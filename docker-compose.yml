@@ -1,0 +1,22 @@
+services:
+  alice:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alice-assistant
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      - CODEX_HOME=/data/codex
+      - ALICE_STATE_DIR=/data/alice
+    volumes:
+      - ./:/workspace
+      - alice-codex-home:/data/codex
+      - alice-state:/data/alice
+    restart: unless-stopped
+
+volumes:
+  alice-codex-home:
+  alice-state:

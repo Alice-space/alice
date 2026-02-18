@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Alice Console</title>
+  <style>
+    :root {
+      --bg: #0f172a;
+      --card: #111827;
+      --accent: #22c55e;
+      --text: #e5e7eb;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --line: #1f2937;
+    }
+    body {
+      margin: 0;
+      font-family: "IBM Plex Sans", "Segoe UI", sans-serif;
+      background: radial-gradient(circle at 20% 10%, #1e293b, #0b1020 60%);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1100px;
+      margin: 0 auto;
+      padding: 24px;
+      display: grid;
+      gap: 16px;
+    }
+    .panel {
+      background: linear-gradient(180deg, rgba(255,255,255,0.03), rgba(255,255,255,0.01));
+      border: 1px solid var(--line);
+      border-radius: 14px;
+      padding: 14px;
+    }
+    h1 { margin: 0 0 12px 0; font-size: 26px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    input, button, textarea {
+      border: 1px solid var(--line);
+      background: #0b1222;
+      color: var(--text);
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+    button { cursor: pointer; }
+    button.ok { background: #0f2d1a; border-color: #14532d; color: #bbf7d0; }
+    button.warn { background: #3f1d1d; border-color: #7f1d1d; color: #fecaca; }
+    pre {
+      white-space: pre-wrap;
+      word-break: break-word;
+      background: #050a14;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      padding: 10px;
+      color: var(--muted);
+      min-height: 90px;
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <h1>Alice Operations Console</h1>
+
+    <div class="panel">
+      <div class="row">
+        <input id="base" style="min-width: 320px" />
+        <input id="token" style="min-width: 320px" placeholder="Bearer token" />
+        <button onclick="refreshAll()" class="ok">Refresh</button>
+      </div>
+    </div>
+
+    <div class="panel">
+      <h3>Runtime</h3>
+      <div class="row">
+        <button class="warn" onclick="pause()">Pause</button>
+        <button class="ok" onclick="resume()">Resume</button>
+      </div>
+      <pre id="runtime"></pre>
+    </div>
+
+    <div class="panel">
+      <h3>Providers</h3>
+      <pre id="providers"></pre>
+    </div>
+
+    <div class="panel">
+      <h3>Todos (pending)</h3>
+      <pre id="todos"></pre>
+    </div>
+
+    <div class="panel">
+      <h3>Create Todo</h3>
+      <div class="row">
+        <input id="todo-title" placeholder="title" style="min-width: 220px" />
+        <input id="todo-desc" placeholder="description" style="min-width: 320px" />
+        <button class="ok" onclick="createTodo()">Create</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+function headers() {
+  const token = document.getElementById('token').value.trim();
+  const h = {
+    'Content-Type': 'application/json'
+  };
+  if (token) h['Authorization'] = `Bearer ${token}`;
+  return h;
+}
+
+function normalizedBase() {
+  const raw = document.getElementById('base').value.trim();
+  return raw.replace(/\/$/, '');
+}
+
+function storeInputs() {
+  localStorage.setItem('alice.base', document.getElementById('base').value.trim());
+  localStorage.setItem('alice.token', document.getElementById('token').value.trim());
+}
+
+function loadInputs() {
+  const defaultBase = (window.location.origin && window.location.origin !== 'null')
+    ? window.location.origin
+    : 'http://localhost:8000';
+  document.getElementById('base').value = localStorage.getItem('alice.base') || defaultBase;
+  document.getElementById('token').value = localStorage.getItem('alice.token') || '';
+}
+
+function renderResult(elId, result) {
+  document.getElementById(elId).textContent = JSON.stringify(result, null, 2);
+}
+
+async function api(path, options = {}) {
+  const url = normalizedBase() + path;
+  try {
+    const res = await fetch(url, {
+      ...options,
+      headers: { ...headers(), ...(options.headers || {}) }
+    });
+    const text = await res.text();
+    let parsed;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      parsed = { raw: text };
+    }
+    if (!res.ok) {
+      return { ok: false, status: res.status, url, error: parsed.detail || parsed.error || 'request failed', response: parsed };
+    }
+    return { ok: true, status: res.status, url, data: parsed };
+  } catch (err) {
+    return { ok: false, url, error: String(err), network: true };
+  }
+}
+
+async function refreshAll() {
+  storeInputs();
+  renderResult('runtime', await api('/api/v1/runtime/status'));
+  renderResult('providers', await api('/api/v1/providers/health'));
+  renderResult('todos', await api('/api/v1/todos?status=pending'));
+}
+
+async function pause() {
+  storeInputs();
+  await api('/api/v1/runtime/pause', { method: 'POST', body: JSON.stringify({ reason: 'manual from dashboard' })});
+  await refreshAll();
+}
+
+async function resume() {
+  storeInputs();
+  await api('/api/v1/runtime/resume', { method: 'POST', body: '{}' });
+  await refreshAll();
+}
+
+async function createTodo() {
+  storeInputs();
+  const title = document.getElementById('todo-title').value.trim();
+  const description = document.getElementById('todo-desc').value.trim();
+  if (!title) return;
+  await api('/api/v1/todos', {
+    method: 'POST',
+    body: JSON.stringify({ title, description })
+  });
+  document.getElementById('todo-title').value = '';
+  document.getElementById('todo-desc').value = '';
+  await refreshAll();
+}
+
+loadInputs();
+document.getElementById('base').addEventListener('change', storeInputs);
+document.getElementById('token').addEventListener('change', storeInputs);
+refreshAll();
+window.setInterval(refreshAll, 15000);
+</script>
+</body>
+</html>
