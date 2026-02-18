@@ -16,6 +16,7 @@ from app.db.models import (
     TurnRecord,
 )
 from app.memory.store import FileMemoryStore
+from app.prompts import PromptRegistry
 from app.providers.base import ProviderError
 from app.providers.router import ModelRouter
 from app.runtime.context import ContextAssembler
@@ -35,6 +36,7 @@ class RuntimeOrchestrator:
         session_factory: async_sessionmaker[AsyncSession],
         model_router: ModelRouter,
         tool_registry: ToolRegistry,
+        prompt_registry: PromptRegistry,
         memory_store: FileMemoryStore,
         stream_hub: SessionStreamHub,
         runtime_control: RuntimeControl,
@@ -44,11 +46,17 @@ class RuntimeOrchestrator:
         self.session_factory = session_factory
         self.model_router = model_router
         self.tool_registry = tool_registry
+        self.prompt_registry = prompt_registry
         self.memory_store = memory_store
         self.stream_hub = stream_hub
         self.runtime_control = runtime_control
         self.feishu_service = feishu_service
-        self.context_assembler = ContextAssembler(settings, memory_store, tool_registry)
+        self.context_assembler = ContextAssembler(
+            settings,
+            memory_store,
+            tool_registry,
+            prompt_registry,
+        )
 
     async def handle_trigger(self, event: RuntimeTriggerEvent) -> str | None:
         if await self.runtime_control.is_paused():

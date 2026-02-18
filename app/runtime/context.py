@@ -10,17 +10,23 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import Settings
 from app.db.models import MessageRecord
 from app.memory.store import FileMemoryStore
+from app.prompts import PromptRegistry
 from app.runtime.types import RuntimeTriggerEvent
 from app.tools.registry import ToolRegistry
 
 
 class ContextAssembler:
     def __init__(
-        self, settings: Settings, memory_store: FileMemoryStore, tool_registry: ToolRegistry
+        self,
+        settings: Settings,
+        memory_store: FileMemoryStore,
+        tool_registry: ToolRegistry,
+        prompt_registry: PromptRegistry,
     ) -> None:
         self.settings = settings
         self.memory_store = memory_store
         self.tool_registry = tool_registry
+        self.prompt_registry = prompt_registry
 
     async def build(
         self,
@@ -112,11 +118,9 @@ class ContextAssembler:
         tool_results: list[dict[str, Any]],
     ) -> str:
         lines: list[str] = []
-        lines.append("You are Alice, a private assistant. Always return valid JSON only.")
-        lines.append("Decide one action per step: final_message or tool_call.")
-        lines.append(
-            "For tool_call include tool_name and tool_arguments_json string (JSON object serialized as string)."
-        )
+        lines.append(self.prompt_registry.get("runtime.system"))
+        lines.append(self.prompt_registry.get("runtime.action_instruction"))
+        lines.append(self.prompt_registry.get("runtime.tool_call_instruction"))
         lines.append("")
         lines.append(f"Trigger: {event.trigger_type}")
         lines.append(f"User input: {event.text}")

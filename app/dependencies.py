@@ -9,12 +9,14 @@ from app.config import Settings
 from app.db.init_db import init_db
 from app.db.session import create_session_factory
 from app.memory.store import FileMemoryStore
+from app.prompts import PromptRegistry
 from app.providers.router import ModelRouter
 from app.runtime.control import RuntimeControl
 from app.runtime.orchestrator import RuntimeOrchestrator
 from app.runtime.stream import SessionStreamHub
 from app.services.feishu import FeishuService
 from app.services.permissions import PermissionService
+from app.services.todo_title import TodoTitleGenerator
 from app.tools.registry import ToolRegistry
 from app.triggers.scheduler import AutomationScheduler
 from app.triggers.todo_worker import TodoDrainWorker
@@ -27,6 +29,8 @@ class AppContainer:
     session_factory: async_sessionmaker[AsyncSession]
     feishu_service: FeishuService
     permission_service: PermissionService
+    todo_title_generator: TodoTitleGenerator
+    prompt_registry: PromptRegistry
     memory_store: FileMemoryStore
     model_router: ModelRouter
     tool_registry: ToolRegistry
@@ -41,14 +45,17 @@ class AppContainer:
         engine, session_factory = create_session_factory(settings.resolved_database_url)
         feishu_service = FeishuService(settings)
         permission_service = PermissionService(settings)
+        prompt_registry = PromptRegistry(settings)
+        todo_title_generator = TodoTitleGenerator(settings, prompt_registry)
         memory_store = FileMemoryStore(settings)
-        model_router = ModelRouter(settings)
+        model_router = ModelRouter(settings, prompt_registry)
         stream_hub = SessionStreamHub()
         runtime_control = RuntimeControl()
         tool_registry = ToolRegistry(
             settings=settings,
             feishu_service=feishu_service,
             permission_service=permission_service,
+            todo_title_generator=todo_title_generator,
             memory_store=memory_store,
         )
         orchestrator = RuntimeOrchestrator(
@@ -56,6 +63,7 @@ class AppContainer:
             session_factory=session_factory,
             model_router=model_router,
             tool_registry=tool_registry,
+            prompt_registry=prompt_registry,
             memory_store=memory_store,
             stream_hub=stream_hub,
             runtime_control=runtime_control,
@@ -70,6 +78,8 @@ class AppContainer:
             session_factory=session_factory,
             feishu_service=feishu_service,
             permission_service=permission_service,
+            todo_title_generator=todo_title_generator,
+            prompt_registry=prompt_registry,
             memory_store=memory_store,
             model_router=model_router,
             tool_registry=tool_registry,
@@ -82,6 +92,7 @@ class AppContainer:
 
     async def startup(self) -> None:
         self._ensure_state_directories()
+        self.prompt_registry.ensure_prompts_file()
         await init_db(self.engine)
         self.memory_store.ensure_files()
         self.automation_scheduler.start()

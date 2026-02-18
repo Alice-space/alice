@@ -56,6 +56,16 @@
       color: var(--muted);
       min-height: 90px;
     }
+    .dialog-log {
+      min-height: 180px;
+      max-height: 320px;
+      overflow-y: auto;
+    }
+    .dialog-input {
+      width: 100%;
+      min-height: 90px;
+      resize: vertical;
+    }
   </style>
 </head>
 <body>
@@ -90,11 +100,11 @@
     </div>
 
     <div class="panel">
-      <h3>Create Todo</h3>
+      <h3>Todo Dialog</h3>
+      <pre id="todo-dialog-log" class="dialog-log"></pre>
+      <textarea id="todo-dialog-input" class="dialog-input" placeholder="Type what you need to do. Alice will create a todo with Codex-generated title."></textarea>
       <div class="row">
-        <input id="todo-title" placeholder="title" style="min-width: 220px" />
-        <input id="todo-desc" placeholder="description" style="min-width: 320px" />
-        <button class="ok" onclick="createTodo()">Create</button>
+        <button id="todo-dialog-send" class="ok" onclick="sendTodoDialog()">Send</button>
       </div>
     </div>
   </div>
@@ -129,6 +139,13 @@ function loadInputs() {
 
 function renderResult(elId, result) {
   document.getElementById(elId).textContent = JSON.stringify(result, null, 2);
+}
+
+function appendTodoDialog(role, text) {
+  const log = document.getElementById('todo-dialog-log');
+  const ts = new Date().toLocaleTimeString();
+  log.textContent += `[${ts}] ${role}: ${text}\\n`;
+  log.scrollTop = log.scrollHeight;
 }
 
 function renderTodos(result) {
@@ -201,23 +218,122 @@ async function resume() {
   await refreshAll();
 }
 
-async function createTodo() {
+async function sendTodoDialog() {
   storeInputs();
-  const title = document.getElementById('todo-title').value.trim();
-  const description = document.getElementById('todo-desc').value.trim();
-  if (!title) return;
-  await api('/api/v1/todos', {
-    method: 'POST',
-    body: JSON.stringify({ title, description })
-  });
-  document.getElementById('todo-title').value = '';
-  document.getElementById('todo-desc').value = '';
+  const message = document.getElementById('todo-dialog-input').value.trim();
+  if (!message) return;
+  const sendBtn = document.getElementById('todo-dialog-send');
+
+  appendTodoDialog('You', message);
+  sendBtn.disabled = true;
+  sendBtn.textContent = 'Sending...';
+  const result = await streamTodoDialog(message);
+
+  if (!result.ok) {
+    appendTodoDialog('Alice', `Failed: ${result.error || 'unknown error'}`);
+  }
+
+  document.getElementById('todo-dialog-input').value = '';
+  sendBtn.disabled = false;
+  sendBtn.textContent = 'Send';
   await refreshAll();
+}
+
+async function streamTodoDialog(message) {
+  const url = normalizedBase() + '/api/v1/todos/dialog/stream';
+  try {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: headers(),
+      body: JSON.stringify({ message })
+    });
+
+    if (!res.ok || !res.body) {
+      const text = await res.text();
+      return { ok: false, error: `HTTP ${res.status}: ${text || 'stream unavailable'}` };
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let createdTodo = null;
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+
+      let idx = buffer.indexOf('\n\n');
+      while (idx !== -1) {
+        const chunk = buffer.slice(0, idx);
+        buffer = buffer.slice(idx + 2);
+        const parsed = parseSseChunk(chunk);
+        if (parsed) {
+          const outcome = handleTodoDialogEvent(parsed.event, parsed.data);
+          if (parsed.event === 'created' && parsed.data && parsed.data.todo) {
+            createdTodo = parsed.data.todo;
+          }
+          if (outcome && outcome.ok === false) {
+            return outcome;
+          }
+        }
+        idx = buffer.indexOf('\n\n');
+      }
+    }
+
+    return { ok: true, todo: createdTodo };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+function parseSseChunk(chunk) {
+  if (!chunk) return null;
+  const lines = chunk.split('\n');
+  let event = 'message';
+  const dataLines = [];
+  for (const line of lines) {
+    if (line.startsWith('event:')) event = line.slice(6).trim();
+    if (line.startsWith('data:')) dataLines.push(line.slice(5).trim());
+  }
+  if (!dataLines.length) return null;
+  const dataText = dataLines.join('\n');
+  try {
+    return { event, data: JSON.parse(dataText) };
+  } catch {
+    return { event, data: { raw: dataText } };
+  }
+}
+
+function handleTodoDialogEvent(event, data) {
+  if (event === 'status') {
+    appendTodoDialog('Alice', data.message || data.phase || '...');
+    return { ok: true };
+  }
+  if (event === 'title') {
+    appendTodoDialog('Alice', `Generated title: ${data.title} (${data.title_source})`);
+    return { ok: true };
+  }
+  if (event === 'created') {
+    const todo = data.todo || {};
+    appendTodoDialog('Alice', `Created todo #${todo.id}: ${todo.title || '(no title)'}`);
+    return { ok: true };
+  }
+  if (event === 'error') {
+    return { ok: false, error: data.error || 'stream error' };
+  }
+  return { ok: true };
 }
 
 loadInputs();
 document.getElementById('base').addEventListener('change', storeInputs);
 document.getElementById('token').addEventListener('change', storeInputs);
+document.getElementById('todo-dialog-input').addEventListener('keydown', (event) => {
+  if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
+    event.preventDefault();
+    sendTodoDialog();
+  }
+});
 refreshAll();
 window.setInterval(refreshAll, 15000);
 </script>

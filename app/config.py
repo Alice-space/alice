@@ -28,6 +28,7 @@ class Settings(BaseSettings):
     # Runtime state is decoupled from project code:
     # db, memory, and skills default under this directory.
     state_dir: Path = Field(default_factory=lambda: Path.home() / ".alice")
+    prompts_file: Path | None = None
     database_url: str | None = None
 
     timezone: str | None = None
@@ -101,6 +102,11 @@ class Settings(BaseSettings):
         if resolved.startswith("sqlite+aiosqlite:///"):
             return resolved.replace("sqlite+aiosqlite:///", "sqlite:///")
         return resolved
+
+    @property
+    def resolved_prompts_file(self) -> Path:
+        path = self.prompts_file or Path("prompts.json")
+        return self._resolve_path(path, base=self.resolved_state_dir)
 
     @property
     def resolved_memory_dir(self) -> Path:

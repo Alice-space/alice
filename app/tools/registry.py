@@ -15,6 +15,7 @@ from app.memory.store import FileMemoryStore
 from app.runtime.types import ToolExecutionResult
 from app.services.feishu import FeishuService
 from app.services.permissions import PermissionService
+from app.services.todo_title import TodoTitleGenerator
 
 logger = logging.getLogger(__name__)
 
@@ -34,11 +35,13 @@ class ToolRegistry:
         settings: Settings,
         feishu_service: FeishuService,
         permission_service: PermissionService,
+        todo_title_generator: TodoTitleGenerator,
         memory_store: FileMemoryStore,
     ) -> None:
         self.settings = settings
         self.feishu_service = feishu_service
         self.permission_service = permission_service
+        self.todo_title_generator = todo_title_generator
         self.memory_store = memory_store
         self._tools: dict[str, ToolSpec] = {
             "feishu.send_message": ToolSpec(
@@ -135,12 +138,19 @@ class ToolRegistry:
         self, db: AsyncSession, arguments: dict[str, Any]
     ) -> dict[str, Any]:
         title = str(arguments.get("title") or "").strip()
+        description = str(arguments.get("description") or "")
+        title_source = "manual"
         if not title:
-            raise ValueError("todo.create requires title")
+            summary_seed = description or str(arguments.get("raw_text") or "")
+            title, title_source = await self.todo_title_generator.summarize(summary_seed)
         todo = TodoRecord(
             title=title,
-            description=str(arguments.get("description") or ""),
+            description=description,
             priority=int(arguments.get("priority") or 0),
+            metadata_json={
+                **(arguments.get("metadata") or {}),
+                "title_source": title_source,
+            },
         )
         db.add(todo)
         await db.flush()
@@ -150,6 +160,7 @@ class ToolRegistry:
             "description": todo.description,
             "status": todo.status,
             "priority": todo.priority,
+            "title_source": title_source,
         }
 
     async def _handle_todo_update(

@@ -27,3 +27,11 @@ async def resume_runtime(container: AppContainer = Depends(get_container)) -> di
 @router.get("/status")
 async def runtime_status(container: AppContainer = Depends(get_container)) -> dict:
     return await container.runtime_control.status()
+
+
+@router.get("/prompts")
+async def runtime_prompts(container: AppContainer = Depends(get_container)) -> dict:
+    return {
+        "prompts_file": str(container.prompt_registry.prompts_file),
+        "prompts": container.prompt_registry.all(),
+    }

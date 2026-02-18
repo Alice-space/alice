@@ -6,6 +6,7 @@ import logging
 import httpx
 
 from app.config import Settings
+from app.prompts import PromptRegistry
 from app.providers.base import ProviderError, parse_action_payload
 from app.runtime.types import ActionRequest, ActionResponse, ProviderHealth
 
@@ -13,8 +14,9 @@ logger = logging.getLogger(__name__)
 
 
 class OpenAIAPIProvider:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, prompt_registry: PromptRegistry) -> None:
         self.settings = settings
+        self.prompt_registry = prompt_registry
 
     async def health(self) -> ProviderHealth:
         if not self.settings.openai_api_key:
@@ -25,11 +27,7 @@ class OpenAIAPIProvider:
         if not self.settings.openai_api_key:
             raise ProviderError("openai api key is not configured")
 
-        system_prompt = (
-            "Return strict JSON with fields: "
-            "action_type(final_message|tool_call), final_message, tool_name, "
-            "tool_arguments_json(stringified JSON object), reasoning."
-        )
+        system_prompt = self.prompt_registry.get("openai.system_json")
 
         payload = {
             "model": self.settings.openai_model,
