@@ -85,7 +85,7 @@
     </div>
 
     <div class="panel">
-      <h3>Todos (pending)</h3>
+      <h3>Todos (all)</h3>
       <pre id="todos"></pre>
     </div>
 
@@ -131,6 +131,34 @@ function renderResult(elId, result) {
   document.getElementById(elId).textContent = JSON.stringify(result, null, 2);
 }
 
+function renderTodos(result) {
+  if (!result.ok) {
+    renderResult('todos', result);
+    return;
+  }
+  const items = Array.isArray(result.data?.items) ? result.data.items : [];
+  const counts = { pending: 0, in_progress: 0, done: 0, other: 0 };
+  for (const item of items) {
+    const status = item.status || 'other';
+    if (status in counts) counts[status] += 1;
+    else counts.other += 1;
+  }
+  const payload = {
+    ok: true,
+    status: result.status,
+    url: result.url,
+    summary: {
+      total: items.length,
+      pending: counts.pending,
+      in_progress: counts.in_progress,
+      done: counts.done,
+      other: counts.other
+    },
+    items
+  };
+  renderResult('todos', payload);
+}
+
 async function api(path, options = {}) {
   const url = normalizedBase() + path;
   try {
@@ -158,7 +186,7 @@ async function refreshAll() {
   storeInputs();
   renderResult('runtime', await api('/api/v1/runtime/status'));
   renderResult('providers', await api('/api/v1/providers/health'));
-  renderResult('todos', await api('/api/v1/todos?status=pending'));
+  renderTodos(await api('/api/v1/todos'));
 }
 
 async function pause() {

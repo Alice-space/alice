@@ -10,3 +10,4 @@ __pycache__/
 alice.db
 *.db
 .env
+.alice
