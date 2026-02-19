@@ -93,6 +93,7 @@ feishu_base_url: "https://open.feishu.cn"
 codex_command: "codex"
 codex_timeout_secs: 120
 workspace_dir: "."
+memory_dir: ".memory"
 
 codex_prompt_prefix: "你是一个助手，请用中文简洁回答，不要使用 Markdown 标题。"
 failure_message: "Codex 暂时不可用，请稍后重试。"
@@ -113,8 +114,12 @@ Required keys:
 
 - Non-text messages are ignored.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
+- Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
+- Before each Codex call, only long-term memory is injected; date-based memory is exposed as a directory path for Codex to search on demand.
+- Each interaction is appended to current-day short-term memory; messages containing "记住"/"长期记忆"/"remember this" are also appended to `MEMORY.md`.
 - The bot replies with an **interactive card** quoting the source message (`reply` API).
 - While Codex is running, the card is patched incrementally with Codex reasoning.
+- If a newer user message arrives in the same session, the running task is interrupted immediately and switched to the latest message (steer behavior).
 - After completion, the same card is patched with final answer (`patch` API).
 - Reply target priority (fallback path for non-card mode): `chat_id`, fallback to sender `open_id`.
 - On Codex failure/timeout, sends `failure_message`.
@@ -131,5 +136,6 @@ Note: Feishu OpenAPI currently has reply/patch APIs, but no dedicated bot typing
 
 - `cmd/connector/main.go`: bootstrap and lifecycle
 - `internal/config/config.go`: config file loading and validation (`viper`)
+- `internal/memory/memory.go`: memory module (long-term + date-based short-term memory files)
 - `internal/codex/codex.go`: Codex CLI call + JSONL parsing
 - `internal/connector/connector.go`: long connection, queue, workers, Feishu send

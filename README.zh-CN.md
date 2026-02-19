@@ -93,6 +93,7 @@ feishu_base_url: "https://open.feishu.cn"
 codex_command: "codex"
 codex_timeout_secs: 120
 workspace_dir: "."
+memory_dir: ".memory"
 
 codex_prompt_prefix: "你是一个助手，请用中文简洁回答，不要使用 Markdown 标题。"
 failure_message: "Codex 暂时不可用，请稍后重试。"
@@ -113,8 +114,12 @@ log_level: "info"
 
 - 非文本消息会忽略。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
+- 默认启用记忆模块，文件写入 `memory_dir`：长期记忆 `MEMORY.md`，分日期记忆在 `daily/YYYY-MM-DD.md`。
+- 每次调用 Codex 前，仅把长期记忆注入提示词；分日期记忆只提供目录位置，让 Codex 按需检索。
+- 每次对话都会追加到当天短期记忆；用户消息包含“记住”/“长期记忆”/“remember this”时，也会追加到 `MEMORY.md`。
 - 机器人会使用“**卡片消息 + 引用回复原消息**”方式返回结果。
 - Codex 执行期间，会把思考过程持续同步到同一条卡片消息。
+- 同一会话内若收到新的用户消息，会立即中断旧任务并切换到最新消息（steer）。
 - Codex 完成后，会把同一条卡片更新为最终答案。
 - 回复目标优先级（非卡片回退路径）：`chat_id`，没有则回退到发送者 `open_id`。
 - Codex 超时或失败时，发送 `failure_message`。
@@ -131,5 +136,6 @@ log_level: "info"
 
 - `cmd/connector/main.go`：启动与生命周期
 - `internal/config/config.go`：配置文件读取与校验（`viper`）
+- `internal/memory/memory.go`：记忆模块（长期记忆 + 按日期短期记忆文件）
 - `internal/codex/codex.go`：Codex CLI 调用与 JSONL 解析
 - `internal/connector/connector.go`：长连接、队列、worker、飞书发消息

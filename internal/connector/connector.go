@@ -8,6 +8,7 @@ import (
 	"log"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -17,6 +18,7 @@ import (
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
 	"gitee.com/alicespace/alice/internal/config"
+	"gitee.com/alicespace/alice/internal/logging"
 )
 
 var mentionPattern = regexp.MustCompile(`<at[^>]*>.*?</at>`)
@@ -29,6 +31,11 @@ type CodexRunner interface {
 
 type StreamingCodexRunner interface {
 	RunWithProgress(ctx context.Context, userText string, onThinking func(step string)) (string, error)
+}
+
+type MemoryManager interface {
+	BuildPrompt(userText string) (string, error)
+	SaveInteraction(userText, assistantText string, failed bool) error
 }
 
 type Sender interface {
@@ -45,14 +52,19 @@ type Job struct {
 	Text            string
 	EventID         string
 	ReceivedAt      time.Time
+	SessionKey      string
+	SessionVersion  uint64
 }
 
 type Processor struct {
 	codex           CodexRunner
+	memory          MemoryManager
 	sender          Sender
 	failureMessage  string
 	thinkingMessage string
 }
+
+const interruptedReplyMessage = "已收到你的新消息，当前回复已中断并切换到最新输入。"
 
 func NewProcessor(
 	codexRunner CodexRunner,
@@ -60,8 +72,19 @@ func NewProcessor(
 	failureMessage string,
 	thinkingMessage string,
 ) *Processor {
+	return NewProcessorWithMemory(codexRunner, sender, failureMessage, thinkingMessage, nil)
+}
+
+func NewProcessorWithMemory(
+	codexRunner CodexRunner,
+	sender Sender,
+	failureMessage string,
+	thinkingMessage string,
+	memoryManager MemoryManager,
+) *Processor {
 	return &Processor{
 		codex:           codexRunner,
+		memory:          memoryManager,
 		sender:          sender,
 		failureMessage:  failureMessage,
 		thinkingMessage: thinkingMessage,
@@ -69,16 +92,33 @@ func NewProcessor(
 }
 
 func (p *Processor) ProcessJob(ctx context.Context, job Job) {
+	logging.Debugf(
+		"process job start event_id=%s receive_id_type=%s receive_id=%s source_message_id=%s text=%q",
+		job.EventID,
+		job.ReceiveIDType,
+		job.ReceiveID,
+		job.SourceMessageID,
+		job.Text,
+	)
 	if strings.TrimSpace(job.SourceMessageID) != "" {
 		p.processReplyCard(ctx, job)
 		return
 	}
 
-	reply, err := p.runCodex(ctx, job.Text, nil)
+	promptText := p.buildPromptWithMemory(job)
+	reply, err := p.runCodex(ctx, promptText, nil)
+	if errors.Is(err, context.Canceled) {
+		log.Printf("codex canceled event_id=%s", job.EventID)
+		logging.Debugf("memory update skipped event_id=%s changed=false reason=codex_canceled", job.EventID)
+		return
+	}
+	failed := err != nil
 	if err != nil {
 		log.Printf("codex failed event_id=%s: %v", job.EventID, err)
 		reply = p.failureMessage
 	}
+	p.recordInteraction(job, reply, failed)
+
 	if sendErr := p.sender.SendText(ctx, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
 		log.Printf("send message failed event_id=%s: %v", job.EventID, sendErr)
 	}
@@ -91,7 +131,7 @@ func (p *Processor) processReplyCard(ctx context.Context, job Job) {
 	if initialThinking == "" {
 		initialThinking = "思考中..."
 	}
-	cardContent := buildProgressCardContent(initialThinking, "", false, 0)
+	cardContent := buildProgressCardContent(initialThinking, "", false, false, 0)
 
 	cardMessageID, err := p.sender.ReplyCard(ctx, job.SourceMessageID, cardContent)
 	if err != nil {
@@ -118,7 +158,7 @@ func (p *Processor) processReplyCard(ctx context.Context, job Job) {
 		if time.Since(lastPatchTime) < 350*time.Millisecond {
 			return
 		}
-		progressCard := buildProgressCardContent(thinkingText, "", false, time.Since(startedAt))
+		progressCard := buildProgressCardContent(thinkingText, "", false, false, time.Since(startedAt))
 		if patchErr := p.sender.PatchCard(ctx, cardMessageID, progressCard); patchErr != nil {
 			log.Printf("patch card failed event_id=%s: %v", job.EventID, patchErr)
 			return
@@ -126,17 +166,42 @@ func (p *Processor) processReplyCard(ctx context.Context, job Job) {
 		lastPatchTime = time.Now()
 	}
 
-	finalReply, runErr := p.runCodex(ctx, job.Text, onThinking)
+	promptText := p.buildPromptWithMemory(job)
+	finalReply, runErr := p.runCodex(ctx, promptText, onThinking)
+	if errors.Is(runErr, context.Canceled) {
+		// Parent context cancellation usually means app shutdown.
+		if ctx.Err() != nil {
+			logging.Debugf("memory update skipped event_id=%s changed=false reason=context_canceled", job.EventID)
+			return
+		}
+
+		finalThinking := strings.Join(thinkingParts, "\n")
+		elapsed := time.Since(startedAt)
+		if cardMessageID != "" {
+			interruptedCard := buildProgressCardContent(finalThinking, interruptedReplyMessage, false, true, elapsed)
+			if patchErr := p.sender.PatchCard(ctx, cardMessageID, interruptedCard); patchErr == nil {
+				logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
+				return
+			}
+		}
+		if _, replyErr := p.sender.ReplyText(ctx, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
+			log.Printf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
+		}
+		logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
+		return
+	}
 	failed := runErr != nil
 	if failed {
 		log.Printf("codex failed event_id=%s: %v", job.EventID, runErr)
 		finalReply = p.failureMessage
 	}
+	p.recordInteraction(job, finalReply, failed)
+
 	finalThinking := strings.Join(thinkingParts, "\n")
 	elapsed := time.Since(startedAt)
 
 	if cardMessageID != "" {
-		finalCard := buildProgressCardContent(finalThinking, finalReply, failed, elapsed)
+		finalCard := buildProgressCardContent(finalThinking, finalReply, failed, false, elapsed)
 		if patchErr := p.sender.PatchCard(ctx, cardMessageID, finalCard); patchErr == nil {
 			return
 		}
@@ -158,10 +223,49 @@ func (p *Processor) runCodex(
 	return p.codex.Run(ctx, userText)
 }
 
+func (p *Processor) buildPromptWithMemory(job Job) string {
+	logging.Debugf("prompt assemble start event_id=%s memory_enabled=%t user_text=%q", job.EventID, p.memory != nil, job.Text)
+	if p.memory == nil {
+		logging.Debugf("prompt assemble event_id=%s strategy=direct final_prompt=%q", job.EventID, job.Text)
+		return job.Text
+	}
+
+	prompt, err := p.memory.BuildPrompt(job.Text)
+	if err != nil {
+		log.Printf("build memory prompt failed event_id=%s: %v", job.EventID, err)
+		logging.Debugf("prompt assemble fallback event_id=%s strategy=direct reason=%v final_prompt=%q", job.EventID, err, job.Text)
+		return job.Text
+	}
+	logging.Debugf("prompt assemble event_id=%s strategy=memory final_prompt=%q", job.EventID, prompt)
+	return prompt
+}
+
+func (p *Processor) recordInteraction(job Job, reply string, failed bool) {
+	if p.memory == nil {
+		logging.Debugf("memory update skipped event_id=%s changed=false reason=no_memory_manager", job.EventID)
+		return
+	}
+	if err := p.memory.SaveInteraction(job.Text, reply, failed); err != nil {
+		log.Printf("save memory failed event_id=%s: %v", job.EventID, err)
+		logging.Debugf("memory update result event_id=%s changed=unknown error=%v", job.EventID, err)
+		return
+	}
+	logging.Debugf("memory update result event_id=%s changed=true failed=%t", job.EventID, failed)
+}
+
 type App struct {
 	cfg       config.Config
 	queue     chan Job
 	processor *Processor
+	mu        sync.Mutex
+	latest    map[string]uint64
+	active    map[string]activeSession
+}
+
+type activeSession struct {
+	version uint64
+	cancel  context.CancelFunc
+	eventID string
 }
 
 func NewApp(cfg config.Config, processor *Processor) *App {
@@ -169,6 +273,8 @@ func NewApp(cfg config.Config, processor *Processor) *App {
 		cfg:       cfg,
 		queue:     make(chan Job, cfg.QueueCapacity),
 		processor: processor,
+		latest:    make(map[string]uint64),
+		active:    make(map[string]activeSession),
 	}
 }
 
@@ -209,29 +315,150 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 		case <-ctx.Done():
 			return
 		case job := <-a.queue:
-			a.processor.ProcessJob(ctx, job)
+			if !a.shouldProcessJob(job) {
+				log.Printf("drop stale job event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
+				continue
+			}
+
+			jobCtx, cancel := context.WithCancel(ctx)
+			if !a.markSessionActive(job, cancel) {
+				cancel()
+				log.Printf("skip stale job before run event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
+				continue
+			}
+
+			a.processor.ProcessJob(jobCtx, job)
+			cancel()
+			a.clearSessionActive(job)
 		}
 	}
 }
 
 func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
+	logIncomingEventDebug(event)
+
 	job, err := BuildJob(event)
 	if err != nil {
 		if errors.Is(err, ErrIgnoreMessage) {
+			logging.Debugf("incoming message ignored source=feishu_im event_id=%s", eventID(event))
 			return nil
 		}
 		log.Printf("build job failed: %v", err)
+		logging.Debugf("incoming message rejected source=feishu_im event_id=%s err=%v", eventID(event), err)
 		return nil
 	}
 
-	select {
-	case a.queue <- *job:
-		log.Printf("job queued event_id=%s receive_id_type=%s", job.EventID, job.ReceiveIDType)
-	default:
+	queued, cancelActive, canceledEventID := a.enqueueJob(job)
+	if !queued {
 		log.Printf("queue full, drop event_id=%s", job.EventID)
+		return nil
 	}
+	if cancelActive != nil {
+		cancelActive()
+		log.Printf("steer active job canceled old_event_id=%s new_event_id=%s session=%s", canceledEventID, job.EventID, job.SessionKey)
+	}
+	log.Printf(
+		"job queued event_id=%s receive_id_type=%s session=%s version=%d",
+		job.EventID,
+		job.ReceiveIDType,
+		job.SessionKey,
+		job.SessionVersion,
+	)
+	logging.Debugf(
+		"job accepted event_id=%s channel=%s receive_id_type=%s receive_id=%s source_message_id=%s normalized_text=%q",
+		job.EventID,
+		"feishu_im",
+		job.ReceiveIDType,
+		job.ReceiveID,
+		job.SourceMessageID,
+		job.Text,
+	)
 
 	return nil
+}
+
+func (a *App) enqueueJob(job *Job) (queued bool, cancelActive context.CancelFunc, canceledEventID string) {
+	if job == nil {
+		return false, nil, ""
+	}
+
+	if strings.TrimSpace(job.SessionKey) == "" {
+		job.SessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	nextVersion := a.latest[job.SessionKey] + 1
+	job.SessionVersion = nextVersion
+
+	select {
+	case a.queue <- *job:
+		a.latest[job.SessionKey] = nextVersion
+		if active, ok := a.active[job.SessionKey]; ok {
+			cancelActive = active.cancel
+			canceledEventID = active.eventID
+		}
+		return true, cancelActive, canceledEventID
+	default:
+		return false, nil, ""
+	}
+}
+
+func (a *App) shouldProcessJob(job Job) bool {
+	sessionKey := strings.TrimSpace(job.SessionKey)
+	if sessionKey == "" {
+		sessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	}
+	if sessionKey == "" || job.SessionVersion == 0 {
+		return false
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	return a.latest[sessionKey] == job.SessionVersion
+}
+
+func (a *App) markSessionActive(job Job, cancel context.CancelFunc) bool {
+	sessionKey := strings.TrimSpace(job.SessionKey)
+	if sessionKey == "" {
+		sessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	}
+	if sessionKey == "" || job.SessionVersion == 0 {
+		return false
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if a.latest[sessionKey] != job.SessionVersion {
+		return false
+	}
+	a.active[sessionKey] = activeSession{
+		version: job.SessionVersion,
+		cancel:  cancel,
+		eventID: job.EventID,
+	}
+	return true
+}
+
+func (a *App) clearSessionActive(job Job) {
+	sessionKey := strings.TrimSpace(job.SessionKey)
+	if sessionKey == "" {
+		sessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	}
+	if sessionKey == "" {
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	active, ok := a.active[sessionKey]
+	if !ok {
+		return
+	}
+	if active.version == job.SessionVersion {
+		delete(a.active, sessionKey)
+	}
 }
 
 func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
@@ -269,7 +496,41 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 		Text:            text,
 		EventID:         eventID(event),
 		ReceivedAt:      time.Now(),
+		SessionKey:      buildSessionKey(receiveIDType, receiveID),
 	}, nil
+}
+
+func logIncomingEventDebug(event *larkim.P2MessageReceiveV1) {
+	if !logging.IsDebugEnabled() {
+		return
+	}
+	if event == nil || event.Event == nil || event.Event.Message == nil {
+		logging.Debugf("incoming message source=feishu_im event=<nil>")
+		return
+	}
+
+	message := event.Event.Message
+	logging.Debugf(
+		"incoming message source=feishu_im event_id=%s message_id=%s message_type=%s chat_id=%s raw_content=%s",
+		eventID(event),
+		strings.TrimSpace(deref(message.MessageId)),
+		strings.TrimSpace(deref(message.MessageType)),
+		strings.TrimSpace(deref(message.ChatId)),
+		deref(message.Content),
+	)
+}
+
+func buildSessionKey(receiveIDType, receiveID string) string {
+	idType := strings.TrimSpace(receiveIDType)
+	if idType == "" {
+		idType = "unknown"
+	}
+
+	id := strings.TrimSpace(receiveID)
+	if id == "" {
+		return ""
+	}
+	return idType + ":" + id
 }
 
 func extractText(content *string) (string, error) {
@@ -336,9 +597,11 @@ func normalizeReasoning(step string) string {
 	return clipText(step, 600)
 }
 
-func buildProgressCardContent(thinkingText, answerText string, failed bool, elapsed time.Duration) string {
+func buildProgressCardContent(thinkingText, answerText string, failed bool, interrupted bool, elapsed time.Duration) string {
 	status := "思考中"
-	if failed {
+	if interrupted {
+		status = "已中断"
+	} else if failed {
 		status = "失败"
 	} else if strings.TrimSpace(answerText) != "" {
 		status = "已完成"
@@ -350,7 +613,7 @@ func buildProgressCardContent(thinkingText, answerText string, failed bool, elap
 		thinking = "（暂无）"
 	}
 	durationLabel := "已思考：" + formatElapsed(elapsed)
-	if failed || strings.TrimSpace(answer) != "" {
+	if interrupted || failed || strings.TrimSpace(answer) != "" {
 		durationLabel = "总耗时：" + formatElapsed(elapsed)
 	}
 
