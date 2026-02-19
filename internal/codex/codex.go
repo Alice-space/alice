@@ -49,7 +49,7 @@ func (r Runner) RunWithProgress(
 		"--json",
 		"--skip-git-repo-check",
 		"--sandbox",
-		"read-only",
+		"danger-full-access",
 		prompt,
 	)
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
