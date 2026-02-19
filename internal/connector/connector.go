@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"log"
 	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
@@ -86,9 +85,12 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) {
 }
 
 func (p *Processor) processReplyCard(ctx context.Context, job Job) {
-	thinkingParts := []string{p.thinkingMessage}
-	thinkingText := p.thinkingMessage
-	cardContent := buildProgressCardContent(job.Text, thinkingText, "", false)
+	thinkingParts := make([]string, 0, 8)
+	initialThinking := strings.TrimSpace(p.thinkingMessage)
+	if initialThinking == "" {
+		initialThinking = "思考中..."
+	}
+	cardContent := buildProgressCardContent(job.Text, initialThinking, "", false)
 
 	cardMessageID, err := p.sender.ReplyCard(ctx, job.SourceMessageID, cardContent)
 	if err != nil {
@@ -102,11 +104,11 @@ func (p *Processor) processReplyCard(ctx context.Context, job Job) {
 		if normalized == "" {
 			return
 		}
-		if thinkingParts[len(thinkingParts)-1] == normalized {
+		if len(thinkingParts) > 0 && thinkingParts[len(thinkingParts)-1] == normalized {
 			return
 		}
 		thinkingParts = append(thinkingParts, normalized)
-		thinkingText = strings.Join(thinkingParts, "\n")
+		thinkingText := strings.Join(thinkingParts, "\n")
 
 		if cardMessageID == "" {
 			return
@@ -129,9 +131,10 @@ func (p *Processor) processReplyCard(ctx context.Context, job Job) {
 		log.Printf("codex failed event_id=%s: %v", job.EventID, runErr)
 		finalReply = p.failureMessage
 	}
+	finalThinking := strings.Join(thinkingParts, "\n")
 
 	if cardMessageID != "" {
-		finalCard := buildProgressCardContent(job.Text, thinkingText, finalReply, failed)
+		finalCard := buildProgressCardContent(job.Text, finalThinking, finalReply, failed)
 		if patchErr := p.sender.PatchCard(ctx, cardMessageID, finalCard); patchErr == nil {
 			return
 		}
@@ -367,7 +370,7 @@ func buildProgressCardContent(userText, thinkingText, answerText string, failed 
 				cardMarkdown("**你的消息**\n" + question),
 				cardMarkdown("**Codex 思考**\n" + thinking),
 				cardMarkdown("**回复**\n" + answer),
-				cardMarkdown("_更新时间：" + strconv.FormatInt(time.Now().Unix(), 10) + "_"),
+				cardMarkdown("_更新时间：" + time.Now().In(time.Local).Format("2006-01-02 15:04:05") + "_"),
 			},
 		},
 	}

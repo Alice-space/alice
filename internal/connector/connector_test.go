@@ -133,6 +133,26 @@ func TestProcessor_FallbackToReplyTextWhenPatchFails(t *testing.T) {
 	}
 }
 
+func TestProcessor_FinalCardRemovesThinkingMessage(t *testing.T) {
+	fakeCodex := codexStub{resp: "final answer"}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		SourceMessageID: "om_src",
+		Text:            "hello",
+	})
+
+	if sender.patchCardCalls != 1 {
+		t.Fatalf("expected 1 patch call, got %d", sender.patchCardCalls)
+	}
+	if strings.Contains(sender.lastPatchedCard, "正在思考中...") {
+		t.Fatalf("final card should not keep thinking placeholder: %s", sender.lastPatchedCard)
+	}
+}
+
 func TestProcessor_NoSourceMessageUsesSendText(t *testing.T) {
 	fakeCodex := codexStub{resp: "final answer"}
 	sender := &senderStub{}
@@ -181,6 +201,14 @@ func TestBuildProgressCardContent_UsesCardSchemaV2BodyElements(t *testing.T) {
 	}
 	if first["tag"] != "markdown" {
 		t.Fatalf("expected markdown element, got %#v", first["tag"])
+	}
+	last, ok := elements[len(elements)-1].(map[string]any)
+	if !ok {
+		t.Fatalf("expected last element object, got %#v", elements[len(elements)-1])
+	}
+	lastContent, _ := last["content"].(string)
+	if !strings.Contains(lastContent, "-") || !strings.Contains(lastContent, ":") {
+		t.Fatalf("expected human readable timestamp in last element, got %q", lastContent)
 	}
 }
 
