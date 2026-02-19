@@ -1,4 +1,4 @@
-module github.com/alice/feishu-codex-connector
+module gitee.com/alicespace/alice
 
 go 1.25.0
 

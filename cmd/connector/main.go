@@ -9,9 +9,9 @@ import (
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 
-	"github.com/alice/feishu-codex-connector/internal/codex"
-	"github.com/alice/feishu-codex-connector/internal/config"
-	"github.com/alice/feishu-codex-connector/internal/connector"
+	"gitee.com/alicespace/alice/internal/codex"
+	"gitee.com/alicespace/alice/internal/config"
+	"gitee.com/alicespace/alice/internal/connector"
 )
 
 func main() {

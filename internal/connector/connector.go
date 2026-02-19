@@ -16,7 +16,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 	larkws "github.com/larksuite/oapi-sdk-go/v3/ws"
 
-	"github.com/alice/feishu-codex-connector/internal/config"
+	"gitee.com/alicespace/alice/internal/config"
 )
 
 var mentionPattern = regexp.MustCompile(`<at[^>]*>.*?</at>`)
