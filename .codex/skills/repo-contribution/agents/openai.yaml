@@ -1,0 +1,4 @@
+interface:
+  display_name: "Repo Contribution"
+  short_description: "Full repo contribution flow with branch and checks"
+  default_prompt: "Use $repo-contribution to complete a full repository contribution workflow before commit."
