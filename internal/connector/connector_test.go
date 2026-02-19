@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
@@ -148,6 +149,38 @@ func TestProcessor_NoSourceMessageUsesSendText(t *testing.T) {
 	}
 	if sender.lastSendText != "final answer" {
 		t.Fatalf("unexpected send text content: %s", sender.lastSendText)
+	}
+}
+
+func TestBuildProgressCardContent_UsesCardSchemaV2BodyElements(t *testing.T) {
+	content := buildProgressCardContent("问题", "思考", "答案", false)
+
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		t.Fatalf("unmarshal card content failed: %v", err)
+	}
+
+	if payload["schema"] != "2.0" {
+		t.Fatalf("expected schema 2.0, got %#v", payload["schema"])
+	}
+	if _, exists := payload["elements"]; exists {
+		t.Fatalf("schema 2.0 card should not use top-level elements")
+	}
+
+	body, ok := payload["body"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected body object, got %#v", payload["body"])
+	}
+	elements, ok := body["elements"].([]any)
+	if !ok || len(elements) == 0 {
+		t.Fatalf("expected non-empty body.elements, got %#v", body["elements"])
+	}
+	first, ok := elements[0].(map[string]any)
+	if !ok {
+		t.Fatalf("expected first element object, got %#v", elements[0])
+	}
+	if first["tag"] != "markdown" {
+		t.Fatalf("expected markdown element, got %#v", first["tag"])
 	}
 }
 

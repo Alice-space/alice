@@ -333,13 +333,10 @@ func normalizeReasoning(step string) string {
 
 func buildProgressCardContent(userText, thinkingText, answerText string, failed bool) string {
 	status := "思考中"
-	template := "blue"
 	if failed {
 		status = "失败"
-		template = "red"
 	} else if strings.TrimSpace(answerText) != "" {
 		status = "已完成"
-		template = "green"
 	}
 
 	question := clipText(strings.TrimSpace(userText), 1200)
@@ -355,23 +352,23 @@ func buildProgressCardContent(userText, thinkingText, answerText string, failed 
 	card := map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{
-			"wide_screen_mode": true,
-			"enable_forward":   true,
-			"update_multi":     true,
+			"enable_forward": true,
+			"update_multi":   true,
 		},
 		"header": map[string]any{
-			"template": template,
 			"title": map[string]any{
 				"tag":     "plain_text",
 				"content": "Alice 助手",
 			},
 		},
-		"elements": []any{
-			cardMarkdown("**状态**：" + status),
-			cardMarkdown("**你的消息**\n" + question),
-			cardMarkdown("**Codex 思考**\n" + thinking),
-			cardMarkdown("**回复**\n" + answer),
-			cardMarkdown("_更新时间：" + strconv.FormatInt(time.Now().Unix(), 10) + "_"),
+		"body": map[string]any{
+			"elements": []any{
+				cardMarkdown("**状态**：" + status),
+				cardMarkdown("**你的消息**\n" + question),
+				cardMarkdown("**Codex 思考**\n" + thinking),
+				cardMarkdown("**回复**\n" + answer),
+				cardMarkdown("_更新时间：" + strconv.FormatInt(time.Now().Unix(), 10) + "_"),
+			},
 		},
 	}
 	raw, _ := json.Marshal(card)
@@ -380,11 +377,8 @@ func buildProgressCardContent(userText, thinkingText, answerText string, failed 
 
 func cardMarkdown(content string) map[string]any {
 	return map[string]any{
-		"tag": "div",
-		"text": map[string]any{
-			"tag":     "lark_md",
-			"content": content,
-		},
+		"tag":     "markdown",
+		"content": content,
 	}
 }
 
