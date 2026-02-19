@@ -38,7 +38,7 @@ go mod tidy
 go test ./...
 
 # 启动连接器
-go run ./cmd/connector -config ./config.yaml
+go run ./cmd/connector -c config.yaml
 ```
 
 ## 编译
@@ -52,7 +52,7 @@ go build -o bin/alice-connector ./cmd/connector
 运行：
 
 ```bash
-./bin/alice-connector -config ./config.yaml
+./bin/alice-connector -c config.yaml
 ```
 
 ## 提交前检查
@@ -69,6 +69,10 @@ make check
 make precommit-install
 ```
 
+## 贡献规则
+
+贡献规范见 [CONTRIBUTING.md](./CONTRIBUTING.md)。
+
 ## 配置文件
 
 程序从 YAML 配置文件读取参数（默认路径：`config.yaml`）。
@@ -76,7 +80,7 @@ make precommit-install
 你也可以传入自定义路径：
 
 ```bash
-go run ./cmd/connector -config /path/to/config.yaml
+go run ./cmd/connector -c /path/to/config.yaml
 ```
 
 `config.example.yaml` 示例：

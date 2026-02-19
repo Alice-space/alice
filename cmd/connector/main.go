@@ -16,10 +16,12 @@ import (
 )
 
 func main() {
-	configPath := flag.String("config", config.DefaultConfigPath, "path to config yaml")
+	configPath := config.DefaultConfigPath
+	flag.StringVar(&configPath, "config", config.DefaultConfigPath, "path to config yaml")
+	flag.StringVar(&configPath, "c", config.DefaultConfigPath, "path to config yaml (short)")
 	flag.Parse()
 
-	cfg, err := config.LoadFromFile(*configPath)
+	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
 		log.Fatalf("load config failed: %v", err)
 	}

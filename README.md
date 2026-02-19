@@ -38,7 +38,7 @@ go mod tidy
 go test ./...
 
 # start connector
-go run ./cmd/connector -config ./config.yaml
+go run ./cmd/connector -c config.yaml
 ```
 
 ## Build
@@ -52,7 +52,7 @@ go build -o bin/alice-connector ./cmd/connector
 Then run:
 
 ```bash
-./bin/alice-connector -config ./config.yaml
+./bin/alice-connector -c config.yaml
 ```
 
 ## Pre-commit checks
@@ -69,6 +69,10 @@ Install git pre-commit hook (runs `make check` before commit):
 make precommit-install
 ```
 
+## Contributing
+
+Contribution rules are documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
+
 ## Config file
 
 The application loads config from YAML file (default: `config.yaml`).
@@ -76,7 +80,7 @@ The application loads config from YAML file (default: `config.yaml`).
 You can provide a custom file path:
 
 ```bash
-go run ./cmd/connector -config /path/to/config.yaml
+go run ./cmd/connector -c /path/to/config.yaml
 ```
 
 `config.example.yaml`:
