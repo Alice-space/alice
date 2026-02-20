@@ -33,6 +33,19 @@ type StreamingCodexRunner interface {
 	RunWithProgress(ctx context.Context, userText string, onThinking func(step string)) (string, error)
 }
 
+type ResumableCodexRunner interface {
+	RunWithThread(ctx context.Context, threadID, userText string) (reply string, nextThreadID string, err error)
+}
+
+type ResumableStreamingCodexRunner interface {
+	RunWithThreadAndProgress(
+		ctx context.Context,
+		threadID string,
+		userText string,
+		onThinking func(step string),
+	) (reply string, nextThreadID string, err error)
+}
+
 type MemoryManager interface {
 	BuildPrompt(userText string) (string, error)
 	SaveInteraction(userText, assistantText string, failed bool) (changed bool, err error)
@@ -45,15 +58,20 @@ type Sender interface {
 	PatchCard(ctx context.Context, messageID, cardContent string) error
 }
 
+type ReplyContextProvider interface {
+	GetMessageText(ctx context.Context, messageID string) (string, error)
+}
+
 type Job struct {
-	ReceiveID       string
-	ReceiveIDType   string
-	SourceMessageID string
-	Text            string
-	EventID         string
-	ReceivedAt      time.Time
-	SessionKey      string
-	SessionVersion  uint64
+	ReceiveID            string
+	ReceiveIDType        string
+	SourceMessageID      string
+	ReplyParentMessageID string
+	Text                 string
+	EventID              string
+	ReceivedAt           time.Time
+	SessionKey           string
+	SessionVersion       uint64
 }
 
 type Processor struct {
@@ -62,6 +80,8 @@ type Processor struct {
 	sender          Sender
 	failureMessage  string
 	thinkingMessage string
+	mu              sync.Mutex
+	threadBySession map[string]string
 }
 
 const interruptedReplyMessage = "已收到你的新消息，当前回复已中断并切换到最新输入。"
@@ -88,6 +108,7 @@ func NewProcessorWithMemory(
 		sender:          sender,
 		failureMessage:  failureMessage,
 		thinkingMessage: thinkingMessage,
+		threadBySession: make(map[string]string),
 	}
 }
 
@@ -105,8 +126,10 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) {
 		return
 	}
 
-	promptText := p.buildPromptWithMemory(job)
-	reply, err := p.runCodex(ctx, promptText, nil)
+	currentThreadID := p.getThreadID(job.SessionKey)
+	promptText := p.buildPromptWithMemory(ctx, job, currentThreadID)
+	reply, nextThreadID, err := p.runCodex(ctx, currentThreadID, promptText, nil)
+	p.setThreadID(job.SessionKey, nextThreadID)
 	if errors.Is(err, context.Canceled) {
 		log.Printf("codex canceled event_id=%s", job.EventID)
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=codex_canceled", job.EventID)
@@ -166,8 +189,10 @@ func (p *Processor) processReplyCard(ctx context.Context, job Job) {
 		lastPatchTime = time.Now()
 	}
 
-	promptText := p.buildPromptWithMemory(job)
-	finalReply, runErr := p.runCodex(ctx, promptText, onThinking)
+	currentThreadID := p.getThreadID(job.SessionKey)
+	promptText := p.buildPromptWithMemory(ctx, job, currentThreadID)
+	finalReply, nextThreadID, runErr := p.runCodex(ctx, currentThreadID, promptText, onThinking)
+	p.setThreadID(job.SessionKey, nextThreadID)
 	if errors.Is(runErr, context.Canceled) {
 		// Parent context cancellation usually means app shutdown.
 		if ctx.Err() != nil {
@@ -214,30 +239,128 @@ func (p *Processor) processReplyCard(ctx context.Context, job Job) {
 
 func (p *Processor) runCodex(
 	ctx context.Context,
+	threadID string,
 	userText string,
 	onThinking func(step string),
-) (string, error) {
-	if runner, ok := p.codex.(StreamingCodexRunner); ok {
-		return runner.RunWithProgress(ctx, userText, onThinking)
+) (string, string, error) {
+	if runner, ok := p.codex.(ResumableStreamingCodexRunner); ok {
+		return runner.RunWithThreadAndProgress(ctx, threadID, userText, onThinking)
 	}
-	return p.codex.Run(ctx, userText)
+	if runner, ok := p.codex.(ResumableCodexRunner); ok {
+		return runner.RunWithThread(ctx, threadID, userText)
+	}
+	if runner, ok := p.codex.(StreamingCodexRunner); ok {
+		reply, err := runner.RunWithProgress(ctx, userText, onThinking)
+		return reply, strings.TrimSpace(threadID), err
+	}
+	reply, err := p.codex.Run(ctx, userText)
+	return reply, strings.TrimSpace(threadID), err
 }
 
-func (p *Processor) buildPromptWithMemory(job Job) string {
-	logging.Debugf("prompt assemble start event_id=%s memory_enabled=%t user_text=%q", job.EventID, p.memory != nil, job.Text)
-	if p.memory == nil {
-		logging.Debugf("prompt assemble event_id=%s strategy=direct final_prompt=%q", job.EventID, job.Text)
-		return job.Text
+func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID string) string {
+	userText := p.buildUserTextWithReplyContext(ctx, job, threadID)
+	if strings.TrimSpace(threadID) != "" {
+		logging.Debugf(
+			"prompt assemble event_id=%s strategy=resume_direct thread_id=%s final_prompt=%q",
+			job.EventID,
+			strings.TrimSpace(threadID),
+			userText,
+		)
+		return userText
 	}
 
-	prompt, err := p.memory.BuildPrompt(job.Text)
+	logging.Debugf("prompt assemble start event_id=%s memory_enabled=%t user_text=%q", job.EventID, p.memory != nil, userText)
+	if p.memory == nil {
+		logging.Debugf("prompt assemble event_id=%s strategy=direct final_prompt=%q", job.EventID, userText)
+		return userText
+	}
+
+	prompt, err := p.memory.BuildPrompt(userText)
 	if err != nil {
 		log.Printf("build memory prompt failed event_id=%s: %v", job.EventID, err)
-		logging.Debugf("prompt assemble fallback event_id=%s strategy=direct reason=%v final_prompt=%q", job.EventID, err, job.Text)
-		return job.Text
+		logging.Debugf("prompt assemble fallback event_id=%s strategy=direct reason=%v final_prompt=%q", job.EventID, err, userText)
+		return userText
 	}
 	logging.Debugf("prompt assemble event_id=%s strategy=memory final_prompt=%q", job.EventID, prompt)
 	return prompt
+}
+
+func (p *Processor) buildUserTextWithReplyContext(ctx context.Context, job Job, threadID string) string {
+	currentText := strings.TrimSpace(job.Text)
+	if strings.TrimSpace(threadID) != "" {
+		logging.Debugf(
+			"reply context skipped event_id=%s reason=resume_thread thread_id=%s",
+			job.EventID,
+			strings.TrimSpace(threadID),
+		)
+		return currentText
+	}
+
+	parentMessageID := strings.TrimSpace(job.ReplyParentMessageID)
+	if currentText == "" || parentMessageID == "" {
+		return currentText
+	}
+
+	replyContextProvider, ok := p.sender.(ReplyContextProvider)
+	if !ok {
+		logging.Debugf(
+			"reply context skipped event_id=%s parent_message_id=%s reason=no_provider",
+			job.EventID,
+			parentMessageID,
+		)
+		return currentText
+	}
+
+	parentText, err := replyContextProvider.GetMessageText(ctx, parentMessageID)
+	if err != nil {
+		logging.Debugf(
+			"reply context fetch failed event_id=%s parent_message_id=%s err=%v",
+			job.EventID,
+			parentMessageID,
+			err,
+		)
+		return currentText
+	}
+	parentText = strings.TrimSpace(parentText)
+	if parentText == "" {
+		logging.Debugf("reply context empty event_id=%s parent_message_id=%s", job.EventID, parentMessageID)
+		return currentText
+	}
+
+	combined := "你正在回复下面这条消息，请基于其上下文回答。\n" +
+		"被回复消息：\n" + clipText(parentText, 2000) + "\n\n" +
+		"用户当前回复：\n" + currentText
+	logging.Debugf(
+		"reply context attached event_id=%s parent_message_id=%s parent_text=%q combined_user_text=%q",
+		job.EventID,
+		parentMessageID,
+		parentText,
+		combined,
+	)
+	return combined
+}
+
+func (p *Processor) getThreadID(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return strings.TrimSpace(p.threadBySession[sessionKey])
+}
+
+func (p *Processor) setThreadID(sessionKey string, threadID string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	threadID = strings.TrimSpace(threadID)
+	if sessionKey == "" || threadID == "" {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.threadBySession[sessionKey] = threadID
 }
 
 func (p *Processor) recordInteraction(job Job, reply string, failed bool) {
@@ -491,13 +614,14 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 	}
 
 	return &Job{
-		ReceiveID:       receiveID,
-		ReceiveIDType:   receiveIDType,
-		SourceMessageID: strings.TrimSpace(deref(message.MessageId)),
-		Text:            text,
-		EventID:         eventID(event),
-		ReceivedAt:      time.Now(),
-		SessionKey:      buildSessionKey(receiveIDType, receiveID),
+		ReceiveID:            receiveID,
+		ReceiveIDType:        receiveIDType,
+		SourceMessageID:      strings.TrimSpace(deref(message.MessageId)),
+		ReplyParentMessageID: extractReplyParentMessageID(message),
+		Text:                 text,
+		EventID:              eventID(event),
+		ReceivedAt:           time.Now(),
+		SessionKey:           buildSessionKey(receiveIDType, receiveID),
 	}, nil
 }
 
@@ -559,6 +683,17 @@ func extractOpenID(event *larkim.P2MessageReceiveV1) string {
 		return ""
 	}
 	return deref(event.Event.Sender.SenderId.OpenId)
+}
+
+func extractReplyParentMessageID(message *larkim.EventMessage) string {
+	if message == nil {
+		return ""
+	}
+	parentID := strings.TrimSpace(deref(message.ParentId))
+	if parentID != "" {
+		return parentID
+	}
+	return strings.TrimSpace(deref(message.RootId))
 }
 
 func eventID(event *larkim.P2MessageReceiveV1) string {
@@ -769,6 +904,94 @@ func (s *LarkSender) PatchCard(ctx context.Context, messageID, cardContent strin
 		return fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
 	}
 	return nil
+}
+
+func (s *LarkSender) GetMessageText(ctx context.Context, messageID string) (string, error) {
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return "", errors.New("message id is empty")
+	}
+
+	req := larkim.NewGetMessageReqBuilder().
+		MessageId(messageID).
+		Build()
+	resp, err := s.client.Im.V1.Message.Get(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+	}
+	if resp.Data == nil || len(resp.Data.Items) == 0 || resp.Data.Items[0] == nil {
+		return "", errors.New("get message success but items is empty")
+	}
+
+	item := resp.Data.Items[0]
+	msgType := strings.ToLower(strings.TrimSpace(deref(item.MsgType)))
+	content := ""
+	if item.Body != nil {
+		content = deref(item.Body.Content)
+	}
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", errors.New("get message success but content is empty")
+	}
+
+	switch msgType {
+	case "text":
+		text, err := extractText(&content)
+		if err == nil {
+			return text, nil
+		}
+	case "interactive":
+		if text := extractReplyTextFromCard(content); text != "" {
+			return text, nil
+		}
+	}
+
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(content), &payload); err == nil {
+		text := strings.TrimSpace(payload.Text)
+		if text != "" {
+			text = mentionPattern.ReplaceAllString(text, "")
+			text = strings.TrimSpace(text)
+			if text != "" {
+				return text, nil
+			}
+		}
+	}
+	return clipText(content, 1200), nil
+}
+
+func extractReplyTextFromCard(content string) string {
+	var payload struct {
+		Body struct {
+			Elements []struct {
+				Tag     string `json:"tag"`
+				Content string `json:"content"`
+			} `json:"elements"`
+		} `json:"body"`
+	}
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return ""
+	}
+
+	const replyPrefix = "**回复**\n"
+	for _, element := range payload.Body.Elements {
+		if strings.ToLower(strings.TrimSpace(element.Tag)) != "markdown" {
+			continue
+		}
+		md := strings.TrimSpace(element.Content)
+		if md == "" {
+			continue
+		}
+		if strings.HasPrefix(md, replyPrefix) {
+			return strings.TrimSpace(strings.TrimPrefix(md, replyPrefix))
+		}
+	}
+	return ""
 }
 
 func textMessageContent(text string) string {

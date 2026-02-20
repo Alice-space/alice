@@ -20,6 +20,7 @@ func TestBuildJob_TextMessage(t *testing.T) {
 		Event: &larkim.P2MessageReceiveV1Data{
 			Message: &larkim.EventMessage{
 				MessageId:   strPtr("om_123"),
+				ParentId:    strPtr("om_parent"),
 				MessageType: strPtr("text"),
 				Content:     strPtr(`{"text":"<at user_id=\"ou_x\">Tom</at> 你好"}`),
 				ChatId:      strPtr("oc_chat"),
@@ -39,6 +40,9 @@ func TestBuildJob_TextMessage(t *testing.T) {
 	}
 	if job.SourceMessageID != "om_123" {
 		t.Fatalf("unexpected source message id: %s", job.SourceMessageID)
+	}
+	if job.ReplyParentMessageID != "om_parent" {
+		t.Fatalf("unexpected parent message id: %s", job.ReplyParentMessageID)
 	}
 	if job.EventID != "evt_1" {
 		t.Fatalf("unexpected event id: %s", job.EventID)
@@ -335,6 +339,159 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	}
 }
 
+func TestProcessor_AttachesReplyParentMessageContext(t *testing.T) {
+	fakeCodex := &codexCaptureStub{resp: "final answer"}
+	sender := &senderStub{
+		messageTextByID: map[string]string{
+			"om_parent": "上一条消息",
+		},
+	}
+	processor := NewProcessor(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:            "oc_chat",
+		ReceiveIDType:        "chat_id",
+		SourceMessageID:      "om_src",
+		ReplyParentMessageID: "om_parent",
+		Text:                 "继续",
+	})
+
+	if sender.getMessageTextCalls != 1 {
+		t.Fatalf("expected 1 get message text call, got %d", sender.getMessageTextCalls)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "被回复消息：\n上一条消息") {
+		t.Fatalf("expected parent context in codex input, got: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "用户当前回复：\n继续") {
+		t.Fatalf("expected current reply in codex input, got: %s", fakeCodex.lastInput)
+	}
+}
+
+func TestProcessor_ReplyParentContextFetchFailureFallsBackToUserText(t *testing.T) {
+	fakeCodex := &codexCaptureStub{resp: "final answer"}
+	sender := &senderStub{
+		getMessageTextErr: errors.New("boom"),
+	}
+	processor := NewProcessor(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:            "oc_chat",
+		ReceiveIDType:        "chat_id",
+		SourceMessageID:      "om_src",
+		ReplyParentMessageID: "om_parent",
+		Text:                 "继续",
+	})
+
+	if fakeCodex.lastInput != "继续" {
+		t.Fatalf("expected fallback to user text, got: %s", fakeCodex.lastInput)
+	}
+}
+
+func TestProcessor_ResumesCodexThreadWithinSameSession(t *testing.T) {
+	fakeCodex := &codexResumableCaptureStub{
+		respByCall:   []string{"B", "D"},
+		threadByCall: []string{"thread_1", "thread_1"},
+	}
+	sender := &senderStub{
+		messageTextByID: map[string]string{
+			"om_parent": "上一条消息",
+		},
+	}
+	processor := NewProcessor(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		Text:          "A",
+		SessionKey:    "chat_id:oc_chat",
+	})
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:            "oc_chat",
+		ReceiveIDType:        "chat_id",
+		SourceMessageID:      "om_src",
+		ReplyParentMessageID: "om_parent",
+		Text:                 "C",
+		SessionKey:           "chat_id:oc_chat",
+	})
+
+	if len(fakeCodex.receivedThreadIDs) != 2 {
+		t.Fatalf("expected 2 codex calls, got %d", len(fakeCodex.receivedThreadIDs))
+	}
+	if fakeCodex.receivedThreadIDs[0] != "" {
+		t.Fatalf("first call should start new thread, got %q", fakeCodex.receivedThreadIDs[0])
+	}
+	if fakeCodex.receivedThreadIDs[1] != "thread_1" {
+		t.Fatalf("second call should resume thread_1, got %q", fakeCodex.receivedThreadIDs[1])
+	}
+	if len(fakeCodex.receivedInputs) != 2 {
+		t.Fatalf("expected 2 codex inputs, got %d", len(fakeCodex.receivedInputs))
+	}
+	if fakeCodex.receivedInputs[1] != "C" {
+		t.Fatalf("second input should be direct follow-up text C, got %q", fakeCodex.receivedInputs[1])
+	}
+	if sender.getMessageTextCalls != 0 {
+		t.Fatalf("resume mode should not fetch parent text, got %d", sender.getMessageTextCalls)
+	}
+}
+
+func TestProcessor_ResumeSkipsMemoryBuildPrompt(t *testing.T) {
+	fakeCodex := &codexResumableCaptureStub{
+		respByCall:   []string{"B", "D"},
+		threadByCall: []string{"thread_1", "thread_1"},
+	}
+	sender := &senderStub{}
+	memory := &memoryStub{prompt: "记忆上下文 + 用户消息"}
+	processor := NewProcessorWithMemory(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+		memory,
+	)
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		Text:          "A",
+		SessionKey:    "chat_id:oc_chat",
+	})
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		Text:          "C",
+		SessionKey:    "chat_id:oc_chat",
+	})
+
+	if memory.buildCalls != 1 {
+		t.Fatalf("expected memory build only once before resume, got %d", memory.buildCalls)
+	}
+	if len(fakeCodex.receivedInputs) != 2 {
+		t.Fatalf("expected 2 codex calls, got %d", len(fakeCodex.receivedInputs))
+	}
+	if fakeCodex.receivedInputs[0] != "记忆上下文 + 用户消息" {
+		t.Fatalf("first call should use memory prompt, got %q", fakeCodex.receivedInputs[0])
+	}
+	if fakeCodex.receivedInputs[1] != "C" {
+		t.Fatalf("resume call should use raw user text, got %q", fakeCodex.receivedInputs[1])
+	}
+}
+
 func TestProcessor_SavesFailureFallbackToMemory(t *testing.T) {
 	fakeCodex := &codexCaptureStub{err: errors.New("boom")}
 	sender := &senderStub{}
@@ -466,6 +623,44 @@ func (c *codexCaptureStub) Run(_ context.Context, input string) (string, error) 
 	return c.resp, c.err
 }
 
+type codexResumableCaptureStub struct {
+	respByCall   []string
+	threadByCall []string
+
+	receivedThreadIDs []string
+	receivedInputs    []string
+}
+
+func (c *codexResumableCaptureStub) Run(_ context.Context, input string) (string, error) {
+	c.receivedInputs = append(c.receivedInputs, input)
+	return c.responseForCall(len(c.receivedInputs) - 1), nil
+}
+
+func (c *codexResumableCaptureStub) RunWithThread(
+	_ context.Context,
+	threadID string,
+	input string,
+) (string, string, error) {
+	c.receivedThreadIDs = append(c.receivedThreadIDs, threadID)
+	c.receivedInputs = append(c.receivedInputs, input)
+	idx := len(c.receivedInputs) - 1
+	return c.responseForCall(idx), c.threadForCall(idx), nil
+}
+
+func (c *codexResumableCaptureStub) responseForCall(idx int) string {
+	if idx >= 0 && idx < len(c.respByCall) {
+		return c.respByCall[idx]
+	}
+	return "ok"
+}
+
+func (c *codexResumableCaptureStub) threadForCall(idx int) string {
+	if idx >= 0 && idx < len(c.threadByCall) {
+		return c.threadByCall[idx]
+	}
+	return ""
+}
+
 type memoryStub struct {
 	prompt string
 
@@ -503,6 +698,10 @@ type senderStub struct {
 	patchCardCalls  int
 	lastPatchedCard string
 	patchCardErr    error
+
+	getMessageTextCalls int
+	getMessageTextErr   error
+	messageTextByID     map[string]string
 }
 
 func (s *senderStub) SendText(_ context.Context, _, _ string, text string) error {
@@ -527,6 +726,17 @@ func (s *senderStub) PatchCard(_ context.Context, _ string, cardContent string) 
 	s.patchCardCalls++
 	s.lastPatchedCard = cardContent
 	return s.patchCardErr
+}
+
+func (s *senderStub) GetMessageText(_ context.Context, messageID string) (string, error) {
+	s.getMessageTextCalls++
+	if s.getMessageTextErr != nil {
+		return "", s.getMessageTextErr
+	}
+	if s.messageTextByID == nil {
+		return "", nil
+	}
+	return s.messageTextByID[messageID], nil
 }
 
 func strPtr(s string) *string { return &s }

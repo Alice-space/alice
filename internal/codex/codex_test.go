@@ -43,3 +43,40 @@ func TestMergeEnv_OverridesAndAppends(t *testing.T) {
 		t.Fatalf("expected ALL_PROXY append, got %#v", merged)
 	}
 }
+
+func TestParseEventLine_ThreadStarted(t *testing.T) {
+	reasoning, message, threadID := parseEventLine(`{"type":"thread.started","thread_id":"thread_123"}`)
+	if reasoning != "" {
+		t.Fatalf("unexpected reasoning: %q", reasoning)
+	}
+	if message != "" {
+		t.Fatalf("unexpected message: %q", message)
+	}
+	if threadID != "thread_123" {
+		t.Fatalf("unexpected thread id: %q", threadID)
+	}
+}
+
+func TestBuildExecArgs_ResumeThread(t *testing.T) {
+	args := buildExecArgs("thread_123", "hello")
+	if !slices.Contains(args, "resume") {
+		t.Fatalf("expected resume args, got: %#v", args)
+	}
+	if !slices.Contains(args, "thread_123") {
+		t.Fatalf("expected thread id in args, got: %#v", args)
+	}
+}
+
+func TestBuildPrompt_NewThreadIncludesPrefix(t *testing.T) {
+	prompt := buildPrompt("", "你是助手Alice。", "你好")
+	if prompt != "你是助手Alice。\n\n你好" {
+		t.Fatalf("unexpected prompt: %q", prompt)
+	}
+}
+
+func TestBuildPrompt_ResumeThreadSkipsPrefix(t *testing.T) {
+	prompt := buildPrompt("thread_123", "你是助手Alice。", "你好")
+	if prompt != "你好" {
+		t.Fatalf("unexpected resume prompt: %q", prompt)
+	}
+}
