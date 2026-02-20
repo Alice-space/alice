@@ -63,7 +63,18 @@ func (m *Manager) Init() error {
 	if err := os.MkdirAll(filepath.Join(m.Dir, ShortTermDirName), 0o755); err != nil {
 		return fmt.Errorf("create short-term memory dir failed: %w", err)
 	}
+	if err := ensureFileExists(filepath.Join(m.Dir, LongTermFileName), 0o644); err != nil {
+		return fmt.Errorf("create long-term memory file failed: %w", err)
+	}
 	return nil
+}
+
+func ensureFileExists(path string, perm os.FileMode) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_APPEND|os.O_WRONLY, perm)
+	if err != nil {
+		return err
+	}
+	return f.Close()
 }
 
 func (m *Manager) BuildPrompt(userText string) (string, error) {

@@ -32,6 +32,10 @@ func TestManagerInit_CreatesMemoryDirStructure(t *testing.T) {
 	if info, err := os.Stat(shortTermDir); err != nil || !info.IsDir() {
 		t.Fatalf("init should create short-term memory dir, err=%v", err)
 	}
+	longTermFile := filepath.Join(dir, LongTermFileName)
+	if info, err := os.Stat(longTermFile); err != nil || info.IsDir() {
+		t.Fatalf("init should create long-term memory file, err=%v", err)
+	}
 }
 
 func TestManagerBuildPrompt_ContainsLongTermAndPaths(t *testing.T) {
