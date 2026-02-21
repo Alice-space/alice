@@ -18,15 +18,16 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 	}
 
 	message := event.Event.Message
-	if strings.ToLower(deref(message.MessageType)) != "text" {
+	messageType := strings.ToLower(strings.TrimSpace(deref(message.MessageType)))
+	if !isSupportedIncomingMessageType(messageType) {
 		return nil, ErrIgnoreMessage
 	}
 
-	text, err := extractText(message.Content)
+	text, attachments, err := extractIncomingMessageContent(messageType, message.Content)
 	if err != nil {
 		return nil, err
 	}
-	if text == "" {
+	if strings.TrimSpace(text) == "" && len(attachments) == 0 {
 		return nil, ErrIgnoreMessage
 	}
 
@@ -45,11 +46,154 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 		ReceiveIDType:        receiveIDType,
 		SourceMessageID:      strings.TrimSpace(deref(message.MessageId)),
 		ReplyParentMessageID: extractReplyParentMessageID(message),
+		MessageType:          messageType,
 		Text:                 text,
+		Attachments:          attachments,
+		RawContent:           strings.TrimSpace(deref(message.Content)),
 		EventID:              eventID(event),
 		ReceivedAt:           time.Now(),
 		SessionKey:           buildSessionKey(receiveIDType, receiveID),
 	}, nil
+}
+
+func isSupportedIncomingMessageType(messageType string) bool {
+	switch strings.ToLower(strings.TrimSpace(messageType)) {
+	case "text", "image", "sticker", "audio", "file":
+		return true
+	default:
+		return false
+	}
+}
+
+func extractIncomingMessageContent(messageType string, content *string) (string, []Attachment, error) {
+	switch strings.ToLower(strings.TrimSpace(messageType)) {
+	case "text":
+		text, err := extractText(content)
+		return text, nil, err
+	case "image":
+		attachment, err := extractImageAttachment(content)
+		if err != nil {
+			return "", nil, err
+		}
+		return "用户发送了一张图片。", []Attachment{attachment}, nil
+	case "sticker":
+		attachment, err := extractStickerAttachment(content)
+		if err != nil {
+			return "", nil, err
+		}
+		return "用户发送了一个表情包。", []Attachment{attachment}, nil
+	case "audio":
+		attachment, err := extractAudioAttachment(content)
+		if err != nil {
+			return "", nil, err
+		}
+		return "用户发送了一段语音。", []Attachment{attachment}, nil
+	case "file":
+		text, attachment, err := extractFileAttachment(content)
+		if err != nil {
+			return "", nil, err
+		}
+		return text, []Attachment{attachment}, nil
+	default:
+		return "", nil, ErrIgnoreMessage
+	}
+}
+
+func extractImageAttachment(content *string) (Attachment, error) {
+	var payload struct {
+		ImageKey string `json:"image_key"`
+		FileKey  string `json:"file_key"`
+	}
+	if err := decodeIncomingContent(content, &payload); err != nil {
+		return Attachment{}, err
+	}
+
+	imageKey := strings.TrimSpace(payload.ImageKey)
+	fileKey := strings.TrimSpace(payload.FileKey)
+	if imageKey == "" && fileKey == "" {
+		return Attachment{}, ErrIgnoreMessage
+	}
+	return Attachment{
+		Kind:     "image",
+		ImageKey: imageKey,
+		FileKey:  fileKey,
+	}, nil
+}
+
+func extractStickerAttachment(content *string) (Attachment, error) {
+	var payload struct {
+		FileKey  string `json:"file_key"`
+		ImageKey string `json:"image_key"`
+	}
+	if err := decodeIncomingContent(content, &payload); err != nil {
+		return Attachment{}, err
+	}
+
+	fileKey := strings.TrimSpace(payload.FileKey)
+	imageKey := strings.TrimSpace(payload.ImageKey)
+	if fileKey == "" && imageKey == "" {
+		return Attachment{}, ErrIgnoreMessage
+	}
+	return Attachment{
+		Kind:     "sticker",
+		FileKey:  fileKey,
+		ImageKey: imageKey,
+	}, nil
+}
+
+func extractAudioAttachment(content *string) (Attachment, error) {
+	var payload struct {
+		FileKey string `json:"file_key"`
+	}
+	if err := decodeIncomingContent(content, &payload); err != nil {
+		return Attachment{}, err
+	}
+
+	fileKey := strings.TrimSpace(payload.FileKey)
+	if fileKey == "" {
+		return Attachment{}, ErrIgnoreMessage
+	}
+	return Attachment{
+		Kind:    "audio",
+		FileKey: fileKey,
+	}, nil
+}
+
+func extractFileAttachment(content *string) (string, Attachment, error) {
+	var payload struct {
+		FileKey  string `json:"file_key"`
+		FileName string `json:"file_name"`
+	}
+	if err := decodeIncomingContent(content, &payload); err != nil {
+		return "", Attachment{}, err
+	}
+
+	fileKey := strings.TrimSpace(payload.FileKey)
+	fileName := strings.TrimSpace(payload.FileName)
+	if fileKey == "" {
+		return "", Attachment{}, ErrIgnoreMessage
+	}
+
+	text := "用户发送了一个文件。"
+	if fileName != "" {
+		text = "用户发送了一个文件：" + fileName
+	}
+	return text, Attachment{
+		Kind:     "file",
+		FileKey:  fileKey,
+		FileName: fileName,
+	}, nil
+}
+
+func decodeIncomingContent(content *string, out any) error {
+	trimmed := strings.TrimSpace(deref(content))
+	if trimmed == "" {
+		return ErrIgnoreMessage
+	}
+	if err := json.Unmarshal([]byte(trimmed), out); err != nil {
+		return fmt.Errorf("invalid message content json: %w", err)
+	}
+	return nil
 }
 
 func shouldProcessIncomingMessage(event *larkim.P2MessageReceiveV1, botOpenID, botUserID string) bool {

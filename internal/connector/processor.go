@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"strings"
 	"sync"
@@ -64,18 +65,21 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) {
 	p.touchSessionMessage(sessionKey, p.now())
 
 	logging.Debugf(
-		"process job start event_id=%s receive_id_type=%s receive_id=%s source_message_id=%s text=%q",
+		"process job start event_id=%s receive_id_type=%s receive_id=%s source_message_id=%s message_type=%s text=%q attachments=%d",
 		job.EventID,
 		job.ReceiveIDType,
 		job.ReceiveID,
 		job.SourceMessageID,
+		job.MessageType,
 		job.Text,
+		len(job.Attachments),
 	)
 	if strings.TrimSpace(job.SourceMessageID) != "" {
 		p.processReplyMessage(ctx, job)
 		return
 	}
 
+	p.prepareJobForCodex(ctx, &job)
 	currentThreadID := p.getThreadID(sessionKey)
 	promptText := p.buildPromptWithMemory(ctx, job, currentThreadID)
 	reply, nextThreadID, err := p.runCodex(ctx, currentThreadID, promptText, nil)
@@ -90,7 +94,7 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) {
 		log.Printf("codex failed event_id=%s: %v", job.EventID, err)
 		reply = p.failureMessage
 	}
-	p.recordInteraction(job, reply, failed)
+	p.recordInteraction(job, p.buildCurrentUserInput(job), reply, failed)
 
 	if sendErr := p.sender.SendText(ctx, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
 		log.Printf("send message failed event_id=%s: %v", job.EventID, sendErr)
@@ -121,6 +125,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
 		lastSentAgentMessage = normalized
 	}
 
+	p.prepareJobForCodex(ctx, &job)
 	currentThreadID := p.getThreadID(sessionKey)
 	promptText := p.buildPromptWithMemory(ctx, job, currentThreadID)
 	finalReply, nextThreadID, runErr := p.runCodex(ctx, currentThreadID, promptText, sendAgentMessage)
@@ -146,7 +151,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
 		log.Printf("codex failed event_id=%s: %v", job.EventID, runErr)
 		finalReply = p.failureMessage
 	}
-	p.recordInteraction(job, finalReply, failed)
+	p.recordInteraction(job, p.buildCurrentUserInput(job), finalReply, failed)
 	if strings.TrimSpace(finalReply) != "" && strings.TrimSpace(finalReply) != lastSentAgentMessage {
 		if _, replyErr := p.sender.ReplyText(ctx, job.SourceMessageID, finalReply); replyErr != nil {
 			log.Printf("send final reply text failed event_id=%s: %v", job.EventID, replyErr)
@@ -203,7 +208,7 @@ func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID
 }
 
 func (p *Processor) buildUserTextWithReplyContext(ctx context.Context, job Job, threadID string) string {
-	currentText := strings.TrimSpace(job.Text)
+	currentText := p.buildCurrentUserInput(job)
 	if strings.TrimSpace(threadID) != "" {
 		logging.Debugf(
 			"reply context skipped event_id=%s reason=resume_thread thread_id=%s",
@@ -265,12 +270,90 @@ func sessionKeyForJob(job Job) string {
 	return buildSessionKey(job.ReceiveIDType, job.ReceiveID)
 }
 
-func (p *Processor) recordInteraction(job Job, reply string, failed bool) {
+func (p *Processor) prepareJobForCodex(ctx context.Context, job *Job) {
+	if job == nil || len(job.Attachments) == 0 {
+		return
+	}
+
+	downloader, ok := p.sender.(AttachmentDownloader)
+	if !ok {
+		for i := range job.Attachments {
+			if strings.TrimSpace(job.Attachments[i].DownloadError) == "" {
+				job.Attachments[i].DownloadError = "sender does not support attachment download"
+			}
+		}
+		return
+	}
+
+	for i := range job.Attachments {
+		attachment := &job.Attachments[i]
+		if strings.TrimSpace(attachment.LocalPath) != "" {
+			continue
+		}
+		if err := downloader.DownloadAttachment(ctx, job.SourceMessageID, attachment); err != nil {
+			attachment.DownloadError = err.Error()
+			log.Printf(
+				"download attachment failed event_id=%s message_type=%s kind=%s file_key=%s image_key=%s err=%v",
+				job.EventID,
+				job.MessageType,
+				attachment.Kind,
+				attachment.FileKey,
+				attachment.ImageKey,
+				err,
+			)
+		}
+	}
+}
+
+func (p *Processor) buildCurrentUserInput(job Job) string {
+	baseText := strings.TrimSpace(job.Text)
+	if len(job.Attachments) == 0 {
+		return baseText
+	}
+
+	var builder strings.Builder
+	if baseText != "" {
+		builder.WriteString(baseText)
+		builder.WriteString("\n\n")
+	}
+	builder.WriteString("附加资源信息：\n")
+	for idx, attachment := range job.Attachments {
+		builder.WriteString(fmt.Sprintf("%d. 类型：%s\n", idx+1, strings.TrimSpace(attachment.Kind)))
+		if name := strings.TrimSpace(attachment.FileName); name != "" {
+			builder.WriteString("   文件名：")
+			builder.WriteString(name)
+			builder.WriteString("\n")
+		}
+		if key := strings.TrimSpace(attachment.ImageKey); key != "" {
+			builder.WriteString("   image_key：")
+			builder.WriteString(key)
+			builder.WriteString("\n")
+		}
+		if key := strings.TrimSpace(attachment.FileKey); key != "" {
+			builder.WriteString("   file_key：")
+			builder.WriteString(key)
+			builder.WriteString("\n")
+		}
+		if localPath := strings.TrimSpace(attachment.LocalPath); localPath != "" {
+			builder.WriteString("   本地路径：")
+			builder.WriteString(localPath)
+			builder.WriteString("\n")
+		}
+		if errText := strings.TrimSpace(attachment.DownloadError); errText != "" {
+			builder.WriteString("   下载状态：失败（")
+			builder.WriteString(errText)
+			builder.WriteString("）\n")
+		}
+	}
+	return strings.TrimSpace(builder.String())
+}
+
+func (p *Processor) recordInteraction(job Job, userText, reply string, failed bool) {
 	if p.memory == nil {
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=no_memory_manager", job.EventID)
 		return
 	}
-	changed, err := p.memory.SaveInteraction(job.Text, reply, failed)
+	changed, err := p.memory.SaveInteraction(strings.TrimSpace(userText), reply, failed)
 	if err != nil {
 		log.Printf("save memory failed event_id=%s: %v", job.EventID, err)
 		logging.Debugf("memory update result event_id=%s changed=unknown error=%v", job.EventID, err)

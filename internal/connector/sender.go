@@ -5,18 +5,26 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"os"
+	"path/filepath"
 	"strings"
+	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
 type LarkSender struct {
-	client *lark.Client
+	client      *lark.Client
+	resourceDir string
 }
 
-func NewLarkSender(client *lark.Client) *LarkSender {
-	return &LarkSender{client: client}
+func NewLarkSender(client *lark.Client, resourceDir string) *LarkSender {
+	return &LarkSender{
+		client:      client,
+		resourceDir: strings.TrimSpace(resourceDir),
+	}
 }
 
 func (s *LarkSender) SendText(ctx context.Context, receiveIDType, receiveID, text string) error {
@@ -162,6 +170,203 @@ func (s *LarkSender) GetMessageText(ctx context.Context, messageID string) (stri
 		}
 	}
 	return clipText(content, 1200), nil
+}
+
+func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID string, attachment *Attachment) error {
+	if attachment == nil {
+		return errors.New("attachment is nil")
+	}
+	sourceMessageID = strings.TrimSpace(sourceMessageID)
+	if sourceMessageID == "" {
+		return errors.New("source message id is empty")
+	}
+	if strings.TrimSpace(s.resourceDir) == "" {
+		return errors.New("resource dir is empty")
+	}
+
+	kind := strings.ToLower(strings.TrimSpace(attachment.Kind))
+	switch kind {
+	case "image":
+		imageKey := strings.TrimSpace(attachment.ImageKey)
+		fileKey := strings.TrimSpace(attachment.FileKey)
+		if imageKey != "" {
+			fileName, fileReader, err := s.downloadMessageResource(ctx, sourceMessageID, imageKey, "image")
+			if err == nil {
+				return s.writeAttachmentFile(sourceMessageID, kind, imageKey, fileName, fileReader, attachment)
+			}
+			if fallbackName, fallbackReader, fallbackErr := s.downloadImage(ctx, imageKey); fallbackErr == nil {
+				return s.writeAttachmentFile(sourceMessageID, kind, imageKey, fallbackName, fallbackReader, attachment)
+			}
+			if fileKey == "" {
+				return err
+			}
+		}
+		if fileKey != "" {
+			fileName, fileReader, err := s.downloadMessageResource(ctx, sourceMessageID, fileKey, "file")
+			if err != nil {
+				return err
+			}
+			return s.writeAttachmentFile(sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
+		}
+		return errors.New("image attachment missing image_key and file_key")
+	case "sticker":
+		fileKey := strings.TrimSpace(attachment.FileKey)
+		imageKey := strings.TrimSpace(attachment.ImageKey)
+		if fileKey != "" {
+			fileName, fileReader, err := s.downloadMessageResource(ctx, sourceMessageID, fileKey, "file")
+			if err == nil {
+				return s.writeAttachmentFile(sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
+			}
+			if imageKey == "" {
+				return err
+			}
+		}
+		if imageKey != "" {
+			fileName, fileReader, err := s.downloadMessageResource(ctx, sourceMessageID, imageKey, "image")
+			if err != nil {
+				return err
+			}
+			return s.writeAttachmentFile(sourceMessageID, kind, imageKey, fileName, fileReader, attachment)
+		}
+		return errors.New("sticker attachment missing file_key and image_key")
+	case "audio", "file":
+		fileKey := strings.TrimSpace(attachment.FileKey)
+		if fileKey == "" {
+			return fmt.Errorf("%s attachment missing file_key", kind)
+		}
+		fileName, fileReader, err := s.downloadMessageResource(ctx, sourceMessageID, fileKey, "file")
+		if err != nil {
+			return err
+		}
+		return s.writeAttachmentFile(sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
+	default:
+		return fmt.Errorf("unsupported attachment kind: %s", kind)
+	}
+}
+
+func (s *LarkSender) downloadImage(ctx context.Context, imageKey string) (string, io.Reader, error) {
+	req := larkim.NewGetImageReqBuilder().
+		ImageKey(imageKey).
+		Build()
+	resp, err := s.client.Im.V1.Image.Get(ctx, req)
+	if err != nil {
+		return "", nil, err
+	}
+	if !resp.Success() {
+		return "", nil, fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+	}
+	if resp.File == nil {
+		return "", nil, errors.New("download image success but file body is empty")
+	}
+	return strings.TrimSpace(resp.FileName), resp.File, nil
+}
+
+func (s *LarkSender) downloadMessageResource(ctx context.Context, messageID, resourceKey, resourceType string) (string, io.Reader, error) {
+	req := larkim.NewGetMessageResourceReqBuilder().
+		MessageId(messageID).
+		FileKey(resourceKey).
+		Type(resourceType).
+		Build()
+	resp, err := s.client.Im.V1.MessageResource.Get(ctx, req)
+	if err != nil {
+		return "", nil, err
+	}
+	if !resp.Success() {
+		return "", nil, fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+	}
+	if resp.File == nil {
+		return "", nil, errors.New("download message resource success but file body is empty")
+	}
+	return strings.TrimSpace(resp.FileName), resp.File, nil
+}
+
+func (s *LarkSender) writeAttachmentFile(
+	sourceMessageID, kind, key, suggestedFileName string,
+	reader io.Reader,
+	attachment *Attachment,
+) error {
+	if reader == nil {
+		return errors.New("attachment file reader is nil")
+	}
+	raw, err := io.ReadAll(reader)
+	if err != nil {
+		return err
+	}
+	if len(raw) == 0 {
+		return errors.New("attachment file is empty")
+	}
+
+	resourceDir := strings.TrimSpace(s.resourceDir)
+	subDir := filepath.Join(
+		resourceDir,
+		time.Now().Format("2006-01-02"),
+		sanitizePathToken(sourceMessageID),
+	)
+	if err := os.MkdirAll(subDir, 0o755); err != nil {
+		return err
+	}
+
+	baseName := sanitizePathToken(strings.TrimSpace(suggestedFileName))
+	if baseName == "" {
+		baseName = sanitizePathToken(kind + "_" + key)
+	}
+	baseName = ensureAttachmentExtension(baseName, kind)
+
+	targetPath := filepath.Join(subDir, baseName)
+	if _, statErr := os.Stat(targetPath); statErr == nil {
+		targetPath = filepath.Join(
+			subDir,
+			ensureAttachmentExtension(
+				sanitizePathToken(kind+"_"+key+"_"+time.Now().Format("150405")),
+				kind,
+			),
+		)
+	}
+	if err := os.WriteFile(targetPath, raw, 0o600); err != nil {
+		return err
+	}
+
+	attachment.LocalPath = targetPath
+	if strings.TrimSpace(attachment.FileName) == "" {
+		attachment.FileName = filepath.Base(targetPath)
+	}
+	return nil
+}
+
+func sanitizePathToken(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" {
+		return "unknown"
+	}
+	replacer := strings.NewReplacer(
+		"/", "_",
+		"\\", "_",
+		" ", "_",
+		"\n", "_",
+		"\r", "_",
+		"\t", "_",
+		":", "_",
+	)
+	value = replacer.Replace(value)
+	value = strings.Trim(value, "._")
+	if value == "" {
+		return "unknown"
+	}
+	return value
+}
+
+func ensureAttachmentExtension(fileName, kind string) string {
+	if filepath.Ext(fileName) != "" {
+		return fileName
+	}
+	switch strings.ToLower(strings.TrimSpace(kind)) {
+	case "image", "sticker":
+		return fileName + ".img"
+	case "audio":
+		return fileName + ".audio"
+	default:
+		return fileName + ".bin"
+	}
 }
 
 func extractReplyTextFromCard(content string) string {

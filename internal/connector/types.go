@@ -50,12 +50,28 @@ type ReplyContextProvider interface {
 	GetMessageText(ctx context.Context, messageID string) (string, error)
 }
 
+type AttachmentDownloader interface {
+	DownloadAttachment(ctx context.Context, sourceMessageID string, attachment *Attachment) error
+}
+
+type Attachment struct {
+	Kind          string
+	FileKey       string
+	ImageKey      string
+	FileName      string
+	LocalPath     string
+	DownloadError string
+}
+
 type Job struct {
 	ReceiveID            string
 	ReceiveIDType        string
 	SourceMessageID      string
 	ReplyParentMessageID string
+	MessageType          string
 	Text                 string
+	Attachments          []Attachment
+	RawContent           string
 	EventID              string
 	ReceivedAt           time.Time
 	SessionKey           string

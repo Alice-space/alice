@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"path/filepath"
 	"strings"
 	"sync"
 	"testing"
@@ -432,6 +433,10 @@ type senderStub struct {
 	getMessageTextCalls int
 	getMessageTextErr   error
 	messageTextByID     map[string]string
+
+	downloadCalls     int
+	downloadPathByKey map[string]string
+	downloadErrByKey  map[string]error
 }
 
 func (s *senderStub) SendText(_ context.Context, _, _ string, text string) error {
@@ -469,6 +474,36 @@ func (s *senderStub) GetMessageText(_ context.Context, messageID string) (string
 		return "", nil
 	}
 	return s.messageTextByID[messageID], nil
+}
+
+func (s *senderStub) DownloadAttachment(_ context.Context, _ string, attachment *Attachment) error {
+	s.downloadCalls++
+	if attachment == nil {
+		return errors.New("attachment is nil")
+	}
+
+	key := strings.TrimSpace(attachment.ImageKey)
+	if key == "" {
+		key = strings.TrimSpace(attachment.FileKey)
+	}
+	if s.downloadErrByKey != nil {
+		if err, ok := s.downloadErrByKey[key]; ok && err != nil {
+			return err
+		}
+	}
+
+	localPath := ""
+	if s.downloadPathByKey != nil {
+		localPath = strings.TrimSpace(s.downloadPathByKey[key])
+	}
+	if localPath == "" {
+		localPath = filepath.Join("/tmp", sanitizePathToken(key))
+	}
+	attachment.LocalPath = localPath
+	if strings.TrimSpace(attachment.FileName) == "" {
+		attachment.FileName = filepath.Base(localPath)
+	}
+	return nil
 }
 
 func strPtr(s string) *string { return &s }

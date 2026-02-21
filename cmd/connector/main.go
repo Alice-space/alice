@@ -51,10 +51,11 @@ func main() {
 	if err := memoryManager.Init(); err != nil {
 		log.Fatalf("init memory module failed: %v", err)
 	}
+	resourceDir := filepath.Join(memoryDir, "resources")
 
 	processor := connector.NewProcessorWithMemory(
 		codexRunner,
-		connector.NewLarkSender(botClient),
+		connector.NewLarkSender(botClient, resourceDir),
 		cfg.FailureMessage,
 		cfg.ThinkingMessage,
 		memoryManager,

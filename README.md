@@ -128,11 +128,12 @@ Optional:
 
 ## Runtime behavior
 
-- Non-text messages are ignored.
+- Supported incoming message types: `text`, `image`, `sticker`, `audio`, `file`.
 - In group/topic-group chats, only messages that mention the bot are processed.
   - If both `feishu_bot_open_id` and `feishu_bot_user_id` are empty, group/topic-group messages are ignored.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
 - Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
+- Downloaded incoming resources are stored under `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`.
 - On first startup, the connector auto-creates `memory_dir` and its `daily/` subdirectory.
 - The connector also persists per-chat session state in `memory_dir/session_state.json` to keep thread continuity across restarts.
 - Before each Codex call, only long-term memory is injected; date-based memory is exposed as a directory path for Codex to search on demand.

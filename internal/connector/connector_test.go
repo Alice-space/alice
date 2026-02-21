@@ -49,8 +49,8 @@ func TestBuildJob_IgnoreNonText(t *testing.T) {
 	event := &larkim.P2MessageReceiveV1{
 		Event: &larkim.P2MessageReceiveV1Data{
 			Message: &larkim.EventMessage{
-				MessageType: strPtr("image"),
-				Content:     strPtr(`{"image_key":"abc"}`),
+				MessageType: strPtr("interactive"),
+				Content:     strPtr(`{"type":"template","data":{}}`),
 			},
 		},
 	}
@@ -58,6 +58,118 @@ func TestBuildJob_IgnoreNonText(t *testing.T) {
 	_, err := BuildJob(event)
 	if !errors.Is(err, ErrIgnoreMessage) {
 		t.Fatalf("expected ErrIgnoreMessage, got: %v", err)
+	}
+}
+
+func TestBuildJob_ImageMessage(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_img"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_img"),
+				MessageType: strPtr("image"),
+				Content:     strPtr(`{"image_key":"img_123"}`),
+				ChatId:      strPtr("oc_chat"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if job.MessageType != "image" {
+		t.Fatalf("unexpected message type: %s", job.MessageType)
+	}
+	if len(job.Attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(job.Attachments))
+	}
+	if job.Attachments[0].ImageKey != "img_123" {
+		t.Fatalf("unexpected image key: %s", job.Attachments[0].ImageKey)
+	}
+}
+
+func TestBuildJob_StickerMessage(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_stk"),
+				MessageType: strPtr("sticker"),
+				Content:     strPtr(`{"file_key":"file_sticker_123"}`),
+				ChatId:      strPtr("oc_chat"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if job.MessageType != "sticker" {
+		t.Fatalf("unexpected message type: %s", job.MessageType)
+	}
+	if len(job.Attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(job.Attachments))
+	}
+	if job.Attachments[0].FileKey != "file_sticker_123" {
+		t.Fatalf("unexpected sticker file key: %s", job.Attachments[0].FileKey)
+	}
+}
+
+func TestBuildJob_AudioMessage(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_audio"),
+				MessageType: strPtr("audio"),
+				Content:     strPtr(`{"file_key":"file_audio_123"}`),
+				ChatId:      strPtr("oc_chat"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if job.MessageType != "audio" {
+		t.Fatalf("unexpected message type: %s", job.MessageType)
+	}
+	if len(job.Attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(job.Attachments))
+	}
+	if job.Attachments[0].FileKey != "file_audio_123" {
+		t.Fatalf("unexpected audio file key: %s", job.Attachments[0].FileKey)
+	}
+}
+
+func TestBuildJob_FileMessage(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_file"),
+				MessageType: strPtr("file"),
+				Content:     strPtr(`{"file_key":"file_123","file_name":"report.pdf"}`),
+				ChatId:      strPtr("oc_chat"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if job.MessageType != "file" {
+		t.Fatalf("unexpected message type: %s", job.MessageType)
+	}
+	if len(job.Attachments) != 1 {
+		t.Fatalf("expected 1 attachment, got %d", len(job.Attachments))
+	}
+	if job.Attachments[0].FileKey != "file_123" {
+		t.Fatalf("unexpected file key: %s", job.Attachments[0].FileKey)
+	}
+	if job.Attachments[0].FileName != "report.pdf" {
+		t.Fatalf("unexpected file name: %s", job.Attachments[0].FileName)
 	}
 }
 
@@ -348,6 +460,40 @@ func TestProcessor_NoSourceMessageUsesSendText(t *testing.T) {
 	}
 	if sender.lastSendText != "final answer" {
 		t.Fatalf("unexpected send text content: %s", sender.lastSendText)
+	}
+}
+
+func TestProcessor_ResolvesAttachmentsAndPassesLocalPathToCodex(t *testing.T) {
+	fakeCodex := &codexCaptureStub{resp: "final answer"}
+	sender := &senderStub{
+		downloadPathByKey: map[string]string{
+			"img_123": "/tmp/alice/image.png",
+		},
+	}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		SourceMessageID: "om_src",
+		MessageType:     "image",
+		Text:            "用户发送了一张图片。",
+		Attachments: []Attachment{
+			{
+				Kind:     "image",
+				ImageKey: "img_123",
+			},
+		},
+	})
+
+	if sender.downloadCalls != 1 {
+		t.Fatalf("expected 1 attachment download, got %d", sender.downloadCalls)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "本地路径：/tmp/alice/image.png") {
+		t.Fatalf("codex input should include downloaded local path, got: %s", fakeCodex.lastInput)
+	}
+	if sender.replyTextCalls != 2 {
+		t.Fatalf("expected ack + final reply, got %d", sender.replyTextCalls)
 	}
 }
 

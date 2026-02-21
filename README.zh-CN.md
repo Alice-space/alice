@@ -134,11 +134,12 @@ log_level: "info"
 
 ## 运行行为
 
-- 非文本消息会忽略。
+- 支持接收消息类型：`text`、`image`、`sticker`、`audio`、`file`。
 - 群聊/话题群中，仅处理艾特机器人的消息。
   - 若 `feishu_bot_open_id` 与 `feishu_bot_user_id` 都为空，则群聊/话题群消息全部忽略。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
 - 默认启用记忆模块，文件写入 `memory_dir`：长期记忆 `MEMORY.md`，分日期记忆在 `daily/YYYY-MM-DD.md`。
+- 下载的消息资源会落盘到 `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`。
 - 首次启动时会自动创建 `memory_dir` 及其 `daily/` 子目录。
 - 连接器会把每个聊天的会话状态持久化到 `memory_dir/session_state.json`，重启后仍可续接线程。
 - 每次调用 Codex 前，仅把长期记忆注入提示词；分日期记忆只提供目录位置，让 Codex 按需检索。
