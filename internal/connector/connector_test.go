@@ -395,6 +395,35 @@ func TestProcessor_SendsAgentMessagesAsReplyTexts(t *testing.T) {
 	}
 }
 
+func TestProcessor_FileChangeEventUsesRichTextReply(t *testing.T) {
+	fakeCodex := codexStreamingStub{
+		resp:          "最终答复",
+		agentMessages: []string{"[filechange] internal/connector/processor.go已更改，+23-34"},
+	}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		SourceMessageID: "om_src",
+		Text:            "hello",
+	})
+
+	if sender.replyRichCalls != 1 {
+		t.Fatalf("expected 1 rich text reply for file change, got %d", sender.replyRichCalls)
+	}
+	if len(sender.replyRichLines) != 1 || len(sender.replyRichLines[0]) != 1 {
+		t.Fatalf("unexpected rich text payload: %#v", sender.replyRichLines)
+	}
+	if sender.replyRichLines[0][0] != "internal/connector/processor.go已更改，+23-34" {
+		t.Fatalf("unexpected rich text line: %#v", sender.replyRichLines[0])
+	}
+	if sender.replyTextCalls != 2 {
+		t.Fatalf("expected ack + final reply text, got %d", sender.replyTextCalls)
+	}
+}
+
 func TestProcessor_DeduplicatesFinalReplyWhenAlreadySentViaAgentMessage(t *testing.T) {
 	fakeCodex := codexStub{resp: "final answer"}
 	sender := &senderStub{}

@@ -142,12 +142,13 @@ Optional:
 - The message path does not wait for idle-summary writes; new messages are handled immediately.
 - The bot immediately replies to the source message with `收到！`.
 - During Codex execution, each streamed `agent_message` is sent as a new text reply to the same source message.
+- During Codex execution, each streamed `file_change` event is sent as a rich-text (`post`) reply, for example: `internal/x.go已更改，+23-34`.
 - If a newer user message arrives in the same session, the running task is interrupted immediately and switched to the latest message (steer behavior).
 - If no streamed `agent_message` was sent, the final Codex answer is sent as a text reply.
 - Reply target priority (fallback path): `chat_id`, fallback to sender `open_id`.
 - On Codex failure/timeout, sends `failure_message`.
 
-Note: this project now uses pure text replies for conversation output and no longer uses interactive card patch flow.
+Note: this project now uses reply-message flow (text replies + rich-text file-change replies) and no longer uses interactive card patch flow.
 
 ## Feishu API references
 

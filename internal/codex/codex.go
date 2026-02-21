@@ -11,6 +11,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -24,6 +25,8 @@ type Runner struct {
 	PromptPrefix string
 	WorkspaceDir string
 }
+
+const fileChangeCallbackPrefix = "[filechange] "
 
 func (r Runner) Run(ctx context.Context, userText string) (string, error) {
 	reply, _, err := r.RunWithThreadAndProgress(ctx, "", userText, nil)
@@ -123,13 +126,19 @@ func (r Runner) RunWithThreadAndProgress(
 		stdout.WriteByte('\n')
 		logging.Debugf("codex stdout line=%s", line)
 
-		reasoning, agentMessage, parsedThreadID := parseEventLine(line)
+		reasoning, agentMessage, fileChangeMessage, parsedThreadID := parseEventLine(line)
 		if strings.TrimSpace(parsedThreadID) != "" {
 			activeThreadID = strings.TrimSpace(parsedThreadID)
 			logging.Debugf("codex thread started thread_id=%s", activeThreadID)
 		}
 		if strings.TrimSpace(reasoning) != "" {
 			logging.Debugf("codex reasoning=%q", strings.TrimSpace(reasoning))
+		}
+		if strings.TrimSpace(fileChangeMessage) != "" {
+			logging.Debugf("codex file_change=%q", strings.TrimSpace(fileChangeMessage))
+			if onThinking != nil {
+				onThinking(fileChangeCallbackPrefix + strings.TrimSpace(fileChangeMessage))
+			}
 		}
 		if strings.TrimSpace(agentMessage) != "" {
 			finalMessage = strings.TrimSpace(agentMessage)
@@ -210,7 +219,7 @@ func ParseFinalMessage(jsonlOutput string) (string, error) {
 			continue
 		}
 
-		_, text, _ := parseEventLine(line)
+		_, text, _, _ := parseEventLine(line)
 		if strings.TrimSpace(text) != "" {
 			lastMessage = text
 		}
@@ -225,40 +234,118 @@ func ParseFinalMessage(jsonlOutput string) (string, error) {
 	return lastMessage, nil
 }
 
-func parseEventLine(line string) (reasoning string, agentMessage string, threadID string) {
+func parseEventLine(line string) (reasoning string, agentMessage string, fileChangeMessage string, threadID string) {
 	line = strings.TrimSpace(line)
 	if line == "" {
-		return "", "", ""
+		return "", "", "", ""
 	}
 
 	var event map[string]any
 	if err := json.Unmarshal([]byte(line), &event); err != nil {
-		return "", "", ""
+		return "", "", "", ""
 	}
 
 	eventType, _ := event["type"].(string)
 	if eventType == "thread.started" {
 		id, _ := event["thread_id"].(string)
-		return "", "", strings.TrimSpace(id)
+		return "", "", "", strings.TrimSpace(id)
 	}
 	if eventType != "item.completed" {
-		return "", "", ""
+		return "", "", "", ""
 	}
 
 	item, ok := event["item"].(map[string]any)
 	if !ok {
-		return "", "", ""
+		return "", "", "", ""
 	}
 	itemType, _ := item["type"].(string)
 	text, _ := item["text"].(string)
 	switch itemType {
 	case "reasoning":
-		return text, "", ""
+		return text, "", "", ""
 	case "agent_message":
-		return "", text, ""
+		return "", text, "", ""
+	case "file_change", "filechange":
+		return "", "", parseFileChangeMessage(item), ""
 	default:
-		return "", "", ""
+		return "", "", "", ""
 	}
+}
+
+func parseFileChangeMessage(item map[string]any) string {
+	if item == nil {
+		return ""
+	}
+
+	path := extractString(item, "path", "file_path", "filename", "file")
+	if path == "" {
+		if changed, ok := item["changed_file"].(map[string]any); ok {
+			path = extractString(changed, "path", "file_path", "filename", "file")
+		}
+	}
+	if path == "" {
+		return ""
+	}
+
+	additions := extractInt(item, "added_lines", "additions", "added", "insertions", "plus")
+	deletions := extractInt(item, "removed_lines", "deletions", "removed", "minus")
+	if stats, ok := item["diff_stats"].(map[string]any); ok {
+		if additions == 0 {
+			additions = extractInt(stats, "added_lines", "additions", "added", "insertions", "plus")
+		}
+		if deletions == 0 {
+			deletions = extractInt(stats, "removed_lines", "deletions", "removed", "minus")
+		}
+	}
+
+	return fmt.Sprintf("%s已更改，+%d-%d", strings.TrimSpace(path), additions, deletions)
+}
+
+func extractString(payload map[string]any, keys ...string) string {
+	for _, key := range keys {
+		value, ok := payload[key]
+		if !ok {
+			continue
+		}
+		if text, ok := value.(string); ok {
+			trimmed := strings.TrimSpace(text)
+			if trimmed != "" {
+				return trimmed
+			}
+		}
+	}
+	return ""
+}
+
+func extractInt(payload map[string]any, keys ...string) int {
+	for _, key := range keys {
+		value, ok := payload[key]
+		if !ok {
+			continue
+		}
+		switch v := value.(type) {
+		case float64:
+			return int(v)
+		case float32:
+			return int(v)
+		case int:
+			return v
+		case int64:
+			return int(v)
+		case int32:
+			return int(v)
+		case string:
+			trimmed := strings.TrimSpace(v)
+			if trimmed == "" {
+				continue
+			}
+			parsed, err := strconv.Atoi(trimmed)
+			if err == nil {
+				return parsed
+			}
+		}
+	}
+	return 0
 }
 
 func buildExecArgs(threadID string, prompt string) []string {

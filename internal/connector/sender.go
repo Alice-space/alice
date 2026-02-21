@@ -72,6 +72,29 @@ func (s *LarkSender) ReplyText(ctx context.Context, sourceMessageID, text string
 	return strings.TrimSpace(*resp.Data.MessageId), nil
 }
 
+func (s *LarkSender) ReplyRichText(ctx context.Context, sourceMessageID string, lines []string) (string, error) {
+	req := larkim.NewReplyMessageReqBuilder().
+		MessageId(sourceMessageID).
+		Body(larkim.NewReplyMessageReqBodyBuilder().
+			MsgType("post").
+			Content(richTextMessageContent(lines)).
+			ReplyInThread(false).
+			Build()).
+		Build()
+
+	resp, err := s.client.Im.V1.Message.Reply(ctx, req)
+	if err != nil {
+		return "", err
+	}
+	if !resp.Success() {
+		return "", fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+	}
+	if resp.Data == nil || resp.Data.MessageId == nil {
+		return "", errors.New("reply rich text success but response message_id is empty")
+	}
+	return strings.TrimSpace(*resp.Data.MessageId), nil
+}
+
 func (s *LarkSender) ReplyCard(ctx context.Context, sourceMessageID, cardContent string) (string, error) {
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(sourceMessageID).
@@ -152,6 +175,10 @@ func (s *LarkSender) GetMessageText(ctx context.Context, messageID string) (stri
 		}
 	case "interactive":
 		if text := extractReplyTextFromCard(content); text != "" {
+			return text, nil
+		}
+	case "post":
+		if text := extractTextFromPost(content); text != "" {
 			return text, nil
 		}
 	}
@@ -398,7 +425,101 @@ func extractReplyTextFromCard(content string) string {
 	return ""
 }
 
+func extractTextFromPost(content string) string {
+	var payload map[string]any
+	if err := json.Unmarshal([]byte(content), &payload); err != nil {
+		return ""
+	}
+
+	var locale map[string]any
+	for _, key := range []string{"zh_cn", "en_us"} {
+		value, ok := payload[key]
+		if !ok {
+			continue
+		}
+		if parsed, ok := value.(map[string]any); ok {
+			locale = parsed
+			break
+		}
+	}
+	if locale == nil {
+		return ""
+	}
+
+	contentRows, ok := locale["content"].([]any)
+	if !ok || len(contentRows) == 0 {
+		return ""
+	}
+
+	lines := make([]string, 0, len(contentRows))
+	for _, row := range contentRows {
+		elements, ok := row.([]any)
+		if !ok {
+			continue
+		}
+		var lineBuilder strings.Builder
+		for _, element := range elements {
+			item, ok := element.(map[string]any)
+			if !ok {
+				continue
+			}
+			tag, _ := item["tag"].(string)
+			if strings.ToLower(strings.TrimSpace(tag)) != "text" {
+				continue
+			}
+			text, _ := item["text"].(string)
+			if strings.TrimSpace(text) == "" {
+				continue
+			}
+			if lineBuilder.Len() > 0 {
+				lineBuilder.WriteString(" ")
+			}
+			lineBuilder.WriteString(strings.TrimSpace(text))
+		}
+		line := strings.TrimSpace(lineBuilder.String())
+		if line != "" {
+			lines = append(lines, line)
+		}
+	}
+	if len(lines) == 0 {
+		return ""
+	}
+	return strings.Join(lines, "\n")
+}
+
 func textMessageContent(text string) string {
 	contentBytes, _ := json.Marshal(map[string]string{"text": text})
+	return string(contentBytes)
+}
+
+func richTextMessageContent(lines []string) string {
+	paragraphs := make([][]map[string]string, 0, len(lines))
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		if line == "" {
+			continue
+		}
+		paragraphs = append(paragraphs, []map[string]string{
+			{
+				"tag":  "text",
+				"text": line,
+			},
+		})
+	}
+	if len(paragraphs) == 0 {
+		paragraphs = append(paragraphs, []map[string]string{
+			{
+				"tag":  "text",
+				"text": " ",
+			},
+		})
+	}
+
+	contentBytes, _ := json.Marshal(map[string]any{
+		"zh_cn": map[string]any{
+			"title":   "",
+			"content": paragraphs,
+		},
+	})
 	return string(contentBytes)
 }

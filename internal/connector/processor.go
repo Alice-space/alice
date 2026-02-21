@@ -27,6 +27,7 @@ type Processor struct {
 }
 
 const interruptedReplyMessage = "已收到你的新消息，当前回复已中断并切换到最新输入。"
+const fileChangeEventPrefix = "[filechange] "
 const idleSummaryPrompt = "请基于当前会话上下文，提炼后续仍有价值的信息摘要。\n" +
 	"要求：\n" +
 	"1. 只提炼：事实、约束、决策、待办、偏好变化。\n" +
@@ -112,15 +113,29 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
 	lastSentAgentMessage := ""
 	sendAgentMessage := func(agentMessage string) {
 		normalized := strings.TrimSpace(agentMessage)
+		isFileChange := false
+		if strings.HasPrefix(normalized, fileChangeEventPrefix) {
+			isFileChange = true
+			normalized = strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix))
+		}
 		if normalized == "" {
 			return
 		}
 		if normalized == lastSentAgentMessage {
 			return
 		}
-		if _, sendErr := p.sender.ReplyText(ctx, job.SourceMessageID, normalized); sendErr != nil {
-			log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
-			return
+		if isFileChange {
+			if _, richErr := p.sender.ReplyRichText(ctx, job.SourceMessageID, splitMessageLines(normalized)); richErr != nil {
+				if _, sendErr := p.sender.ReplyText(ctx, job.SourceMessageID, normalized); sendErr != nil {
+					log.Printf("send filechange message failed event_id=%s: %v", job.EventID, sendErr)
+					return
+				}
+			}
+		} else {
+			if _, sendErr := p.sender.ReplyText(ctx, job.SourceMessageID, normalized); sendErr != nil {
+				log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
+				return
+			}
 		}
 		lastSentAgentMessage = normalized
 	}
@@ -157,6 +172,19 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
 			log.Printf("send final reply text failed event_id=%s: %v", job.EventID, replyErr)
 		}
 	}
+}
+
+func splitMessageLines(message string) []string {
+	rawLines := strings.Split(strings.TrimSpace(message), "\n")
+	lines := make([]string, 0, len(rawLines))
+	for _, line := range rawLines {
+		trimmed := strings.TrimSpace(line)
+		if trimmed == "" {
+			continue
+		}
+		lines = append(lines, trimmed)
+	}
+	return lines
 }
 
 func (p *Processor) runCodex(
