@@ -122,6 +122,12 @@ log_level: "info"
 - `env`：注入到 `codex` 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
 
+## 隔离运行（独立用户）
+
+如果你希望把本项目放到独立账号下自动运行，降低误改主账号文件风险，参考：
+
+- [在独立用户下隔离运行本项目（Codex 自动运行）](./docs/run-with-isolated-user.zh-CN.md)
+
 ## 运行行为
 
 - 非文本消息会忽略。
