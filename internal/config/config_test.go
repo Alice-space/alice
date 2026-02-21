@@ -138,3 +138,28 @@ idle_summary_hours: 0
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestLoadFromFile_FeishuBotIDsTrimmed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+feishu_bot_open_id: "  ou_bot  "
+feishu_bot_user_id: "  123456  "
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	cfg, err := LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("load config failed: %v", err)
+	}
+	if cfg.FeishuBotOpenID != "ou_bot" {
+		t.Fatalf("unexpected feishu_bot_open_id: %q", cfg.FeishuBotOpenID)
+	}
+	if cfg.FeishuBotUserID != "123456" {
+		t.Fatalf("unexpected feishu_bot_user_id: %q", cfg.FeishuBotUserID)
+	}
+}

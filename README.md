@@ -92,6 +92,8 @@ go run ./cmd/connector -c /path/to/config.yaml
 feishu_app_id: "cli_xxxxx"
 feishu_app_secret: "xxxxxx"
 feishu_base_url: "https://open.feishu.cn"
+feishu_bot_open_id: ""
+feishu_bot_user_id: ""
 
 codex_command: "codex"
 codex_timeout_secs: 120
@@ -122,10 +124,14 @@ Optional:
 - `env`: key-value environment variables injected into `codex` process (for example HTTP/HTTPS/SOCKS proxy settings).
 - `codex_prompt_prefix`: global instruction prefix prepended for new threads only; default is empty.
 - `idle_summary_hours`: idle threshold (hours) before background daily summary write (default `8`).
+- `feishu_bot_open_id` / `feishu_bot_user_id`: optional bot IDs for strict group mention filtering. When set, group messages are processed only if they mention this bot ID.
 
 ## Runtime behavior
 
 - Non-text messages are ignored.
+- In group/topic-group chats, only messages that mention the bot are processed.
+  - Strict mode: if `feishu_bot_open_id` or `feishu_bot_user_id` is configured, only mentions matching configured IDs will trigger.
+  - Fallback mode: if both are empty, any user `@mention` (except `@all`) can trigger.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
 - Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
 - On first startup, the connector auto-creates `memory_dir` and its `daily/` subdirectory.

@@ -52,6 +52,134 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 	}, nil
 }
 
+func shouldProcessIncomingMessage(event *larkim.P2MessageReceiveV1, botOpenID, botUserID string) bool {
+	if event == nil || event.Event == nil || event.Event.Message == nil {
+		return true
+	}
+	message := event.Event.Message
+	if !isGroupChatType(deref(message.ChatType)) {
+		return true
+	}
+	return isGroupMentionAccepted(message, botOpenID, botUserID)
+}
+
+func isGroupChatType(chatType string) bool {
+	switch strings.ToLower(strings.TrimSpace(chatType)) {
+	case "group", "topic_group":
+		return true
+	default:
+		return false
+	}
+}
+
+func isGroupMentionAccepted(message *larkim.EventMessage, botOpenID, botUserID string) bool {
+	if message == nil {
+		return false
+	}
+
+	normalizedBotOpenID := strings.TrimSpace(botOpenID)
+	normalizedBotUserID := strings.TrimSpace(botUserID)
+	hasConfiguredBotID := normalizedBotOpenID != "" || normalizedBotUserID != ""
+
+	if hasConfiguredBotID {
+		return isBotMentioned(message, normalizedBotOpenID, normalizedBotUserID)
+	}
+	return hasAnyUserMention(message)
+}
+
+func isBotMentioned(message *larkim.EventMessage, botOpenID, botUserID string) bool {
+	if message == nil {
+		return false
+	}
+
+	for _, mention := range message.Mentions {
+		if mention == nil || mention.Id == nil {
+			continue
+		}
+		openID := strings.TrimSpace(deref(mention.Id.OpenId))
+		userID := strings.TrimSpace(deref(mention.Id.UserId))
+		if botOpenID != "" && openID == botOpenID {
+			return true
+		}
+		if botUserID != "" && userID == botUserID {
+			return true
+		}
+	}
+
+	for _, mentionedUserID := range extractMentionUserIDs(message.Content) {
+		if botOpenID != "" && mentionedUserID == botOpenID {
+			return true
+		}
+		if botUserID != "" && mentionedUserID == botUserID {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyUserMention(message *larkim.EventMessage) bool {
+	if message == nil {
+		return false
+	}
+
+	for _, mentionedUserID := range extractMentionUserIDs(message.Content) {
+		if !isMentionAll(mentionedUserID) {
+			return true
+		}
+	}
+	for _, mention := range message.Mentions {
+		if mention == nil || mention.Id == nil {
+			continue
+		}
+		if mentionID := strings.TrimSpace(deref(mention.Id.OpenId)); mentionID != "" && !isMentionAll(mentionID) {
+			return true
+		}
+		if mentionID := strings.TrimSpace(deref(mention.Id.UserId)); mentionID != "" && !isMentionAll(mentionID) {
+			return true
+		}
+	}
+	return false
+}
+
+func extractMentionUserIDs(content *string) []string {
+	rawContent := strings.TrimSpace(deref(content))
+	if rawContent == "" {
+		return nil
+	}
+
+	var payload struct {
+		Text string `json:"text"`
+	}
+	if err := json.Unmarshal([]byte(rawContent), &payload); err != nil {
+		return nil
+	}
+	if strings.TrimSpace(payload.Text) == "" {
+		return nil
+	}
+
+	matches := mentionUserIDPattern.FindAllStringSubmatch(payload.Text, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+
+	userIDs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		userID := strings.TrimSpace(match[1])
+		if userID == "" {
+			continue
+		}
+		userIDs = append(userIDs, userID)
+	}
+	return userIDs
+}
+
+func isMentionAll(userID string) bool {
+	return strings.EqualFold(strings.TrimSpace(userID), "all")
+}
+
 func logIncomingEventDebug(event *larkim.P2MessageReceiveV1) {
 	if !logging.IsDebugEnabled() {
 		return

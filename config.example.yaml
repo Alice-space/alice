@@ -4,6 +4,10 @@ feishu_app_secret: "xxxxxx"
 
 # Optional, default is https://open.feishu.cn
 feishu_base_url: "https://open.feishu.cn"
+# Optional: use these for strict group mention filtering (only respond when @this bot)
+# If both are empty, group chat falls back to "has any @mention" filtering.
+feishu_bot_open_id: ""
+feishu_bot_user_id: ""
 
 # Codex runtime
 codex_command: "codex"

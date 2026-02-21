@@ -61,6 +61,116 @@ func TestBuildJob_IgnoreNonText(t *testing.T) {
 	}
 }
 
+func TestShouldProcessIncomingMessage_GroupRequiresMention(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				ChatType: strPtr("group"),
+				Content:  strPtr(`{"text":"大家好"}`),
+			},
+		},
+	}
+
+	if shouldProcessIncomingMessage(event, "", "") {
+		t.Fatal("group message without mention should be ignored")
+	}
+}
+
+func TestShouldProcessIncomingMessage_GroupMentionWithBotOpenID(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				ChatType: strPtr("group"),
+				Content:  strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> 你好"}`),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{
+							OpenId: strPtr("ou_bot"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if !shouldProcessIncomingMessage(event, "ou_bot", "") {
+		t.Fatal("group message that mentions bot open_id should be processed")
+	}
+}
+
+func TestShouldProcessIncomingMessage_PrivateChatNoMention(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				ChatType: strPtr("p2p"),
+				Content:  strPtr(`{"text":"你好"}`),
+			},
+		},
+	}
+
+	if !shouldProcessIncomingMessage(event, "", "") {
+		t.Fatal("p2p message should be processed without mention")
+	}
+}
+
+func TestApp_OnMessageReceive_GroupWithoutMentionNotQueued(t *testing.T) {
+	cfg := configForTest()
+	app := NewApp(cfg, nil)
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_no_mention"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_no_mention"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"群里随便说说"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), event); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected queue len 0, got %d", got)
+	}
+}
+
+func TestApp_OnMessageReceive_GroupMentionQueued(t *testing.T) {
+	cfg := configForTest()
+	cfg.FeishuBotOpenID = "ou_bot"
+	app := NewApp(cfg, nil)
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_with_mention"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_with_mention"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> 你好"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{
+							OpenId: strPtr("ou_bot"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), event); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := len(app.queue); got != 1 {
+		t.Fatalf("expected queue len 1, got %d", got)
+	}
+}
+
 func TestProcessor_UsesReplyCardAndPatchOnFailure(t *testing.T) {
 	fakeCodex := codexStub{err: errors.New("boom")}
 	sender := &senderStub{}

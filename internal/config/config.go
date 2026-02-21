@@ -17,6 +17,8 @@ type Config struct {
 	FeishuAppID     string `mapstructure:"feishu_app_id"`
 	FeishuAppSecret string `mapstructure:"feishu_app_secret"`
 	FeishuBaseURL   string `mapstructure:"feishu_base_url"`
+	FeishuBotOpenID string `mapstructure:"feishu_bot_open_id"`
+	FeishuBotUserID string `mapstructure:"feishu_bot_user_id"`
 
 	CodexCommand      string            `mapstructure:"codex_command"`
 	CodexTimeout      time.Duration     `mapstructure:"-"`
@@ -68,6 +70,8 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.FeishuAppID = strings.TrimSpace(cfg.FeishuAppID)
 	cfg.FeishuAppSecret = strings.TrimSpace(cfg.FeishuAppSecret)
 	cfg.FeishuBaseURL = strings.TrimSpace(cfg.FeishuBaseURL)
+	cfg.FeishuBotOpenID = strings.TrimSpace(cfg.FeishuBotOpenID)
+	cfg.FeishuBotUserID = strings.TrimSpace(cfg.FeishuBotUserID)
 	cfg.CodexCommand = strings.TrimSpace(cfg.CodexCommand)
 	cfg.CodexEnv = normalizeEnvMap(envMap)
 	cfg.CodexPromptPrefix = strings.TrimSpace(cfg.CodexPromptPrefix)

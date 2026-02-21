@@ -8,6 +8,7 @@ import (
 )
 
 var mentionPattern = regexp.MustCompile(`<at[^>]*>.*?</at>`)
+var mentionUserIDPattern = regexp.MustCompile(`<at[^>]*\buser_id="([^"]+)"[^>]*>`)
 
 var ErrIgnoreMessage = errors.New("ignore message")
 

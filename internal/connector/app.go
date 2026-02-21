@@ -157,6 +157,14 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 
 func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	logIncomingEventDebug(event)
+	if !shouldProcessIncomingMessage(event, a.cfg.FeishuBotOpenID, a.cfg.FeishuBotUserID) {
+		logging.Debugf(
+			"incoming message ignored source=feishu_im event_id=%s reason=group_without_bot_mention chat_type=%s",
+			eventID(event),
+			strings.TrimSpace(deref(event.Event.Message.ChatType)),
+		)
+		return nil
+	}
 
 	job, err := BuildJob(event)
 	if err != nil {
