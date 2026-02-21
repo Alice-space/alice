@@ -151,6 +151,7 @@ log_level: "info"
 - 收到用户消息后，机器人会第一时间引用回复 `收到！`。
 - Codex 执行期间，流式返回的每条 `agent_message`（Markdown 内容）都会作为富文本（`post`）消息，继续引用回复用户原消息。
 - Codex 执行期间，流式 `file_change` 事件会用富文本（`post`）消息回复，例如：`internal/x.go已更改，+23-34`。
+- 若当前 Codex CLI 未输出原生 `file_change` 事件，连接器会回退到仓库 diff 快照（git numstat）生成同格式的 `file_change` 通知。
 - 同一会话内若收到新的用户消息，会立即中断旧任务并切换到最新消息（steer）。
 - 若执行过程中没有任何流式 `agent_message`，会在完成后引用回复最终答案。
 - 回复目标优先级（回退路径）：`chat_id`，没有则回退到发送者 `open_id`。

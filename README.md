@@ -145,6 +145,7 @@ Optional:
 - The bot immediately replies to the source message with `收到！`.
 - During Codex execution, each streamed `agent_message` (Markdown content) is sent as a rich-text (`post`) reply to the same source message.
 - During Codex execution, each streamed `file_change` event is sent as a rich-text (`post`) reply, for example: `internal/x.go已更改，+23-34`.
+- If the current Codex CLI does not emit native `file_change` events, the connector falls back to repo diff snapshots (git numstat) and still emits `file_change`-style updates.
 - If a newer user message arrives in the same session, the running task is interrupted immediately and switched to the latest message (steer behavior).
 - If no streamed `agent_message` was sent, the final Codex answer is sent as a text reply.
 - Reply target priority (fallback path): `chat_id`, fallback to sender `open_id`.

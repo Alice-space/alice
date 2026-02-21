@@ -3,6 +3,7 @@ package codex
 import (
 	"context"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"slices"
 	"strings"
@@ -78,6 +79,25 @@ func TestParseEventLine_FileChange(t *testing.T) {
 	}
 	if threadID != "" {
 		t.Fatalf("unexpected thread id: %q", threadID)
+	}
+}
+
+func TestParseEventLine_FileChangeLegacyType(t *testing.T) {
+	_, _, fileChange, _ := parseEventLine(`{"type":"item.completed","item":{"type":"filechange","path":"internal/connector/processor.go","added_lines":2,"removed_lines":1}}`)
+	if fileChange != "internal/connector/processor.go已更改，+2-1" {
+		t.Fatalf("unexpected file change message for legacy type: %q", fileChange)
+	}
+}
+
+func TestIsSuccessfulCommandExecutionCompleted(t *testing.T) {
+	success := `{"type":"item.completed","item":{"type":"command_execution","command":"echo ok","exit_code":0,"status":"completed"}}`
+	if !isSuccessfulCommandExecutionCompleted(success) {
+		t.Fatal("expected successful command_execution completion")
+	}
+
+	failed := `{"type":"item.completed","item":{"type":"command_execution","command":"false","exit_code":1,"status":"failed"}}`
+	if isSuccessfulCommandExecutionCompleted(failed) {
+		t.Fatal("failed command_execution should not be treated as successful completion")
 	}
 }
 
@@ -175,5 +195,102 @@ EOF
 	}
 	if !slices.Contains(updates, "最终答复") {
 		t.Fatalf("final agent message should be synced, got: %#v", updates)
+	}
+}
+
+func TestRunnerRunWithProgress_SynthesizesFileChangeFromRepoDiff(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("create repo dir failed: %v", err)
+	}
+	runInRepo := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("run %v failed: %v output=%s", args, err, string(out))
+		}
+	}
+	runInRepo("git", "init")
+	runInRepo("git", "config", "user.email", "bot@example.com")
+	runInRepo("git", "config", "user.name", "Bot")
+	if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatalf("write initial file failed: %v", err)
+	}
+	runInRepo("git", "add", "a.txt")
+	runInRepo("git", "commit", "-m", "init")
+
+	fakeCodexPath := filepath.Join(tempDir, "fake-codex.sh")
+	script := `#!/bin/sh
+cat <<'EOF'
+{"type":"item.started","item":{"id":"item_1","type":"command_execution","command":"edit","aggregated_output":"","exit_code":null,"status":"in_progress"}}
+EOF
+printf 'new\n' > a.txt
+cat <<'EOF'
+{"type":"item.completed","item":{"id":"item_1","type":"command_execution","command":"edit","aggregated_output":"","exit_code":0,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_2","type":"agent_message","text":"完成"}}
+EOF
+`
+	if err := os.WriteFile(fakeCodexPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex script failed: %v", err)
+	}
+
+	runner := Runner{
+		Command:      fakeCodexPath,
+		Timeout:      3 * time.Second,
+		WorkspaceDir: repoDir,
+	}
+	updates := make([]string, 0, 4)
+	reply, err := runner.RunWithProgress(context.Background(), "请修改 a.txt", func(step string) {
+		updates = append(updates, strings.TrimSpace(step))
+	})
+	if err != nil {
+		t.Fatalf("run with progress failed: %v", err)
+	}
+	if reply != "完成" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+	if !slices.Contains(updates, "[file_change] a.txt已更改，+1-1") {
+		t.Fatalf("expected synthetic file_change update, got: %#v", updates)
+	}
+}
+
+func TestCollectRepoDiffMessages_DetectsChangedFile(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("create repo dir failed: %v", err)
+	}
+	runInRepo := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("run %v failed: %v output=%s", args, err, string(out))
+		}
+	}
+	runInRepo("git", "init")
+	runInRepo("git", "config", "user.email", "bot@example.com")
+	runInRepo("git", "config", "user.name", "Bot")
+	if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatalf("write initial file failed: %v", err)
+	}
+	runInRepo("git", "add", "a.txt")
+	runInRepo("git", "commit", "-m", "init")
+
+	repos := discoverWatchRepos(repoDir)
+	if !slices.Contains(repos, repoDir) {
+		t.Fatalf("expected discoverWatchRepos to include %s, got %#v", repoDir, repos)
+	}
+
+	previous := captureRepoSnapshots(context.Background(), repos)
+	if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("new\n"), 0o644); err != nil {
+		t.Fatalf("write changed file failed: %v", err)
+	}
+
+	messages, _ := collectRepoDiffMessages(context.Background(), repos, previous)
+	if !slices.Contains(messages, "a.txt已更改，+1-1") {
+		t.Fatalf("expected repo diff message, got %#v", messages)
 	}
 }
