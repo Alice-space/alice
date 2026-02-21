@@ -136,6 +136,7 @@ Optional:
 - Downloaded incoming resources are stored under `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`.
 - On first startup, the connector auto-creates `memory_dir` and its `daily/` subdirectory.
 - The connector also persists per-chat session state in `memory_dir/session_state.json` to keep thread continuity across restarts.
+- The connector persists queued/in-progress jobs in `memory_dir/runtime_state.json`; after restart it resumes replying jobs that were unfinished or not replied.
 - Before each Codex call, only long-term memory is injected; date-based memory is exposed as a directory path for Codex to search on demand.
 - For each chat (`chat_id`, fallback `open_id`), the connector always reuses one Codex thread.
 - If a chat stays idle for `idle_summary_hours` (default 8), a background task asynchronously resumes that thread and appends an "idle summary" to `daily/YYYY-MM-DD.md` once per idle period.

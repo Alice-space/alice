@@ -67,6 +67,12 @@ func main() {
 		log.Printf("session state enabled file=%s", sessionStatePath)
 	}
 	app := connector.NewApp(cfg, processor)
+	runtimeStatePath := filepath.Join(memoryDir, "runtime_state.json")
+	if err := app.LoadRuntimeState(runtimeStatePath); err != nil {
+		log.Printf("load runtime state failed file=%s err=%v", runtimeStatePath, err)
+	} else {
+		log.Printf("runtime state enabled file=%s", runtimeStatePath)
+	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()

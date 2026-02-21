@@ -1,0 +1,314 @@
+package connector
+
+import (
+	"encoding/json"
+	"fmt"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"gitee.com/alicespace/alice/internal/logging"
+)
+
+type runtimeStateSnapshot struct {
+	Latest  map[string]uint64 `json:"latest"`
+	Pending []Job             `json:"pending"`
+}
+
+func (a *App) LoadRuntimeState(path string) error {
+	path = strings.TrimSpace(path)
+
+	a.mu.Lock()
+	a.runtimeStatePath = path
+	a.mu.Unlock()
+
+	if path == "" {
+		return nil
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return fmt.Errorf("read runtime state failed: %w", err)
+	}
+
+	var snapshot runtimeStateSnapshot
+	if err := json.Unmarshal(data, &snapshot); err != nil {
+		return fmt.Errorf("parse runtime state failed: %w", err)
+	}
+
+	loadedLatest := make(map[string]uint64, len(snapshot.Latest))
+	for rawSessionKey, version := range snapshot.Latest {
+		sessionKey := strings.TrimSpace(rawSessionKey)
+		if sessionKey == "" || version == 0 {
+			continue
+		}
+		if version > loadedLatest[sessionKey] {
+			loadedLatest[sessionKey] = version
+		}
+	}
+
+	pendingByKey := make(map[string]Job, len(snapshot.Pending))
+	for _, rawJob := range snapshot.Pending {
+		job, ok := normalizeRuntimeJob(rawJob)
+		if !ok {
+			continue
+		}
+		if job.SessionVersion > loadedLatest[job.SessionKey] {
+			loadedLatest[job.SessionKey] = job.SessionVersion
+		}
+		pendingByKey[pendingJobKey(job)] = job
+	}
+
+	finalPending := make(map[string]Job, len(pendingByKey))
+	for key, job := range pendingByKey {
+		if loadedLatest[job.SessionKey] != job.SessionVersion {
+			continue
+		}
+		finalPending[key] = job
+	}
+
+	restoredJobs := make([]Job, 0, len(finalPending))
+	for _, job := range finalPending {
+		restoredJobs = append(restoredJobs, job)
+	}
+	sortPendingJobs(restoredJobs)
+
+	a.mu.Lock()
+	a.latest = loadedLatest
+	a.pending = finalPending
+	a.runtimeStateVersion = 0
+	a.runtimeStateFlushedVersion = 0
+	a.mu.Unlock()
+
+	restoredCount := 0
+	droppedCount := 0
+	for _, job := range restoredJobs {
+		select {
+		case a.queue <- job:
+			restoredCount++
+		default:
+			droppedCount++
+			a.completePendingJob(job)
+		}
+	}
+
+	logging.Debugf(
+		"runtime state loaded file=%s latest=%d pending=%d restored=%d dropped=%d",
+		path,
+		len(loadedLatest),
+		len(finalPending),
+		restoredCount,
+		droppedCount,
+	)
+	return nil
+}
+
+func (a *App) FlushRuntimeState() error {
+	return a.flushRuntimeStateFile(true)
+}
+
+func (a *App) FlushRuntimeStateIfDirty() error {
+	return a.flushRuntimeStateFile(false)
+}
+
+func (a *App) flushRuntimeStateFile(force bool) error {
+	a.mu.Lock()
+	path := strings.TrimSpace(a.runtimeStatePath)
+	currentVersion := a.runtimeStateVersion
+	flushedVersion := a.runtimeStateFlushedVersion
+	if !force && currentVersion == flushedVersion {
+		a.mu.Unlock()
+		return nil
+	}
+	if path == "" {
+		a.mu.Unlock()
+		return nil
+	}
+
+	snapshot := runtimeStateSnapshot{
+		Latest:  make(map[string]uint64, len(a.latest)),
+		Pending: make([]Job, 0, len(a.pending)),
+	}
+	for sessionKey, version := range a.latest {
+		if strings.TrimSpace(sessionKey) == "" || version == 0 {
+			continue
+		}
+		snapshot.Latest[sessionKey] = version
+	}
+	for _, job := range a.pending {
+		snapshot.Pending = append(snapshot.Pending, job)
+	}
+	a.mu.Unlock()
+
+	sortPendingJobs(snapshot.Pending)
+
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return fmt.Errorf("create runtime state dir failed: %w", err)
+	}
+
+	raw, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return fmt.Errorf("marshal runtime state failed: %w", err)
+	}
+
+	tmpFile, err := os.CreateTemp(filepath.Dir(path), ".runtime_state.*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp runtime state failed: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	if _, err := tmpFile.Write(raw); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("write temp runtime state failed: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close temp runtime state failed: %w", err)
+	}
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("replace runtime state failed: %w", err)
+	}
+
+	a.mu.Lock()
+	if currentVersion > a.runtimeStateFlushedVersion {
+		a.runtimeStateFlushedVersion = currentVersion
+	}
+	a.mu.Unlock()
+	return nil
+}
+
+func (a *App) completePendingJob(job Job) {
+	key := pendingJobKey(job)
+	if key == "" {
+		return
+	}
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	if _, ok := a.pending[key]; !ok {
+		return
+	}
+	delete(a.pending, key)
+	a.markRuntimeStateChangedLocked()
+}
+
+func (a *App) rememberPendingJobLocked(job Job) {
+	normalized, ok := normalizeRuntimeJob(job)
+	if !ok {
+		return
+	}
+	key := pendingJobKey(normalized)
+	if key == "" {
+		return
+	}
+	a.pending[key] = normalized
+	a.markRuntimeStateChangedLocked()
+}
+
+func (a *App) removeOlderPendingJobsLocked(sessionKey string, keepVersion uint64) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" || keepVersion == 0 {
+		return
+	}
+	changed := false
+	for key, job := range a.pending {
+		if strings.TrimSpace(job.SessionKey) != sessionKey {
+			continue
+		}
+		if job.SessionVersion >= keepVersion {
+			continue
+		}
+		delete(a.pending, key)
+		changed = true
+	}
+	if changed {
+		a.markRuntimeStateChangedLocked()
+	}
+}
+
+func (a *App) removePendingBySessionVersionLocked(sessionKey string, sessionVersion uint64) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" || sessionVersion == 0 {
+		return
+	}
+	changed := false
+	for key, job := range a.pending {
+		if strings.TrimSpace(job.SessionKey) != sessionKey {
+			continue
+		}
+		if job.SessionVersion != sessionVersion {
+			continue
+		}
+		delete(a.pending, key)
+		changed = true
+	}
+	if changed {
+		a.markRuntimeStateChangedLocked()
+	}
+}
+
+func (a *App) markRuntimeStateChangedLocked() {
+	a.runtimeStateVersion++
+}
+
+func pendingJobKey(job Job) string {
+	eventID := strings.TrimSpace(job.EventID)
+	if eventID != "" {
+		return "event:" + eventID
+	}
+	sessionKey := strings.TrimSpace(job.SessionKey)
+	if sessionKey == "" {
+		sessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	}
+	if sessionKey == "" || job.SessionVersion == 0 {
+		return ""
+	}
+	return fmt.Sprintf("session:%s#%d", sessionKey, job.SessionVersion)
+}
+
+func normalizeRuntimeJob(job Job) (Job, bool) {
+	job.ReceiveID = strings.TrimSpace(job.ReceiveID)
+	job.ReceiveIDType = strings.TrimSpace(job.ReceiveIDType)
+	job.SourceMessageID = strings.TrimSpace(job.SourceMessageID)
+	job.ReplyParentMessageID = strings.TrimSpace(job.ReplyParentMessageID)
+	job.MessageType = strings.TrimSpace(job.MessageType)
+	job.RawContent = strings.TrimSpace(job.RawContent)
+	job.EventID = strings.TrimSpace(job.EventID)
+	job.SessionKey = strings.TrimSpace(job.SessionKey)
+	if job.SessionKey == "" {
+		job.SessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	}
+	if job.SessionKey == "" || job.SessionVersion == 0 {
+		return Job{}, false
+	}
+	return job, true
+}
+
+func sortPendingJobs(jobs []Job) {
+	sort.Slice(jobs, func(i, j int) bool {
+		left := jobs[i]
+		right := jobs[j]
+
+		if !left.ReceivedAt.Equal(right.ReceivedAt) {
+			if left.ReceivedAt.IsZero() {
+				return false
+			}
+			if right.ReceivedAt.IsZero() {
+				return true
+			}
+			return left.ReceivedAt.Before(right.ReceivedAt)
+		}
+		if left.SessionKey != right.SessionKey {
+			return left.SessionKey < right.SessionKey
+		}
+		if left.SessionVersion != right.SessionVersion {
+			return left.SessionVersion < right.SessionVersion
+		}
+		return left.EventID < right.EventID
+	})
+}

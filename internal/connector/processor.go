@@ -61,7 +61,7 @@ func NewProcessorWithMemory(
 	}
 }
 
-func (p *Processor) ProcessJob(ctx context.Context, job Job) {
+func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {
 	sessionKey := sessionKeyForJob(job)
 	p.touchSessionMessage(sessionKey, p.now())
 
@@ -76,8 +76,7 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) {
 		len(job.Attachments),
 	)
 	if strings.TrimSpace(job.SourceMessageID) != "" {
-		p.processReplyMessage(ctx, job)
-		return
+		return p.processReplyMessage(ctx, job)
 	}
 
 	p.prepareJobForCodex(ctx, &job)
@@ -88,7 +87,7 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) {
 	if errors.Is(err, context.Canceled) {
 		log.Printf("codex canceled event_id=%s", job.EventID)
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=codex_canceled", job.EventID)
-		return
+		return false
 	}
 	failed := err != nil
 	if err != nil {
@@ -100,9 +99,10 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) {
 	if sendErr := p.sender.SendText(ctx, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
 		log.Printf("send message failed event_id=%s: %v", job.EventID, sendErr)
 	}
+	return true
 }
 
-func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
+func (p *Processor) processReplyMessage(ctx context.Context, job Job) bool {
 	sessionKey := sessionKeyForJob(job)
 	ackMessageID, err := p.sender.ReplyText(ctx, job.SourceMessageID, "收到！")
 	if err != nil {
@@ -149,7 +149,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
 		// Parent context cancellation usually means app shutdown.
 		if ctx.Err() != nil {
 			logging.Debugf("memory update skipped event_id=%s changed=false reason=context_canceled", job.EventID)
-			return
+			return false
 		}
 		if ackMessageID != "" {
 			if _, replyErr := p.sender.ReplyText(ctx, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
@@ -159,7 +159,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
 			log.Printf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 		}
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
-		return
+		return false
 	}
 	failed := runErr != nil
 	if failed {
@@ -172,6 +172,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) {
 			log.Printf("send final reply text failed event_id=%s: %v", job.EventID, replyErr)
 		}
 	}
+	return true
 }
 
 func splitMessageLines(message string) []string {

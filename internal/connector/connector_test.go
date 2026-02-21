@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
@@ -650,6 +651,111 @@ func TestApp_ShouldProcessJobSkipsStaleVersion(t *testing.T) {
 	}
 	if !app.shouldProcessJob(Job{SessionKey: sessionKey, SessionVersion: 3}) {
 		t.Fatal("latest job should be processed")
+	}
+}
+
+func TestApp_RuntimeStatePersistAndRestorePendingJob(t *testing.T) {
+	cfg := configForTest()
+	statePath := t.TempDir() + "/runtime_state.json"
+
+	app := NewApp(cfg, nil)
+	if err := app.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load runtime state failed: %v", err)
+	}
+
+	job := &Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		EventID:       "evt_runtime_restore",
+		Text:          "hello",
+		ReceivedAt:    time.Date(2026, 2, 21, 18, 0, 0, 0, time.UTC),
+	}
+	queued, _, _ := app.enqueueJob(job)
+	if !queued {
+		t.Fatal("expected job to be queued")
+	}
+	if err := app.FlushRuntimeState(); err != nil {
+		t.Fatalf("flush runtime state failed: %v", err)
+	}
+
+	restored := NewApp(cfg, nil)
+	if err := restored.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load persisted runtime state failed: %v", err)
+	}
+
+	if got := restored.latest["chat_id:oc_chat"]; got != 1 {
+		t.Fatalf("expected latest version 1 after restore, got %d", got)
+	}
+	if got := len(restored.queue); got != 1 {
+		t.Fatalf("expected restored queue len 1, got %d", got)
+	}
+
+	recovered := <-restored.queue
+	if recovered.EventID != "evt_runtime_restore" {
+		t.Fatalf("unexpected recovered event id: %s", recovered.EventID)
+	}
+	if recovered.SessionVersion != 1 {
+		t.Fatalf("unexpected recovered session version: %d", recovered.SessionVersion)
+	}
+}
+
+func TestApp_InterruptedJobKeepsPendingForRestart(t *testing.T) {
+	cfg := configForTest()
+	statePath := t.TempDir() + "/runtime_state.json"
+	blockingCodex := newBlockingResumableCodexStub()
+	sender := &senderStub{}
+	processor := NewProcessor(
+		blockingCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+	app := NewApp(cfg, processor)
+	if err := app.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load runtime state failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go app.workerLoop(ctx, 0)
+
+	job := &Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		EventID:       "evt_interrupt",
+		Text:          "need resume",
+	}
+	queued, _, _ := app.enqueueJob(job)
+	if !queued {
+		t.Fatal("expected job to be queued")
+	}
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		return blockingCodex.CallCount() == 1
+	}, "expected codex call to start")
+
+	cancel()
+	waitForCondition(t, 2*time.Second, func() bool {
+		app.mu.Lock()
+		defer app.mu.Unlock()
+		_, ok := app.pending[pendingJobKey(*job)]
+		return ok
+	}, "interrupted job should remain pending")
+
+	if err := app.FlushRuntimeState(); err != nil {
+		t.Fatalf("flush runtime state failed: %v", err)
+	}
+
+	restored := NewApp(cfg, nil)
+	if err := restored.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load persisted runtime state failed: %v", err)
+	}
+	if got := len(restored.queue); got != 1 {
+		t.Fatalf("expected interrupted job to be restored, got queue len %d", got)
+	}
+	recovered := <-restored.queue
+	if recovered.EventID != "evt_interrupt" {
+		t.Fatalf("unexpected recovered event id: %s", recovered.EventID)
 	}
 }
 

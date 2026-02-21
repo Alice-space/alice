@@ -25,6 +25,11 @@ type App struct {
 	mu        sync.Mutex
 	latest    map[string]uint64
 	active    map[string]activeSession
+	pending   map[string]Job
+
+	runtimeStatePath           string
+	runtimeStateVersion        uint64
+	runtimeStateFlushedVersion uint64
 }
 
 const (
@@ -45,10 +50,12 @@ func NewApp(cfg config.Config, processor *Processor) *App {
 		processor: processor,
 		latest:    make(map[string]uint64),
 		active:    make(map[string]activeSession),
+		pending:   make(map[string]Job),
 	}
 }
 
 func (a *App) Run(ctx context.Context) error {
+	defer a.flushRuntimeState()
 	defer a.flushSessionState()
 
 	for i := 0; i < a.cfg.WorkerConcurrency; i++ {
@@ -111,10 +118,16 @@ func (a *App) sessionStateFlushLoop(ctx context.Context) {
 			return
 		case <-ticker.C:
 			if a.processor == nil {
+				if err := a.FlushRuntimeStateIfDirty(); err != nil {
+					log.Printf("flush runtime state failed: %v", err)
+				}
 				continue
 			}
 			if err := a.processor.FlushSessionStateIfDirty(); err != nil {
 				log.Printf("flush session state failed: %v", err)
+			}
+			if err := a.FlushRuntimeStateIfDirty(); err != nil {
+				log.Printf("flush runtime state failed: %v", err)
 			}
 		}
 	}
@@ -129,6 +142,12 @@ func (a *App) flushSessionState() {
 	}
 }
 
+func (a *App) flushRuntimeState() {
+	if err := a.FlushRuntimeStateIfDirty(); err != nil {
+		log.Printf("flush runtime state on exit failed: %v", err)
+	}
+}
+
 func (a *App) workerLoop(ctx context.Context, idx int) {
 	log.Printf("worker started id=%d", idx)
 	for {
@@ -138,6 +157,7 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 		case job := <-a.queue:
 			if !a.shouldProcessJob(job) {
 				log.Printf("drop stale job event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
+				a.completePendingJob(job)
 				continue
 			}
 
@@ -145,12 +165,23 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 			if !a.markSessionActive(job, cancel) {
 				cancel()
 				log.Printf("skip stale job before run event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
+				a.completePendingJob(job)
 				continue
 			}
 
-			a.processor.ProcessJob(jobCtx, job)
+			completed := a.processor.ProcessJob(jobCtx, job)
 			cancel()
 			a.clearSessionActive(job)
+			if completed {
+				a.completePendingJob(job)
+			} else {
+				log.Printf(
+					"job interrupted, keep pending for resume event_id=%s session=%s version=%d",
+					job.EventID,
+					job.SessionKey,
+					job.SessionVersion,
+				)
+			}
 		}
 	}
 }
@@ -224,9 +255,12 @@ func (a *App) enqueueJob(job *Job) (queued bool, cancelActive context.CancelFunc
 	select {
 	case a.queue <- *job:
 		a.latest[job.SessionKey] = nextVersion
+		a.rememberPendingJobLocked(*job)
+		a.removeOlderPendingJobsLocked(job.SessionKey, nextVersion)
 		if active, ok := a.active[job.SessionKey]; ok {
 			cancelActive = active.cancel
 			canceledEventID = active.eventID
+			a.removePendingBySessionVersionLocked(job.SessionKey, active.version)
 		}
 		return true, cancelActive, canceledEventID
 	default:
