@@ -255,6 +255,34 @@ func (a *App) rememberPendingJobLocked(job Job) {
 	a.markRuntimeStateChangedLocked()
 }
 
+func (a *App) updatePendingJobWorkflowPhase(job Job, phase string) {
+	key := pendingJobKey(job)
+	if key == "" {
+		return
+	}
+	normalizedPhase := normalizeJobWorkflowPhase(phase)
+
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	pendingJob, ok := a.pending[key]
+	if !ok {
+		pendingJob = job
+	}
+	pendingJob.WorkflowPhase = normalizedPhase
+
+	normalizedJob, normalized := normalizeRuntimeJob(pendingJob)
+	if !normalized {
+		return
+	}
+	if existing, ok := a.pending[key]; ok && normalizeJobWorkflowPhase(existing.WorkflowPhase) == normalizedJob.WorkflowPhase {
+		return
+	}
+
+	a.pending[key] = normalizedJob
+	a.markRuntimeStateChangedLocked()
+}
+
 func (a *App) removeOlderPendingJobsLocked(sessionKey string, keepVersion uint64) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" || keepVersion == 0 {
@@ -328,6 +356,7 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	job.RawContent = strings.TrimSpace(job.RawContent)
 	job.EventID = strings.TrimSpace(job.EventID)
 	job.SessionKey = strings.TrimSpace(job.SessionKey)
+	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
 	if len(job.Attachments) > 0 {
 		normalized := make([]Attachment, 0, len(job.Attachments))
 		for _, rawAttachment := range job.Attachments {

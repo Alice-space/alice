@@ -1319,7 +1319,7 @@ func TestApp_RuntimeStatePersistAndRestoreMediaWindow(t *testing.T) {
 	}
 }
 
-func TestApp_SelfUpdateInterruptedJobDoesNotResumeAfterRestart(t *testing.T) {
+func TestApp_SelfUpdateInterruptedJobFinalizesAfterRestart(t *testing.T) {
 	cfg := configForTest()
 	statePath := t.TempDir() + "/runtime_state.json"
 	blockingCodex := newBlockingResumableCodexStub()
@@ -1359,20 +1359,50 @@ func TestApp_SelfUpdateInterruptedJobDoesNotResumeAfterRestart(t *testing.T) {
 	waitForCondition(t, 2*time.Second, func() bool {
 		app.mu.Lock()
 		defer app.mu.Unlock()
-		_, ok := app.pending[pendingJobKey(*job)]
-		return !ok
-	}, "self-update command should be removed from pending after shutdown cancellation")
+		pending, ok := app.pending[pendingJobKey(*job)]
+		if !ok {
+			return false
+		}
+		return pending.WorkflowPhase == jobWorkflowPhasePostRestartFinalize
+	}, "self-update command should enter post restart finalize phase after shutdown cancellation")
 
 	if err := app.FlushRuntimeState(); err != nil {
 		t.Fatalf("flush runtime state failed: %v", err)
 	}
 
-	restored := NewApp(cfg, nil)
+	finalizeSender := &senderStub{}
+	finalizeCodex := newBlockingResumableCodexStub()
+	finalizeProcessor := NewProcessor(
+		finalizeCodex,
+		finalizeSender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+	restored := NewApp(cfg, finalizeProcessor)
 	if err := restored.LoadRuntimeState(statePath); err != nil {
 		t.Fatalf("load persisted runtime state failed: %v", err)
 	}
-	if got := len(restored.queue); got != 0 {
-		t.Fatalf("expected no restored self-update job, got queue len %d", got)
+	if got := len(restored.queue); got != 1 {
+		t.Fatalf("expected one restored finalize job, got queue len %d", got)
+	}
+
+	ctx2, cancel2 := context.WithCancel(context.Background())
+	defer cancel2()
+	go restored.workerLoop(ctx2, 0)
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		restored.mu.Lock()
+		defer restored.mu.Unlock()
+		return len(restored.pending) == 0
+	}, "post restart finalize job should be completed")
+	if finalizeCodex.CallCount() != 0 {
+		t.Fatalf("post restart finalize should not call codex, got %d calls", finalizeCodex.CallCount())
+	}
+	if len(finalizeSender.replyTexts) != 1 {
+		t.Fatalf("expected one finalize reply, got %d", len(finalizeSender.replyTexts))
+	}
+	if !strings.Contains(finalizeSender.replyTexts[0], "重启操作已完成") {
+		t.Fatalf("unexpected finalize reply: %q", finalizeSender.replyTexts[0])
 	}
 }
 

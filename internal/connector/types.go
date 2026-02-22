@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"regexp"
+	"strings"
 	"time"
 )
 
@@ -82,4 +83,30 @@ type Job struct {
 	ReceivedAt           time.Time
 	SessionKey           string
 	SessionVersion       uint64
+	WorkflowPhase        string
+}
+
+type JobProcessState string
+
+const (
+	JobProcessCompleted           JobProcessState = "completed"
+	JobProcessRetryAfterRestart   JobProcessState = "retry_after_restart"
+	JobProcessPostRestartFinalize JobProcessState = "post_restart_finalize"
+)
+
+const (
+	jobWorkflowPhaseNormal              = "normal"
+	jobWorkflowPhasePostRestartFinalize = "post_restart_finalize"
+)
+
+func normalizeJobWorkflowPhase(raw string) string {
+	normalized := strings.ToLower(strings.TrimSpace(raw))
+	switch normalized {
+	case "", jobWorkflowPhaseNormal:
+		return jobWorkflowPhaseNormal
+	case jobWorkflowPhasePostRestartFinalize:
+		return jobWorkflowPhasePostRestartFinalize
+	default:
+		return jobWorkflowPhaseNormal
+	}
 }

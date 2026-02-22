@@ -164,16 +164,34 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 
 			sessionMu := a.sessionMutex(sessionKey)
 			sessionMu.Lock()
-			completed := a.processor.ProcessJob(ctx, job)
+			result := a.processor.ProcessJobState(ctx, job)
 			sessionMu.Unlock()
-			if completed {
+			switch result {
+			case JobProcessCompleted:
 				a.completePendingJob(job)
-			} else {
+			case JobProcessPostRestartFinalize:
+				a.updatePendingJobWorkflowPhase(job, jobWorkflowPhasePostRestartFinalize)
+				log.Printf(
+					"job state updated event_id=%s session=%s version=%d state=%s",
+					job.EventID,
+					job.SessionKey,
+					job.SessionVersion,
+					JobProcessPostRestartFinalize,
+				)
+			case JobProcessRetryAfterRestart:
 				log.Printf(
 					"job interrupted, keep pending for resume event_id=%s session=%s version=%d",
 					job.EventID,
 					job.SessionKey,
 					job.SessionVersion,
+				)
+			default:
+				log.Printf(
+					"job state unknown, keep pending event_id=%s session=%s version=%d state=%s",
+					job.EventID,
+					job.SessionKey,
+					job.SessionVersion,
+					result,
 				)
 			}
 		}
@@ -246,6 +264,7 @@ func (a *App) enqueueJob(job *Job) (queued bool, cancelActive context.CancelFunc
 	if strings.TrimSpace(job.SessionKey) == "" {
 		job.SessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
 	}
+	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
 
 	a.mu.Lock()
 	defer a.mu.Unlock()

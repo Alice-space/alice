@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
 	"regexp"
 	"strings"
 	"sync"
@@ -73,6 +74,15 @@ func NewProcessorWithMemory(
 }
 
 func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {
+	return p.ProcessJobState(ctx, job) == JobProcessCompleted
+}
+
+func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessState {
+	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
+	if job.WorkflowPhase == jobWorkflowPhasePostRestartFinalize {
+		return p.processPostRestartFinalize(ctx, job)
+	}
+
 	sessionKey := sessionKeyForJob(job)
 	p.touchSessionMessage(sessionKey, p.now())
 
@@ -96,9 +106,17 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {
 	reply, nextThreadID, err := p.runCodex(ctx, currentThreadID, promptText, nil)
 	p.setThreadID(sessionKey, nextThreadID)
 	if errors.Is(err, context.Canceled) {
+		if ctx.Err() != nil && isRestartIntentJob(job) {
+			logging.Debugf(
+				"job state decided event_id=%s state=%s reason=shutdown_restart_intent",
+				job.EventID,
+				JobProcessPostRestartFinalize,
+			)
+			return JobProcessPostRestartFinalize
+		}
 		log.Printf("codex canceled event_id=%s", job.EventID)
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=codex_canceled", job.EventID)
-		return false
+		return JobProcessRetryAfterRestart
 	}
 	failed := err != nil
 	if err != nil {
@@ -110,10 +128,10 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {
 	if sendErr := p.sender.SendText(ctx, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
 		log.Printf("send message failed event_id=%s: %v", job.EventID, sendErr)
 	}
-	return true
+	return JobProcessCompleted
 }
 
-func (p *Processor) processReplyMessage(ctx context.Context, job Job) bool {
+func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcessState {
 	sessionKey := sessionKeyForJob(job)
 	ackMessageID, err := p.sender.ReplyText(ctx, job.SourceMessageID, "收到！")
 	if err != nil {
@@ -161,15 +179,20 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) bool {
 	if errors.Is(runErr, context.Canceled) {
 		// Parent context cancellation usually means app shutdown.
 		if ctx.Err() != nil {
-			if shouldSkipResumeForSelfUpdate(job) {
+			if isRestartIntentJob(job) {
 				logging.Debugf(
-					"job canceled by shutdown and marked completed event_id=%s reason=self_update_intent",
+					"job state decided event_id=%s state=%s reason=shutdown_restart_intent",
 					job.EventID,
+					JobProcessPostRestartFinalize,
 				)
-				return true
+				return JobProcessPostRestartFinalize
 			}
-			logging.Debugf("memory update skipped event_id=%s changed=false reason=context_canceled", job.EventID)
-			return false
+			logging.Debugf(
+				"job state decided event_id=%s state=%s reason=context_canceled",
+				job.EventID,
+				JobProcessRetryAfterRestart,
+			)
+			return JobProcessRetryAfterRestart
 		}
 		if ackMessageID != "" {
 			if _, replyErr := p.sender.ReplyText(ctx, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
@@ -179,7 +202,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) bool {
 			log.Printf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 		}
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
-		return false
+		return JobProcessRetryAfterRestart
 	}
 	failed := runErr != nil
 	if failed {
@@ -192,10 +215,10 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) bool {
 			log.Printf("send final reply text failed event_id=%s: %v", job.EventID, replyErr)
 		}
 	}
-	return true
+	return JobProcessCompleted
 }
 
-func shouldSkipResumeForSelfUpdate(job Job) bool {
+func isRestartIntentJob(job Job) bool {
 	candidates := []string{
 		strings.TrimSpace(job.Text),
 		strings.TrimSpace(job.RawContent),
@@ -211,6 +234,52 @@ func shouldSkipResumeForSelfUpdate(job Job) bool {
 		}
 	}
 	return false
+}
+
+func (p *Processor) processPostRestartFinalize(ctx context.Context, job Job) JobProcessState {
+	sessionKey := sessionKeyForJob(job)
+	threadID := strings.TrimSpace(p.getThreadID(sessionKey))
+	now := p.now()
+	pid := os.Getpid()
+
+	summary := fmt.Sprintf(
+		"重启操作已完成，并已在重启后自检通过。\n时间：%s\n进程：PID=%d\n会话：%s\n线程：%s",
+		now.Format(time.RFC3339),
+		pid,
+		sessionKey,
+		defaultIfEmpty(threadID, "无"),
+	)
+
+	var sendErr error
+	if strings.TrimSpace(job.SourceMessageID) != "" {
+		_, sendErr = p.sender.ReplyText(ctx, job.SourceMessageID, summary)
+	} else {
+		sendErr = p.sender.SendText(ctx, job.ReceiveIDType, job.ReceiveID, summary)
+	}
+	if sendErr != nil {
+		log.Printf("send post-restart finalize reply failed event_id=%s: %v", job.EventID, sendErr)
+		logging.Debugf(
+			"job state decided event_id=%s state=%s reason=post_restart_finalize_send_failed",
+			job.EventID,
+			JobProcessRetryAfterRestart,
+		)
+		return JobProcessRetryAfterRestart
+	}
+
+	p.recordInteraction(job, p.buildCurrentUserInput(job), summary, false)
+	logging.Debugf(
+		"job state decided event_id=%s state=%s reason=post_restart_finalize_completed",
+		job.EventID,
+		JobProcessCompleted,
+	)
+	return JobProcessCompleted
+}
+
+func defaultIfEmpty(value string, fallback string) string {
+	if strings.TrimSpace(value) == "" {
+		return fallback
+	}
+	return value
 }
 
 func splitMessageLines(message string) []string {
