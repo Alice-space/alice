@@ -97,6 +97,7 @@ const (
 const (
 	jobWorkflowPhaseNormal              = "normal"
 	jobWorkflowPhasePostRestartFinalize = "post_restart_finalize"
+	jobWorkflowPhaseRestartNotification = "restart_notification"
 )
 
 func normalizeJobWorkflowPhase(raw string) string {
@@ -106,6 +107,8 @@ func normalizeJobWorkflowPhase(raw string) string {
 		return jobWorkflowPhaseNormal
 	case jobWorkflowPhasePostRestartFinalize:
 		return jobWorkflowPhasePostRestartFinalize
+	case jobWorkflowPhaseRestartNotification:
+		return jobWorkflowPhaseRestartNotification
 	default:
 		return jobWorkflowPhaseNormal
 	}

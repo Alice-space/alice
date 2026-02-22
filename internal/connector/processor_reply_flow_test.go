@@ -276,3 +276,44 @@ func TestProcessor_CanceledNonReplySkipsSendingAndMemory(t *testing.T) {
 		t.Fatalf("canceled job should not be saved to memory, got %d", memory.saveCalls)
 	}
 }
+
+func TestProcessor_RestartNotificationPhaseSkipsCodexAndSendsFixedMessage(t *testing.T) {
+	fakeCodex := newBlockingResumableCodexStub()
+	sender := &senderStub{}
+	memory := &memoryStub{prompt: "记忆上下文 + 用户消息"}
+
+	processor := NewProcessorWithMemory(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+		memory,
+	)
+
+	state := processor.ProcessJobState(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		SourceMessageID: "om_src",
+		Text:            "hello",
+		WorkflowPhase:   jobWorkflowPhaseRestartNotification,
+	})
+
+	if state != JobProcessCompleted {
+		t.Fatalf("expected completed state, got %s", state)
+	}
+	if got := fakeCodex.CallCount(); got != 0 {
+		t.Fatalf("restart notification should skip codex call, got %d", got)
+	}
+	if sender.replyTextCalls != 1 {
+		t.Fatalf("expected one restart notification reply, got %d", sender.replyTextCalls)
+	}
+	if len(sender.replyTexts) != 1 || sender.replyTexts[0] != restartNotificationMessage {
+		t.Fatalf("unexpected restart notification reply history: %#v", sender.replyTexts)
+	}
+	if sender.sendCalls != 0 {
+		t.Fatalf("reply message should not send direct chat message, got sendCalls=%d", sender.sendCalls)
+	}
+	if memory.saveCalls != 1 {
+		t.Fatalf("restart notification should be recorded once in memory, got %d", memory.saveCalls)
+	}
+}

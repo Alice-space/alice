@@ -198,22 +198,24 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 			switch result {
 			case JobProcessCompleted:
 				a.completePendingJob(job)
-			case JobProcessPostRestartFinalize:
+			case JobProcessPostRestartFinalize, JobProcessRetryAfterRestart:
+				if ctx.Err() != nil {
+					a.updatePendingJobWorkflowPhase(job, jobWorkflowPhaseRestartNotification)
+					log.Printf(
+						"job interrupted, keep pending for restart notification event_id=%s session=%s version=%d state=%s",
+						job.EventID,
+						job.SessionKey,
+						job.SessionVersion,
+						result,
+					)
+					continue
+				}
 				log.Printf(
 					"job interrupted, drop in-progress event_id=%s session=%s version=%d state=%s",
 					job.EventID,
 					job.SessionKey,
 					job.SessionVersion,
-					JobProcessPostRestartFinalize,
-				)
-				a.completePendingJob(job)
-			case JobProcessRetryAfterRestart:
-				log.Printf(
-					"job interrupted, drop in-progress event_id=%s session=%s version=%d state=%s",
-					job.EventID,
-					job.SessionKey,
-					job.SessionVersion,
-					JobProcessRetryAfterRestart,
+					result,
 				)
 				a.completePendingJob(job)
 			default:

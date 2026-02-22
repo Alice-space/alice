@@ -29,6 +29,7 @@ type Processor struct {
 }
 
 const interruptedReplyMessage = "已收到你的新消息，当前回复已中断并切换到最新输入。"
+const restartNotificationMessage = "Alice已重新启动"
 const fileChangeEventPrefix = "[file_change] "
 const idleSummaryPrompt = "请基于当前会话上下文，提炼后续仍有价值的信息摘要。\n" +
 	"要求：\n" +
@@ -79,6 +80,9 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {
 
 func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessState {
 	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
+	if job.WorkflowPhase == jobWorkflowPhaseRestartNotification {
+		return p.processRestartNotification(ctx, job)
+	}
 	if job.WorkflowPhase == jobWorkflowPhasePostRestartFinalize {
 		return p.processPostRestartFinalize(ctx, job)
 	}
@@ -234,6 +238,32 @@ func isRestartIntentJob(job Job) bool {
 		}
 	}
 	return false
+}
+
+func (p *Processor) processRestartNotification(ctx context.Context, job Job) JobProcessState {
+	var sendErr error
+	if strings.TrimSpace(job.SourceMessageID) != "" {
+		_, sendErr = p.sender.ReplyText(ctx, job.SourceMessageID, restartNotificationMessage)
+	} else {
+		sendErr = p.sender.SendText(ctx, job.ReceiveIDType, job.ReceiveID, restartNotificationMessage)
+	}
+	if sendErr != nil {
+		log.Printf("send restart notification failed event_id=%s: %v", job.EventID, sendErr)
+		logging.Debugf(
+			"job state decided event_id=%s state=%s reason=restart_notification_send_failed",
+			job.EventID,
+			JobProcessRetryAfterRestart,
+		)
+		return JobProcessRetryAfterRestart
+	}
+
+	p.recordInteraction(job, p.buildCurrentUserInput(job), restartNotificationMessage, false)
+	logging.Debugf(
+		"job state decided event_id=%s state=%s reason=restart_notification_completed",
+		job.EventID,
+		JobProcessCompleted,
+	)
+	return JobProcessCompleted
 }
 
 func (p *Processor) processPostRestartFinalize(ctx context.Context, job Job) JobProcessState {
