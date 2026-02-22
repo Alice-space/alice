@@ -22,6 +22,7 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 	if !isSupportedIncomingMessageType(messageType) {
 		return nil, ErrIgnoreMessage
 	}
+	sourceMessageID := strings.TrimSpace(deref(message.MessageId))
 
 	text, attachments, err := extractIncomingMessageContent(messageType, message.Content)
 	if err != nil {
@@ -29,6 +30,11 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 	}
 	if strings.TrimSpace(text) == "" && len(attachments) == 0 {
 		return nil, ErrIgnoreMessage
+	}
+	for i := range attachments {
+		if strings.TrimSpace(attachments[i].SourceMessageID) == "" {
+			attachments[i].SourceMessageID = sourceMessageID
+		}
 	}
 
 	receiveID := strings.TrimSpace(deref(message.ChatId))
@@ -47,7 +53,7 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 		ChatType:             strings.TrimSpace(deref(message.ChatType)),
 		SenderOpenID:         strings.TrimSpace(extractOpenID(event)),
 		SenderUserID:         strings.TrimSpace(extractUserID(event)),
-		SourceMessageID:      strings.TrimSpace(deref(message.MessageId)),
+		SourceMessageID:      sourceMessageID,
 		ReplyParentMessageID: extractReplyParentMessageID(message),
 		MessageType:          messageType,
 		Text:                 text,

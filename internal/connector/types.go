@@ -57,12 +57,13 @@ type AttachmentDownloader interface {
 }
 
 type Attachment struct {
-	Kind          string
-	FileKey       string
-	ImageKey      string
-	FileName      string
-	LocalPath     string
-	DownloadError string
+	SourceMessageID string
+	Kind            string
+	FileKey         string
+	ImageKey        string
+	FileName        string
+	LocalPath       string
+	DownloadError   string
 }
 
 type Job struct {

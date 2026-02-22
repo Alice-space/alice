@@ -88,6 +88,9 @@ func TestBuildJob_ImageMessage(t *testing.T) {
 	if job.Attachments[0].ImageKey != "img_123" {
 		t.Fatalf("unexpected image key: %s", job.Attachments[0].ImageKey)
 	}
+	if job.Attachments[0].SourceMessageID != "om_img" {
+		t.Fatalf("unexpected image source message id: %s", job.Attachments[0].SourceMessageID)
+	}
 }
 
 func TestBuildJob_StickerMessage(t *testing.T) {
@@ -115,6 +118,9 @@ func TestBuildJob_StickerMessage(t *testing.T) {
 	if job.Attachments[0].FileKey != "file_sticker_123" {
 		t.Fatalf("unexpected sticker file key: %s", job.Attachments[0].FileKey)
 	}
+	if job.Attachments[0].SourceMessageID != "om_stk" {
+		t.Fatalf("unexpected sticker source message id: %s", job.Attachments[0].SourceMessageID)
+	}
 }
 
 func TestBuildJob_AudioMessage(t *testing.T) {
@@ -141,6 +147,9 @@ func TestBuildJob_AudioMessage(t *testing.T) {
 	}
 	if job.Attachments[0].FileKey != "file_audio_123" {
 		t.Fatalf("unexpected audio file key: %s", job.Attachments[0].FileKey)
+	}
+	if job.Attachments[0].SourceMessageID != "om_audio" {
+		t.Fatalf("unexpected audio source message id: %s", job.Attachments[0].SourceMessageID)
 	}
 }
 
@@ -171,6 +180,9 @@ func TestBuildJob_FileMessage(t *testing.T) {
 	}
 	if job.Attachments[0].FileName != "report.pdf" {
 		t.Fatalf("unexpected file name: %s", job.Attachments[0].FileName)
+	}
+	if job.Attachments[0].SourceMessageID != "om_file" {
+		t.Fatalf("unexpected file source message id: %s", job.Attachments[0].SourceMessageID)
 	}
 }
 
@@ -441,6 +453,9 @@ func TestApp_OnMessageReceive_GroupMentionMergesRecentMediaWindow(t *testing.T) 
 	if len(job.Attachments) != 1 {
 		t.Fatalf("expected merged attachments count 1, got %d", len(job.Attachments))
 	}
+	if job.Attachments[0].SourceMessageID != "om_media" {
+		t.Fatalf("unexpected merged attachment source message id: %s", job.Attachments[0].SourceMessageID)
+	}
 	if !strings.Contains(job.Text, "已自动合并你在过去5分钟发送的1条多媒体消息") {
 		t.Fatalf("expected merge hint in text, got: %q", job.Text)
 	}
@@ -513,6 +528,9 @@ func TestApp_OnMessageReceive_MentionOnlyBuildsSyntheticJobAndMergesMedia(t *tes
 	job := <-app.queue
 	if len(job.Attachments) != 1 {
 		t.Fatalf("expected merged attachments count 1, got %d", len(job.Attachments))
+	}
+	if job.Attachments[0].SourceMessageID != "om_media_synth" {
+		t.Fatalf("unexpected merged synthetic attachment source message id: %s", job.Attachments[0].SourceMessageID)
 	}
 	if !strings.Contains(job.Text, "用户@了你，请结合其最近发送的多媒体继续处理。") {
 		t.Fatalf("expected synthetic mention hint in text, got: %q", job.Text)
@@ -701,14 +719,18 @@ func TestProcessor_ResolvesAttachmentsAndPassesLocalPathToCodex(t *testing.T) {
 		Text:            "用户发送了一张图片。",
 		Attachments: []Attachment{
 			{
-				Kind:     "image",
-				ImageKey: "img_123",
+				SourceMessageID: "om_media",
+				Kind:            "image",
+				ImageKey:        "img_123",
 			},
 		},
 	})
 
 	if sender.downloadCalls != 1 {
 		t.Fatalf("expected 1 attachment download, got %d", sender.downloadCalls)
+	}
+	if len(sender.downloadSourceMessageIDs) != 1 || sender.downloadSourceMessageIDs[0] != "om_media" {
+		t.Fatalf("expected attachment download to use attachment source message id, got %#v", sender.downloadSourceMessageIDs)
 	}
 	if !strings.Contains(fakeCodex.lastInput, "本地路径：/tmp/alice/image.png") {
 		t.Fatalf("codex input should include downloaded local path, got: %s", fakeCodex.lastInput)

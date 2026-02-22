@@ -336,6 +336,17 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	job.RawContent = strings.TrimSpace(job.RawContent)
 	job.EventID = strings.TrimSpace(job.EventID)
 	job.SessionKey = strings.TrimSpace(job.SessionKey)
+	if len(job.Attachments) > 0 {
+		normalized := make([]Attachment, 0, len(job.Attachments))
+		for _, rawAttachment := range job.Attachments {
+			attachment, ok := normalizeAttachment(rawAttachment)
+			if !ok {
+				continue
+			}
+			normalized = append(normalized, attachment)
+		}
+		job.Attachments = normalized
+	}
 	if job.SessionKey == "" {
 		job.SessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
 	}
@@ -350,14 +361,41 @@ func normalizeMediaWindowEntry(entry mediaWindowEntry) (mediaWindowEntry, bool) 
 	entry.MessageType = strings.TrimSpace(entry.MessageType)
 	entry.Text = strings.TrimSpace(entry.Text)
 	entry.RawContent = strings.TrimSpace(entry.RawContent)
-	entry.Attachments = cloneAttachments(entry.Attachments)
-	if len(entry.Attachments) == 0 {
+	normalized := make([]Attachment, 0, len(entry.Attachments))
+	for _, rawAttachment := range entry.Attachments {
+		attachment, ok := normalizeAttachment(rawAttachment)
+		if !ok {
+			continue
+		}
+		normalized = append(normalized, attachment)
+	}
+	entry.Attachments = normalized
+	if len(normalized) == 0 {
 		return mediaWindowEntry{}, false
 	}
 	if entry.ReceivedAt.IsZero() {
 		entry.ReceivedAt = time.Now()
 	}
 	return entry, true
+}
+
+func normalizeAttachment(attachment Attachment) (Attachment, bool) {
+	attachment.SourceMessageID = strings.TrimSpace(attachment.SourceMessageID)
+	attachment.Kind = strings.TrimSpace(attachment.Kind)
+	attachment.FileKey = strings.TrimSpace(attachment.FileKey)
+	attachment.ImageKey = strings.TrimSpace(attachment.ImageKey)
+	attachment.FileName = strings.TrimSpace(attachment.FileName)
+	attachment.LocalPath = strings.TrimSpace(attachment.LocalPath)
+	attachment.DownloadError = strings.TrimSpace(attachment.DownloadError)
+	if attachment.Kind == "" &&
+		attachment.FileKey == "" &&
+		attachment.ImageKey == "" &&
+		attachment.FileName == "" &&
+		attachment.LocalPath == "" &&
+		attachment.DownloadError == "" {
+		return Attachment{}, false
+	}
+	return attachment, true
 }
 
 func sortPendingJobs(jobs []Job) {

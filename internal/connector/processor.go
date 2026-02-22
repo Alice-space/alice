@@ -357,13 +357,18 @@ func (p *Processor) prepareJobForCodex(ctx context.Context, job *Job) {
 		if strings.TrimSpace(attachment.LocalPath) != "" {
 			continue
 		}
-		if err := downloader.DownloadAttachment(ctx, job.SourceMessageID, attachment); err != nil {
+		downloadSourceMessageID := strings.TrimSpace(attachment.SourceMessageID)
+		if downloadSourceMessageID == "" {
+			downloadSourceMessageID = strings.TrimSpace(job.SourceMessageID)
+		}
+		if err := downloader.DownloadAttachment(ctx, downloadSourceMessageID, attachment); err != nil {
 			attachment.DownloadError = err.Error()
 			log.Printf(
-				"download attachment failed event_id=%s message_type=%s kind=%s file_key=%s image_key=%s err=%v",
+				"download attachment failed event_id=%s message_type=%s kind=%s source_message_id=%s file_key=%s image_key=%s err=%v",
 				job.EventID,
 				job.MessageType,
 				attachment.Kind,
+				downloadSourceMessageID,
 				attachment.FileKey,
 				attachment.ImageKey,
 				err,

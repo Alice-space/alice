@@ -441,9 +441,10 @@ type senderStub struct {
 	getMessageTextErr   error
 	messageTextByID     map[string]string
 
-	downloadCalls     int
-	downloadPathByKey map[string]string
-	downloadErrByKey  map[string]error
+	downloadCalls            int
+	downloadSourceMessageIDs []string
+	downloadPathByKey        map[string]string
+	downloadErrByKey         map[string]error
 }
 
 func (s *senderStub) SendText(_ context.Context, _, _ string, text string) error {
@@ -500,8 +501,9 @@ func (s *senderStub) GetMessageText(_ context.Context, messageID string) (string
 	return s.messageTextByID[messageID], nil
 }
 
-func (s *senderStub) DownloadAttachment(_ context.Context, _ string, attachment *Attachment) error {
+func (s *senderStub) DownloadAttachment(_ context.Context, sourceMessageID string, attachment *Attachment) error {
 	s.downloadCalls++
+	s.downloadSourceMessageIDs = append(s.downloadSourceMessageIDs, strings.TrimSpace(sourceMessageID))
 	if attachment == nil {
 		return errors.New("attachment is nil")
 	}
