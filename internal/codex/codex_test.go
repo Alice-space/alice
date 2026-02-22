@@ -301,3 +301,93 @@ func TestCollectRepoDiffMessages_DetectsChangedFile(t *testing.T) {
 		t.Fatalf("expected repo diff message, got %#v", messages)
 	}
 }
+
+func TestEnrichFileChangeMessageStats_UsesGitDiffForZeroStats(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("create repo dir failed: %v", err)
+	}
+	runInRepo := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("run %v failed: %v output=%s", args, err, string(out))
+		}
+	}
+	runInRepo("git", "init")
+	runInRepo("git", "config", "user.email", "bot@example.com")
+	runInRepo("git", "config", "user.name", "Bot")
+	if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatalf("write initial file failed: %v", err)
+	}
+	runInRepo("git", "add", "a.txt")
+	runInRepo("git", "commit", "-m", "init")
+
+	if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("new\nline2\n"), 0o644); err != nil {
+		t.Fatalf("write changed file failed: %v", err)
+	}
+
+	got := enrichFileChangeMessageStats(context.Background(), "a.txt已更改，+0-0", []string{repoDir})
+	if got != "a.txt已更改，+2-1" {
+		t.Fatalf("unexpected enriched message: %q", got)
+	}
+}
+
+func TestEnrichFileChangeMessageStats_StripsZeroStatsWhenNoDiffFound(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("create repo dir failed: %v", err)
+	}
+	runInRepo := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("run %v failed: %v output=%s", args, err, string(out))
+		}
+	}
+	runInRepo("git", "init")
+	runInRepo("git", "config", "user.email", "bot@example.com")
+	runInRepo("git", "config", "user.name", "Bot")
+	if err := os.WriteFile(filepath.Join(repoDir, "a.txt"), []byte("old\n"), 0o644); err != nil {
+		t.Fatalf("write initial file failed: %v", err)
+	}
+	runInRepo("git", "add", "a.txt")
+	runInRepo("git", "commit", "-m", "init")
+
+	got := enrichFileChangeMessageStats(context.Background(), "a.txt已更改，+0-0", []string{repoDir})
+	if got != "a.txt已更改" {
+		t.Fatalf("unexpected fallback message: %q", got)
+	}
+}
+
+func TestEnrichFileChangeMessageStats_UsesNoIndexDiffForUntrackedFile(t *testing.T) {
+	tempDir := t.TempDir()
+	repoDir := filepath.Join(tempDir, "repo")
+	if err := os.MkdirAll(repoDir, 0o755); err != nil {
+		t.Fatalf("create repo dir failed: %v", err)
+	}
+	runInRepo := func(args ...string) {
+		cmd := exec.Command(args[0], args[1:]...)
+		cmd.Dir = repoDir
+		out, err := cmd.CombinedOutput()
+		if err != nil {
+			t.Fatalf("run %v failed: %v output=%s", args, err, string(out))
+		}
+	}
+	runInRepo("git", "init")
+	runInRepo("git", "config", "user.email", "bot@example.com")
+	runInRepo("git", "config", "user.name", "Bot")
+
+	if err := os.WriteFile(filepath.Join(repoDir, "new.txt"), []byte("line1\nline2\nline3\n"), 0o644); err != nil {
+		t.Fatalf("write untracked file failed: %v", err)
+	}
+
+	got := enrichFileChangeMessageStats(context.Background(), "new.txt已更改，+0-0", []string{repoDir})
+	if got != "new.txt已更改，+3-0" {
+		t.Fatalf("unexpected untracked message: %q", got)
+	}
+}

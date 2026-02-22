@@ -146,10 +146,14 @@ func (r Runner) RunWithThreadAndProgress(
 			logging.Debugf("codex reasoning=%q", strings.TrimSpace(reasoning))
 		}
 		if strings.TrimSpace(fileChangeMessage) != "" {
+			resolvedFileChangeMessage := enrichFileChangeMessageStats(tctx, fileChangeMessage, watchedRepos)
+			if strings.TrimSpace(resolvedFileChangeMessage) == "" {
+				resolvedFileChangeMessage = strings.TrimSpace(fileChangeMessage)
+			}
 			sawNativeFileChange = true
-			logging.Debugf("codex file_change=%q", strings.TrimSpace(fileChangeMessage))
+			logging.Debugf("codex file_change=%q", strings.TrimSpace(resolvedFileChangeMessage))
 			if onThinking != nil {
-				onThinking(fileChangeCallbackPrefix + strings.TrimSpace(fileChangeMessage))
+				onThinking(fileChangeCallbackPrefix + strings.TrimSpace(resolvedFileChangeMessage))
 			}
 		}
 		if strings.TrimSpace(agentMessage) != "" {
@@ -603,6 +607,211 @@ func parseNumstatValue(raw string) int {
 
 func formatFileChangeMessage(path string, stat fileDiffStat) string {
 	return fmt.Sprintf("%s已更改，+%d-%d", strings.TrimSpace(path), stat.Additions, stat.Deletions)
+}
+
+func enrichFileChangeMessageStats(ctx context.Context, message string, repos []string) string {
+	lines := strings.Split(strings.TrimSpace(message), "\n")
+	if len(lines) == 0 {
+		return ""
+	}
+
+	updated := make([]string, 0, len(lines))
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+
+		path, additions, deletions, ok := parseFormattedFileChangeLine(line)
+		if !ok {
+			updated = append(updated, line)
+			continue
+		}
+		if additions != 0 || deletions != 0 {
+			updated = append(updated, line)
+			continue
+		}
+
+		stat, found := resolveFileChangeStatByGitDiff(ctx, repos, path)
+		if found && (stat.Additions != 0 || stat.Deletions != 0) {
+			updated = append(updated, formatFileChangeMessage(path, stat))
+			continue
+		}
+
+		updated = append(updated, fmt.Sprintf("%s已更改", strings.TrimSpace(path)))
+	}
+
+	return strings.Join(updated, "\n")
+}
+
+func parseFormattedFileChangeLine(line string) (path string, additions int, deletions int, ok bool) {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return "", 0, 0, false
+	}
+
+	const marker = "已更改，+"
+	idx := strings.LastIndex(line, marker)
+	if idx < 0 {
+		return "", 0, 0, false
+	}
+	path = strings.TrimSpace(line[:idx])
+	if path == "" {
+		return "", 0, 0, false
+	}
+
+	statsPart := strings.TrimSpace(line[idx+len(marker):])
+	parts := strings.SplitN(statsPart, "-", 2)
+	if len(parts) != 2 {
+		return path, 0, 0, false
+	}
+
+	add, addErr := strconv.Atoi(strings.TrimSpace(parts[0]))
+	del, delErr := strconv.Atoi(strings.TrimSpace(parts[1]))
+	if addErr != nil || delErr != nil {
+		return path, 0, 0, false
+	}
+	return path, add, del, true
+}
+
+func resolveFileChangeStatByGitDiff(ctx context.Context, repos []string, path string) (fileDiffStat, bool) {
+	path = strings.TrimSpace(path)
+	if path == "" || len(repos) == 0 {
+		return fileDiffStat{}, false
+	}
+
+	for _, repo := range repos {
+		stat, ok := readRepoPathDiffStat(ctx, repo, path)
+		if ok {
+			return stat, true
+		}
+	}
+	return fileDiffStat{}, false
+}
+
+func readRepoPathDiffStat(ctx context.Context, repo, path string) (fileDiffStat, bool) {
+	relPath, absPath, ok := resolvePathForRepo(repo, path)
+	if !ok {
+		return fileDiffStat{}, false
+	}
+
+	if stat, found := readGitNumstatForPath(ctx, repo, relPath, false); found && (stat.Additions != 0 || stat.Deletions != 0) {
+		return stat, true
+	}
+	if stat, found := readGitNumstatForPath(ctx, repo, relPath, true); found && (stat.Additions != 0 || stat.Deletions != 0) {
+		return stat, true
+	}
+	if isUntrackedPath(ctx, repo, relPath) {
+		if stat, found := readNoIndexDiffStat(ctx, absPath); found && (stat.Additions != 0 || stat.Deletions != 0) {
+			return stat, true
+		}
+	}
+	return fileDiffStat{}, false
+}
+
+func resolvePathForRepo(repo, path string) (relPath string, absPath string, ok bool) {
+	repo = strings.TrimSpace(repo)
+	path = strings.TrimSpace(path)
+	if repo == "" || path == "" {
+		return "", "", false
+	}
+
+	cleanRepo := filepath.Clean(repo)
+	if filepath.IsAbs(path) {
+		cleanAbs := filepath.Clean(path)
+		rel, err := filepath.Rel(cleanRepo, cleanAbs)
+		if err != nil {
+			return "", "", false
+		}
+		rel = filepath.ToSlash(rel)
+		if rel == ".." || strings.HasPrefix(rel, "../") {
+			return "", "", false
+		}
+		return rel, cleanAbs, true
+	}
+
+	rel := filepath.ToSlash(strings.TrimPrefix(path, "./"))
+	if rel == "" {
+		return "", "", false
+	}
+	abs := filepath.Join(cleanRepo, filepath.FromSlash(rel))
+	return rel, filepath.Clean(abs), true
+}
+
+func readGitNumstatForPath(ctx context.Context, repo, relPath string, cached bool) (fileDiffStat, bool) {
+	args := []string{"-C", repo, "diff"}
+	if cached {
+		args = append(args, "--cached")
+	}
+	args = append(args, "--numstat", "--", relPath)
+
+	cmd := exec.CommandContext(ctx, "git", args...)
+	out, err := cmd.Output()
+	if err != nil {
+		return fileDiffStat{}, false
+	}
+
+	targetRel := filepath.ToSlash(strings.TrimSpace(relPath))
+	for _, rawLine := range strings.Split(string(out), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		fields := strings.SplitN(line, "\t", 3)
+		if len(fields) != 3 {
+			continue
+		}
+		diffPath := filepath.ToSlash(strings.TrimSpace(fields[2]))
+		if diffPath != targetRel {
+			continue
+		}
+		stat := fileDiffStat{
+			Additions: parseNumstatValue(fields[0]),
+			Deletions: parseNumstatValue(fields[1]),
+		}
+		return stat, true
+	}
+	return fileDiffStat{}, false
+}
+
+func isUntrackedPath(ctx context.Context, repo, relPath string) bool {
+	cmd := exec.CommandContext(ctx, "git", "-C", repo, "ls-files", "--others", "--exclude-standard", "--", relPath)
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	for _, rawLine := range strings.Split(string(out), "\n") {
+		if filepath.ToSlash(strings.TrimSpace(rawLine)) == filepath.ToSlash(strings.TrimSpace(relPath)) {
+			return true
+		}
+	}
+	return false
+}
+
+func readNoIndexDiffStat(ctx context.Context, absPath string) (fileDiffStat, bool) {
+	cmd := exec.CommandContext(ctx, "git", "diff", "--numstat", "--no-index", "/dev/null", absPath)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if _, isExitErr := err.(*exec.ExitError); !isExitErr {
+			return fileDiffStat{}, false
+		}
+	}
+
+	for _, rawLine := range strings.Split(string(out), "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" || !strings.Contains(line, "\t") {
+			continue
+		}
+		fields := strings.SplitN(line, "\t", 3)
+		if len(fields) != 3 {
+			continue
+		}
+		return fileDiffStat{
+			Additions: parseNumstatValue(fields[0]),
+			Deletions: parseNumstatValue(fields[1]),
+		}, true
+	}
+	return fileDiffStat{}, false
 }
 
 func collectFileChangePaths(item map[string]any) []string {
