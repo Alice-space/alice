@@ -144,6 +144,7 @@ Optional:
 - For each chat (`chat_id`, fallback `open_id`), the connector always reuses one Codex thread.
 - If a chat stays idle for `idle_summary_hours` (default 8), a background task asynchronously resumes that thread and appends an "idle summary" to `daily/YYYY-MM-DD.md` once per idle period.
 - The message path does not wait for idle-summary writes; new messages are handled immediately.
+- In reply flow, the bot prefers topic replies (`reply_in_thread=true`) for ack/progress/final messages; if Feishu rejects topic mode, it falls back to normal replies.
 - The bot immediately replies to the source message with `收到！`.
 - During Codex execution, each streamed `agent_message` (Markdown content) is sent as a rich-text (`post`) reply to the same source message.
 - During Codex execution, each streamed `file_change` event is sent as a rich-text (`post`) reply, for example: `internal/x.go已更改，+23-34`.

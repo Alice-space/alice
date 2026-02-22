@@ -59,58 +59,73 @@ func (s *LarkSender) SendText(ctx context.Context, receiveIDType, receiveID, tex
 }
 
 func (s *LarkSender) ReplyText(ctx context.Context, sourceMessageID, text string) (string, error) {
-	req := larkim.NewReplyMessageReqBuilder().
-		MessageId(sourceMessageID).
-		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType("text").
-			Content(textMessageContent(text)).
-			ReplyInThread(false).
-			Build()).
-		Build()
-
-	resp, err := s.client.Im.V1.Message.Reply(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	if !resp.Success() {
-		return "", fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
-	}
-	if resp.Data == nil || resp.Data.MessageId == nil {
-		return "", errors.New("reply success but response message_id is empty")
-	}
-	return strings.TrimSpace(*resp.Data.MessageId), nil
+	return s.replyMessagePreferThread(
+		ctx,
+		sourceMessageID,
+		"text",
+		textMessageContent(text),
+		"reply success but response message_id is empty",
+	)
 }
 
 func (s *LarkSender) ReplyRichText(ctx context.Context, sourceMessageID string, lines []string) (string, error) {
-	req := larkim.NewReplyMessageReqBuilder().
-		MessageId(sourceMessageID).
-		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType("post").
-			Content(richTextMessageContent(lines)).
-			ReplyInThread(false).
-			Build()).
-		Build()
-
-	resp, err := s.client.Im.V1.Message.Reply(ctx, req)
-	if err != nil {
-		return "", err
-	}
-	if !resp.Success() {
-		return "", fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
-	}
-	if resp.Data == nil || resp.Data.MessageId == nil {
-		return "", errors.New("reply rich text success but response message_id is empty")
-	}
-	return strings.TrimSpace(*resp.Data.MessageId), nil
+	return s.replyMessagePreferThread(
+		ctx,
+		sourceMessageID,
+		"post",
+		richTextMessageContent(lines),
+		"reply rich text success but response message_id is empty",
+	)
 }
 
 func (s *LarkSender) ReplyRichTextMarkdown(ctx context.Context, sourceMessageID, markdown string) (string, error) {
+	return s.replyMessagePreferThread(
+		ctx,
+		sourceMessageID,
+		"post",
+		richTextMarkdownMessageContent(markdown),
+		"reply markdown rich text success but response message_id is empty",
+	)
+}
+
+func (s *LarkSender) ReplyCard(ctx context.Context, sourceMessageID, cardContent string) (string, error) {
+	return s.replyMessagePreferThread(
+		ctx,
+		sourceMessageID,
+		"interactive",
+		cardContent,
+		"reply card success but response message_id is empty",
+	)
+}
+
+func (s *LarkSender) replyMessagePreferThread(
+	ctx context.Context,
+	sourceMessageID, msgType, content, emptyMessageIDErr string,
+) (string, error) {
+	messageID, err := s.replyMessage(ctx, sourceMessageID, msgType, content, true, emptyMessageIDErr)
+	if err == nil {
+		return messageID, nil
+	}
+
+	var apiErr *feishuAPIError
+	if !errors.As(err, &apiErr) {
+		return "", err
+	}
+	return s.replyMessage(ctx, sourceMessageID, msgType, content, false, emptyMessageIDErr)
+}
+
+func (s *LarkSender) replyMessage(
+	ctx context.Context,
+	sourceMessageID, msgType, content string,
+	replyInThread bool,
+	emptyMessageIDErr string,
+) (string, error) {
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(sourceMessageID).
 		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType("post").
-			Content(richTextMarkdownMessageContent(markdown)).
-			ReplyInThread(false).
+			MsgType(msgType).
+			Content(content).
+			ReplyInThread(replyInThread).
 			Build()).
 		Build()
 
@@ -119,35 +134,29 @@ func (s *LarkSender) ReplyRichTextMarkdown(ctx context.Context, sourceMessageID,
 		return "", err
 	}
 	if !resp.Success() {
-		return "", fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
+		return "", &feishuAPIError{
+			Code:      resp.Code,
+			Msg:       resp.Msg,
+			RequestID: resp.RequestId(),
+		}
 	}
 	if resp.Data == nil || resp.Data.MessageId == nil {
-		return "", errors.New("reply markdown rich text success but response message_id is empty")
+		return "", errors.New(emptyMessageIDErr)
 	}
 	return strings.TrimSpace(*resp.Data.MessageId), nil
 }
 
-func (s *LarkSender) ReplyCard(ctx context.Context, sourceMessageID, cardContent string) (string, error) {
-	req := larkim.NewReplyMessageReqBuilder().
-		MessageId(sourceMessageID).
-		Body(larkim.NewReplyMessageReqBodyBuilder().
-			MsgType("interactive").
-			Content(cardContent).
-			ReplyInThread(false).
-			Build()).
-		Build()
+type feishuAPIError struct {
+	Code      int
+	Msg       string
+	RequestID string
+}
 
-	resp, err := s.client.Im.V1.Message.Reply(ctx, req)
-	if err != nil {
-		return "", err
+func (e *feishuAPIError) Error() string {
+	if e == nil {
+		return "feishu api error"
 	}
-	if !resp.Success() {
-		return "", fmt.Errorf("feishu api error code=%d msg=%s request_id=%s", resp.Code, resp.Msg, resp.RequestId())
-	}
-	if resp.Data == nil || resp.Data.MessageId == nil {
-		return "", errors.New("reply card success but response message_id is empty")
-	}
-	return strings.TrimSpace(*resp.Data.MessageId), nil
+	return fmt.Sprintf("feishu api error code=%d msg=%s request_id=%s", e.Code, e.Msg, e.RequestID)
 }
 
 func (s *LarkSender) PatchCard(ctx context.Context, messageID, cardContent string) error {
