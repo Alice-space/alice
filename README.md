@@ -138,8 +138,8 @@ Optional:
 - Downloaded incoming resources are stored under `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`.
 - On first startup, the connector auto-creates `memory_dir` and its `daily/` subdirectory.
 - The connector also persists per-chat session state in `memory_dir/session_state.json` to keep thread continuity across restarts.
-- The connector persists queued/in-progress jobs in `memory_dir/runtime_state.json`; after restart it resumes replying jobs that were unfinished or not replied.
-- If a job text clearly indicates "self-update + restart", and shutdown happens while handling it, that job is treated as completed to avoid self-update loops after restart.
+- The connector persists queued jobs in `memory_dir/runtime_state.json`; after restart it resumes queued jobs that were not started yet.
+- If shutdown/restart happens while a job is being processed, that in-progress job is discarded and will not be resumed after restart.
 - Before each Codex call, only long-term memory is injected; date-based memory is exposed as a directory path for Codex to search on demand.
 - Session reuse is now thread-aware:
   - Messages in the same Feishu thread/topic (`thread_id`, fallback `root_id`) reuse one Codex thread.

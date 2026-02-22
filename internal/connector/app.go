@@ -175,6 +175,15 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 		case <-ctx.Done():
 			return
 		case job := <-a.queue:
+			if ctx.Err() != nil {
+				log.Printf(
+					"worker stopping with queued job preserved event_id=%s session=%s version=%d",
+					job.EventID,
+					job.SessionKey,
+					job.SessionVersion,
+				)
+				return
+			}
 			sessionKey := normalizeJobSessionKey(job)
 			if sessionKey == "" {
 				log.Printf("drop invalid job event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
@@ -190,24 +199,23 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 			case JobProcessCompleted:
 				a.completePendingJob(job)
 			case JobProcessPostRestartFinalize:
-				a.updatePendingJobWorkflowPhase(job, jobWorkflowPhasePostRestartFinalize)
-				if err := a.FlushRuntimeState(); err != nil {
-					log.Printf("flush runtime state failed after post restart phase update: %v", err)
-				}
 				log.Printf(
-					"job state updated event_id=%s session=%s version=%d state=%s",
+					"job interrupted, drop in-progress event_id=%s session=%s version=%d state=%s",
 					job.EventID,
 					job.SessionKey,
 					job.SessionVersion,
 					JobProcessPostRestartFinalize,
 				)
+				a.completePendingJob(job)
 			case JobProcessRetryAfterRestart:
 				log.Printf(
-					"job interrupted, keep pending for resume event_id=%s session=%s version=%d",
+					"job interrupted, drop in-progress event_id=%s session=%s version=%d state=%s",
 					job.EventID,
 					job.SessionKey,
 					job.SessionVersion,
+					JobProcessRetryAfterRestart,
 				)
+				a.completePendingJob(job)
 			default:
 				log.Printf(
 					"job state unknown, keep pending event_id=%s session=%s version=%d state=%s",

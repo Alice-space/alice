@@ -2,9 +2,6 @@ package connector
 
 import (
 	"context"
-	"encoding/json"
-	"os"
-	"strings"
 	"testing"
 	"time"
 
@@ -258,7 +255,7 @@ func TestApp_RuntimeStateRestoreKeepsPendingQueueOrderWithinSession(t *testing.T
 	}
 }
 
-func TestApp_InterruptedJobKeepsPendingForRestart(t *testing.T) {
+func TestApp_InterruptedJobDroppedOnRestart(t *testing.T) {
 	cfg := configForTest()
 	statePath := t.TempDir() + "/runtime_state.json"
 	blockingCodex := newBlockingResumableCodexStub()
@@ -298,8 +295,73 @@ func TestApp_InterruptedJobKeepsPendingForRestart(t *testing.T) {
 		app.mu.Lock()
 		defer app.mu.Unlock()
 		_, ok := app.pending[pendingJobKey(*job)]
-		return ok
-	}, "interrupted job should remain pending")
+		return !ok
+	}, "interrupted in-progress job should be dropped")
+
+	if err := app.FlushRuntimeState(); err != nil {
+		t.Fatalf("flush runtime state failed: %v", err)
+	}
+
+	restored := NewApp(cfg, nil)
+	if err := restored.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load persisted runtime state failed: %v", err)
+	}
+	if got := len(restored.queue); got != 0 {
+		t.Fatalf("expected no restored queue job for interrupted task, got %d", got)
+	}
+}
+
+func TestApp_RestartDropsInProgressJobButKeepsQueuedJobs(t *testing.T) {
+	cfg := configForTest()
+	statePath := t.TempDir() + "/runtime_state.json"
+	blockingCodex := newBlockingResumableCodexStub()
+	sender := &senderStub{}
+	processor := NewProcessor(
+		blockingCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+	app := NewApp(cfg, processor)
+	if err := app.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load runtime state failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go app.workerLoop(ctx, 0)
+
+	inProgress := &Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		EventID:       "evt_in_progress_drop",
+		Text:          "first",
+	}
+	queued := &Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		EventID:       "evt_queued_keep",
+		Text:          "second",
+	}
+	if queuedOK, _, _ := app.enqueueJob(inProgress); !queuedOK {
+		t.Fatal("expected in-progress job to be queued")
+	}
+	if queuedOK, _, _ := app.enqueueJob(queued); !queuedOK {
+		t.Fatal("expected queued job to be queued")
+	}
+
+	waitForCondition(t, 2*time.Second, func() bool {
+		return blockingCodex.CallCount() == 1
+	}, "expected first codex call to start")
+
+	cancel()
+	waitForCondition(t, 2*time.Second, func() bool {
+		app.mu.Lock()
+		defer app.mu.Unlock()
+		_, firstExists := app.pending[pendingJobKey(*inProgress)]
+		_, secondExists := app.pending[pendingJobKey(*queued)]
+		return !firstExists && secondExists
+	}, "expected in-progress dropped but queued job kept pending")
 
 	if err := app.FlushRuntimeState(); err != nil {
 		t.Fatalf("flush runtime state failed: %v", err)
@@ -310,10 +372,10 @@ func TestApp_InterruptedJobKeepsPendingForRestart(t *testing.T) {
 		t.Fatalf("load persisted runtime state failed: %v", err)
 	}
 	if got := len(restored.queue); got != 1 {
-		t.Fatalf("expected interrupted job to be restored, got queue len %d", got)
+		t.Fatalf("expected one restored queued job, got queue len %d", got)
 	}
 	recovered := <-restored.queue
-	if recovered.EventID != "evt_interrupt" {
+	if recovered.EventID != queued.EventID {
 		t.Fatalf("unexpected recovered event id: %s", recovered.EventID)
 	}
 }
@@ -375,7 +437,7 @@ func TestApp_RuntimeStatePersistAndRestoreMediaWindow(t *testing.T) {
 	}
 }
 
-func TestApp_SelfUpdateInterruptedJobFinalizesAfterRestart(t *testing.T) {
+func TestApp_SelfUpdateInterruptedJobDroppedOnRestart(t *testing.T) {
 	cfg := configForTest()
 	statePath := t.TempDir() + "/runtime_state.json"
 	blockingCodex := newBlockingResumableCodexStub()
@@ -415,101 +477,19 @@ func TestApp_SelfUpdateInterruptedJobFinalizesAfterRestart(t *testing.T) {
 	waitForCondition(t, 2*time.Second, func() bool {
 		app.mu.Lock()
 		defer app.mu.Unlock()
-		pending, ok := app.pending[pendingJobKey(*job)]
-		if !ok {
-			return false
-		}
-		return pending.WorkflowPhase == jobWorkflowPhasePostRestartFinalize
-	}, "self-update command should enter post restart finalize phase after shutdown cancellation")
+		_, ok := app.pending[pendingJobKey(*job)]
+		return !ok
+	}, "self-update in-progress job should be dropped after shutdown cancellation")
 
 	if err := app.FlushRuntimeState(); err != nil {
 		t.Fatalf("flush runtime state failed: %v", err)
 	}
 
-	finalizeSender := &senderStub{}
-	finalizeCodex := newBlockingResumableCodexStub()
-	finalizeProcessor := NewProcessor(
-		finalizeCodex,
-		finalizeSender,
-		"Codex 暂时不可用，请稍后重试。",
-		"正在思考中...",
-	)
-	restored := NewApp(cfg, finalizeProcessor)
+	restored := NewApp(cfg, nil)
 	if err := restored.LoadRuntimeState(statePath); err != nil {
 		t.Fatalf("load persisted runtime state failed: %v", err)
 	}
-	if got := len(restored.queue); got != 1 {
-		t.Fatalf("expected one restored finalize job, got queue len %d", got)
+	if got := len(restored.queue); got != 0 {
+		t.Fatalf("expected no restored queue job for interrupted self-update task, got %d", got)
 	}
-
-	ctx2, cancel2 := context.WithCancel(context.Background())
-	defer cancel2()
-	go restored.workerLoop(ctx2, 0)
-
-	waitForCondition(t, 2*time.Second, func() bool {
-		restored.mu.Lock()
-		defer restored.mu.Unlock()
-		return len(restored.pending) == 0
-	}, "post restart finalize job should be completed")
-	if finalizeCodex.CallCount() != 0 {
-		t.Fatalf("post restart finalize should not call codex, got %d calls", finalizeCodex.CallCount())
-	}
-	if len(finalizeSender.replyTexts) != 1 {
-		t.Fatalf("expected one finalize reply, got %d", len(finalizeSender.replyTexts))
-	}
-	if !strings.Contains(finalizeSender.replyTexts[0], "重启操作已完成") {
-		t.Fatalf("unexpected finalize reply: %q", finalizeSender.replyTexts[0])
-	}
-}
-
-func TestApp_SelfUpdateInterruptedJobPersistsFinalizePhaseImmediately(t *testing.T) {
-	cfg := configForTest()
-	statePath := t.TempDir() + "/runtime_state.json"
-	blockingCodex := newBlockingResumableCodexStub()
-	sender := &senderStub{}
-	processor := NewProcessor(
-		blockingCodex,
-		sender,
-		"Codex 暂时不可用，请稍后重试。",
-		"正在思考中...",
-	)
-	app := NewApp(cfg, processor)
-	if err := app.LoadRuntimeState(statePath); err != nil {
-		t.Fatalf("load runtime state failed: %v", err)
-	}
-
-	ctx, cancel := context.WithCancel(context.Background())
-	go app.workerLoop(ctx, 0)
-
-	job := &Job{
-		ReceiveID:       "oc_chat",
-		ReceiveIDType:   "chat_id",
-		SourceMessageID: "om_self_update_persist",
-		EventID:         "evt_self_update_persist",
-		Text:            "请修改后重启你自己",
-	}
-	if queued, _, _ := app.enqueueJob(job); !queued {
-		t.Fatal("expected job to be queued")
-	}
-
-	waitForCondition(t, 2*time.Second, func() bool {
-		return blockingCodex.CallCount() == 1
-	}, "expected codex call to start")
-
-	cancel()
-
-	waitForCondition(t, 2*time.Second, func() bool {
-		data, err := os.ReadFile(statePath)
-		if err != nil {
-			return false
-		}
-		var snapshot runtimeStateSnapshot
-		if err := json.Unmarshal(data, &snapshot); err != nil {
-			return false
-		}
-		if len(snapshot.Pending) != 1 {
-			return false
-		}
-		return normalizeJobWorkflowPhase(snapshot.Pending[0].WorkflowPhase) == jobWorkflowPhasePostRestartFinalize
-	}, "post restart finalize phase should be flushed immediately")
 }
