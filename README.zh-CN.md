@@ -137,6 +137,8 @@ log_level: "info"
 - 支持接收消息类型：`text`、`image`、`sticker`、`audio`、`file`。
 - 群聊/话题群中，仅处理艾特机器人的消息。
   - 若 `feishu_bot_open_id` 与 `feishu_bot_user_id` 都为空，则群聊/话题群消息全部忽略。
+- 群聊/话题群中的多媒体消息（`image`/`sticker`/`audio`/`file`）即使未艾特，也会按“同群同人”维护 5 分钟滑动窗口缓存。
+- 当同一用户后续在该群艾特机器人触发时，会把其过去 5 分钟缓存的多媒体并入本次上下文。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
 - 默认启用记忆模块，文件写入 `memory_dir`：长期记忆 `MEMORY.md`，分日期记忆在 `daily/YYYY-MM-DD.md`。
 - 下载的消息资源会落盘到 `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`。

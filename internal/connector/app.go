@@ -19,22 +19,26 @@ import (
 )
 
 type App struct {
-	cfg       config.Config
-	queue     chan Job
-	processor *Processor
-	mu        sync.Mutex
-	latest    map[string]uint64
-	active    map[string]activeSession
-	pending   map[string]Job
+	cfg         config.Config
+	queue       chan Job
+	processor   *Processor
+	mu          sync.Mutex
+	latest      map[string]uint64
+	active      map[string]activeSession
+	pending     map[string]Job
+	mediaWindow map[string][]mediaWindowEntry
 
 	runtimeStatePath           string
 	runtimeStateVersion        uint64
 	runtimeStateFlushedVersion uint64
+	now                        func() time.Time
 }
 
 const (
 	idleSummaryScanInterval   = 60 * time.Second
 	sessionStateFlushInterval = 1 * time.Second
+	groupMediaWindowTTL       = 5 * time.Minute
+	maxMediaWindowEntries     = 20
 )
 
 type activeSession struct {
@@ -45,12 +49,14 @@ type activeSession struct {
 
 func NewApp(cfg config.Config, processor *Processor) *App {
 	return &App{
-		cfg:       cfg,
-		queue:     make(chan Job, cfg.QueueCapacity),
-		processor: processor,
-		latest:    make(map[string]uint64),
-		active:    make(map[string]activeSession),
-		pending:   make(map[string]Job),
+		cfg:         cfg,
+		queue:       make(chan Job, cfg.QueueCapacity),
+		processor:   processor,
+		latest:      make(map[string]uint64),
+		active:      make(map[string]activeSession),
+		pending:     make(map[string]Job),
+		mediaWindow: make(map[string][]mediaWindowEntry),
+		now:         time.Now,
 	}
 }
 
@@ -188,7 +194,9 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 
 func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	logIncomingEventDebug(event)
-	if !shouldProcessIncomingMessage(event, a.cfg.FeishuBotOpenID, a.cfg.FeishuBotUserID) {
+	accepted := shouldProcessIncomingMessage(event, a.cfg.FeishuBotOpenID, a.cfg.FeishuBotUserID)
+	a.cacheGroupMediaWindow(event)
+	if !accepted {
 		logging.Debugf(
 			"incoming message ignored source=feishu_im event_id=%s reason=group_without_bot_mention chat_type=%s",
 			eventID(event),
@@ -200,6 +208,14 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 	job, err := BuildJob(event)
 	if err != nil {
 		if errors.Is(err, ErrIgnoreMessage) {
+			if syntheticJob, ok := a.buildSyntheticMentionJob(event); ok {
+				job = syntheticJob
+				err = nil
+			}
+		}
+	}
+	if err != nil {
+		if errors.Is(err, ErrIgnoreMessage) {
 			logging.Debugf("incoming message ignored source=feishu_im event_id=%s", eventID(event))
 			return nil
 		}
@@ -207,6 +223,7 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 		logging.Debugf("incoming message rejected source=feishu_im event_id=%s err=%v", eventID(event), err)
 		return nil
 	}
+	a.mergeRecentGroupMediaWindow(job)
 
 	queued, cancelActive, canceledEventID := a.enqueueJob(job)
 	if !queued {

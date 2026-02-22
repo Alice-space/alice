@@ -44,6 +44,9 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 	return &Job{
 		ReceiveID:            receiveID,
 		ReceiveIDType:        receiveIDType,
+		ChatType:             strings.TrimSpace(deref(message.ChatType)),
+		SenderOpenID:         strings.TrimSpace(extractOpenID(event)),
+		SenderUserID:         strings.TrimSpace(extractUserID(event)),
 		SourceMessageID:      strings.TrimSpace(deref(message.MessageId)),
 		ReplyParentMessageID: extractReplyParentMessageID(message),
 		MessageType:          messageType,
@@ -59,6 +62,15 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 func isSupportedIncomingMessageType(messageType string) bool {
 	switch strings.ToLower(strings.TrimSpace(messageType)) {
 	case "text", "image", "sticker", "audio", "file":
+		return true
+	default:
+		return false
+	}
+}
+
+func isMediaMessageType(messageType string) bool {
+	switch strings.ToLower(strings.TrimSpace(messageType)) {
+	case "image", "sticker", "audio", "file":
 		return true
 	default:
 		return false
@@ -354,6 +366,13 @@ func extractOpenID(event *larkim.P2MessageReceiveV1) string {
 		return ""
 	}
 	return deref(event.Event.Sender.SenderId.OpenId)
+}
+
+func extractUserID(event *larkim.P2MessageReceiveV1) string {
+	if event == nil || event.Event == nil || event.Event.Sender == nil || event.Event.Sender.SenderId == nil {
+		return ""
+	}
+	return deref(event.Event.Sender.SenderId.UserId)
 }
 
 func extractReplyParentMessageID(message *larkim.EventMessage) string {

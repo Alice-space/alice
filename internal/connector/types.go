@@ -68,6 +68,9 @@ type Attachment struct {
 type Job struct {
 	ReceiveID            string
 	ReceiveIDType        string
+	ChatType             string
+	SenderOpenID         string
+	SenderUserID         string
 	SourceMessageID      string
 	ReplyParentMessageID string
 	MessageType          string

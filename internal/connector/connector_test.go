@@ -338,6 +338,187 @@ func TestApp_OnMessageReceive_GroupMentionWithoutBotIDConfigNotQueued(t *testing
 	}
 }
 
+func TestApp_OnMessageReceive_GroupMediaWithoutMentionCachedNotQueued(t *testing.T) {
+	cfg := configForTest()
+	cfg.FeishuBotOpenID = "ou_bot"
+	app := NewApp(cfg, nil)
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_media_no_mention"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Sender: &larkim.EventSender{
+				SenderId: &larkim.UserId{
+					OpenId: strPtr("ou_user_1"),
+				},
+			},
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_media"),
+				MessageType: strPtr("image"),
+				Content:     strPtr(`{"image_key":"img_123"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), event); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected queue len 0, got %d", got)
+	}
+
+	windowKey := buildMediaWindowKey("oc_chat", "open_id:ou_user_1")
+	app.mu.Lock()
+	entries := app.mediaWindow[windowKey]
+	app.mu.Unlock()
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 cached media entry, got %d", len(entries))
+	}
+	if entries[0].SourceMessageID != "om_media" {
+		t.Fatalf("unexpected cached source message id: %s", entries[0].SourceMessageID)
+	}
+}
+
+func TestApp_OnMessageReceive_GroupMentionMergesRecentMediaWindow(t *testing.T) {
+	cfg := configForTest()
+	cfg.FeishuBotOpenID = "ou_bot"
+	app := NewApp(cfg, nil)
+
+	mediaEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_media"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Sender: &larkim.EventSender{
+				SenderId: &larkim.UserId{
+					OpenId: strPtr("ou_user_1"),
+				},
+			},
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_media"),
+				MessageType: strPtr("image"),
+				Content:     strPtr(`{"image_key":"img_123"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+	if err := app.onMessageReceive(context.Background(), mediaEvent); err != nil {
+		t.Fatalf("unexpected media event error: %v", err)
+	}
+
+	mentionEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_mention"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Sender: &larkim.EventSender{
+				SenderId: &larkim.UserId{
+					OpenId: strPtr("ou_user_1"),
+				},
+			},
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_mention"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> 帮我处理刚发的图片"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{
+							OpenId: strPtr("ou_bot"),
+						},
+					},
+				},
+			},
+		},
+	}
+	if err := app.onMessageReceive(context.Background(), mentionEvent); err != nil {
+		t.Fatalf("unexpected mention event error: %v", err)
+	}
+
+	if got := len(app.queue); got != 1 {
+		t.Fatalf("expected queue len 1, got %d", got)
+	}
+	job := <-app.queue
+	if len(job.Attachments) != 1 {
+		t.Fatalf("expected merged attachments count 1, got %d", len(job.Attachments))
+	}
+	if !strings.Contains(job.Text, "已自动合并你在过去5分钟发送的1条多媒体消息") {
+		t.Fatalf("expected merge hint in text, got: %q", job.Text)
+	}
+
+	windowKey := buildMediaWindowKey("oc_chat", "open_id:ou_user_1")
+	app.mu.Lock()
+	remaining := len(app.mediaWindow[windowKey])
+	app.mu.Unlock()
+	if remaining != 0 {
+		t.Fatalf("expected media window consumed after merge, remaining=%d", remaining)
+	}
+}
+
+func TestApp_OnMessageReceive_MentionOnlyBuildsSyntheticJobAndMergesMedia(t *testing.T) {
+	cfg := configForTest()
+	cfg.FeishuBotOpenID = "ou_bot"
+	app := NewApp(cfg, nil)
+
+	mediaEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_media_synth"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Sender: &larkim.EventSender{
+				SenderId: &larkim.UserId{
+					OpenId: strPtr("ou_user_1"),
+				},
+			},
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_media_synth"),
+				MessageType: strPtr("file"),
+				Content:     strPtr(`{"file_key":"file_123","file_name":"spec.txt"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+	if err := app.onMessageReceive(context.Background(), mediaEvent); err != nil {
+		t.Fatalf("unexpected media event error: %v", err)
+	}
+
+	mentionOnlyEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_mention_only"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Sender: &larkim.EventSender{
+				SenderId: &larkim.UserId{
+					OpenId: strPtr("ou_user_1"),
+				},
+			},
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_mention_only"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at>"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{
+							OpenId: strPtr("ou_bot"),
+						},
+					},
+				},
+			},
+		},
+	}
+	if err := app.onMessageReceive(context.Background(), mentionOnlyEvent); err != nil {
+		t.Fatalf("unexpected mention-only event error: %v", err)
+	}
+	if got := len(app.queue); got != 1 {
+		t.Fatalf("expected queue len 1, got %d", got)
+	}
+	job := <-app.queue
+	if len(job.Attachments) != 1 {
+		t.Fatalf("expected merged attachments count 1, got %d", len(job.Attachments))
+	}
+	if !strings.Contains(job.Text, "用户@了你，请结合其最近发送的多媒体继续处理。") {
+		t.Fatalf("expected synthetic mention hint in text, got: %q", job.Text)
+	}
+}
+
 func TestProcessor_ReplyMessageFlow_OnFailureSendsAckThenFallback(t *testing.T) {
 	fakeCodex := codexStub{err: errors.New("boom")}
 	sender := &senderStub{}
@@ -766,6 +947,63 @@ func TestApp_InterruptedJobKeepsPendingForRestart(t *testing.T) {
 	recovered := <-restored.queue
 	if recovered.EventID != "evt_interrupt" {
 		t.Fatalf("unexpected recovered event id: %s", recovered.EventID)
+	}
+}
+
+func TestApp_RuntimeStatePersistAndRestoreMediaWindow(t *testing.T) {
+	cfg := configForTest()
+	cfg.FeishuBotOpenID = "ou_bot"
+	statePath := t.TempDir() + "/runtime_state.json"
+	base := time.Date(2026, 2, 22, 10, 0, 0, 0, time.UTC)
+
+	app := NewApp(cfg, nil)
+	app.now = func() time.Time { return base }
+	if err := app.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load runtime state failed: %v", err)
+	}
+
+	mediaEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_media_state"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Sender: &larkim.EventSender{
+				SenderId: &larkim.UserId{
+					OpenId: strPtr("ou_user_1"),
+				},
+			},
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_media_state"),
+				MessageType: strPtr("image"),
+				Content:     strPtr(`{"image_key":"img_state"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+	if err := app.onMessageReceive(context.Background(), mediaEvent); err != nil {
+		t.Fatalf("unexpected media event error: %v", err)
+	}
+	windowKey := buildMediaWindowKey("oc_chat", "open_id:ou_user_1")
+	app.mu.Lock()
+	originalCount := len(app.mediaWindow[windowKey])
+	app.mu.Unlock()
+	if originalCount != 1 {
+		t.Fatalf("expected 1 cached entry before flush, got %d", originalCount)
+	}
+
+	if err := app.FlushRuntimeState(); err != nil {
+		t.Fatalf("flush runtime state failed: %v", err)
+	}
+
+	restored := NewApp(cfg, nil)
+	restored.now = func() time.Time { return base.Add(1 * time.Minute) }
+	if err := restored.LoadRuntimeState(statePath); err != nil {
+		t.Fatalf("load persisted runtime state failed: %v", err)
+	}
+	restored.mu.Lock()
+	restoredCount := len(restored.mediaWindow[windowKey])
+	restored.mu.Unlock()
+	if restoredCount != 1 {
+		t.Fatalf("expected 1 restored media entry, got %d", restoredCount)
 	}
 }
 

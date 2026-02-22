@@ -131,6 +131,8 @@ Optional:
 - Supported incoming message types: `text`, `image`, `sticker`, `audio`, `file`.
 - In group/topic-group chats, only messages that mention the bot are processed.
   - If both `feishu_bot_open_id` and `feishu_bot_user_id` are empty, group/topic-group messages are ignored.
+- For group/topic-group multimedia (`image`/`sticker`/`audio`/`file`) without mention, the connector caches a per-user 5-minute sliding window.
+- When the same user later sends an `@bot` trigger message in that group, cached multimedia from the previous 5 minutes is merged into that request context.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
 - Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
 - Downloaded incoming resources are stored under `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`.
