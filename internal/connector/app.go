@@ -24,9 +24,9 @@ type App struct {
 	processor   *Processor
 	mu          sync.Mutex
 	latest      map[string]uint64
-	active      map[string]activeSession
 	pending     map[string]Job
 	mediaWindow map[string][]mediaWindowEntry
+	sessionMu   map[string]*sync.Mutex
 
 	runtimeStatePath           string
 	runtimeStateVersion        uint64
@@ -41,21 +41,15 @@ const (
 	maxMediaWindowEntries     = 20
 )
 
-type activeSession struct {
-	version uint64
-	cancel  context.CancelFunc
-	eventID string
-}
-
 func NewApp(cfg config.Config, processor *Processor) *App {
 	return &App{
 		cfg:         cfg,
 		queue:       make(chan Job, cfg.QueueCapacity),
 		processor:   processor,
 		latest:      make(map[string]uint64),
-		active:      make(map[string]activeSession),
 		pending:     make(map[string]Job),
 		mediaWindow: make(map[string][]mediaWindowEntry),
+		sessionMu:   make(map[string]*sync.Mutex),
 		now:         time.Now,
 	}
 }
@@ -161,23 +155,17 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 		case <-ctx.Done():
 			return
 		case job := <-a.queue:
-			if !a.shouldProcessJob(job) {
-				log.Printf("drop stale job event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
+			sessionKey := normalizeJobSessionKey(job)
+			if sessionKey == "" {
+				log.Printf("drop invalid job event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
 				a.completePendingJob(job)
 				continue
 			}
 
-			jobCtx, cancel := context.WithCancel(ctx)
-			if !a.markSessionActive(job, cancel) {
-				cancel()
-				log.Printf("skip stale job before run event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
-				a.completePendingJob(job)
-				continue
-			}
-
-			completed := a.processor.ProcessJob(jobCtx, job)
-			cancel()
-			a.clearSessionActive(job)
+			sessionMu := a.sessionMutex(sessionKey)
+			sessionMu.Lock()
+			completed := a.processor.ProcessJob(ctx, job)
+			sessionMu.Unlock()
 			if completed {
 				a.completePendingJob(job)
 			} else {
@@ -225,14 +213,10 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 	}
 	a.mergeRecentGroupMediaWindow(job)
 
-	queued, cancelActive, canceledEventID := a.enqueueJob(job)
+	queued, _, _ := a.enqueueJob(job)
 	if !queued {
 		log.Printf("queue full, drop event_id=%s", job.EventID)
 		return nil
-	}
-	if cancelActive != nil {
-		cancelActive()
-		log.Printf("steer active job canceled old_event_id=%s new_event_id=%s session=%s", canceledEventID, job.EventID, job.SessionKey)
 	}
 	log.Printf(
 		"job queued event_id=%s receive_id_type=%s session=%s version=%d",
@@ -273,72 +257,34 @@ func (a *App) enqueueJob(job *Job) (queued bool, cancelActive context.CancelFunc
 	case a.queue <- *job:
 		a.latest[job.SessionKey] = nextVersion
 		a.rememberPendingJobLocked(*job)
-		a.removeOlderPendingJobsLocked(job.SessionKey, nextVersion)
-		if active, ok := a.active[job.SessionKey]; ok {
-			cancelActive = active.cancel
-			canceledEventID = active.eventID
-			a.removePendingBySessionVersionLocked(job.SessionKey, active.version)
-		}
 		return true, cancelActive, canceledEventID
 	default:
 		return false, nil, ""
 	}
 }
 
-func (a *App) shouldProcessJob(job Job) bool {
+func normalizeJobSessionKey(job Job) string {
 	sessionKey := strings.TrimSpace(job.SessionKey)
-	if sessionKey == "" {
-		sessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	if sessionKey != "" {
+		return sessionKey
 	}
-	if sessionKey == "" || job.SessionVersion == 0 {
-		return false
-	}
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.latest[sessionKey] == job.SessionVersion
+	return buildSessionKey(job.ReceiveIDType, job.ReceiveID)
 }
 
-func (a *App) markSessionActive(job Job, cancel context.CancelFunc) bool {
-	sessionKey := strings.TrimSpace(job.SessionKey)
+func (a *App) sessionMutex(sessionKey string) *sync.Mutex {
+	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {
-		sessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
-	}
-	if sessionKey == "" || job.SessionVersion == 0 {
-		return false
+		return nil
 	}
 
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if a.latest[sessionKey] != job.SessionVersion {
-		return false
+	if mu, ok := a.sessionMu[sessionKey]; ok && mu != nil {
+		return mu
 	}
-	a.active[sessionKey] = activeSession{
-		version: job.SessionVersion,
-		cancel:  cancel,
-		eventID: job.EventID,
-	}
-	return true
-}
-
-func (a *App) clearSessionActive(job Job) {
-	sessionKey := strings.TrimSpace(job.SessionKey)
-	if sessionKey == "" {
-		sessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
-	}
-	if sessionKey == "" {
-		return
-	}
-
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	active, ok := a.active[sessionKey]
-	if !ok {
-		return
-	}
-	if active.version == job.SessionVersion {
-		delete(a.active, sessionKey)
-	}
+	mu := &sync.Mutex{}
+	a.sessionMu[sessionKey] = mu
+	return mu
 }
 
 func parseLogLevel(level string) larkcore.LogLevel {

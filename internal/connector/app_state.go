@@ -65,14 +65,6 @@ func (a *App) LoadRuntimeState(path string) error {
 		pendingByKey[pendingJobKey(job)] = job
 	}
 
-	finalPending := make(map[string]Job, len(pendingByKey))
-	for key, job := range pendingByKey {
-		if loadedLatest[job.SessionKey] != job.SessionVersion {
-			continue
-		}
-		finalPending[key] = job
-	}
-
 	now := a.now()
 	loadedMediaWindow := make(map[string][]mediaWindowEntry, len(snapshot.MediaWindow))
 	for rawKey, rawEntries := range snapshot.MediaWindow {
@@ -103,15 +95,15 @@ func (a *App) LoadRuntimeState(path string) error {
 		loadedMediaWindow[windowKey] = entries
 	}
 
-	restoredJobs := make([]Job, 0, len(finalPending))
-	for _, job := range finalPending {
+	restoredJobs := make([]Job, 0, len(pendingByKey))
+	for _, job := range pendingByKey {
 		restoredJobs = append(restoredJobs, job)
 	}
 	sortPendingJobs(restoredJobs)
 
 	a.mu.Lock()
 	a.latest = loadedLatest
-	a.pending = finalPending
+	a.pending = pendingByKey
 	a.mediaWindow = loadedMediaWindow
 	a.runtimeStateVersion = 0
 	a.runtimeStateFlushedVersion = 0
@@ -133,7 +125,7 @@ func (a *App) LoadRuntimeState(path string) error {
 		"runtime state loaded file=%s latest=%d pending=%d media_windows=%d restored=%d dropped=%d",
 		path,
 		len(loadedLatest),
-		len(finalPending),
+		len(pendingByKey),
 		len(loadedMediaWindow),
 		restoredCount,
 		droppedCount,
