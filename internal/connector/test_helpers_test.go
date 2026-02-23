@@ -357,12 +357,13 @@ func (s *senderStub) ReplyRichTextMarkdown(_ context.Context, sourceMessageID, m
 	return "om_reply_rich_markdown", nil
 }
 
-func (s *senderStub) ReplyCard(_ context.Context, _ string, cardContent string) (string, error) {
+func (s *senderStub) ReplyCard(_ context.Context, sourceMessageID string, cardContent string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.replyCardCalls++
 	s.lastReplyCard = cardContent
 	s.replyCards = append(s.replyCards, cardContent)
+	s.replyTargets = append(s.replyTargets, sourceMessageID)
 	if s.replyCardErr != nil {
 		return "", s.replyCardErr
 	}

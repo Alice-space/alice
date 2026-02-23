@@ -173,7 +173,16 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 			return
 		}
 		if isFileChange {
-			if sendErr := p.sendCardWithFallback(ctx, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
+			replyTarget := strings.TrimSpace(job.ReplyParentMessageID)
+			if replyTarget == "" {
+				replyTarget = strings.TrimSpace(job.SourceMessageID)
+			}
+			if replyTarget == "" {
+				if sendErr := p.sendCardWithFallback(ctx, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
+					log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
+					return
+				}
+			} else if _, sendErr := p.replyCardWithFallback(ctx, replyTarget, normalized); sendErr != nil {
 				log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
 				return
 			}
