@@ -7,6 +7,14 @@ import (
 	"testing"
 )
 
+func withMediaActionGuide(userText string) string {
+	trimmed := strings.TrimSpace(userText)
+	if trimmed == "" {
+		return mediaActionPromptGuide
+	}
+	return trimmed + "\n\n" + mediaActionPromptGuide
+}
+
 func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	fakeCodex := &codexCaptureStub{resp: "final answer"}
 	sender := &senderStub{}
@@ -26,7 +34,7 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 		Text:          "hello",
 	})
 
-	if memory.buildCalls != 1 || memory.lastBuildInput != "hello" {
+	if memory.buildCalls != 1 || memory.lastBuildInput != withMediaActionGuide("hello") {
 		t.Fatalf("unexpected memory build call: %+v", memory)
 	}
 	if fakeCodex.lastInput != "记忆上下文 + 用户消息" {
@@ -35,7 +43,7 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	if memory.saveCalls != 1 {
 		t.Fatalf("expected 1 memory save, got %d", memory.saveCalls)
 	}
-	if memory.lastSaveUser != "hello" {
+	if memory.lastSaveUser != withMediaActionGuide("hello") {
 		t.Fatalf("unexpected saved user text: %s", memory.lastSaveUser)
 	}
 	if memory.lastSaveReply != "final answer" {
@@ -220,7 +228,7 @@ func TestProcessor_ReplyParentContextFetchFailureFallsBackToUserText(t *testing.
 		Text:                 "继续",
 	})
 
-	if fakeCodex.lastInput != "继续" {
+	if fakeCodex.lastInput != withMediaActionGuide("继续") {
 		t.Fatalf("expected fallback to user text, got: %s", fakeCodex.lastInput)
 	}
 }
@@ -270,7 +278,7 @@ func TestProcessor_ResumesCodexThreadWithinSameSession(t *testing.T) {
 	if len(fakeCodex.receivedInputs) != 2 {
 		t.Fatalf("expected 2 codex inputs, got %d", len(fakeCodex.receivedInputs))
 	}
-	if fakeCodex.receivedInputs[1] != "C" {
+	if fakeCodex.receivedInputs[1] != withMediaActionGuide("C") {
 		t.Fatalf("second input should be direct follow-up text C, got %q", fakeCodex.receivedInputs[1])
 	}
 	if sender.getMessageTextCalls != 0 {
@@ -315,7 +323,7 @@ func TestProcessor_ResumeSkipsMemoryBuildPrompt(t *testing.T) {
 	if fakeCodex.receivedInputs[0] != "记忆上下文 + 用户消息" {
 		t.Fatalf("first call should use memory prompt, got %q", fakeCodex.receivedInputs[0])
 	}
-	if fakeCodex.receivedInputs[1] != "C" {
+	if fakeCodex.receivedInputs[1] != withMediaActionGuide("C") {
 		t.Fatalf("resume call should use raw user text, got %q", fakeCodex.receivedInputs[1])
 	}
 }

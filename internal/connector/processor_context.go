@@ -34,27 +34,6 @@ func splitMessageLines(message string) []string {
 	return lines
 }
 
-func shouldAppendMediaActionGuide(job Job) bool {
-	if len(job.Attachments) > 0 {
-		return true
-	}
-	text := strings.ToLower(strings.TrimSpace(job.Text))
-	if text == "" {
-		return false
-	}
-	keywords := []string{
-		"发图", "发图片", "发送图片",
-		"发文件", "发送文件", "附件",
-		"send image", "send file", "upload",
-	}
-	for _, keyword := range keywords {
-		if strings.Contains(text, keyword) {
-			return true
-		}
-	}
-	return false
-}
-
 func (p *Processor) runLLM(
 	ctx context.Context,
 	threadID string,
@@ -274,12 +253,10 @@ func (p *Processor) buildCurrentUserInput(job Job) string {
 		}
 	}
 
-	if shouldAppendMediaActionGuide(job) {
-		if builder.Len() > 0 {
-			builder.WriteString("\n\n")
-		}
-		builder.WriteString(mediaActionPromptGuide)
+	if builder.Len() > 0 {
+		builder.WriteString("\n\n")
 	}
+	builder.WriteString(mediaActionPromptGuide)
 	return strings.TrimSpace(builder.String())
 }
 
