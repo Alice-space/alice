@@ -97,7 +97,7 @@ func TestManagerBuildPrompt_LongTermMissingIsEmpty(t *testing.T) {
 	}
 }
 
-func TestManagerBuildPrompt_IncludesProjectGuideFiles(t *testing.T) {
+func TestManagerBuildPrompt_DoesNotIncludeProjectGuideFiles(t *testing.T) {
 	root := t.TempDir()
 	projectDir := filepath.Join(root, "project")
 	memoryDir := filepath.Join(projectDir, ".memory")
@@ -112,46 +112,22 @@ func TestManagerBuildPrompt_IncludesProjectGuideFiles(t *testing.T) {
 	}
 
 	mgr := NewManager(memoryDir)
-	mgr.SetProjectDir(projectDir)
 
 	prompt, err := mgr.BuildPrompt("hello")
 	if err != nil {
 		t.Fatalf("build prompt failed: %v", err)
 	}
-	if !strings.Contains(prompt, "项目级执行规范文件（自动检索）") {
-		t.Fatalf("prompt missing project guide section: %s", prompt)
+	if strings.Contains(prompt, "项目级执行规范文件（自动检索）") {
+		t.Fatalf("prompt should not include project guide section: %s", prompt)
 	}
-	if !strings.Contains(prompt, filepath.Join(projectDir, "AGENTS.md")) {
-		t.Fatalf("prompt missing AGENTS.md path: %s", prompt)
+	if strings.Contains(prompt, "AGENTS.md") {
+		t.Fatalf("prompt should not include AGENTS.md: %s", prompt)
 	}
-	if !strings.Contains(prompt, "规则A：先测后提。") {
-		t.Fatalf("prompt missing AGENTS.md content: %s", prompt)
+	if strings.Contains(prompt, "GEMINI.md") {
+		t.Fatalf("prompt should not include GEMINI.md: %s", prompt)
 	}
-	if !strings.Contains(prompt, filepath.Join(projectDir, "GEMINI.md")) {
-		t.Fatalf("prompt missing GEMINI.md path: %s", prompt)
-	}
-	if !strings.Contains(prompt, "规则B：先事实后判断。") {
-		t.Fatalf("prompt missing GEMINI.md content: %s", prompt)
-	}
-}
-
-func TestManagerBuildPrompt_ProjectGuideFilesMissing(t *testing.T) {
-	root := t.TempDir()
-	projectDir := filepath.Join(root, "project")
-	memoryDir := filepath.Join(projectDir, ".memory")
-	if err := os.MkdirAll(memoryDir, 0o755); err != nil {
-		t.Fatalf("create memory dir failed: %v", err)
-	}
-
-	mgr := NewManager(memoryDir)
-	mgr.SetProjectDir(projectDir)
-
-	prompt, err := mgr.BuildPrompt("hello")
-	if err != nil {
-		t.Fatalf("build prompt failed: %v", err)
-	}
-	if !strings.Contains(prompt, "当前未发现上述文件") {
-		t.Fatalf("prompt should mention missing project guide files: %s", prompt)
+	if strings.Contains(prompt, "规则A：先测后提。") || strings.Contains(prompt, "规则B：先事实后判断。") {
+		t.Fatalf("prompt should not include project guide contents: %s", prompt)
 	}
 }
 
