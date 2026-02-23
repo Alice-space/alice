@@ -25,6 +25,7 @@ type ScheduleType string
 
 const (
 	ScheduleTypeInterval ScheduleType = "interval"
+	ScheduleTypeCron     ScheduleType = "cron"
 )
 
 type ActionType string
@@ -68,6 +69,7 @@ func (a Actor) PreferredID() string {
 type Schedule struct {
 	Type         ScheduleType `json:"type"`
 	EverySeconds int          `json:"every_seconds"`
+	CronExpr     string       `json:"cron_expr,omitempty"`
 }
 
 type Action struct {
@@ -87,6 +89,8 @@ type Task struct {
 	Schedule            Schedule   `json:"schedule"`
 	Action              Action     `json:"action"`
 	Status              TaskStatus `json:"status"`
+	MaxRuns             int        `json:"max_runs,omitempty"`
+	RunCount            int        `json:"run_count,omitempty"`
 	CreatedAt           time.Time  `json:"created_at"`
 	UpdatedAt           time.Time  `json:"updated_at"`
 	NextRunAt           time.Time  `json:"next_run_at"`
@@ -113,6 +117,7 @@ func NormalizeTask(task Task) Task {
 	task.Creator.Name = strings.TrimSpace(task.Creator.Name)
 	task.ManageMode = ManageMode(strings.ToLower(strings.TrimSpace(string(task.ManageMode))))
 	task.Schedule.Type = ScheduleType(strings.ToLower(strings.TrimSpace(string(task.Schedule.Type))))
+	task.Schedule.CronExpr = strings.TrimSpace(task.Schedule.CronExpr)
 	task.Action.Type = ActionType(strings.ToLower(strings.TrimSpace(string(task.Action.Type))))
 	task.Action.Text = strings.TrimSpace(task.Action.Text)
 	task.Action.Prompt = strings.TrimSpace(task.Action.Prompt)
@@ -155,11 +160,20 @@ func ValidateTask(task Task) error {
 	if task.ManageMode != ManageModeCreatorOnly && task.ManageMode != ManageModeScopeAll {
 		return fmt.Errorf("invalid manage mode %q", task.ManageMode)
 	}
-	if task.Schedule.Type != ScheduleTypeInterval {
+	switch task.Schedule.Type {
+	case ScheduleTypeInterval:
+		if task.Schedule.EverySeconds <= 0 {
+			return errors.New("every_seconds must be > 0")
+		}
+	case ScheduleTypeCron:
+		if strings.TrimSpace(task.Schedule.CronExpr) == "" {
+			return errors.New("cron_expr is empty")
+		}
+		if err := validateCronExpression(task.Schedule.CronExpr); err != nil {
+			return err
+		}
+	default:
 		return fmt.Errorf("invalid schedule type %q", task.Schedule.Type)
-	}
-	if task.Schedule.EverySeconds <= 0 {
-		return errors.New("every_seconds must be > 0")
 	}
 	switch task.Action.Type {
 	case ActionTypeSendText:
@@ -179,6 +193,18 @@ func ValidateTask(task Task) error {
 	if task.Status != TaskStatusActive && task.Status != TaskStatusPaused && task.Status != TaskStatusDeleted {
 		return fmt.Errorf("invalid status %q", task.Status)
 	}
+	if task.MaxRuns < 0 {
+		return errors.New("max_runs must be >= 0")
+	}
+	if task.RunCount < 0 {
+		return errors.New("run_count must be >= 0")
+	}
+	if task.MaxRuns > 0 && task.RunCount > task.MaxRuns {
+		return errors.New("run_count exceeds max_runs")
+	}
+	if task.Status == TaskStatusActive && task.MaxRuns > 0 && task.RunCount >= task.MaxRuns {
+		return errors.New("active task already reached max_runs")
+	}
 	return nil
 }
 
@@ -187,10 +213,22 @@ func NextRunAt(from time.Time, schedule Schedule) time.Time {
 	if from.IsZero() {
 		from = time.Now()
 	}
-	if normalized.EverySeconds <= 0 {
+	from = from.UTC()
+	switch normalized.Type {
+	case ScheduleTypeInterval:
+		if normalized.EverySeconds <= 0 {
+			return from
+		}
+		return from.Add(time.Duration(normalized.EverySeconds) * time.Second)
+	case ScheduleTypeCron:
+		next, err := nextCronRunAt(from, normalized.CronExpr)
+		if err != nil {
+			return from
+		}
+		return next
+	default:
 		return from
 	}
-	return from.Add(time.Duration(normalized.EverySeconds) * time.Second)
 }
 
 func BuildDispatchText(action Action) (string, error) {

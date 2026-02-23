@@ -36,10 +36,12 @@ type Config struct {
 	WorkspaceDir           string            `mapstructure:"workspace_dir"`
 	MemoryDir              string            `mapstructure:"memory_dir"`
 
-	QueueCapacity     int `mapstructure:"queue_capacity"`
-	WorkerConcurrency int `mapstructure:"worker_concurrency"`
-	IdleSummaryHours  int `mapstructure:"idle_summary_hours"`
-	IdleSummaryIdle   time.Duration
+	QueueCapacity             int           `mapstructure:"queue_capacity"`
+	WorkerConcurrency         int           `mapstructure:"worker_concurrency"`
+	AutomationTaskTimeoutSecs int           `mapstructure:"automation_task_timeout_secs"`
+	AutomationTaskTimeout     time.Duration `mapstructure:"-"`
+	IdleSummaryHours          int           `mapstructure:"idle_summary_hours"`
+	IdleSummaryIdle           time.Duration
 
 	GroupContextWindowMinutes int           `mapstructure:"group_context_window_minutes"`
 	GroupContextWindowTTL     time.Duration `mapstructure:"-"`
@@ -64,6 +66,7 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("memory_dir", ".memory")
 	v.SetDefault("queue_capacity", 256)
 	v.SetDefault("worker_concurrency", 1)
+	v.SetDefault("automation_task_timeout_secs", 600)
 	v.SetDefault("idle_summary_hours", 8)
 	v.SetDefault("group_context_window_minutes", 5)
 	v.SetDefault("log_level", "info")
@@ -151,6 +154,9 @@ func LoadFromFile(path string) (Config, error) {
 	if cfg.WorkerConcurrency <= 0 {
 		return Config{}, errors.New("worker_concurrency must be > 0")
 	}
+	if cfg.AutomationTaskTimeoutSecs <= 0 {
+		return Config{}, errors.New("automation_task_timeout_secs must be > 0")
+	}
 	if cfg.IdleSummaryHours <= 0 {
 		return Config{}, errors.New("idle_summary_hours must be > 0")
 	}
@@ -158,6 +164,7 @@ func LoadFromFile(path string) (Config, error) {
 		return Config{}, errors.New("group_context_window_minutes must be > 0")
 	}
 	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
+	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 	cfg.IdleSummaryIdle = time.Duration(cfg.IdleSummaryHours) * time.Hour
 	cfg.GroupContextWindowTTL = time.Duration(cfg.GroupContextWindowMinutes) * time.Minute
 

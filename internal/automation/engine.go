@@ -24,15 +24,18 @@ type LLMRunner interface {
 
 type SystemTaskFunc func(ctx context.Context)
 
+const defaultUserTaskTimeout = 10 * time.Minute
+
 type Engine struct {
-	store       *Store
-	sender      TextSender
-	llmRunner   LLMRunner
-	tick        time.Duration
-	maxClaim    int
-	now         func() time.Time
-	systemsMu   sync.Mutex
-	systemTasks map[string]*systemTaskRuntime
+	store           *Store
+	sender          TextSender
+	llmRunner       LLMRunner
+	userTaskTimeout time.Duration
+	tick            time.Duration
+	maxClaim        int
+	now             func() time.Time
+	systemsMu       sync.Mutex
+	systemTasks     map[string]*systemTaskRuntime
 }
 
 type systemTaskRuntime struct {
@@ -45,12 +48,13 @@ type systemTaskRuntime struct {
 
 func NewEngine(store *Store, sender TextSender) *Engine {
 	return &Engine{
-		store:       store,
-		sender:      sender,
-		tick:        time.Second,
-		maxClaim:    32,
-		now:         time.Now,
-		systemTasks: make(map[string]*systemTaskRuntime),
+		store:           store,
+		sender:          sender,
+		userTaskTimeout: defaultUserTaskTimeout,
+		tick:            time.Second,
+		maxClaim:        32,
+		now:             time.Now,
+		systemTasks:     make(map[string]*systemTaskRuntime),
 	}
 }
 
@@ -59,6 +63,17 @@ func (e *Engine) SetLLMRunner(runner LLMRunner) {
 		return
 	}
 	e.llmRunner = runner
+}
+
+func (e *Engine) SetUserTaskTimeout(timeout time.Duration) {
+	if e == nil {
+		return
+	}
+	if timeout <= 0 {
+		e.userTaskTimeout = defaultUserTaskTimeout
+		return
+	}
+	e.userTaskTimeout = timeout
 }
 
 func (e *Engine) RegisterSystemTask(name string, interval time.Duration, run SystemTaskFunc) error {
@@ -170,7 +185,7 @@ func (e *Engine) runUserTasks(ctx context.Context, now time.Time) {
 }
 
 func (e *Engine) runUserTask(ctx context.Context, task Task) {
-	runCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	runCtx, cancel := context.WithTimeout(ctx, e.userTaskTimeoutDuration())
 	defer cancel()
 
 	err := e.executeUserTask(runCtx, task)
@@ -182,6 +197,13 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 			log.Printf("record automation result failed id=%s err=%v", task.ID, recordErr)
 		}
 	}
+}
+
+func (e *Engine) userTaskTimeoutDuration() time.Duration {
+	if e == nil || e.userTaskTimeout <= 0 {
+		return defaultUserTaskTimeout
+	}
+	return e.userTaskTimeout
 }
 
 func (e *Engine) executeUserTask(ctx context.Context, task Task) error {

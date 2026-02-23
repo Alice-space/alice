@@ -36,6 +36,12 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if cfg.QueueCapacity != 256 {
 		t.Fatalf("unexpected queue_capacity: %d", cfg.QueueCapacity)
 	}
+	if cfg.AutomationTaskTimeoutSecs != 600 {
+		t.Fatalf("unexpected automation_task_timeout_secs: %d", cfg.AutomationTaskTimeoutSecs)
+	}
+	if cfg.AutomationTaskTimeout != 10*time.Minute {
+		t.Fatalf("unexpected automation_task_timeout: %s", cfg.AutomationTaskTimeout)
+	}
 	if cfg.ThinkingMessage != "正在思考中..." {
 		t.Fatalf("unexpected thinking_message: %s", cfg.ThinkingMessage)
 	}
@@ -174,6 +180,27 @@ group_context_window_minutes: 0
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "group_context_window_minutes must be > 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_AutomationTaskTimeoutSecsInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+automation_task_timeout_secs: 0
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "automation_task_timeout_secs must be > 0") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

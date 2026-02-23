@@ -11,7 +11,6 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"gitee.com/alicespace/alice/internal/automation"
-	"gitee.com/alicespace/alice/internal/mcpbridge"
 )
 
 const (
@@ -39,11 +38,14 @@ func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
 		ToolAutomationTaskCreate,
 		mcp.WithDescription("创建自动化任务。私聊按用户作用域隔离，群聊按群作用域隔离。"),
 		mcp.WithString("title", mcp.Description("任务标题，可选")),
-		mcp.WithNumber("every_seconds", mcp.Required(), mcp.Description("执行间隔秒数，最小60秒"), mcp.Min(60)),
+		mcp.WithString("schedule_type", mcp.Description("调度类型：interval 或 cron；默认 interval"), mcp.Enum("interval", "cron")),
+		mcp.WithNumber("every_seconds", mcp.Description("interval 调度间隔秒数，最小60秒"), mcp.Min(60)),
+		mcp.WithString("cron_expr", mcp.Description("cron 调度表达式，支持 5 段标准格式，如 0 9 * * *")),
 		mcp.WithString("action_type", mcp.Description("任务动作类型：send_text 或 run_llm；默认 send_text"), mcp.Enum("send_text", "run_llm")),
 		mcp.WithString("text", mcp.Description("发送文本，可选；与 mention_user_ids 至少一项非空")),
 		mcp.WithString("prompt", mcp.Description("run_llm 动作的提示词；支持模板变量 {{now}}/{{date}}/{{time}}/{{unix}}")),
 		mcp.WithArray("mention_user_ids", mcp.Description("要@的用户id列表，私聊仅允许@当前用户"), mcp.WithStringItems()),
+		mcp.WithNumber("max_runs", mcp.Description("任务执行次数上限，0表示不限制；1表示仅执行一次"), mcp.Min(0)),
 		mcp.WithBoolean("enabled", mcp.Description("是否启用，默认 true")),
 		mcp.WithString("manage_mode", mcp.Description("creator_only 或 scope_all（仅群聊可用）"), mcp.Enum("creator_only", "scope_all")),
 	), s.handleAutomationTaskCreate)
@@ -66,11 +68,14 @@ func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
 		mcp.WithDescription("更新自动化任务。"),
 		mcp.WithString("task_id", mcp.Required(), mcp.Description("任务ID")),
 		mcp.WithString("title", mcp.Description("新标题")),
-		mcp.WithNumber("every_seconds", mcp.Description("新间隔秒数，最小60秒"), mcp.Min(60)),
+		mcp.WithString("schedule_type", mcp.Description("新调度类型：interval 或 cron"), mcp.Enum("interval", "cron")),
+		mcp.WithNumber("every_seconds", mcp.Description("interval 的新间隔秒数，最小60秒"), mcp.Min(60)),
+		mcp.WithString("cron_expr", mcp.Description("cron 的新表达式，如 0 9 * * *")),
 		mcp.WithString("action_type", mcp.Description("新动作类型：send_text 或 run_llm"), mcp.Enum("send_text", "run_llm")),
 		mcp.WithString("text", mcp.Description("新文本")),
 		mcp.WithString("prompt", mcp.Description("run_llm 动作的新提示词；支持模板变量 {{now}}/{{date}}/{{time}}/{{unix}}")),
 		mcp.WithArray("mention_user_ids", mcp.Description("新的@用户id列表"), mcp.WithStringItems()),
+		mcp.WithNumber("max_runs", mcp.Description("新的执行次数上限，0表示不限制"), mcp.Min(0)),
 		mcp.WithBoolean("enabled", mcp.Description("设置启用状态")),
 		mcp.WithString("status", mcp.Description("active/paused/deleted"), mcp.Enum("active", "paused", "deleted")),
 		mcp.WithString("manage_mode", mcp.Description("creator_only 或 scope_all（仅群聊可用）"), mcp.Enum("creator_only", "scope_all")),
@@ -92,9 +97,9 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	everySeconds := request.GetInt("every_seconds", 0)
-	if everySeconds < 60 {
-		return mcp.NewToolResultError("every_seconds must be >= 60"), nil
+	schedule, err := resolveCreateSchedule(request)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
 	}
 	title := strings.TrimSpace(request.GetString("title", ""))
 	text := strings.TrimSpace(request.GetString("text", ""))
@@ -105,6 +110,10 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 	}
 	mentionUserIDs := uniqueNonEmptyStrings(request.GetStringSlice("mention_user_ids", nil))
 	if err := validateMentionPermission(scopeCtx, mentionUserIDs); err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	maxRuns, err := parseMaxRunsForCreate(request)
+	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
@@ -127,10 +136,8 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 		Route:      scopeCtx.route,
 		Creator:    scopeCtx.creator,
 		ManageMode: manageMode,
-		Schedule: automation.Schedule{
-			Type:         automation.ScheduleTypeInterval,
-			EverySeconds: everySeconds,
-		},
+		Schedule:   schedule,
+		MaxRuns:    maxRuns,
 		Action: automation.Action{
 			Type:           actionType,
 			Text:           text,
@@ -224,13 +231,8 @@ func (s *service) handleAutomationTaskUpdate(_ context.Context, request mcp.Call
 		if hasArgument(request, "title") {
 			task.Title = strings.TrimSpace(request.GetString("title", ""))
 		}
-		if hasArgument(request, "every_seconds") {
-			everySeconds := request.GetInt("every_seconds", 0)
-			if everySeconds < 60 {
-				return errors.New("every_seconds must be >= 60")
-			}
-			task.Schedule.EverySeconds = everySeconds
-			task.NextRunAt = automation.NextRunAt(time.Now().UTC(), task.Schedule)
+		if err := patchTaskScheduleFromRequest(request, task); err != nil {
+			return err
 		}
 		if hasArgument(request, "text") {
 			task.Action.Text = strings.TrimSpace(request.GetString("text", ""))
@@ -251,6 +253,9 @@ func (s *service) handleAutomationTaskUpdate(_ context.Context, request mcp.Call
 				return err
 			}
 			task.Action.MentionUserIDs = mentions
+		}
+		if err := patchTaskMaxRunsFromRequest(request, task); err != nil {
+			return err
 		}
 		if hasArgument(request, "enabled") {
 			enabled := request.GetBool("enabled", true)
@@ -375,107 +380,4 @@ func (s *service) resolveAutomationScope() (automationScopeContext, error) {
 		ctx.route = automation.Route{ReceiveIDType: strings.TrimSpace(sessionContext.ReceiveIDType), ReceiveID: strings.TrimSpace(sessionContext.ReceiveID)}
 	}
 	return ctx, nil
-}
-
-func parseManageMode(raw string, groupScope bool) (automation.ManageMode, error) {
-	raw = strings.ToLower(strings.TrimSpace(raw))
-	if raw == "" {
-		return automation.ManageModeCreatorOnly, nil
-	}
-	mode := automation.ManageMode(raw)
-	switch mode {
-	case automation.ManageModeCreatorOnly:
-		return mode, nil
-	case automation.ManageModeScopeAll:
-		if !groupScope {
-			return "", errors.New("scope_all is only allowed in group scope")
-		}
-		return mode, nil
-	default:
-		return "", fmt.Errorf("invalid manage_mode %q", raw)
-	}
-}
-
-func resolveActionType(raw, prompt string) (automation.ActionType, error) {
-	if strings.TrimSpace(raw) == "" {
-		if strings.TrimSpace(prompt) != "" {
-			return automation.ActionTypeRunLLM, nil
-		}
-		return automation.ActionTypeSendText, nil
-	}
-	return parseActionType(raw)
-}
-
-func parseActionType(raw string) (automation.ActionType, error) {
-	actionType := automation.ActionType(strings.ToLower(strings.TrimSpace(raw)))
-	switch actionType {
-	case automation.ActionTypeSendText, automation.ActionTypeRunLLM:
-		return actionType, nil
-	default:
-		return "", fmt.Errorf("invalid action_type %q", raw)
-	}
-}
-
-func validateMentionPermission(scopeCtx automationScopeContext, mentionUserIDs []string) error {
-	if scopeCtx.isGroup {
-		return nil
-	}
-	for _, mentionID := range mentionUserIDs {
-		if strings.TrimSpace(mentionID) != strings.TrimSpace(scopeCtx.actorID) {
-			return errors.New("private scope only allows mention current actor")
-		}
-	}
-	return nil
-}
-
-func canManageTask(task automation.Task, actorID string) bool {
-	actorID = strings.TrimSpace(actorID)
-	if actorID == "" {
-		return false
-	}
-	if actorID == task.Creator.PreferredID() {
-		return true
-	}
-	if task.Scope.Kind == automation.ScopeKindChat && task.ManageMode == automation.ManageModeScopeAll {
-		return true
-	}
-	return false
-}
-
-func hasArgument(request mcp.CallToolRequest, key string) bool {
-	_, ok := request.GetArguments()[key]
-	return ok
-}
-
-func uniqueNonEmptyStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, raw := range values {
-		value := strings.TrimSpace(raw)
-		if value == "" {
-			continue
-		}
-		if _, exists := seen[value]; exists {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
-}
-
-func buildAutomationScopeHint(sessionContext mcpbridge.SessionContext) string {
-	return fmt.Sprintf("scope chat_type=%s receive_id_type=%s receive_id=%s actor_user_id=%s actor_open_id=%s",
-		strings.TrimSpace(sessionContext.ChatType),
-		strings.TrimSpace(sessionContext.ReceiveIDType),
-		strings.TrimSpace(sessionContext.ReceiveID),
-		strings.TrimSpace(sessionContext.ActorUserID),
-		strings.TrimSpace(sessionContext.ActorOpenID),
-	)
 }

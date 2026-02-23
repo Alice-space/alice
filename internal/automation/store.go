@@ -218,6 +218,7 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 
 	claimed := make([]Task, 0, limit)
 	err := s.withLockedSnapshot(func(snapshot *Snapshot) (bool, error) {
+		changed := false
 		for idx := range snapshot.Tasks {
 			if len(claimed) >= limit {
 				break
@@ -226,7 +227,25 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 			if task.Status != TaskStatusActive {
 				continue
 			}
-			if task.Schedule.Type != ScheduleTypeInterval || task.Schedule.EverySeconds <= 0 {
+			if task.MaxRuns > 0 && task.RunCount >= task.MaxRuns {
+				task.Status = TaskStatusPaused
+				task.NextRunAt = time.Time{}
+				task.UpdatedAt = at
+				task.Revision++
+				snapshot.Tasks[idx] = task
+				changed = true
+				continue
+			}
+			switch task.Schedule.Type {
+			case ScheduleTypeInterval:
+				if task.Schedule.EverySeconds <= 0 {
+					continue
+				}
+			case ScheduleTypeCron:
+				if strings.TrimSpace(task.Schedule.CronExpr) == "" {
+					continue
+				}
+			default:
 				continue
 			}
 			next := task.NextRunAt.UTC()
@@ -234,13 +253,20 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 				continue
 			}
 			task.LastRunAt = at
-			task.NextRunAt = NextRunAt(at, task.Schedule)
+			task.RunCount++
+			if task.MaxRuns > 0 && task.RunCount >= task.MaxRuns {
+				task.Status = TaskStatusPaused
+				task.NextRunAt = time.Time{}
+			} else {
+				task.NextRunAt = NextRunAt(at, task.Schedule)
+			}
 			task.UpdatedAt = at
 			task.Revision++
 			snapshot.Tasks[idx] = task
 			claimed = append(claimed, task)
+			changed = true
 		}
-		return len(claimed) > 0, nil
+		return changed, nil
 	})
 	if err != nil {
 		return nil, err

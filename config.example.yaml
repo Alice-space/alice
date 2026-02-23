@@ -30,6 +30,8 @@ thinking_message: "正在思考中..."
 # Queue and worker
 queue_capacity: 256
 worker_concurrency: 1
+# Timeout (seconds) for one automation user task execution (run_llm/send_text)
+automation_task_timeout_secs: 600
 idle_summary_hours: 8
 # Group context cache window (minutes) for non-@ group messages.
 # On @ trigger, text + media from this window are merged into context.

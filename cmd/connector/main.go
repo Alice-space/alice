@@ -105,6 +105,7 @@ func main() {
 	}
 	automationStatePath := filepath.Join(memoryDir, "automation_state.json")
 	automationEngine := automation.NewEngine(automation.NewStore(automationStatePath), sender)
+	automationEngine.SetUserTaskTimeout(cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(backend)
 	if err := automationEngine.RegisterSystemTask("system.idle_summary_scan", 60*time.Second, func(runCtx context.Context) {
 		processor.RunIdleSummaryScan(runCtx, cfg.IdleSummaryIdle)

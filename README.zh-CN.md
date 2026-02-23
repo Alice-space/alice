@@ -110,6 +110,7 @@ thinking_message: "正在思考中..."
 
 queue_capacity: 256
 worker_concurrency: 1
+automation_task_timeout_secs: 600
 idle_summary_hours: 8
 group_context_window_minutes: 5
 
@@ -126,6 +127,7 @@ log_level: "info"
 - `llm_provider`：LLM 后端类型选择。当前支持 `codex`（默认）。
 - `env`：注入到 `codex` 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
 - `codex_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
+- `automation_task_timeout_secs`：单次自动化用户任务（`send_text`/`run_llm`）的执行超时秒数，默认 `600`。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
 - `group_context_window_minutes`：群聊中未艾特机器人的消息缓存窗口（分钟，默认 `5`）。窗口内文本与多媒体会在后续艾特触发时并入上下文。
 - `feishu_bot_open_id` / `feishu_bot_user_id`：用于群聊严格艾特过滤的机器人 ID。群聊中只有艾特命中这些 ID 的消息才会触发处理。

@@ -28,6 +28,22 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	return nil
 }
 
+type deadlineSenderStub struct {
+	mu          sync.Mutex
+	deadlineSet bool
+	deadline    time.Time
+}
+
+func (s *deadlineSenderStub) SendText(ctx context.Context, _, _, _ string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if deadline, ok := ctx.Deadline(); ok {
+		s.deadlineSet = true
+		s.deadline = deadline
+	}
+	return nil
+}
+
 type llmRunnerStub struct {
 	mu      sync.Mutex
 	calls   int
@@ -176,5 +192,37 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 	}
 	if stored.LastResult == "" {
 		t.Fatalf("expected last result to be recorded, task=%+v", stored)
+	}
+}
+
+func TestEngine_RunUserTask_UsesConfiguredTimeout(t *testing.T) {
+	sender := &deadlineSenderStub{}
+	engine := NewEngine(nil, sender)
+	engine.SetUserTaskTimeout(2 * time.Minute)
+
+	start := time.Now()
+	engine.runUserTask(context.Background(), Task{
+		Scope:   Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:   Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator: Actor{UserID: "ou_actor"},
+		Action:  Action{Type: ActionTypeSendText, Text: "hello"},
+	})
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if !sender.deadlineSet {
+		t.Fatal("expected run context deadline to be set")
+	}
+	remaining := sender.deadline.Sub(start)
+	if remaining < 119*time.Second || remaining > 121*time.Second {
+		t.Fatalf("unexpected configured timeout window: %s", remaining)
+	}
+}
+
+func TestEngine_SetUserTaskTimeout_NonPositiveFallsBackToDefault(t *testing.T) {
+	engine := NewEngine(nil, nil)
+	engine.SetUserTaskTimeout(0)
+	if got := engine.userTaskTimeoutDuration(); got != defaultUserTaskTimeout {
+		t.Fatalf("unexpected default timeout: %s", got)
 	}
 }

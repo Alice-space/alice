@@ -110,6 +110,7 @@ thinking_message: "正在思考中..."
 
 queue_capacity: 256
 worker_concurrency: 1
+automation_task_timeout_secs: 600
 idle_summary_hours: 8
 group_context_window_minutes: 5
 
@@ -126,6 +127,7 @@ Optional:
 - `llm_provider`: LLM backend provider selector. Current supported value: `codex` (default).
 - `env`: key-value environment variables injected into `codex` process (for example HTTP/HTTPS/SOCKS proxy settings).
 - `codex_prompt_prefix`: global instruction prefix prepended for new threads only; default is empty.
+- `automation_task_timeout_secs`: timeout window for a single automation user task execution (`send_text`/`run_llm`), default `600`.
 - `idle_summary_hours`: idle threshold (hours) before background daily summary write (default `8`).
 - `group_context_window_minutes`: sliding window duration (minutes) for caching non-`@bot` group messages (text + multimedia), merged on later `@bot` trigger (default `5`).
 - `feishu_bot_open_id` / `feishu_bot_user_id`: bot IDs used for strict group mention filtering. In group chats, only messages that mention these IDs are processed.
