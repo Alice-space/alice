@@ -36,6 +36,10 @@ type AttachmentDownloader interface {
 	DownloadAttachment(ctx context.Context, sourceMessageID string, attachment *Attachment) error
 }
 
+type UserNameResolver interface {
+	ResolveUserName(ctx context.Context, openID, userID string) (string, error)
+}
+
 type Attachment struct {
 	SourceMessageID string
 	Kind            string
@@ -46,12 +50,23 @@ type Attachment struct {
 	DownloadError   string
 }
 
+type MentionedUser struct {
+	Key     string
+	Name    string
+	OpenID  string
+	UserID  string
+	UnionID string
+}
+
 type Job struct {
 	ReceiveID            string
 	ReceiveIDType        string
 	ChatType             string
+	SenderName           string
 	SenderOpenID         string
 	SenderUserID         string
+	SenderUnionID        string
+	MentionedUsers       []MentionedUser
 	SourceMessageID      string
 	ReplyParentMessageID string
 	MessageType          string

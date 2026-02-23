@@ -237,6 +237,10 @@ type senderStub struct {
 	downloadSourceMessageIDs []string
 	downloadPathByKey        map[string]string
 	downloadErrByKey         map[string]error
+
+	resolveUserNameCalls int
+	resolveUserNameErr   error
+	userNameByIdentity   map[string]string
 }
 
 func (s *senderStub) SendText(_ context.Context, _, _ string, text string) error {
@@ -324,6 +328,28 @@ func (s *senderStub) GetMessageText(_ context.Context, messageID string) (string
 		return "", nil
 	}
 	return s.messageTextByID[messageID], nil
+}
+
+func (s *senderStub) ResolveUserName(_ context.Context, openID, userID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resolveUserNameCalls++
+	if s.resolveUserNameErr != nil {
+		return "", s.resolveUserNameErr
+	}
+	if s.userNameByIdentity == nil {
+		return "", nil
+	}
+
+	openKey := "open_id:" + strings.TrimSpace(openID)
+	if name, ok := s.userNameByIdentity[openKey]; ok {
+		return name, nil
+	}
+	userKey := "user_id:" + strings.TrimSpace(userID)
+	if name, ok := s.userNameByIdentity[userKey]; ok {
+		return name, nil
+	}
+	return "", nil
 }
 
 func (s *senderStub) DownloadAttachment(_ context.Context, sourceMessageID string, attachment *Attachment) error {

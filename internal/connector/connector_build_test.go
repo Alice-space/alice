@@ -46,6 +46,53 @@ func TestBuildJob_TextMessage(t *testing.T) {
 	}
 }
 
+func TestBuildJob_ExtractsSenderAndMentionedUsers(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Sender: &larkim.EventSender{
+				SenderId: &larkim.UserId{
+					OpenId:  strPtr("ou_bob"),
+					UserId:  strPtr("u_bob"),
+					UnionId: strPtr("on_bob"),
+				},
+			},
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_identity_1"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"@_user_1 这是xxx"}`),
+				ChatId:      strPtr("oc_chat"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Key:  strPtr("@_user_1"),
+						Name: strPtr("Carlo"),
+						Id: &larkim.UserId{
+							OpenId: strPtr("ou_carlo"),
+							UserId: strPtr("u_carlo"),
+						},
+					},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if job.SenderOpenID != "ou_bob" || job.SenderUserID != "u_bob" || job.SenderUnionID != "on_bob" {
+		t.Fatalf("unexpected sender ids: open=%q user=%q union=%q", job.SenderOpenID, job.SenderUserID, job.SenderUnionID)
+	}
+	if len(job.MentionedUsers) != 1 {
+		t.Fatalf("expected 1 mentioned user, got %d", len(job.MentionedUsers))
+	}
+	if job.MentionedUsers[0].Name != "Carlo" {
+		t.Fatalf("unexpected mentioned user name: %q", job.MentionedUsers[0].Name)
+	}
+	if job.MentionedUsers[0].OpenID != "ou_carlo" || job.MentionedUsers[0].UserID != "u_carlo" {
+		t.Fatalf("unexpected mentioned user ids: %+v", job.MentionedUsers[0])
+	}
+}
+
 func TestBuildJob_TextMessageStripsMentionKey(t *testing.T) {
 	event := &larkim.P2MessageReceiveV1{
 		Event: &larkim.P2MessageReceiveV1Data{

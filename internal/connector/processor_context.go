@@ -184,13 +184,39 @@ func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {
 
 func (p *Processor) buildCurrentUserInput(job Job) string {
 	baseText := strings.TrimSpace(job.Text)
-	if len(job.Attachments) == 0 {
-		return baseText
+	var builder strings.Builder
+
+	senderName := normalizeUserDisplayName(strings.TrimSpace(job.SenderName), "用户")
+	senderID := preferredID(job.SenderOpenID, job.SenderUserID, job.SenderUnionID)
+	mentionedNames := buildMentionDisplayNames(job.MentionedUsers)
+	speakerKnown := strings.TrimSpace(job.SenderName) != ""
+	mentionsKnown := len(mentionedNames) > 0
+	identityContextEnabled := speakerKnown || mentionsKnown || senderID != ""
+	if identityContextEnabled {
+		for _, mapping := range buildUserIDMappingLines(job, senderName, senderID) {
+			builder.WriteString(mapping)
+			builder.WriteString("\n")
+		}
+		if builder.Len() > 0 {
+			builder.WriteString("\n")
+		}
+		builder.WriteString(senderName)
+		builder.WriteString("说：")
+		if len(mentionedNames) > 0 {
+			builder.WriteString("@")
+			builder.WriteString(strings.Join(mentionedNames, " @"))
+			builder.WriteString(" ")
+		}
+		builder.WriteString(baseText)
+	} else if baseText != "" {
+		builder.WriteString(baseText)
 	}
 
-	var builder strings.Builder
-	if baseText != "" {
-		builder.WriteString(baseText)
+	if len(job.Attachments) == 0 {
+		return strings.TrimSpace(builder.String())
+	}
+
+	if builder.Len() > 0 {
 		builder.WriteString("\n\n")
 	}
 	builder.WriteString("附加资源信息：\n")
@@ -223,6 +249,80 @@ func (p *Processor) buildCurrentUserInput(job Job) string {
 		}
 	}
 	return strings.TrimSpace(builder.String())
+}
+
+func buildUserIDMappingLines(
+	job Job,
+	senderName string,
+	senderID string,
+) []string {
+	lines := make([]string, 0, len(job.MentionedUsers)+1)
+	seen := make(map[string]struct{}, len(job.MentionedUsers)+1)
+
+	if senderID != "" {
+		line := fmt.Sprintf("用户%s的id是%s", senderName, senderID)
+		lines = append(lines, line)
+		seen[line] = struct{}{}
+	}
+
+	for _, mentioned := range job.MentionedUsers {
+		name := strings.TrimSpace(mentioned.Name)
+		if name == "" {
+			name = "用户"
+		}
+		name = normalizeUserDisplayName(name, "用户")
+		id := preferredID(mentioned.OpenID, mentioned.UserID, mentioned.UnionID)
+		if id == "" {
+			continue
+		}
+		line := fmt.Sprintf("用户%s的id是%s", name, id)
+		if _, ok := seen[line]; ok {
+			continue
+		}
+		seen[line] = struct{}{}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func buildMentionDisplayNames(mentionedUsers []MentionedUser) []string {
+	if len(mentionedUsers) == 0 {
+		return nil
+	}
+	names := make([]string, 0, len(mentionedUsers))
+	seen := make(map[string]struct{}, len(mentionedUsers))
+	for _, mentioned := range mentionedUsers {
+		name := normalizeUserDisplayName(mentioned.Name, "")
+		if name == "" {
+			continue
+		}
+		if _, ok := seen[name]; ok {
+			continue
+		}
+		seen[name] = struct{}{}
+		names = append(names, name)
+	}
+	return names
+}
+
+func normalizeUserDisplayName(name string, fallback string) string {
+	name = strings.TrimSpace(name)
+	if name != "" {
+		return name
+	}
+	return strings.TrimSpace(fallback)
+}
+
+func preferredID(openID, userID, unionID string) string {
+	openID = strings.TrimSpace(openID)
+	if openID != "" {
+		return openID
+	}
+	userID = strings.TrimSpace(userID)
+	if userID != "" {
+		return userID
+	}
+	return strings.TrimSpace(unionID)
 }
 
 func (p *Processor) recordInteraction(job Job, userText, reply string, failed bool) {

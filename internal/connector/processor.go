@@ -81,6 +81,7 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {
 
 func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessState {
 	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
+	p.enrichJobUserNames(ctx, &job)
 	if job.WorkflowPhase == jobWorkflowPhaseRestartNotification {
 		return p.processRestartNotification(ctx, job)
 	}

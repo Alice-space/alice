@@ -46,6 +46,42 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	}
 }
 
+func TestProcessor_BuildsIdentityAwareUserContext(t *testing.T) {
+	fakeCodex := &codexCaptureStub{resp: "final answer"}
+	sender := &senderStub{
+		userNameByIdentity: map[string]string{
+			"open_id:ou_bob":   "Bob",
+			"open_id:ou_carlo": "Carlo",
+		},
+	}
+	processor := NewProcessor(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		SenderOpenID:  "ou_bob",
+		MentionedUsers: []MentionedUser{
+			{OpenID: "ou_carlo"},
+		},
+		Text: "这是xxx",
+	})
+
+	if !strings.Contains(fakeCodex.lastInput, "用户Bob的id是ou_bob") {
+		t.Fatalf("missing sender id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "用户Carlo的id是ou_carlo") {
+		t.Fatalf("missing mentioned user id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "Bob说：@Carlo 这是xxx") {
+		t.Fatalf("missing expected speech context in input: %s", fakeCodex.lastInput)
+	}
+}
+
 func TestProcessor_AttachesReplyParentMessageContext(t *testing.T) {
 	fakeCodex := &codexCaptureStub{resp: "final answer"}
 	sender := &senderStub{
