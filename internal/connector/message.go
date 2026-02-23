@@ -58,6 +58,8 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 		MentionedUsers:       extractMentionedUsers(message),
 		SourceMessageID:      sourceMessageID,
 		ReplyParentMessageID: extractReplyParentMessageID(message),
+		ThreadID:             strings.TrimSpace(deref(message.ThreadId)),
+		RootID:               strings.TrimSpace(deref(message.RootId)),
 		MessageType:          messageType,
 		Text:                 text,
 		Attachments:          attachments,

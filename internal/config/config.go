@@ -41,6 +41,9 @@ type Config struct {
 	IdleSummaryHours  int `mapstructure:"idle_summary_hours"`
 	IdleSummaryIdle   time.Duration
 
+	GroupContextWindowMinutes int           `mapstructure:"group_context_window_minutes"`
+	GroupContextWindowTTL     time.Duration `mapstructure:"-"`
+
 	LogLevel string `mapstructure:"log_level"`
 }
 
@@ -62,6 +65,7 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("queue_capacity", 256)
 	v.SetDefault("worker_concurrency", 1)
 	v.SetDefault("idle_summary_hours", 8)
+	v.SetDefault("group_context_window_minutes", 5)
 	v.SetDefault("log_level", "info")
 
 	if err := v.ReadInConfig(); err != nil {
@@ -150,8 +154,12 @@ func LoadFromFile(path string) (Config, error) {
 	if cfg.IdleSummaryHours <= 0 {
 		return Config{}, errors.New("idle_summary_hours must be > 0")
 	}
+	if cfg.GroupContextWindowMinutes <= 0 {
+		return Config{}, errors.New("group_context_window_minutes must be > 0")
+	}
 	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
 	cfg.IdleSummaryIdle = time.Duration(cfg.IdleSummaryHours) * time.Hour
+	cfg.GroupContextWindowTTL = time.Duration(cfg.GroupContextWindowMinutes) * time.Minute
 
 	return cfg, nil
 }

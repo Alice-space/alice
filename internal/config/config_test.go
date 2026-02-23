@@ -45,6 +45,12 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if cfg.IdleSummaryIdle != 8*time.Hour {
 		t.Fatalf("unexpected idle_summary_idle: %s", cfg.IdleSummaryIdle)
 	}
+	if cfg.GroupContextWindowMinutes != 5 {
+		t.Fatalf("unexpected group_context_window_minutes: %d", cfg.GroupContextWindowMinutes)
+	}
+	if cfg.GroupContextWindowTTL != 5*time.Minute {
+		t.Fatalf("unexpected group_context_window_ttl: %s", cfg.GroupContextWindowTTL)
+	}
 	if cfg.MemoryDir != ".memory" {
 		t.Fatalf("unexpected memory_dir: %s", cfg.MemoryDir)
 	}
@@ -147,6 +153,27 @@ idle_summary_hours: 0
 		t.Fatal("expected error, got nil")
 	}
 	if !strings.Contains(err.Error(), "idle_summary_hours must be > 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_GroupContextWindowMinutesInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+group_context_window_minutes: 0
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "group_context_window_minutes must be > 0") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }

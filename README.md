@@ -111,6 +111,7 @@ thinking_message: "正在思考中..."
 queue_capacity: 256
 worker_concurrency: 1
 idle_summary_hours: 8
+group_context_window_minutes: 5
 
 log_level: "info"
 ```
@@ -126,6 +127,7 @@ Optional:
 - `env`: key-value environment variables injected into `codex` process (for example HTTP/HTTPS/SOCKS proxy settings).
 - `codex_prompt_prefix`: global instruction prefix prepended for new threads only; default is empty.
 - `idle_summary_hours`: idle threshold (hours) before background daily summary write (default `8`).
+- `group_context_window_minutes`: sliding window duration (minutes) for caching non-`@bot` group messages (text + multimedia), merged on later `@bot` trigger (default `5`).
 - `feishu_bot_open_id` / `feishu_bot_user_id`: bot IDs used for strict group mention filtering. In group chats, only messages that mention these IDs are processed.
 
 ## Runtime behavior
@@ -133,8 +135,8 @@ Optional:
 - Supported incoming message types: `text`, `image`, `sticker`, `audio`, `file`.
 - In group/topic-group chats, only messages that mention the bot are processed.
   - If both `feishu_bot_open_id` and `feishu_bot_user_id` are empty, group/topic-group messages are ignored.
-- For group/topic-group multimedia (`image`/`sticker`/`audio`/`file`) without mention, the connector caches a per-user 5-minute sliding window.
-- When the same user later sends an `@bot` trigger message in that group, cached multimedia from the previous 5 minutes is merged into that request context.
+- For group/topic-group messages without mention, the connector caches a per-user sliding window (`group_context_window_minutes`) with both text and multimedia entries.
+- When the same user later sends an `@bot` trigger in that group, cached text and multimedia inside the window are merged into that request context; thread messages are isolated by `thread_id`/`root_id` scope.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
 - Prompt speaker context still injects id mappings and mention text for participants, but it filters out the bot's own identity (`feishu_bot_open_id`/`feishu_bot_user_id`) from those injected lines.
 - User display-name enrichment first uses Contact `GetUser`; if name is empty in group/topic-group chats, it falls back to `GetChatMembers` by `chat_id`.

@@ -111,6 +111,7 @@ thinking_message: "正在思考中..."
 queue_capacity: 256
 worker_concurrency: 1
 idle_summary_hours: 8
+group_context_window_minutes: 5
 
 log_level: "info"
 ```
@@ -126,6 +127,7 @@ log_level: "info"
 - `env`：注入到 `codex` 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
 - `codex_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
+- `group_context_window_minutes`：群聊中未艾特机器人的消息缓存窗口（分钟，默认 `5`）。窗口内文本与多媒体会在后续艾特触发时并入上下文。
 - `feishu_bot_open_id` / `feishu_bot_user_id`：用于群聊严格艾特过滤的机器人 ID。群聊中只有艾特命中这些 ID 的消息才会触发处理。
 
 ## 隔离运行（独立用户）
@@ -139,8 +141,8 @@ log_level: "info"
 - 支持接收消息类型：`text`、`image`、`sticker`、`audio`、`file`。
 - 群聊/话题群中，仅处理艾特机器人的消息。
   - 若 `feishu_bot_open_id` 与 `feishu_bot_user_id` 都为空，则群聊/话题群消息全部忽略。
-- 群聊/话题群中的多媒体消息（`image`/`sticker`/`audio`/`file`）即使未艾特，也会按“同群同人”维护 5 分钟滑动窗口缓存。
-- 当同一用户后续在该群艾特机器人触发时，会把其过去 5 分钟缓存的多媒体并入本次上下文。
+- 群聊/话题群中未艾特机器人的消息会按“同群同人”进入滑动窗口缓存（时长由 `group_context_window_minutes` 配置），缓存内容包含文本与多媒体。
+- 同一用户后续在该群艾特机器人触发时，会把窗口内缓存的文本与多媒体并入本次上下文；thread 消息会按 `thread_id`/`root_id` 隔离，不跨 thread 混入。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
 - 说话人上下文仍会注入参与者的 id 映射和 `@提及` 文本，但会过滤机器人自身身份（`feishu_bot_open_id`/`feishu_bot_user_id`）对应的注入内容。
 - 用户昵称补全会先调用 Contact `GetUser`；若在群聊/话题群中返回空名，会按 `chat_id` 回退调用 `GetChatMembers`。

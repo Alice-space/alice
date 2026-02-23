@@ -75,6 +75,8 @@ type Job struct {
 	MentionedUsers       []MentionedUser
 	SourceMessageID      string
 	ReplyParentMessageID string
+	ThreadID             string
+	RootID               string
 	MessageType          string
 	Text                 string
 	Attachments          []Attachment

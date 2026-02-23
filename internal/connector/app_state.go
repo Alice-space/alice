@@ -78,7 +78,7 @@ func (a *App) LoadRuntimeState(path string) error {
 			if !ok {
 				continue
 			}
-			if !entry.ReceivedAt.IsZero() && now.Sub(entry.ReceivedAt) > groupMediaWindowTTL {
+			if !entry.ReceivedAt.IsZero() && now.Sub(entry.ReceivedAt) > a.groupContextWindowTTL() {
 				continue
 			}
 			entries = append(entries, entry)
@@ -352,6 +352,8 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	job.SenderUserID = strings.TrimSpace(job.SenderUserID)
 	job.SourceMessageID = strings.TrimSpace(job.SourceMessageID)
 	job.ReplyParentMessageID = strings.TrimSpace(job.ReplyParentMessageID)
+	job.ThreadID = strings.TrimSpace(job.ThreadID)
+	job.RootID = strings.TrimSpace(job.RootID)
 	job.MessageType = strings.TrimSpace(job.MessageType)
 	job.RawContent = strings.TrimSpace(job.RawContent)
 	job.EventID = strings.TrimSpace(job.EventID)
@@ -391,7 +393,7 @@ func normalizeMediaWindowEntry(entry mediaWindowEntry) (mediaWindowEntry, bool) 
 		normalized = append(normalized, attachment)
 	}
 	entry.Attachments = normalized
-	if len(normalized) == 0 {
+	if !hasMediaWindowEntryContent(entry) {
 		return mediaWindowEntry{}, false
 	}
 	if entry.ReceivedAt.IsZero() {

@@ -31,6 +31,9 @@ thinking_message: "正在思考中..."
 queue_capacity: 256
 worker_concurrency: 1
 idle_summary_hours: 8
+# Group context cache window (minutes) for non-@ group messages.
+# On @ trigger, text + media from this window are merged into context.
+group_context_window_minutes: 5
 
 # debug | info | warn | error
 log_level: "info"

@@ -19,7 +19,14 @@ type mediaWindowEntry struct {
 	ReceivedAt      time.Time    `json:"received_at"`
 }
 
-func (a *App) cacheGroupMediaWindow(event *larkim.P2MessageReceiveV1) {
+func (a *App) groupContextWindowTTL() time.Duration {
+	if a.cfg.GroupContextWindowTTL > 0 {
+		return a.cfg.GroupContextWindowTTL
+	}
+	return defaultGroupContextWindow
+}
+
+func (a *App) cacheGroupContextWindow(event *larkim.P2MessageReceiveV1, accepted bool) {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return
 	}
@@ -27,30 +34,35 @@ func (a *App) cacheGroupMediaWindow(event *larkim.P2MessageReceiveV1) {
 	if !isGroupChatType(deref(message.ChatType)) {
 		return
 	}
+	if accepted {
+		return
+	}
 	if strings.TrimSpace(a.cfg.FeishuBotOpenID) == "" && strings.TrimSpace(a.cfg.FeishuBotUserID) == "" {
 		return
 	}
-	if !isMediaMessageType(deref(message.MessageType)) {
+	if !isSupportedIncomingMessageType(deref(message.MessageType)) {
 		return
 	}
 
 	job, err := BuildJob(event)
-	if err != nil || job == nil || len(job.Attachments) == 0 {
+	if err != nil || job == nil || !hasMediaWindowEntryContent(mediaWindowEntry{
+		Text:        job.Text,
+		Attachments: job.Attachments,
+	}) {
 		return
 	}
 
-	senderIdentity := senderIdentityForJob(*job)
-	if senderIdentity == "" {
-		return
-	}
-	windowKey := buildMediaWindowKey(job.ReceiveID, senderIdentity)
+	windowKey := buildMediaWindowKeyForJob(*job)
 	if windowKey == "" {
 		return
 	}
 
-	at := job.ReceivedAt
+	at := a.now()
 	if at.IsZero() {
-		at = a.now()
+		at = job.ReceivedAt
+	}
+	if at.IsZero() {
+		at = time.Now()
 	}
 	entry := mediaWindowEntry{
 		SourceMessageID: strings.TrimSpace(job.SourceMessageID),
@@ -71,36 +83,35 @@ func (a *App) cacheGroupMediaWindow(event *larkim.P2MessageReceiveV1) {
 	a.mediaWindow[windowKey] = entries
 	a.markRuntimeStateChangedLocked()
 	logging.Debugf(
-		"group media cached event_id=%s window_key=%s message_type=%s attachments=%d",
+		"group context cached event_id=%s window_key=%s message_type=%s text=%t attachments=%d",
 		job.EventID,
 		windowKey,
 		job.MessageType,
+		strings.TrimSpace(job.Text) != "",
 		len(job.Attachments),
 	)
 }
 
-func (a *App) mergeRecentGroupMediaWindow(job *Job) {
+func (a *App) mergeRecentGroupContextWindow(job *Job) {
 	if job == nil {
 		return
 	}
 	if !isGroupChatType(job.ChatType) {
 		return
 	}
-
-	senderIdentity := senderIdentityForJob(*job)
-	if senderIdentity == "" {
-		return
-	}
-	windowKey := buildMediaWindowKey(job.ReceiveID, senderIdentity)
+	windowKey := buildMediaWindowKeyForJob(*job)
 	if windowKey == "" {
 		return
 	}
 
-	now := job.ReceivedAt
+	now := a.now()
 	if now.IsZero() {
-		now = a.now()
+		now = job.ReceivedAt
 	}
-	cutoff := now.Add(-groupMediaWindowTTL)
+	if now.IsZero() {
+		now = time.Now()
+	}
+	cutoff := now.Add(-a.groupContextWindowTTL())
 	sourceMessageID := strings.TrimSpace(job.SourceMessageID)
 
 	a.mu.Lock()
@@ -122,7 +133,6 @@ func (a *App) mergeRecentGroupMediaWindow(job *Job) {
 		}
 		// Avoid reusing the same message as both trigger and window content.
 		if sourceMessageID != "" && strings.TrimSpace(entry.SourceMessageID) == sourceMessageID {
-			remaining = append(remaining, entry)
 			continue
 		}
 		// Keep future-dated entries (clock skew) for next trigger.
@@ -147,16 +157,30 @@ func (a *App) mergeRecentGroupMediaWindow(job *Job) {
 		return
 	}
 
+	mergedTexts := make([]string, 0, len(selected))
+	mediaMessageCount := 0
+	textMessageCount := 0
 	mergedAttachments := 0
 	for _, entry := range selected {
+		if strings.EqualFold(strings.TrimSpace(entry.MessageType), "text") {
+			textMessageCount++
+		}
+		if isMediaMessageType(entry.MessageType) {
+			mediaMessageCount++
+		}
+		if text := strings.TrimSpace(entry.Text); text != "" {
+			mergedTexts = append(mergedTexts, clipText(text, 200))
+		}
 		mergedAttachments += len(entry.Attachments)
 		job.Attachments = append(job.Attachments, cloneAttachments(entry.Attachments)...)
 	}
 
-	hint := fmt.Sprintf(
-		"系统补充：已自动合并你在过去5分钟发送的%d条多媒体消息（共%d个附件）。",
-		len(selected),
+	hint := buildGroupContextMergeHint(
+		formatGroupContextWindowLabel(a.groupContextWindowTTL()),
+		textMessageCount,
+		mediaMessageCount,
 		mergedAttachments,
+		mergedTexts,
 	)
 	baseText := strings.TrimSpace(job.Text)
 	if baseText == "" {
@@ -166,7 +190,7 @@ func (a *App) mergeRecentGroupMediaWindow(job *Job) {
 	}
 
 	logging.Debugf(
-		"group media merged event_id=%s window_key=%s merged_messages=%d merged_attachments=%d",
+		"group context merged event_id=%s window_key=%s merged_messages=%d merged_attachments=%d",
 		job.EventID,
 		windowKey,
 		len(selected),
@@ -207,8 +231,10 @@ func (a *App) buildSyntheticMentionJob(event *larkim.P2MessageReceiveV1) (*Job, 
 		MentionedUsers:       extractMentionedUsers(message),
 		SourceMessageID:      strings.TrimSpace(deref(message.MessageId)),
 		ReplyParentMessageID: extractReplyParentMessageID(message),
+		ThreadID:             strings.TrimSpace(deref(message.ThreadId)),
+		RootID:               strings.TrimSpace(deref(message.RootId)),
 		MessageType:          "text",
-		Text:                 "用户@了你，请结合其最近发送的多媒体继续处理。",
+		Text:                 "用户@了你，请结合其最近发送的消息继续处理。",
 		RawContent:           strings.TrimSpace(deref(message.Content)),
 		EventID:              eventID(event),
 		ReceivedAt:           a.now(),
@@ -223,7 +249,7 @@ func (a *App) pruneExpiredMediaWindowLocked(now time.Time) {
 	if now.IsZero() {
 		now = a.now()
 	}
-	cutoff := now.Add(-groupMediaWindowTTL)
+	cutoff := now.Add(-a.groupContextWindowTTL())
 	changed := false
 
 	for key, entries := range a.mediaWindow {
@@ -235,7 +261,7 @@ func (a *App) pruneExpiredMediaWindowLocked(now time.Time) {
 			if entry.ReceivedAt.Before(cutoff) {
 				continue
 			}
-			if len(entry.Attachments) == 0 {
+			if !hasMediaWindowEntryContent(entry) {
 				continue
 			}
 			filtered = append(filtered, entry)
@@ -275,6 +301,96 @@ func buildMediaWindowKey(receiveID, senderIdentity string) string {
 		return ""
 	}
 	return chatID + "|" + senderIdentity
+}
+
+func buildMediaWindowKeyForJob(job Job) string {
+	base := buildMediaWindowKey(job.ReceiveID, senderIdentityForJob(job))
+	if base == "" {
+		return ""
+	}
+	scope := mediaWindowThreadScopeForJob(job)
+	if scope == "" {
+		return base
+	}
+	return base + "|" + scope
+}
+
+func mediaWindowThreadScopeForJob(job Job) string {
+	if threadID := strings.TrimSpace(job.ThreadID); threadID != "" {
+		return "thread:" + threadID
+	}
+	if rootID := strings.TrimSpace(job.RootID); rootID != "" {
+		return "root:" + rootID
+	}
+	return ""
+}
+
+func hasMediaWindowEntryContent(entry mediaWindowEntry) bool {
+	return strings.TrimSpace(entry.Text) != "" || len(entry.Attachments) > 0
+}
+
+func formatGroupContextWindowLabel(ttl time.Duration) string {
+	if ttl <= 0 {
+		ttl = defaultGroupContextWindow
+	}
+	if ttl%time.Minute == 0 {
+		return fmt.Sprintf("%d分钟", int(ttl/time.Minute))
+	}
+	if ttl%time.Second == 0 {
+		return fmt.Sprintf("%d秒", int(ttl/time.Second))
+	}
+	return ttl.String()
+}
+
+func buildGroupContextMergeHint(
+	windowLabel string,
+	textMessageCount int,
+	mediaMessageCount int,
+	mergedAttachments int,
+	mergedTexts []string,
+) string {
+	var summary string
+	switch {
+	case textMessageCount > 0 && mediaMessageCount > 0:
+		summary = fmt.Sprintf(
+			"系统补充：已自动合并你在过去%s发送的%d条文本消息和%d条多媒体消息（共%d个附件）。",
+			windowLabel,
+			textMessageCount,
+			mediaMessageCount,
+			mergedAttachments,
+		)
+	case mediaMessageCount > 0:
+		summary = fmt.Sprintf(
+			"系统补充：已自动合并你在过去%s发送的%d条多媒体消息（共%d个附件）。",
+			windowLabel,
+			mediaMessageCount,
+			mergedAttachments,
+		)
+	default:
+		summary = fmt.Sprintf(
+			"系统补充：已自动合并你在过去%s发送的%d条文本消息。",
+			windowLabel,
+			textMessageCount,
+		)
+	}
+
+	if len(mergedTexts) == 0 {
+		return summary
+	}
+
+	maxItems := 8
+	if len(mergedTexts) < maxItems {
+		maxItems = len(mergedTexts)
+	}
+	lines := make([]string, 0, maxItems+2)
+	lines = append(lines, summary, "最近消息内容：")
+	for i := 0; i < maxItems; i++ {
+		lines = append(lines, "- "+mergedTexts[i])
+	}
+	if len(mergedTexts) > maxItems {
+		lines = append(lines, fmt.Sprintf("- 其余%d条消息已省略。", len(mergedTexts)-maxItems))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func cloneAttachments(in []Attachment) []Attachment {

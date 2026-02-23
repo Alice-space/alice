@@ -38,7 +38,7 @@ type App struct {
 const (
 	idleSummaryScanInterval   = 60 * time.Second
 	sessionStateFlushInterval = 1 * time.Second
-	groupMediaWindowTTL       = 5 * time.Minute
+	defaultGroupContextWindow = 5 * time.Minute
 	maxMediaWindowEntries     = 20
 )
 
@@ -234,7 +234,7 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	logIncomingEventDebug(event)
 	accepted := shouldProcessIncomingMessage(event, a.cfg.FeishuBotOpenID, a.cfg.FeishuBotUserID)
-	a.cacheGroupMediaWindow(event)
+	a.cacheGroupContextWindow(event, accepted)
 	if !accepted {
 		logging.Debugf(
 			"incoming message ignored source=feishu_im event_id=%s reason=group_without_bot_mention chat_type=%s",
@@ -265,7 +265,7 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 	if event != nil && event.Event != nil {
 		a.resolveJobSessionKey(job, event.Event.Message)
 	}
-	a.mergeRecentGroupMediaWindow(job)
+	a.mergeRecentGroupContextWindow(job)
 	job.BotOpenID = strings.TrimSpace(a.cfg.FeishuBotOpenID)
 	job.BotUserID = strings.TrimSpace(a.cfg.FeishuBotUserID)
 

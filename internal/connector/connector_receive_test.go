@@ -488,7 +488,7 @@ func TestApp_OnMessageReceive_MentionOnlyBuildsSyntheticJobAndMergesMedia(t *tes
 	if job.Attachments[0].SourceMessageID != "om_media_synth" {
 		t.Fatalf("unexpected merged synthetic attachment source message id: %s", job.Attachments[0].SourceMessageID)
 	}
-	if !strings.Contains(job.Text, "用户@了你，请结合其最近发送的多媒体继续处理。") {
+	if !strings.Contains(job.Text, "用户@了你，请结合其最近发送的消息继续处理。") {
 		t.Fatalf("expected synthetic mention hint in text, got: %q", job.Text)
 	}
 }
