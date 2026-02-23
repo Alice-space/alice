@@ -137,12 +137,13 @@ Optional:
 - When the same user later sends an `@bot` trigger message in that group, cached multimedia from the previous 5 minutes is merged into that request context.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
 - Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
+- Before each model call, the connector also auto-checks project-root guidance files (`AGENT.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) and injects existing contents into prompt context.
 - Downloaded incoming resources are stored under `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`.
 - On first startup, the connector auto-creates `memory_dir` and its `daily/` subdirectory.
 - The connector also persists per-chat session state in `memory_dir/session_state.json` to keep thread continuity across restarts.
 - The connector persists queued jobs in `memory_dir/runtime_state.json`; after restart it resumes queued jobs that were not started yet.
 - If shutdown/restart happens while a job is being processed, that in-progress job is discarded and will not be resumed after restart.
-- Before each Codex call, only long-term memory is injected; date-based memory is exposed as a directory path for Codex to search on demand.
+- Before each Codex call, long-term memory plus existing project-root guidance files are injected; date-based memory is exposed as a directory path for Codex to search on demand.
 - Session reuse is now thread-aware:
   - Messages in the same Feishu thread/topic (`thread_id`, fallback `root_id`) reuse one Codex thread.
   - Messages without thread context start a new Codex session per incoming message.

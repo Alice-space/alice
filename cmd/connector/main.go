@@ -54,6 +54,7 @@ func main() {
 
 	memoryDir := resolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
 	memoryManager := memory.NewManager(memoryDir)
+	memoryManager.SetProjectDir(cfg.WorkspaceDir)
 	if err := memoryManager.Init(); err != nil {
 		log.Fatalf("init memory module failed: %v", err)
 	}

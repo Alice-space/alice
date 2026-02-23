@@ -26,14 +26,18 @@ const (
 	defaultMaxLongTermRunes  = 6000
 	defaultMaxShortTermRunes = 8000
 	defaultMaxEntryRunes     = 2000
+	defaultMaxGuideRunes     = 6000
 )
 
 type Manager struct {
 	Dir string
+	// ProjectDir points to the workspace root where guidance files may exist.
+	ProjectDir string
 
 	MaxLongTermRunes  int
 	MaxShortTermRunes int
 	MaxEntryRunes     int
+	MaxGuideRunes     int
 
 	now func() time.Time
 	mu  sync.Mutex
@@ -45,8 +49,15 @@ func NewManager(dir string) *Manager {
 		MaxLongTermRunes:  defaultMaxLongTermRunes,
 		MaxShortTermRunes: defaultMaxShortTermRunes,
 		MaxEntryRunes:     defaultMaxEntryRunes,
+		MaxGuideRunes:     defaultMaxGuideRunes,
 		now:               time.Now,
 	}
+}
+
+func (m *Manager) SetProjectDir(dir string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.ProjectDir = strings.TrimSpace(dir)
 }
 
 func (m *Manager) Init() error {
@@ -101,6 +112,7 @@ func (m *Manager) BuildPrompt(userText string) (string, error) {
 	longTermPromptPath := absOrSame(longTermPath)
 	shortTermName := shortTermFileName(now)
 	shortTermDir := absOrSame(filepath.Join(m.Dir, ShortTermDirName))
+	guideDocs := m.collectProjectGuideDocs()
 
 	prompt := "---\n" +
 		"记忆内容与更新规则：\n" +
@@ -114,13 +126,15 @@ func (m *Manager) BuildPrompt(userText string) (string, error) {
 		"按需记忆更新：\n" +
 		"- 系统仅会在会话空闲超时后自动追加“空闲摘要”到分日期记忆；其余记忆更新请你自行编辑上述文件。\n" +
 		"- 长期记忆内容有限，若用户未明确要求，不要将临时任务细节升级为长期偏好。\n" +
+		buildProjectGuideSection(guideDocs) +
 		"---\n\n" +
 		"当前用户消息：\n" + userText
 	logging.Debugf(
-		"memory prompt assembled dir=%s long_term_file=%s short_term_dir=%s user_text=%q prompt=%q",
+		"memory prompt assembled dir=%s long_term_file=%s short_term_dir=%s guide_docs=%d user_text=%q prompt=%q",
 		m.Dir,
 		longTermPromptPath,
 		shortTermDir,
+		len(guideDocs),
 		userText,
 		prompt,
 	)
@@ -205,6 +219,13 @@ func (m *Manager) maxEntryRunes() int {
 	return m.MaxEntryRunes
 }
 
+func (m *Manager) maxGuideRunes() int {
+	if m.MaxGuideRunes <= 0 {
+		return defaultMaxGuideRunes
+	}
+	return m.MaxGuideRunes
+}
+
 func shortTermFileName(now time.Time) string {
 	return now.Format(shortTermLayout) + shortTermFileSuffix
 }
@@ -233,6 +254,94 @@ func normalizeMemoryText(text string, maxRunes int) string {
 		return "（空）"
 	}
 	return clipTailRunes(text, maxRunes)
+}
+
+type projectGuideDoc struct {
+	Path    string
+	Name    string
+	Content string
+}
+
+func (m *Manager) collectProjectGuideDocs() []projectGuideDoc {
+	roots := m.projectGuideRoots()
+	if len(roots) == 0 {
+		return nil
+	}
+
+	fileNames := []string{"AGENT.md", "AGENTS.md", "CLAUDE.md", "GEMINI.md"}
+	maxRunes := m.maxGuideRunes()
+	docs := make([]projectGuideDoc, 0, len(fileNames))
+	seen := make(map[string]struct{}, len(fileNames))
+
+	for _, root := range roots {
+		for _, name := range fileNames {
+			candidate := filepath.Join(root, name)
+			absPath := absOrSame(candidate)
+			if _, ok := seen[absPath]; ok {
+				continue
+			}
+
+			content, err := readOptionalFile(candidate)
+			if err != nil {
+				logging.Debugf("project guide read failed path=%s err=%v", absPath, err)
+				continue
+			}
+			if strings.TrimSpace(content) == "" {
+				continue
+			}
+
+			seen[absPath] = struct{}{}
+			docs = append(docs, projectGuideDoc{
+				Path:    absPath,
+				Name:    name,
+				Content: clipRunes(strings.TrimSpace(content), maxRunes),
+			})
+		}
+	}
+	return docs
+}
+
+func (m *Manager) projectGuideRoots() []string {
+	roots := make([]string, 0, 2)
+	seen := map[string]struct{}{}
+
+	add := func(path string) {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			return
+		}
+		absPath := absOrSame(path)
+		if _, ok := seen[absPath]; ok {
+			return
+		}
+		if info, err := os.Stat(absPath); err != nil || !info.IsDir() {
+			return
+		}
+		seen[absPath] = struct{}{}
+		roots = append(roots, absPath)
+	}
+
+	add(m.ProjectDir)
+	add(filepath.Dir(m.Dir))
+	return roots
+}
+
+func buildProjectGuideSection(docs []projectGuideDoc) string {
+	var b strings.Builder
+	b.WriteString("\n项目级执行规范文件（自动检索）：\n")
+	b.WriteString("- 检查范围：AGENT.md / AGENTS.md / CLAUDE.md / GEMINI.md（项目根目录）。\n")
+	if len(docs) == 0 {
+		b.WriteString("- 当前未发现上述文件。\n")
+		return b.String()
+	}
+	for _, doc := range docs {
+		b.WriteString("- 文件：")
+		b.WriteString(doc.Path)
+		b.WriteString("\n  内容：\n")
+		b.WriteString(doc.Content)
+		b.WriteString("\n")
+	}
+	return b.String()
 }
 
 func clipTailRunes(text string, maxRunes int) string {

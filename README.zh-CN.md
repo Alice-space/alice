@@ -143,12 +143,13 @@ log_level: "info"
 - 当同一用户后续在该群艾特机器人触发时，会把其过去 5 分钟缓存的多媒体并入本次上下文。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
 - 默认启用记忆模块，文件写入 `memory_dir`：长期记忆 `MEMORY.md`，分日期记忆在 `daily/YYYY-MM-DD.md`。
+- 每次模型调用前，连接器还会自动检查项目根目录的规范文件（`AGENT.md`、`AGENTS.md`、`CLAUDE.md`、`GEMINI.md`），并将存在的文件内容拼接进提示上下文。
 - 下载的消息资源会落盘到 `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`。
 - 首次启动时会自动创建 `memory_dir` 及其 `daily/` 子目录。
 - 连接器会把每个聊天的会话状态持久化到 `memory_dir/session_state.json`，重启后仍可续接线程。
 - 连接器会把队列中/执行中的任务持久化到 `memory_dir/runtime_state.json`，重启后会继续回复未完成或未回复的消息。
 - 若任务文本明显是“自更新并重启自己”，且处理过程中因重启导致中断，会将该任务视为已完成，避免重启后循环再次处理同一更新指令。
-- 每次调用 Codex 前，仅把长期记忆注入提示词；分日期记忆只提供目录位置，让 Codex 按需检索。
+- 每次调用 Codex 前，会把长期记忆和项目根目录规范文件（若存在）注入提示词；分日期记忆只提供目录位置，让 Codex 按需检索。
 - 会话复用改为“按话题优先”：
   - 同一飞书话题线程（`thread_id`，没有则回退 `root_id`）内的消息复用同一个 Codex 线程。
   - 不属于任何话题线程的消息，每条消息都会新建一个 Codex session。
