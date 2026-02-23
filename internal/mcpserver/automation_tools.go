@@ -40,7 +40,9 @@ func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
 		mcp.WithDescription("创建自动化任务。私聊按用户作用域隔离，群聊按群作用域隔离。"),
 		mcp.WithString("title", mcp.Description("任务标题，可选")),
 		mcp.WithNumber("every_seconds", mcp.Required(), mcp.Description("执行间隔秒数，最小60秒"), mcp.Min(60)),
+		mcp.WithString("action_type", mcp.Description("任务动作类型：send_text 或 run_llm；默认 send_text"), mcp.Enum("send_text", "run_llm")),
 		mcp.WithString("text", mcp.Description("发送文本，可选；与 mention_user_ids 至少一项非空")),
+		mcp.WithString("prompt", mcp.Description("run_llm 动作的提示词；支持模板变量 {{now}}/{{date}}/{{time}}/{{unix}}")),
 		mcp.WithArray("mention_user_ids", mcp.Description("要@的用户id列表，私聊仅允许@当前用户"), mcp.WithStringItems()),
 		mcp.WithBoolean("enabled", mcp.Description("是否启用，默认 true")),
 		mcp.WithString("manage_mode", mcp.Description("creator_only 或 scope_all（仅群聊可用）"), mcp.Enum("creator_only", "scope_all")),
@@ -65,7 +67,9 @@ func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
 		mcp.WithString("task_id", mcp.Required(), mcp.Description("任务ID")),
 		mcp.WithString("title", mcp.Description("新标题")),
 		mcp.WithNumber("every_seconds", mcp.Description("新间隔秒数，最小60秒"), mcp.Min(60)),
+		mcp.WithString("action_type", mcp.Description("新动作类型：send_text 或 run_llm"), mcp.Enum("send_text", "run_llm")),
 		mcp.WithString("text", mcp.Description("新文本")),
+		mcp.WithString("prompt", mcp.Description("run_llm 动作的新提示词；支持模板变量 {{now}}/{{date}}/{{time}}/{{unix}}")),
 		mcp.WithArray("mention_user_ids", mcp.Description("新的@用户id列表"), mcp.WithStringItems()),
 		mcp.WithBoolean("enabled", mcp.Description("设置启用状态")),
 		mcp.WithString("status", mcp.Description("active/paused/deleted"), mcp.Enum("active", "paused", "deleted")),
@@ -94,6 +98,11 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 	}
 	title := strings.TrimSpace(request.GetString("title", ""))
 	text := strings.TrimSpace(request.GetString("text", ""))
+	prompt := strings.TrimSpace(request.GetString("prompt", ""))
+	actionType, err := resolveActionType(request.GetString("action_type", ""), prompt)
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
 	mentionUserIDs := uniqueNonEmptyStrings(request.GetStringSlice("mention_user_ids", nil))
 	if err := validateMentionPermission(scopeCtx, mentionUserIDs); err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
@@ -123,8 +132,9 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 			EverySeconds: everySeconds,
 		},
 		Action: automation.Action{
-			Type:           automation.ActionTypeSendText,
+			Type:           actionType,
 			Text:           text,
+			Prompt:         prompt,
 			MentionUserIDs: mentionUserIDs,
 		},
 		Status: status,
@@ -224,6 +234,16 @@ func (s *service) handleAutomationTaskUpdate(_ context.Context, request mcp.Call
 		}
 		if hasArgument(request, "text") {
 			task.Action.Text = strings.TrimSpace(request.GetString("text", ""))
+		}
+		if hasArgument(request, "prompt") {
+			task.Action.Prompt = strings.TrimSpace(request.GetString("prompt", ""))
+		}
+		if hasArgument(request, "action_type") {
+			actionType, err := parseActionType(request.GetString("action_type", ""))
+			if err != nil {
+				return err
+			}
+			task.Action.Type = actionType
 		}
 		if hasArgument(request, "mention_user_ids") {
 			mentions := uniqueNonEmptyStrings(request.GetStringSlice("mention_user_ids", nil))
@@ -373,6 +393,26 @@ func parseManageMode(raw string, groupScope bool) (automation.ManageMode, error)
 		return mode, nil
 	default:
 		return "", fmt.Errorf("invalid manage_mode %q", raw)
+	}
+}
+
+func resolveActionType(raw, prompt string) (automation.ActionType, error) {
+	if strings.TrimSpace(raw) == "" {
+		if strings.TrimSpace(prompt) != "" {
+			return automation.ActionTypeRunLLM, nil
+		}
+		return automation.ActionTypeSendText, nil
+	}
+	return parseActionType(raw)
+}
+
+func parseActionType(raw string) (automation.ActionType, error) {
+	actionType := automation.ActionType(strings.ToLower(strings.TrimSpace(raw)))
+	switch actionType {
+	case automation.ActionTypeSendText, automation.ActionTypeRunLLM:
+		return actionType, nil
+	default:
+		return "", fmt.Errorf("invalid action_type %q", raw)
 	}
 }
 

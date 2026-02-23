@@ -3,14 +3,23 @@ package automation
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"gitee.com/alicespace/alice/internal/llm"
+	"gitee.com/alicespace/alice/internal/mcpbridge"
 )
 
 type TextSender interface {
 	SendText(ctx context.Context, receiveIDType, receiveID, text string) error
+}
+
+type LLMRunner interface {
+	Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error)
 }
 
 type SystemTaskFunc func(ctx context.Context)
@@ -18,6 +27,7 @@ type SystemTaskFunc func(ctx context.Context)
 type Engine struct {
 	store       *Store
 	sender      TextSender
+	llmRunner   LLMRunner
 	tick        time.Duration
 	maxClaim    int
 	now         func() time.Time
@@ -42,6 +52,13 @@ func NewEngine(store *Store, sender TextSender) *Engine {
 		now:         time.Now,
 		systemTasks: make(map[string]*systemTaskRuntime),
 	}
+}
+
+func (e *Engine) SetLLMRunner(runner LLMRunner) {
+	if e == nil {
+		return
+	}
+	e.llmRunner = runner
 }
 
 func (e *Engine) RegisterSystemTask(name string, interval time.Duration, run SystemTaskFunc) error {
@@ -172,14 +189,59 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) error {
 		return errors.New("automation sender is nil")
 	}
 	task = NormalizeTask(task)
-	text, err := BuildDispatchText(task.Action)
-	if err != nil {
-		return err
-	}
 	if strings.TrimSpace(task.Route.ReceiveIDType) == "" || strings.TrimSpace(task.Route.ReceiveID) == "" {
 		return errors.New("task route is incomplete")
 	}
+	text, err := e.buildTaskDispatchText(ctx, task)
+	if err != nil {
+		return err
+	}
 	return e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, text)
+}
+
+func (e *Engine) buildTaskDispatchText(ctx context.Context, task Task) (string, error) {
+	task = NormalizeTask(task)
+	runAt := e.nowTime()
+	switch task.Action.Type {
+	case ActionTypeSendText:
+		rendered := renderActionTemplate(task.Action.Text, runAt)
+		return BuildDispatchText(Action{
+			Type:           ActionTypeSendText,
+			Text:           rendered,
+			MentionUserIDs: task.Action.MentionUserIDs,
+		})
+	case ActionTypeRunLLM:
+		if e.llmRunner == nil {
+			return "", errors.New("automation llm runner is nil")
+		}
+		prompt := renderActionTemplate(task.Action.Prompt, runAt)
+		if prompt == "" {
+			return "", errors.New("action prompt is empty for run_llm")
+		}
+		result, err := e.llmRunner.Run(ctx, llm.RunRequest{
+			UserText: prompt,
+			Env:      buildTaskRunEnv(task),
+		})
+		if err != nil {
+			return "", err
+		}
+		reply := strings.TrimSpace(result.Reply)
+		if reply == "" {
+			return "", errors.New("llm reply is empty")
+		}
+		prefix := renderActionTemplate(task.Action.Text, runAt)
+		message := reply
+		if prefix != "" {
+			message = prefix + "\n" + reply
+		}
+		return BuildDispatchText(Action{
+			Type:           ActionTypeSendText,
+			Text:           message,
+			MentionUserIDs: task.Action.MentionUserIDs,
+		})
+	default:
+		return "", fmt.Errorf("unsupported action type %q", task.Action.Type)
+	}
 }
 
 func (e *Engine) tickDuration() time.Duration {
@@ -198,4 +260,42 @@ func (e *Engine) nowTime() time.Time {
 		return time.Now().UTC()
 	}
 	return now.UTC()
+}
+
+func renderActionTemplate(raw string, now time.Time) string {
+	template := strings.TrimSpace(raw)
+	if template == "" {
+		return ""
+	}
+	if now.IsZero() {
+		now = time.Now().UTC()
+	}
+	now = now.UTC()
+	replacer := strings.NewReplacer(
+		"{{now}}", now.Format(time.RFC3339),
+		"{{date}}", now.Format("2006-01-02"),
+		"{{time}}", now.Format("15:04:05"),
+		"{{unix}}", strconv.FormatInt(now.Unix(), 10),
+	)
+	return strings.TrimSpace(replacer.Replace(template))
+}
+
+func buildTaskRunEnv(task Task) map[string]string {
+	task = NormalizeTask(task)
+	ctx := mcpbridge.SessionContext{
+		ReceiveIDType: task.Route.ReceiveIDType,
+		ReceiveID:     task.Route.ReceiveID,
+		ActorUserID:   task.Creator.UserID,
+		ActorOpenID:   task.Creator.OpenID,
+	}
+	switch task.Scope.Kind {
+	case ScopeKindChat:
+		ctx.ChatType = "group"
+	case ScopeKindUser:
+		ctx.ChatType = "p2p"
+	}
+	if err := ctx.Validate(); err != nil {
+		return nil
+	}
+	return ctx.ToEnv()
 }

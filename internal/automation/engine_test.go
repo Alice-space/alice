@@ -6,6 +6,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"gitee.com/alicespace/alice/internal/llm"
 )
 
 type senderStub struct {
@@ -24,6 +26,22 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	s.lastReceiveID = receiveID
 	s.lastText = text
 	return nil
+}
+
+type llmRunnerStub struct {
+	mu      sync.Mutex
+	calls   int
+	lastReq llm.RunRequest
+	result  llm.RunResult
+	err     error
+}
+
+func (s *llmRunnerStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	s.lastReq = req
+	return s.result, s.err
 }
 
 func TestEngine_RunSystemTask(t *testing.T) {
@@ -80,6 +98,75 @@ func TestEngine_RunUserTask(t *testing.T) {
 	if sender.sendTextCalls == 0 {
 		sender.mu.Unlock()
 		t.Fatal("expected user task to send text")
+	}
+	sender.mu.Unlock()
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.LastResult == "" {
+		t.Fatalf("expected last result to be recorded, task=%+v", stored)
+	}
+}
+
+func TestEngine_RunUserTask_RunLLM(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 1, 2, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation_state.json"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:           ActionTypeRunLLM,
+			Text:           "定时播报",
+			Prompt:         "请回复当前时间 {{now}}",
+			MentionUserIDs: []string{"ou_actor"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_llm task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &llmRunnerStub{
+		result: llm.RunResult{Reply: "现在是 2026-02-23T10:01:02Z"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetLLMRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	runner.mu.Lock()
+	if runner.calls == 0 {
+		runner.mu.Unlock()
+		t.Fatal("expected run_llm task to invoke llm runner")
+	}
+	if runner.lastReq.UserText != "请回复当前时间 2026-02-23T10:01:04Z" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm prompt: %q", runner.lastReq.UserText)
+	}
+	if got := runner.lastReq.Env["ALICE_MCP_RECEIVE_ID"]; got != "ou_actor" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm env receive id: %q", got)
+	}
+	runner.mu.Unlock()
+
+	sender.mu.Lock()
+	if sender.sendTextCalls == 0 {
+		sender.mu.Unlock()
+		t.Fatal("expected run_llm task to send text")
+	}
+	if sender.lastText == "" {
+		sender.mu.Unlock()
+		t.Fatal("expected non-empty run_llm dispatch text")
 	}
 	sender.mu.Unlock()
 

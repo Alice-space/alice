@@ -108,6 +108,55 @@ func TestAutomationTaskCreate_GroupScopeAllowsMentionOthers(t *testing.T) {
 	}
 }
 
+func TestAutomationTaskCreate_RunLLMByPromptDefaultActionType(t *testing.T) {
+	store := automation.NewStore(filepath.Join(t.TempDir(), "automation_state.json"))
+	svc := &service{
+		sender:          &senderStub{},
+		automationStore: store,
+		getenv: func(key string) string {
+			switch key {
+			case mcpbridge.EnvReceiveIDType:
+				return "chat_id"
+			case mcpbridge.EnvReceiveID:
+				return "oc_group"
+			case mcpbridge.EnvActorUserID:
+				return "ou_actor"
+			case mcpbridge.EnvChatType:
+				return "group"
+			default:
+				return ""
+			}
+		},
+	}
+
+	result, err := svc.handleAutomationTaskCreate(context.Background(), mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Arguments: map[string]any{
+			"every_seconds": 60,
+			"prompt":        "请输出当前时间 {{now}}",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected create handler error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected run_llm create success, got %#v", result)
+	}
+
+	list, err := store.ListTasks(automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_group"}, "", 10)
+	if err != nil {
+		t.Fatalf("list tasks failed: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 created task, got %d", len(list))
+	}
+	if list[0].Action.Type != automation.ActionTypeRunLLM {
+		t.Fatalf("expected run_llm action type, got %s", list[0].Action.Type)
+	}
+	if list[0].Action.Prompt == "" {
+		t.Fatalf("expected run_llm prompt to be stored, got %+v", list[0].Action)
+	}
+}
+
 func TestAutomationTaskUpdate_PermissionDeniedForCreatorOnly(t *testing.T) {
 	store := automation.NewStore(filepath.Join(t.TempDir(), "automation_state.json"))
 	created, err := store.CreateTask(automation.Task{
@@ -208,5 +257,66 @@ func TestAutomationTaskDelete_ScopeAllAllowsOthers(t *testing.T) {
 	}
 	if updated.Status != automation.TaskStatusDeleted {
 		t.Fatalf("expected deleted status, got %s", updated.Status)
+	}
+}
+
+func TestAutomationTaskUpdate_CanSwitchToRunLLM(t *testing.T) {
+	store := automation.NewStore(filepath.Join(t.TempDir(), "automation_state.json"))
+	created, err := store.CreateTask(automation.Task{
+		Title:      "group reminder",
+		Scope:      automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_group"},
+		Route:      automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_group"},
+		Creator:    automation.Actor{UserID: "ou_creator"},
+		ManageMode: automation.ManageModeCreatorOnly,
+		Schedule:   automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 60},
+		Action:     automation.Action{Type: automation.ActionTypeSendText, Text: "hello"},
+		Status:     automation.TaskStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("create task failed: %v", err)
+	}
+
+	svc := &service{
+		sender:          &senderStub{},
+		automationStore: store,
+		getenv: func(key string) string {
+			switch key {
+			case mcpbridge.EnvReceiveIDType:
+				return "chat_id"
+			case mcpbridge.EnvReceiveID:
+				return "oc_group"
+			case mcpbridge.EnvActorUserID:
+				return "ou_creator"
+			case mcpbridge.EnvChatType:
+				return "group"
+			default:
+				return ""
+			}
+		},
+	}
+
+	result, err := svc.handleAutomationTaskUpdate(context.Background(), mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Arguments: map[string]any{
+			"task_id":     created.ID,
+			"action_type": "run_llm",
+			"prompt":      "请输出当前时间 {{now}}",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected update handler error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected update success result, got %#v", result)
+	}
+
+	updated, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if updated.Action.Type != automation.ActionTypeRunLLM {
+		t.Fatalf("expected run_llm action type, got %s", updated.Action.Type)
+	}
+	if updated.Action.Prompt == "" {
+		t.Fatalf("expected updated run_llm prompt, got %+v", updated.Action)
 	}
 }

@@ -36,3 +36,40 @@ func TestParseStatusFilter(t *testing.T) {
 		t.Fatal("expected invalid status filter error")
 	}
 }
+
+func TestValidateTask_RunLLM(t *testing.T) {
+	task := Task{
+		ID:       "task_run_llm",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:           ActionTypeRunLLM,
+			Prompt:         "请输出当前时间 {{now}}",
+			MentionUserIDs: []string{"ou_actor"},
+		},
+		Status: TaskStatusActive,
+	}
+	if err := ValidateTask(task); err != nil {
+		t.Fatalf("expected run_llm task to be valid, got err=%v", err)
+	}
+}
+
+func TestValidateTask_RunLLMEmptyPromptRejected(t *testing.T) {
+	task := Task{
+		ID:       "task_run_llm_empty_prompt",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:   ActionTypeRunLLM,
+			Prompt: "",
+		},
+		Status: TaskStatusActive,
+	}
+	if err := ValidateTask(task); err == nil {
+		t.Fatal("expected empty run_llm prompt error")
+	}
+}

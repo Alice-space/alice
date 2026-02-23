@@ -31,6 +31,7 @@ type ActionType string
 
 const (
 	ActionTypeSendText ActionType = "send_text"
+	ActionTypeRunLLM   ActionType = "run_llm"
 )
 
 type TaskStatus string
@@ -72,6 +73,7 @@ type Schedule struct {
 type Action struct {
 	Type           ActionType `json:"type"`
 	Text           string     `json:"text"`
+	Prompt         string     `json:"prompt,omitempty"`
 	MentionUserIDs []string   `json:"mention_user_ids,omitempty"`
 }
 
@@ -113,6 +115,7 @@ func NormalizeTask(task Task) Task {
 	task.Schedule.Type = ScheduleType(strings.ToLower(strings.TrimSpace(string(task.Schedule.Type))))
 	task.Action.Type = ActionType(strings.ToLower(strings.TrimSpace(string(task.Action.Type))))
 	task.Action.Text = strings.TrimSpace(task.Action.Text)
+	task.Action.Prompt = strings.TrimSpace(task.Action.Prompt)
 	task.Action.MentionUserIDs = uniqueNonEmptyStrings(task.Action.MentionUserIDs)
 	task.Status = TaskStatus(strings.ToLower(strings.TrimSpace(string(task.Status))))
 	task.LastResult = strings.TrimSpace(task.LastResult)
@@ -158,14 +161,23 @@ func ValidateTask(task Task) error {
 	if task.Schedule.EverySeconds <= 0 {
 		return errors.New("every_seconds must be > 0")
 	}
-	if task.Action.Type != ActionTypeSendText {
+	switch task.Action.Type {
+	case ActionTypeSendText:
+		if _, err := BuildDispatchText(task.Action); err != nil {
+			return err
+		}
+	case ActionTypeRunLLM:
+		if strings.TrimSpace(task.Action.Prompt) == "" {
+			return errors.New("action prompt is empty for run_llm")
+		}
+		if _, err := buildMentionParts(task.Action.MentionUserIDs); err != nil {
+			return err
+		}
+	default:
 		return fmt.Errorf("invalid action type %q", task.Action.Type)
 	}
 	if task.Status != TaskStatusActive && task.Status != TaskStatusPaused && task.Status != TaskStatusDeleted {
 		return fmt.Errorf("invalid status %q", task.Status)
-	}
-	if _, err := BuildDispatchText(task.Action); err != nil {
-		return err
 	}
 	return nil
 }
@@ -183,16 +195,9 @@ func NextRunAt(from time.Time, schedule Schedule) time.Time {
 
 func BuildDispatchText(action Action) (string, error) {
 	action = NormalizeTask(Task{Action: action}).Action
-	mentionParts := make([]string, 0, len(action.MentionUserIDs))
-	for _, userID := range action.MentionUserIDs {
-		normalized := strings.TrimSpace(userID)
-		if normalized == "" {
-			continue
-		}
-		if strings.ContainsRune(normalized, '"') {
-			return "", fmt.Errorf("invalid mention user id %q", normalized)
-		}
-		mentionParts = append(mentionParts, `<at user_id="`+normalized+`">`+normalized+`</at>`)
+	mentionParts, err := buildMentionParts(action.MentionUserIDs)
+	if err != nil {
+		return "", err
 	}
 	text := strings.TrimSpace(action.Text)
 	if len(mentionParts) == 0 && text == "" {
@@ -206,6 +211,24 @@ func BuildDispatchText(action Action) (string, error) {
 		return prefix, nil
 	}
 	return prefix + " " + text, nil
+}
+
+func buildMentionParts(mentionUserIDs []string) ([]string, error) {
+	if len(mentionUserIDs) == 0 {
+		return nil, nil
+	}
+	mentionParts := make([]string, 0, len(mentionUserIDs))
+	for _, userID := range mentionUserIDs {
+		normalized := strings.TrimSpace(userID)
+		if normalized == "" {
+			continue
+		}
+		if strings.ContainsRune(normalized, '"') {
+			return nil, fmt.Errorf("invalid mention user id %q", normalized)
+		}
+		mentionParts = append(mentionParts, `<at user_id="`+normalized+`">`+normalized+`</at>`)
+	}
+	return mentionParts, nil
 }
 
 func ParseStatusFilter(raw string) (TaskStatus, bool, error) {
