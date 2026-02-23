@@ -457,9 +457,16 @@ func TestApp_RuntimeStatePersistAndRestoreMediaWindow(t *testing.T) {
 	windowKey := buildMediaWindowKey("oc_chat", "open_id:ou_user_1")
 	app.mu.Lock()
 	originalCount := len(app.mediaWindow[windowKey])
+	originalSpeaker := ""
+	if originalCount > 0 {
+		originalSpeaker = app.mediaWindow[windowKey][0].Speaker
+	}
 	app.mu.Unlock()
 	if originalCount != 1 {
 		t.Fatalf("expected 1 cached entry before flush, got %d", originalCount)
+	}
+	if !strings.Contains(originalSpeaker, "ou_user_1") {
+		t.Fatalf("expected cached speaker before flush, got %q", originalSpeaker)
 	}
 
 	if err := app.FlushRuntimeState(); err != nil {
@@ -473,9 +480,16 @@ func TestApp_RuntimeStatePersistAndRestoreMediaWindow(t *testing.T) {
 	}
 	restored.mu.Lock()
 	restoredCount := len(restored.mediaWindow[windowKey])
+	restoredSpeaker := ""
+	if restoredCount > 0 {
+		restoredSpeaker = restored.mediaWindow[windowKey][0].Speaker
+	}
 	restored.mu.Unlock()
 	if restoredCount != 1 {
 		t.Fatalf("expected 1 restored media entry, got %d", restoredCount)
+	}
+	if !strings.Contains(restoredSpeaker, "ou_user_1") {
+		t.Fatalf("expected restored speaker metadata, got %q", restoredSpeaker)
 	}
 }
 

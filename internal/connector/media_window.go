@@ -13,6 +13,7 @@ import (
 type mediaWindowEntry struct {
 	SourceMessageID string       `json:"source_message_id"`
 	MessageType     string       `json:"message_type"`
+	Speaker         string       `json:"speaker,omitempty"`
 	Text            string       `json:"text"`
 	Attachments     []Attachment `json:"attachments"`
 	RawContent      string       `json:"raw_content,omitempty"`
@@ -67,6 +68,7 @@ func (a *App) cacheGroupContextWindow(event *larkim.P2MessageReceiveV1, accepted
 	entry := mediaWindowEntry{
 		SourceMessageID: strings.TrimSpace(job.SourceMessageID),
 		MessageType:     strings.TrimSpace(job.MessageType),
+		Speaker:         mediaWindowSpeakerLabel(job.SenderName, job.SenderOpenID, job.SenderUserID, job.SenderUnionID),
 		Text:            strings.TrimSpace(job.Text),
 		Attachments:     cloneAttachments(job.Attachments),
 		RawContent:      strings.TrimSpace(job.RawContent),
@@ -161,6 +163,7 @@ func (a *App) mergeRecentGroupContextWindow(job *Job) {
 	mediaMessageCount := 0
 	textMessageCount := 0
 	mergedAttachments := 0
+	fallbackSpeaker := mediaWindowSpeakerLabel(job.SenderName, job.SenderOpenID, job.SenderUserID, job.SenderUnionID)
 	for _, entry := range selected {
 		if strings.EqualFold(strings.TrimSpace(entry.MessageType), "text") {
 			textMessageCount++
@@ -169,7 +172,14 @@ func (a *App) mergeRecentGroupContextWindow(job *Job) {
 			mediaMessageCount++
 		}
 		if text := strings.TrimSpace(entry.Text); text != "" {
-			mergedTexts = append(mergedTexts, clipText(text, 200))
+			speaker := strings.TrimSpace(entry.Speaker)
+			if speaker == "" || (isGenericMediaWindowSpeaker(speaker) && !isGenericMediaWindowSpeaker(fallbackSpeaker)) {
+				speaker = fallbackSpeaker
+			}
+			mergedTexts = append(
+				mergedTexts,
+				fmt.Sprintf("说话者：%s；内容：%s", speaker, clipText(text, 200)),
+			)
 		}
 		mergedAttachments += len(entry.Attachments)
 		job.Attachments = append(job.Attachments, cloneAttachments(entry.Attachments)...)
@@ -301,6 +311,26 @@ func buildMediaWindowKey(receiveID, senderIdentity string) string {
 		return ""
 	}
 	return chatID + "|" + senderIdentity
+}
+
+func mediaWindowSpeakerLabel(name, openID, userID, unionID string) string {
+	normalizedName := strings.TrimSpace(name)
+	id := preferredID(openID, userID, unionID)
+	switch {
+	case normalizedName != "" && id != "":
+		return normalizedName + "(" + id + ")"
+	case normalizedName != "":
+		return normalizedName
+	case id != "":
+		return "该用户(" + id + ")"
+	default:
+		return "该用户"
+	}
+}
+
+func isGenericMediaWindowSpeaker(speaker string) bool {
+	speaker = strings.TrimSpace(speaker)
+	return speaker == "该用户" || strings.HasPrefix(speaker, "该用户(")
 }
 
 func buildMediaWindowKeyForJob(job Job) string {

@@ -346,6 +346,9 @@ func TestApp_OnMessageReceive_GroupMediaWithoutMentionCachedNotQueued(t *testing
 	if entries[0].SourceMessageID != "om_media" {
 		t.Fatalf("unexpected cached source message id: %s", entries[0].SourceMessageID)
 	}
+	if !strings.Contains(entries[0].Speaker, "ou_user_1") {
+		t.Fatalf("expected cached speaker identity, got %q", entries[0].Speaker)
+	}
 }
 
 func TestApp_OnMessageReceive_GroupMentionMergesRecentMediaWindow(t *testing.T) {

@@ -74,6 +74,9 @@ func TestApp_OnMessageReceive_GroupTextWithoutMentionCachedAndMergedOnMention(t 
 	if !strings.Contains(job.Text, "最近消息内容") {
 		t.Fatalf("expected cached context section in prompt, got: %q", job.Text)
 	}
+	if !strings.Contains(job.Text, "说话者：") {
+		t.Fatalf("expected speaker metadata in merged context, got: %q", job.Text)
+	}
 
 	app.mu.Lock()
 	remaining := len(app.mediaWindow[windowKey])

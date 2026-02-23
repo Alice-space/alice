@@ -382,6 +382,7 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 func normalizeMediaWindowEntry(entry mediaWindowEntry) (mediaWindowEntry, bool) {
 	entry.SourceMessageID = strings.TrimSpace(entry.SourceMessageID)
 	entry.MessageType = strings.TrimSpace(entry.MessageType)
+	entry.Speaker = strings.TrimSpace(entry.Speaker)
 	entry.Text = strings.TrimSpace(entry.Text)
 	entry.RawContent = strings.TrimSpace(entry.RawContent)
 	normalized := make([]Attachment, 0, len(entry.Attachments))
