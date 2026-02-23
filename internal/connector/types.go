@@ -40,6 +40,10 @@ type UserNameResolver interface {
 	ResolveUserName(ctx context.Context, openID, userID string) (string, error)
 }
 
+type ChatMemberNameResolver interface {
+	ResolveChatMemberName(ctx context.Context, chatID, openID, userID string) (string, error)
+}
+
 type Attachment struct {
 	SourceMessageID string
 	Kind            string

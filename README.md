@@ -136,6 +136,8 @@ Optional:
 - For group/topic-group multimedia (`image`/`sticker`/`audio`/`file`) without mention, the connector caches a per-user 5-minute sliding window.
 - When the same user later sends an `@bot` trigger message in that group, cached multimedia from the previous 5 minutes is merged into that request context.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
+- User display-name enrichment first uses Contact `GetUser`; if name is empty in group/topic-group chats, it falls back to `GetChatMembers` by `chat_id`.
+- To enable the group member name fallback, grant one of: `im:chat.members:read`, `im:chat.group_info:readonly`, `im:chat:readonly`, `im:chat`.
 - Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
 - Before each model call, the connector also auto-checks project-root guidance files (`AGENT.md`, `AGENTS.md`, `CLAUDE.md`, `GEMINI.md`) and injects existing contents into prompt context.
 - Downloaded incoming resources are stored under `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`.

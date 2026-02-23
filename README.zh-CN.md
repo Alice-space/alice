@@ -142,6 +142,8 @@ log_level: "info"
 - 群聊/话题群中的多媒体消息（`image`/`sticker`/`audio`/`file`）即使未艾特，也会按“同群同人”维护 5 分钟滑动窗口缓存。
 - 当同一用户后续在该群艾特机器人触发时，会把其过去 5 分钟缓存的多媒体并入本次上下文。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
+- 用户昵称补全会先调用 Contact `GetUser`；若在群聊/话题群中返回空名，会按 `chat_id` 回退调用 `GetChatMembers`。
+- 若要启用群成员昵称回退，请开通以下任一权限：`im:chat.members:read`、`im:chat.group_info:readonly`、`im:chat:readonly`、`im:chat`。
 - 默认启用记忆模块，文件写入 `memory_dir`：长期记忆 `MEMORY.md`，分日期记忆在 `daily/YYYY-MM-DD.md`。
 - 每次模型调用前，连接器还会自动检查项目根目录的规范文件（`AGENT.md`、`AGENTS.md`、`CLAUDE.md`、`GEMINI.md`），并将存在的文件内容拼接进提示上下文。
 - 下载的消息资源会落盘到 `memory_dir/resources/YYYY-MM-DD/<source_message_id>/`。

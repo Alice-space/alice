@@ -241,6 +241,10 @@ type senderStub struct {
 	resolveUserNameCalls int
 	resolveUserNameErr   error
 	userNameByIdentity   map[string]string
+
+	resolveChatMemberNameCalls int
+	resolveChatMemberNameErr   error
+	chatMemberNameByIdentity   map[string]string
 }
 
 func (s *senderStub) SendText(_ context.Context, _, _ string, text string) error {
@@ -347,6 +351,29 @@ func (s *senderStub) ResolveUserName(_ context.Context, openID, userID string) (
 	}
 	userKey := "user_id:" + strings.TrimSpace(userID)
 	if name, ok := s.userNameByIdentity[userKey]; ok {
+		return name, nil
+	}
+	return "", nil
+}
+
+func (s *senderStub) ResolveChatMemberName(_ context.Context, chatID, openID, userID string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resolveChatMemberNameCalls++
+	if s.resolveChatMemberNameErr != nil {
+		return "", s.resolveChatMemberNameErr
+	}
+	if s.chatMemberNameByIdentity == nil {
+		return "", nil
+	}
+
+	chatKey := "chat_id:" + strings.TrimSpace(chatID) + "|"
+	openKey := chatKey + "open_id:" + strings.TrimSpace(openID)
+	if name, ok := s.chatMemberNameByIdentity[openKey]; ok {
+		return name, nil
+	}
+	userKey := chatKey + "user_id:" + strings.TrimSpace(userID)
+	if name, ok := s.chatMemberNameByIdentity[userKey]; ok {
 		return name, nil
 	}
 	return "", nil
