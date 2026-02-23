@@ -142,7 +142,7 @@ log_level: "info"
 - 群聊/话题群中的多媒体消息（`image`/`sticker`/`audio`/`file`）即使未艾特，也会按“同群同人”维护 5 分钟滑动窗口缓存。
 - 当同一用户后续在该群艾特机器人触发时，会把其过去 5 分钟缓存的多媒体并入本次上下文。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
-- 说话人上下文仅保留自然语句（例如 `Alice说：你好`），不再注入“用户 id 映射行”或 `@提及` 文本。
+- 说话人上下文仍会注入参与者的 id 映射和 `@提及` 文本，但会过滤机器人自身身份（`feishu_bot_open_id`/`feishu_bot_user_id`）对应的注入内容。
 - 用户昵称补全会先调用 Contact `GetUser`；若在群聊/话题群中返回空名，会按 `chat_id` 回退调用 `GetChatMembers`。
 - 若要启用群成员昵称回退，请开通以下任一权限：`im:chat.members:read`、`im:chat.group_info:readonly`、`im:chat:readonly`、`im:chat`。
 - 默认启用记忆模块，文件写入 `memory_dir`：长期记忆 `MEMORY.md`，分日期记忆在 `daily/YYYY-MM-DD.md`。

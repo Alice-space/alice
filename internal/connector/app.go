@@ -266,6 +266,8 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 		a.resolveJobSessionKey(job, event.Event.Message)
 	}
 	a.mergeRecentGroupMediaWindow(job)
+	job.BotOpenID = strings.TrimSpace(a.cfg.FeishuBotOpenID)
+	job.BotUserID = strings.TrimSpace(a.cfg.FeishuBotUserID)
 
 	queued, _, _ := a.enqueueJob(job)
 	if !queued {

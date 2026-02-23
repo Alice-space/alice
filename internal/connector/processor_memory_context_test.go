@@ -71,14 +71,14 @@ func TestProcessor_BuildsIdentityAwareUserContext(t *testing.T) {
 		Text: "这是xxx",
 	})
 
-	if !strings.Contains(fakeCodex.lastInput, "Bob说：这是xxx") {
+	if !strings.Contains(fakeCodex.lastInput, "用户Bob的id是ou_bob") {
+		t.Fatalf("missing sender id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "用户Carlo的id是ou_carlo") {
+		t.Fatalf("missing mentioned user id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "Bob说：@Carlo 这是xxx") {
 		t.Fatalf("missing expected speech context in input: %s", fakeCodex.lastInput)
-	}
-	if strings.Contains(fakeCodex.lastInput, "用户Bob的id是") || strings.Contains(fakeCodex.lastInput, "用户Carlo的id是") {
-		t.Fatalf("id mapping should not appear in input: %s", fakeCodex.lastInput)
-	}
-	if strings.Contains(fakeCodex.lastInput, "@Carlo") {
-		t.Fatalf("mention text should not appear in input: %s", fakeCodex.lastInput)
 	}
 }
 
@@ -108,17 +108,62 @@ func TestProcessor_BuildsIdentityAwareUserContext_WithChatMembersFallback(t *tes
 		Text: "这是xxx",
 	})
 
-	if !strings.Contains(fakeCodex.lastInput, "Bob说：这是xxx") {
+	if !strings.Contains(fakeCodex.lastInput, "用户Bob的id是ou_bob") {
+		t.Fatalf("missing sender id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "用户Carlo的id是ou_carlo") {
+		t.Fatalf("missing mentioned user id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "Bob说：@Carlo 这是xxx") {
 		t.Fatalf("missing expected speech context in input: %s", fakeCodex.lastInput)
-	}
-	if strings.Contains(fakeCodex.lastInput, "用户Bob的id是") || strings.Contains(fakeCodex.lastInput, "用户Carlo的id是") {
-		t.Fatalf("id mapping should not appear in input: %s", fakeCodex.lastInput)
-	}
-	if strings.Contains(fakeCodex.lastInput, "@Carlo") {
-		t.Fatalf("mention text should not appear in input: %s", fakeCodex.lastInput)
 	}
 	if sender.resolveChatMemberNameCalls == 0 {
 		t.Fatalf("expected chat member fallback to be called")
+	}
+}
+
+func TestProcessor_BuildsIdentityAwareUserContext_SkipsBotIdentity(t *testing.T) {
+	fakeCodex := &codexCaptureStub{resp: "final answer"}
+	sender := &senderStub{
+		userNameByIdentity: map[string]string{
+			"open_id:ou_bob":   "Bob",
+			"open_id:ou_carlo": "Carlo",
+			"open_id:ou_alice": "Alice",
+		},
+	}
+	processor := NewProcessor(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		BotOpenID:     "ou_alice",
+		SenderOpenID:  "ou_bob",
+		MentionedUsers: []MentionedUser{
+			{OpenID: "ou_alice"},
+			{OpenID: "ou_carlo"},
+		},
+		Text: "这是xxx",
+	})
+
+	if !strings.Contains(fakeCodex.lastInput, "用户Bob的id是ou_bob") {
+		t.Fatalf("missing sender id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "用户Carlo的id是ou_carlo") {
+		t.Fatalf("missing non-bot mentioned user id mapping in input: %s", fakeCodex.lastInput)
+	}
+	if strings.Contains(fakeCodex.lastInput, "用户Alice的id是ou_alice") {
+		t.Fatalf("bot id mapping should be filtered from input: %s", fakeCodex.lastInput)
+	}
+	if !strings.Contains(fakeCodex.lastInput, "Bob说：@Carlo 这是xxx") {
+		t.Fatalf("non-bot mention should remain in speech context: %s", fakeCodex.lastInput)
+	}
+	if strings.Contains(fakeCodex.lastInput, "@Alice") {
+		t.Fatalf("bot mention should be filtered from speech context: %s", fakeCodex.lastInput)
 	}
 }
 

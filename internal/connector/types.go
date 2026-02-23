@@ -66,6 +66,8 @@ type Job struct {
 	ReceiveID            string
 	ReceiveIDType        string
 	ChatType             string
+	BotOpenID            string
+	BotUserID            string
 	SenderName           string
 	SenderOpenID         string
 	SenderUserID         string

@@ -136,7 +136,7 @@ Optional:
 - For group/topic-group multimedia (`image`/`sticker`/`audio`/`file`) without mention, the connector caches a per-user 5-minute sliding window.
 - When the same user later sends an `@bot` trigger message in that group, cached multimedia from the previous 5 minutes is merged into that request context.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
-- Prompt speaker context only keeps plain speech (for example `Alice说：你好`), and does not inject `user-id` mapping lines or `@mention` text.
+- Prompt speaker context still injects id mappings and mention text for participants, but it filters out the bot's own identity (`feishu_bot_open_id`/`feishu_bot_user_id`) from those injected lines.
 - User display-name enrichment first uses Contact `GetUser`; if name is empty in group/topic-group chats, it falls back to `GetChatMembers` by `chat_id`.
 - To enable the group member name fallback, grant one of: `im:chat.members:read`, `im:chat.group_info:readonly`, `im:chat:readonly`, `im:chat`.
 - Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
