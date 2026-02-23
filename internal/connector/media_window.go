@@ -1,6 +1,7 @@
 package connector
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -27,7 +28,7 @@ func (a *App) groupContextWindowTTL() time.Duration {
 	return defaultGroupContextWindow
 }
 
-func (a *App) cacheGroupContextWindow(event *larkim.P2MessageReceiveV1, accepted bool) {
+func (a *App) cacheGroupContextWindow(ctx context.Context, event *larkim.P2MessageReceiveV1, accepted bool) {
 	if event == nil || event.Event == nil || event.Event.Message == nil {
 		return
 	}
@@ -65,10 +66,14 @@ func (a *App) cacheGroupContextWindow(event *larkim.P2MessageReceiveV1, accepted
 	if at.IsZero() {
 		at = time.Now()
 	}
+	speakerName := strings.TrimSpace(job.SenderName)
+	if speakerName == "" {
+		speakerName = a.resolveMediaWindowSpeakerName(ctx, *job)
+	}
 	entry := mediaWindowEntry{
 		SourceMessageID: strings.TrimSpace(job.SourceMessageID),
 		MessageType:     strings.TrimSpace(job.MessageType),
-		Speaker:         mediaWindowSpeakerLabel(job.SenderName, job.SenderOpenID, job.SenderUserID, job.SenderUnionID),
+		Speaker:         mediaWindowSpeakerLabel(speakerName, job.SenderOpenID, job.SenderUserID, job.SenderUnionID),
 		Text:            strings.TrimSpace(job.Text),
 		Attachments:     cloneAttachments(job.Attachments),
 		RawContent:      strings.TrimSpace(job.RawContent),
@@ -331,6 +336,59 @@ func mediaWindowSpeakerLabel(name, openID, userID, unionID string) string {
 func isGenericMediaWindowSpeaker(speaker string) bool {
 	speaker = strings.TrimSpace(speaker)
 	return speaker == "该用户" || strings.HasPrefix(speaker, "该用户(")
+}
+
+func (a *App) resolveMediaWindowSpeakerName(ctx context.Context, job Job) string {
+	if a == nil || a.processor == nil || a.processor.sender == nil {
+		return ""
+	}
+	openID := strings.TrimSpace(job.SenderOpenID)
+	userID := strings.TrimSpace(job.SenderUserID)
+	if openID == "" && userID == "" {
+		return ""
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	chatID := strings.TrimSpace(job.ReceiveID)
+	if strings.EqualFold(strings.TrimSpace(job.ReceiveIDType), "chat_id") && chatID != "" {
+		if resolver, ok := a.processor.sender.(ChatMemberNameResolver); ok {
+			name, err := resolver.ResolveChatMemberName(ctx, chatID, openID, userID)
+			name = strings.TrimSpace(name)
+			if name != "" {
+				return name
+			}
+			if err != nil {
+				logging.Debugf(
+					"group context speaker resolve via chat_member failed event_id=%s chat_id=%s open_id=%s user_id=%s err=%v",
+					job.EventID,
+					chatID,
+					openID,
+					userID,
+					err,
+				)
+			}
+		}
+	}
+
+	if resolver, ok := a.processor.sender.(UserNameResolver); ok {
+		name, err := resolver.ResolveUserName(ctx, openID, userID)
+		name = strings.TrimSpace(name)
+		if name != "" {
+			return name
+		}
+		if err != nil {
+			logging.Debugf(
+				"group context speaker resolve via user failed event_id=%s open_id=%s user_id=%s err=%v",
+				job.EventID,
+				openID,
+				userID,
+				err,
+			)
+		}
+	}
+	return ""
 }
 
 func buildMediaWindowKeyForJob(job Job) string {

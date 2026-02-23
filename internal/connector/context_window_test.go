@@ -86,6 +86,59 @@ func TestApp_OnMessageReceive_GroupTextWithoutMentionCachedAndMergedOnMention(t 
 	}
 }
 
+func TestApp_OnMessageReceive_GroupContextWindowSpeakerResolvedByChatMemberAPI(t *testing.T) {
+	cfg := configForTest()
+	cfg.FeishuBotOpenID = "ou_bot"
+	sender := &senderStub{
+		chatMemberNameByIdentity: map[string]string{
+			"chat_id:oc_chat|open_id:ou_user_1": "李志昊",
+		},
+	}
+	app := NewApp(
+		cfg,
+		NewProcessor(codexStub{}, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中..."),
+	)
+
+	textEvent := newGroupTextReceiveEvent(
+		t,
+		"evt_speaker_name_cache",
+		"om_speaker_name_cache",
+		"ou_user_1",
+		"oc_chat",
+		"缓存这条消息用于说话者名称解析",
+		nil,
+		"",
+		"",
+	)
+	if err := app.onMessageReceive(context.Background(), textEvent); err != nil {
+		t.Fatalf("unexpected text event error: %v", err)
+	}
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected queue len 0, got %d", got)
+	}
+
+	windowKey := buildMediaWindowKey("oc_chat", "open_id:ou_user_1")
+	app.mu.Lock()
+	cached := app.mediaWindow[windowKey]
+	app.mu.Unlock()
+	if len(cached) != 1 {
+		t.Fatalf("expected 1 cached text entry, got %d", len(cached))
+	}
+	if !strings.Contains(cached[0].Speaker, "李志昊") {
+		t.Fatalf("expected cached speaker name from chat member api, got %q", cached[0].Speaker)
+	}
+	if !strings.Contains(cached[0].Speaker, "ou_user_1") {
+		t.Fatalf("expected cached speaker id retained, got %q", cached[0].Speaker)
+	}
+
+	sender.mu.Lock()
+	resolveCalls := sender.resolveChatMemberNameCalls
+	sender.mu.Unlock()
+	if resolveCalls == 0 {
+		t.Fatal("expected chat member name resolver to be called")
+	}
+}
+
 func TestApp_OnMessageReceive_GroupThreadContextWindowIsolatedByThread(t *testing.T) {
 	cfg := configForTest()
 	cfg.FeishuBotOpenID = "ou_bot"
