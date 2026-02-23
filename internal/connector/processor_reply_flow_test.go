@@ -71,7 +71,7 @@ func TestProcessor_SendsAgentMessagesAsRichTextMarkdown(t *testing.T) {
 	}
 }
 
-func TestProcessor_FileChangeEventUsesRichTextReply(t *testing.T) {
+func TestProcessor_FileChangeEventUsesSendCard(t *testing.T) {
 	fakeCodex := codexStreamingStub{
 		resp:          "最终答复",
 		agentMessages: []string{"[file_change] internal/connector/processor.go已更改，+23-34"},
@@ -92,17 +92,20 @@ func TestProcessor_FileChangeEventUsesRichTextReply(t *testing.T) {
 	if sender.replyTextCalls != 0 {
 		t.Fatalf("expected zero text replies, got %d", sender.replyTextCalls)
 	}
-	if sender.replyCardCalls != 3 {
-		t.Fatalf("expected ack + filechange + final card replies, got %d", sender.replyCardCalls)
+	if sender.replyCardCalls != 2 {
+		t.Fatalf("expected ack + final card replies, got %d", sender.replyCardCalls)
 	}
-	if len(sender.replyCards) != 3 {
+	if len(sender.replyCards) != 2 {
 		t.Fatalf("unexpected card reply history: %#v", sender.replyCards)
 	}
-	if !strings.Contains(sender.replyCards[1], "internal/connector/processor.go已更改，+23-34") {
-		t.Fatalf("filechange should be sent as card markdown, got %q", sender.replyCards[1])
+	if sender.sendCardCalls != 1 {
+		t.Fatalf("expected filechange sent via send card once, got %d", sender.sendCardCalls)
 	}
-	if !strings.Contains(sender.replyCards[2], "最终答复") {
-		t.Fatalf("final reply should be card markdown, got %q", sender.replyCards[2])
+	if len(sender.sendCards) != 1 || !strings.Contains(sender.sendCards[0], "internal/connector/processor.go已更改，+23-34") {
+		t.Fatalf("unexpected filechange send card content: %#v", sender.sendCards)
+	}
+	if !strings.Contains(sender.replyCards[1], "最终答复") {
+		t.Fatalf("final reply should be card markdown, got %q", sender.replyCards[1])
 	}
 }
 

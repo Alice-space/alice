@@ -148,7 +148,8 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	lastSentAgentMessage := ""
 	sendAgentMessage := func(agentMessage string) {
 		normalized := strings.TrimSpace(agentMessage)
-		if strings.HasPrefix(normalized, fileChangeEventPrefix) {
+		isFileChange := strings.HasPrefix(normalized, fileChangeEventPrefix)
+		if isFileChange {
 			normalized = strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix))
 		}
 		if normalized == "" {
@@ -157,9 +158,16 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		if normalized == lastSentAgentMessage {
 			return
 		}
-		if _, sendErr := p.replyCardWithFallback(ctx, job.SourceMessageID, normalized); sendErr != nil {
-			log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
-			return
+		if isFileChange {
+			if sendErr := p.sendCardWithFallback(ctx, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
+				log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
+				return
+			}
+		} else {
+			if _, sendErr := p.replyCardWithFallback(ctx, job.SourceMessageID, normalized); sendErr != nil {
+				log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
+				return
+			}
 		}
 		lastSentAgentMessage = normalized
 	}
