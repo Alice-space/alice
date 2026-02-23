@@ -139,6 +139,7 @@ Optional:
 - When the same user later sends an `@bot` trigger in that group, cached text and multimedia inside the window are merged into that request context; thread messages are isolated by `thread_id`/`root_id` scope.
 - Mention tags like `<at ...>...</at>` are removed from text before sending to Codex.
 - Prompt speaker context still injects id mappings and mention text for participants, but it filters out the bot's own identity (`feishu_bot_open_id`/`feishu_bot_user_id`) from those injected lines.
+- Outgoing replies auto-normalize `@name`/`@id` to Feishu mention tags (`<at user_id="...">...</at>`) using identities in the current message context.
 - User display-name enrichment first uses Contact `GetUser`; if name is empty in group/topic-group chats, it falls back to `GetChatMembers` by `chat_id`.
 - To enable the group member name fallback, grant one of: `im:chat.members:read`, `im:chat.group_info:readonly`, `im:chat:readonly`, `im:chat`.
 - Memory module is enabled by default, writing files under `memory_dir`: long-term `MEMORY.md` and date-based memory in `daily/YYYY-MM-DD.md`.
@@ -157,6 +158,7 @@ Optional:
 - For MCP `alice-feishu` tools (`send_image`/`send_file`), send target is always derived from current session context and cannot be overridden by tool arguments: private chats send to the current private chat; group/topic chats with `source_message_id` reply to that message (thread-preferred).
 - The bot immediately replies to the source message with `收到！`.
 - During Codex execution, streamed `agent_message` updates are sent as card replies first; if card reply fails, fallback is rich-text (`post`) then plain text.
+- If outgoing content contains resolved mentions, the connector sends plain text directly (instead of card/post) to ensure Feishu mention delivery works.
 - Streamed `file_change` updates use the same card-first reply path, for example: `internal/x.go已更改，+23-34`.
 - If the current Codex CLI does not emit native `file_change` events, the connector falls back to repo diff snapshots (git numstat) and still emits `file_change`-style updates.
 - If a newer user message arrives in the same session, the running task is interrupted immediately and switched to the latest message (steer behavior).

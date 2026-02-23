@@ -410,3 +410,58 @@ func TestProcessor_RestartNotificationPhaseSkipsCodexAndSendsFixedMessage(t *tes
 		t.Fatalf("restart notification should be recorded once in memory, got %d", memory.saveCalls)
 	}
 }
+
+func TestProcessor_ReplyMentionUsesTextReply(t *testing.T) {
+	fakeCodex := codexStub{resp: "@李志昊 请看下这个结果"}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		SourceMessageID: "om_src",
+		SenderName:      "李志昊",
+		SenderOpenID:    "ou_776ddbea0c07fd88caaf8fce1b413a41",
+		Text:            "hello",
+	})
+
+	if sender.replyCardCalls != 1 {
+		t.Fatalf("expected only ack card reply, got %d", sender.replyCardCalls)
+	}
+	if sender.replyTextCalls != 1 {
+		t.Fatalf("expected one final text reply for mention, got %d", sender.replyTextCalls)
+	}
+	want := `<at user_id="ou_776ddbea0c07fd88caaf8fce1b413a41">李志昊</at> 请看下这个结果`
+	if len(sender.replyTexts) != 1 || sender.replyTexts[0] != want {
+		t.Fatalf("unexpected mention reply text: %#v", sender.replyTexts)
+	}
+}
+
+func TestProcessor_NoSourceMentionUsesSendText(t *testing.T) {
+	fakeCodex := codexStub{resp: "@Xiang Shi 收到"}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		MentionedUsers: []MentionedUser{
+			{
+				Name:   "Xiang Shi",
+				OpenID: "ou_809a189717a7a855905957ea612ca9f8",
+			},
+		},
+		Text: "hello",
+	})
+
+	if sender.sendCardCalls != 0 {
+		t.Fatalf("expected no card send for mention output, got %d", sender.sendCardCalls)
+	}
+	if sender.sendCalls != 1 {
+		t.Fatalf("expected one text send for mention output, got %d", sender.sendCalls)
+	}
+	want := `<at user_id="ou_809a189717a7a855905957ea612ca9f8">Xiang Shi</at> 收到`
+	if sender.lastSendText != want {
+		t.Fatalf("unexpected mention send text: %q", sender.lastSendText)
+	}
+}

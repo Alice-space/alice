@@ -145,6 +145,7 @@ log_level: "info"
 - 同一用户后续在该群艾特机器人触发时，会把窗口内缓存的文本与多媒体并入本次上下文；thread 消息会按 `thread_id`/`root_id` 隔离，不跨 thread 混入。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
 - 说话人上下文仍会注入参与者的 id 映射和 `@提及` 文本，但会过滤机器人自身身份（`feishu_bot_open_id`/`feishu_bot_user_id`）对应的注入内容。
+- 发送回复时会基于当前消息上下文中的身份信息，把 `@姓名`/`@id` 自动规范化为飞书 mention 标签（`<at user_id="...">...</at>`）。
 - 用户昵称补全会先调用 Contact `GetUser`；若在群聊/话题群中返回空名，会按 `chat_id` 回退调用 `GetChatMembers`。
 - 若要启用群成员昵称回退，请开通以下任一权限：`im:chat.members:read`、`im:chat.group_info:readonly`、`im:chat:readonly`、`im:chat`。
 - 默认启用记忆模块，文件写入 `memory_dir`：长期记忆 `MEMORY.md`，分日期记忆在 `daily/YYYY-MM-DD.md`。
@@ -163,6 +164,7 @@ log_level: "info"
 - 对于 MCP `alice-feishu` 工具（`send_image`/`send_file`），发送目标始终由当前会话上下文自动决定，且不能由工具参数覆盖：私聊发送到当前私聊；群聊/话题群存在 `source_message_id` 时按该消息引用回复（优先 thread）。
 - 收到用户消息后，机器人会第一时间引用回复 `收到！`。
 - Codex 执行期间，流式 `agent_message` 会优先以卡片回复；若卡片失败，会依次回退到富文本（`post`）和纯文本回复。
+- 若回复内容中包含可解析的 @提及，连接器会直接发送纯文本消息（不走卡片/富文本），以确保飞书侧正确触发 mention。
 - Codex 执行期间，流式 `file_change` 事件也走同样的“卡片优先”回复链路，例如：`internal/x.go已更改，+23-34`。
 - 若当前 Codex CLI 未输出原生 `file_change` 事件，连接器会回退到仓库 diff 快照（git numstat）生成同格式的 `file_change` 通知。
 - 同一会话内若收到新的用户消息，会立即中断旧任务并切换到最新消息（steer）。
