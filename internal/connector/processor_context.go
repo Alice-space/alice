@@ -94,9 +94,10 @@ func appendMCPToolContextHint(userText string, job Job) string {
 	}
 
 	hint := fmt.Sprintf(
-		"工具调用上下文：当你调用 alice-feishu 的 send_image/send_file 工具时，必须显式传入 receive_id_type=%q 和 receive_id=%q，且不要改成其他接收目标。\n\n",
+		"工具调用上下文：当你调用 alice-feishu 的 send_image/send_file 工具时，必须显式传入 receive_id_type=%q、receive_id=%q 和 source_message_id=%q，且不要改成其他接收目标。\n\n",
 		receiveIDType,
 		receiveID,
+		strings.TrimSpace(job.SourceMessageID),
 	)
 	return hint + strings.TrimSpace(userText)
 }

@@ -284,6 +284,7 @@ func TestProcessor_ResumesCodexThreadWithinSameSession(t *testing.T) {
 	}
 	if !strings.Contains(fakeCodex.receivedInputs[1], "receive_id_type=\"chat_id\"") ||
 		!strings.Contains(fakeCodex.receivedInputs[1], "receive_id=\"oc_chat\"") ||
+		!strings.Contains(fakeCodex.receivedInputs[1], "source_message_id=\"om_src\"") ||
 		!strings.Contains(fakeCodex.receivedInputs[1], "C") {
 		t.Fatalf("second input should include mcp tool context hint and follow-up text, got %q", fakeCodex.receivedInputs[1])
 	}
