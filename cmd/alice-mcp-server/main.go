@@ -4,12 +4,12 @@ import (
 	"flag"
 	"log"
 	"path/filepath"
-	"strings"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	"github.com/mark3labs/mcp-go/server"
 
 	"gitee.com/alicespace/alice/internal/automation"
+	"gitee.com/alicespace/alice/internal/bootstrap"
 	"gitee.com/alicespace/alice/internal/config"
 	"gitee.com/alicespace/alice/internal/connector"
 	"gitee.com/alicespace/alice/internal/mcpserver"
@@ -32,7 +32,7 @@ func main() {
 		lark.WithOpenBaseUrl(cfg.FeishuBaseURL),
 	)
 
-	memoryDir := resolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
+	memoryDir := bootstrap.ResolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
 	resourceDir := filepath.Join(memoryDir, "resources")
 	automationStatePath := filepath.Join(memoryDir, "automation_state.json")
 	sender := connector.NewLarkSender(botClient, resourceDir)
@@ -44,20 +44,4 @@ func main() {
 	if err := server.ServeStdio(mcpSrv); err != nil {
 		log.Fatalf("mcp server stopped with error: %v", err)
 	}
-}
-
-func resolveMemoryDir(workspaceDir, memoryDir string) string {
-	dir := strings.TrimSpace(memoryDir)
-	if dir == "" {
-		dir = ".memory"
-	}
-	if filepath.IsAbs(dir) {
-		return dir
-	}
-
-	base := strings.TrimSpace(workspaceDir)
-	if base == "" {
-		base = "."
-	}
-	return filepath.Join(base, dir)
 }

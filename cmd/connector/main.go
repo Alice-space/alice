@@ -6,21 +6,12 @@ import (
 	"log"
 	"os"
 	"os/signal"
-	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
-	lark "github.com/larksuite/oapi-sdk-go/v3"
-
-	"gitee.com/alicespace/alice/internal/automation"
-	"gitee.com/alicespace/alice/internal/codearmy"
-	corecodex "gitee.com/alicespace/alice/internal/codex"
+	"gitee.com/alicespace/alice/internal/bootstrap"
 	"gitee.com/alicespace/alice/internal/config"
-	"gitee.com/alicespace/alice/internal/connector"
-	"gitee.com/alicespace/alice/internal/llm"
 	"gitee.com/alicespace/alice/internal/logging"
-	"gitee.com/alicespace/alice/internal/memory"
 )
 
 func main() {
@@ -35,16 +26,10 @@ func main() {
 	}
 	logging.SetLevel(cfg.LogLevel)
 	logging.Debugf("debug logging enabled log_level=%s config=%s", cfg.LogLevel, configPath)
-	configAbsPath := resolveConfigPath(configPath)
 
 	if cfg.CodexMCPAutoRegister {
 		mcpRegisterCtx, cancelRegister := context.WithTimeout(context.Background(), 20*time.Second)
-		err = corecodex.EnsureMCPServerRegistered(mcpRegisterCtx, corecodex.MCPRegistration{
-			CodexCommand:  cfg.CodexCommand,
-			ServerName:    cfg.CodexMCPServerName,
-			ServerCommand: resolveMCPServerCommand(configAbsPath),
-			ServerArgs:    []string{"-c", configAbsPath},
-		})
+		err = bootstrap.RegisterCodexMCPServer(mcpRegisterCtx, cfg, configPath)
 		cancelRegister()
 		if err != nil {
 			if cfg.CodexMCPRegisterStrict {
@@ -56,127 +41,20 @@ func main() {
 		}
 	}
 
-	botClient := lark.NewClient(
-		cfg.FeishuAppID,
-		cfg.FeishuAppSecret,
-		lark.WithOpenBaseUrl(cfg.FeishuBaseURL),
-	)
-
-	backend, err := llm.NewBackend(llm.FactoryConfig{
-		Provider: cfg.LLMProvider,
-		Codex: llm.CodexConfig{
-			Command:      cfg.CodexCommand,
-			Timeout:      cfg.CodexTimeout,
-			Env:          cfg.CodexEnv,
-			PromptPrefix: cfg.CodexPromptPrefix,
-			WorkspaceDir: cfg.WorkspaceDir,
-		},
-	})
+	runtime, err := bootstrap.BuildConnectorRuntime(cfg)
 	if err != nil {
-		log.Fatalf("init llm backend failed: %v", err)
+		log.Fatalf("init connector runtime failed: %v", err)
 	}
-
-	memoryDir := resolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
-	memoryManager := memory.NewManager(memoryDir)
-	if err := memoryManager.Init(); err != nil {
-		log.Fatalf("init memory module failed: %v", err)
-	}
-	resourceDir := filepath.Join(memoryDir, "resources")
-	sender := connector.NewLarkSender(botClient, resourceDir)
-
-	processor := connector.NewProcessorWithMemory(
-		backend,
-		sender,
-		cfg.FailureMessage,
-		cfg.ThinkingMessage,
-		memoryManager,
-	)
-	sessionStatePath := filepath.Join(memoryDir, "session_state.json")
-	if err := processor.LoadSessionState(sessionStatePath); err != nil {
-		log.Printf("load session state failed file=%s err=%v", sessionStatePath, err)
-	} else {
-		log.Printf("session state enabled file=%s", sessionStatePath)
-	}
-	app := connector.NewApp(cfg, processor)
-	runtimeStatePath := filepath.Join(memoryDir, "runtime_state.json")
-	if err := app.LoadRuntimeState(runtimeStatePath); err != nil {
-		log.Printf("load runtime state failed file=%s err=%v", runtimeStatePath, err)
-	} else {
-		log.Printf("runtime state enabled file=%s", runtimeStatePath)
-	}
-	automationStatePath := filepath.Join(memoryDir, "automation_state.json")
-	automationEngine := automation.NewEngine(automation.NewStore(automationStatePath), sender)
-	automationEngine.SetUserTaskTimeout(cfg.AutomationTaskTimeout)
-	automationEngine.SetLLMRunner(backend)
-	automationEngine.SetWorkflowRunner(codearmy.NewRunner(filepath.Join(memoryDir, "code_army"), backend))
-	if err := automationEngine.RegisterSystemTask("system.idle_summary_scan", 60*time.Second, func(runCtx context.Context) {
-		processor.RunIdleSummaryScan(runCtx, cfg.IdleSummaryIdle)
-	}); err != nil {
-		log.Fatalf("register idle summary automation task failed: %v", err)
-	}
-	if err := automationEngine.RegisterSystemTask("system.state_flush", 1*time.Second, func(context.Context) {
-		if err := processor.FlushSessionStateIfDirty(); err != nil {
-			log.Printf("flush session state failed: %v", err)
-		}
-		if err := app.FlushRuntimeStateIfDirty(); err != nil {
-			log.Printf("flush runtime state failed: %v", err)
-		}
-	}); err != nil {
-		log.Fatalf("register state flush automation task failed: %v", err)
-	}
-	app.SetAutomationRunner(automationEngine)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	log.Printf("feishu-codex connector started (long connection mode)")
-	log.Printf("memory module enabled dir=%s", memoryDir)
-	log.Printf("automation engine enabled state_file=%s", automationStatePath)
-	if err := app.Run(ctx); err != nil {
+	log.Printf("memory module enabled dir=%s", runtime.MemoryDir)
+	log.Printf("automation engine enabled state_file=%s", runtime.AutomationStatePath)
+	if err := runtime.App.Run(ctx); err != nil {
 		log.Fatalf("connector stopped with error: %v", err)
 	}
 
 	log.Printf("connector stopped")
-}
-
-func resolveMemoryDir(workspaceDir, memoryDir string) string {
-	dir := strings.TrimSpace(memoryDir)
-	if dir == "" {
-		dir = ".memory"
-	}
-	if filepath.IsAbs(dir) {
-		return dir
-	}
-
-	base := strings.TrimSpace(workspaceDir)
-	if base == "" {
-		base = "."
-	}
-	return filepath.Join(base, dir)
-}
-
-func resolveConfigPath(configPath string) string {
-	configPath = strings.TrimSpace(configPath)
-	if configPath == "" {
-		return config.DefaultConfigPath
-	}
-	abs, err := filepath.Abs(configPath)
-	if err != nil {
-		return configPath
-	}
-	return abs
-}
-
-func resolveMCPServerCommand(configAbsPath string) string {
-	if executablePath, err := os.Executable(); err == nil {
-		sibling := filepath.Join(filepath.Dir(executablePath), "alice-mcp-server")
-		if stat, statErr := os.Stat(sibling); statErr == nil && !stat.IsDir() {
-			return sibling
-		}
-	}
-	configDir := filepath.Dir(strings.TrimSpace(configAbsPath))
-	if configDir == "" {
-		configDir = "."
-	}
-	return filepath.Join(configDir, "bin", "alice-mcp-server")
 }

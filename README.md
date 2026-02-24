@@ -192,6 +192,7 @@ Note: this project now uses a card-first reply flow and no longer uses interacti
 - `cmd/connector/main.go`: bootstrap and lifecycle
 - `cmd/alice-mcp-server/main.go`: MCP server entry registered into Codex
 - `internal/config/config.go`: config file loading and validation (`viper`)
+- `internal/bootstrap/`: startup/runtime assembly helpers shared by binaries
 - `internal/automation/`: scheduler, persistence, and action execution for Alice automation tasks
 - `internal/llm/`: LLM backend abstraction and backend factory
 - `internal/memory/memory.go`: memory module (long-term + date-based short-term memory files)

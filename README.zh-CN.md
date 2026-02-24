@@ -198,6 +198,7 @@ log_level: "info"
 - `cmd/connector/main.go`：启动与生命周期
 - `cmd/alice-mcp-server/main.go`：注册到 Codex 的 MCP 服务入口
 - `internal/config/config.go`：配置文件读取与校验（`viper`）
+- `internal/bootstrap/`：两个二进制共享的启动/装配辅助模块
 - `internal/automation/`：Alice 自动化任务的调度、存储与执行
 - `internal/llm/`：LLM 后端抽象与工厂
 - `internal/memory/memory.go`：记忆模块（长期记忆 + 按日期短期记忆文件）
