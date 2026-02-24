@@ -10,7 +10,6 @@ import (
 
 	"gitee.com/alicespace/alice/internal/automation"
 	"gitee.com/alicespace/alice/internal/codearmy"
-	corecodex "gitee.com/alicespace/alice/internal/codex"
 	"gitee.com/alicespace/alice/internal/config"
 	"gitee.com/alicespace/alice/internal/connector"
 	"gitee.com/alicespace/alice/internal/llm"
@@ -23,10 +22,26 @@ type ConnectorRuntime struct {
 	AutomationStatePath string
 }
 
-func RegisterCodexMCPServer(ctx context.Context, cfg config.Config, configPath string) error {
+func buildFactoryConfig(cfg config.Config) llm.FactoryConfig {
+	return llm.FactoryConfig{
+		Provider: cfg.LLMProvider,
+		Codex: llm.CodexConfig{
+			Command:      cfg.CodexCommand,
+			Timeout:      cfg.CodexTimeout,
+			Env:          cfg.CodexEnv,
+			PromptPrefix: cfg.CodexPromptPrefix,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
+	}
+}
+
+func RegisterMCPServer(ctx context.Context, cfg config.Config, configPath string) error {
 	configAbsPath := ResolveConfigPath(configPath)
-	return corecodex.EnsureMCPServerRegistered(ctx, corecodex.MCPRegistration{
-		CodexCommand:  cfg.CodexCommand,
+	registrar, err := llm.NewMCPRegistrar(buildFactoryConfig(cfg))
+	if err != nil {
+		return err
+	}
+	return registrar.EnsureMCPServerRegistered(ctx, llm.MCPRegistration{
 		ServerName:    cfg.CodexMCPServerName,
 		ServerCommand: ResolveMCPServerCommand(configAbsPath),
 		ServerArgs:    []string{"-c", configAbsPath},
@@ -40,16 +55,7 @@ func BuildConnectorRuntime(cfg config.Config) (*ConnectorRuntime, error) {
 		lark.WithOpenBaseUrl(cfg.FeishuBaseURL),
 	)
 
-	backend, err := llm.NewBackend(llm.FactoryConfig{
-		Provider: cfg.LLMProvider,
-		Codex: llm.CodexConfig{
-			Command:      cfg.CodexCommand,
-			Timeout:      cfg.CodexTimeout,
-			Env:          cfg.CodexEnv,
-			PromptPrefix: cfg.CodexPromptPrefix,
-			WorkspaceDir: cfg.WorkspaceDir,
-		},
-	})
+	backend, err := llm.NewBackend(buildFactoryConfig(cfg))
 	if err != nil {
 		return nil, err
 	}

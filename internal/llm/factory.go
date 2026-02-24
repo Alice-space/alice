@@ -22,10 +22,7 @@ type CodexConfig struct {
 }
 
 func NewBackend(cfg FactoryConfig) (Backend, error) {
-	provider := strings.ToLower(strings.TrimSpace(cfg.Provider))
-	if provider == "" {
-		provider = ProviderCodex
-	}
+	provider := normalizeProvider(cfg.Provider)
 
 	switch provider {
 	case ProviderCodex:
@@ -33,4 +30,23 @@ func NewBackend(cfg FactoryConfig) (Backend, error) {
 	default:
 		return nil, fmt.Errorf("unsupported llm_provider %q", provider)
 	}
+}
+
+func NewMCPRegistrar(cfg FactoryConfig) (MCPRegistrar, error) {
+	provider := normalizeProvider(cfg.Provider)
+
+	switch provider {
+	case ProviderCodex:
+		return newCodexMCPRegistrar(cfg.Codex), nil
+	default:
+		return nil, fmt.Errorf("unsupported llm_provider %q", provider)
+	}
+}
+
+func normalizeProvider(provider string) string {
+	normalized := strings.ToLower(strings.TrimSpace(provider))
+	if normalized == "" {
+		return ProviderCodex
+	}
+	return normalized
 }

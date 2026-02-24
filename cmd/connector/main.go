@@ -45,15 +45,15 @@ func main() {
 
 	if cfg.CodexMCPAutoRegister {
 		mcpRegisterCtx, cancelRegister := context.WithTimeout(context.Background(), 20*time.Second)
-		err = bootstrap.RegisterCodexMCPServer(mcpRegisterCtx, cfg, configPath)
+		err = bootstrap.RegisterMCPServer(mcpRegisterCtx, cfg, configPath)
 		cancelRegister()
 		if err != nil {
 			if cfg.CodexMCPRegisterStrict {
-				log.Fatalf("register codex mcp server failed: %v", err)
+				log.Fatalf("register llm mcp server failed: %v", err)
 			}
-			log.Printf("register codex mcp server failed but ignored: %v", err)
+			log.Printf("register llm mcp server failed but ignored: %v", err)
 		} else {
-			log.Printf("codex mcp server ready name=%s", cfg.CodexMCPServerName)
+			log.Printf("llm mcp server ready name=%s", cfg.CodexMCPServerName)
 		}
 	}
 
