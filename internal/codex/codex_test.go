@@ -121,7 +121,7 @@ func TestIsSuccessfulCommandExecutionCompleted(t *testing.T) {
 }
 
 func TestBuildExecArgs_ResumeThread(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello")
+	args := buildExecArgs("thread_123", "hello", "", "")
 	if !slices.Contains(args, "resume") {
 		t.Fatalf("expected resume args, got: %#v", args)
 	}
@@ -140,7 +140,7 @@ func TestBuildExecArgs_ResumeThread(t *testing.T) {
 }
 
 func TestBuildExecArgs_NewThreadUsesDangerousBypass(t *testing.T) {
-	args := buildExecArgs("", "hello")
+	args := buildExecArgs("", "hello", "", "")
 	if !slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Fatalf("new thread args should include dangerous bypass flag, got: %#v", args)
 	}
@@ -149,6 +149,16 @@ func TestBuildExecArgs_NewThreadUsesDangerousBypass(t *testing.T) {
 	}
 	if !slices.Contains(args, "--") {
 		t.Fatalf("new thread args should include option terminator, got: %#v", args)
+	}
+}
+
+func TestBuildExecArgs_WithModelAndProfile(t *testing.T) {
+	args := buildExecArgs("thread_123", "hello", "gpt-4.1-mini", "worker-cheap")
+	if !slices.Contains(args, "-m") || !slices.Contains(args, "gpt-4.1-mini") {
+		t.Fatalf("expected model selector in args, got: %#v", args)
+	}
+	if !slices.Contains(args, "-p") || !slices.Contains(args, "worker-cheap") {
+		t.Fatalf("expected profile selector in args, got: %#v", args)
 	}
 }
 
@@ -193,6 +203,8 @@ EOF
 		context.Background(),
 		"",
 		"hello",
+		"",
+		"",
 		map[string]string{"ALICE_TEST_ENV": "env_ok"},
 		nil,
 	)

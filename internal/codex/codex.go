@@ -33,7 +33,7 @@ type fileDiffStat struct {
 type repoDiffSnapshot map[string]fileDiffStat
 
 func (r Runner) Run(ctx context.Context, userText string) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", userText, nil, nil)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", userText, "", "", nil, nil)
 	return reply, err
 }
 
@@ -42,7 +42,7 @@ func (r Runner) RunWithProgress(
 	userText string,
 	onThinking func(step string),
 ) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", userText, nil, onThinking)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", userText, "", "", nil, onThinking)
 	return reply, err
 }
 
@@ -51,20 +51,26 @@ func (r Runner) RunWithThread(
 	threadID string,
 	userText string,
 ) (string, string, error) {
-	return r.RunWithThreadAndProgress(ctx, threadID, userText, nil, nil)
+	return r.RunWithThreadAndProgress(ctx, threadID, userText, "", "", nil, nil)
 }
 
 func (r Runner) RunWithThreadAndProgress(
 	ctx context.Context,
 	threadID string,
 	userText string,
+	model string,
+	profile string,
 	env map[string]string,
 	onThinking func(step string),
 ) (string, string, error) {
+	model = strings.TrimSpace(model)
+	profile = strings.TrimSpace(profile)
 	prompt := buildPrompt(threadID, r.PromptPrefix, userText)
 	logging.Debugf(
-		"codex prompt assemble thread_id=%s prefix=%q user_prompt=%q final_prompt=%q",
+		"codex prompt assemble thread_id=%s model=%q profile=%q prefix=%q user_prompt=%q final_prompt=%q",
 		threadID,
+		model,
+		profile,
 		r.PromptPrefix,
 		userText,
 		prompt,
@@ -81,16 +87,18 @@ func (r Runner) RunWithThreadAndProgress(
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmdArgs := buildExecArgs(threadID, prompt)
+	cmdArgs := buildExecArgs(threadID, prompt, model, profile)
 	cmd := exec.CommandContext(tctx, r.Command, cmdArgs...)
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}
 	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
 	logging.Debugf(
-		"run codex command command=%q thread_id=%s args=%q cwd=%q timeout=%s",
+		"run codex command command=%q thread_id=%s model=%q profile=%q args=%q cwd=%q timeout=%s",
 		r.Command,
 		threadID,
+		model,
+		profile,
 		cmdArgs,
 		cmd.Dir,
 		timeout,

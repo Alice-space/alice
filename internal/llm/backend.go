@@ -7,6 +7,8 @@ type ProgressFunc func(step string)
 type RunRequest struct {
 	ThreadID   string
 	UserText   string
+	Model      string
+	Profile    string
 	Env        map[string]string
 	OnProgress ProgressFunc
 }

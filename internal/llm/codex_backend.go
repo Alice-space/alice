@@ -28,6 +28,8 @@ func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, erro
 		ctx,
 		strings.TrimSpace(req.ThreadID),
 		req.UserText,
+		strings.TrimSpace(req.Model),
+		strings.TrimSpace(req.Profile),
 		req.Env,
 		req.OnProgress,
 	)

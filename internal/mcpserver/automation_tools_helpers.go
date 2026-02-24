@@ -31,8 +31,11 @@ func parseManageMode(raw string, groupScope bool) (automation.ManageMode, error)
 	}
 }
 
-func resolveActionType(raw, prompt string) (automation.ActionType, error) {
+func resolveActionType(raw, prompt, workflow string) (automation.ActionType, error) {
 	if strings.TrimSpace(raw) == "" {
+		if strings.TrimSpace(workflow) != "" {
+			return automation.ActionTypeRunWorkflow, nil
+		}
 		if strings.TrimSpace(prompt) != "" {
 			return automation.ActionTypeRunLLM, nil
 		}
@@ -44,7 +47,7 @@ func resolveActionType(raw, prompt string) (automation.ActionType, error) {
 func parseActionType(raw string) (automation.ActionType, error) {
 	actionType := automation.ActionType(strings.ToLower(strings.TrimSpace(raw)))
 	switch actionType {
-	case automation.ActionTypeSendText, automation.ActionTypeRunLLM:
+	case automation.ActionTypeSendText, automation.ActionTypeRunLLM, automation.ActionTypeRunWorkflow:
 		return actionType, nil
 	default:
 		return "", fmt.Errorf("invalid action_type %q", raw)

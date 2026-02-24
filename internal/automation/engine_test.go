@@ -60,6 +60,22 @@ func (s *llmRunnerStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResul
 	return s.result, s.err
 }
 
+type workflowRunnerStub struct {
+	mu      sync.Mutex
+	calls   int
+	lastReq WorkflowRunRequest
+	result  WorkflowRunResult
+	err     error
+}
+
+func (s *workflowRunnerStub) Run(_ context.Context, req WorkflowRunRequest) (WorkflowRunResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	s.lastReq = req
+	return s.result, s.err
+}
+
 func TestEngine_RunSystemTask(t *testing.T) {
 	engine := NewEngine(nil, nil)
 	engine.tick = 10 * time.Millisecond
@@ -140,6 +156,8 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 			Type:           ActionTypeRunLLM,
 			Text:           "定时播报",
 			Prompt:         "请回复当前时间 {{now}}",
+			Model:          "gpt-4.1-mini",
+			Profile:        "worker-cheap",
 			MentionUserIDs: []string{"ou_actor"},
 		},
 	})
@@ -168,6 +186,14 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 	if runner.lastReq.UserText != "请回复当前时间 2026-02-23T10:01:04Z" {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm prompt: %q", runner.lastReq.UserText)
+	}
+	if runner.lastReq.Model != "gpt-4.1-mini" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm model: %q", runner.lastReq.Model)
+	}
+	if runner.lastReq.Profile != "worker-cheap" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm profile: %q", runner.lastReq.Profile)
 	}
 	if got := runner.lastReq.Env["ALICE_MCP_RECEIVE_ID"]; got != "ou_actor" {
 		runner.mu.Unlock()
@@ -216,6 +242,87 @@ func TestEngine_RunUserTask_UsesConfiguredTimeout(t *testing.T) {
 	remaining := sender.deadline.Sub(start)
 	if remaining < 119*time.Second || remaining > 121*time.Second {
 		t.Fatalf("unexpected configured timeout window: %s", remaining)
+	}
+}
+
+func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation_state.json"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:           ActionTypeRunWorkflow,
+			Text:           "流程播报",
+			Prompt:         "请推进代码军队流程",
+			Workflow:       WorkflowCodeArmy,
+			StateKey:       "project_alpha",
+			Model:          "gpt-4.1-mini",
+			Profile:        "workflow-runner",
+			MentionUserIDs: []string{"ou_actor"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{Message: "code-army gate 通过"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	runner.mu.Lock()
+	if runner.calls == 0 {
+		runner.mu.Unlock()
+		t.Fatal("expected run_workflow task to invoke workflow runner")
+	}
+	if runner.lastReq.Workflow != WorkflowCodeArmy {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow name: %q", runner.lastReq.Workflow)
+	}
+	if runner.lastReq.StateKey != "project_alpha" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow state key: %q", runner.lastReq.StateKey)
+	}
+	if runner.lastReq.Model != "gpt-4.1-mini" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow model: %q", runner.lastReq.Model)
+	}
+	if runner.lastReq.Profile != "workflow-runner" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow profile: %q", runner.lastReq.Profile)
+	}
+	runner.mu.Unlock()
+
+	sender.mu.Lock()
+	if sender.sendTextCalls == 0 {
+		sender.mu.Unlock()
+		t.Fatal("expected run_workflow task to send text")
+	}
+	if sender.lastText == "" {
+		sender.mu.Unlock()
+		t.Fatal("expected non-empty run_workflow dispatch text")
+	}
+	sender.mu.Unlock()
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.LastResult == "" {
+		t.Fatalf("expected last result to be recorded, task=%+v", stored)
 	}
 }
 

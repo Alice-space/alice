@@ -50,12 +50,71 @@ func TestValidateTask_RunLLM(t *testing.T) {
 		Action: Action{
 			Type:           ActionTypeRunLLM,
 			Prompt:         "请输出当前时间 {{now}}",
+			Model:          "gpt-4.1-mini",
+			Profile:        "worker-cheap",
 			MentionUserIDs: []string{"ou_actor"},
 		},
 		Status: TaskStatusActive,
 	}
 	if err := ValidateTask(task); err != nil {
 		t.Fatalf("expected run_llm task to be valid, got err=%v", err)
+	}
+}
+
+func TestNormalizeTask_TrimRunLLMSelectors(t *testing.T) {
+	task := NormalizeTask(Task{
+		Action: Action{
+			Type:    ActionTypeRunLLM,
+			Prompt:  "hi",
+			Model:   "  gpt-4.1-mini  ",
+			Profile: "  worker-cheap  ",
+		},
+	})
+	if task.Action.Model != "gpt-4.1-mini" {
+		t.Fatalf("unexpected normalized model: %q", task.Action.Model)
+	}
+	if task.Action.Profile != "worker-cheap" {
+		t.Fatalf("unexpected normalized profile: %q", task.Action.Profile)
+	}
+}
+
+func TestValidateTask_RunWorkflow(t *testing.T) {
+	task := Task{
+		ID:       "task_run_workflow",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:           ActionTypeRunWorkflow,
+			Prompt:         "推进代码军队流程",
+			Workflow:       WorkflowCodeArmy,
+			StateKey:       "project_alpha",
+			MentionUserIDs: []string{"ou_actor"},
+		},
+		Status: TaskStatusActive,
+	}
+	if err := ValidateTask(task); err != nil {
+		t.Fatalf("expected run_workflow task to be valid, got err=%v", err)
+	}
+}
+
+func TestValidateTask_RunWorkflowWithoutWorkflowRejected(t *testing.T) {
+	task := Task{
+		ID:       "task_run_workflow_invalid",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:     ActionTypeRunWorkflow,
+			Prompt:   "推进代码军队流程",
+			Workflow: "",
+		},
+		Status: TaskStatusActive,
+	}
+	if err := ValidateTask(task); err == nil {
+		t.Fatal("expected run_workflow with empty workflow to be rejected")
 	}
 }
 

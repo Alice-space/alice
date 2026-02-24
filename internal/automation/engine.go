@@ -30,6 +30,7 @@ type Engine struct {
 	store           *Store
 	sender          TextSender
 	llmRunner       LLMRunner
+	workflowRunner  WorkflowRunner
 	userTaskTimeout time.Duration
 	tick            time.Duration
 	maxClaim        int
@@ -63,6 +64,13 @@ func (e *Engine) SetLLMRunner(runner LLMRunner) {
 		return
 	}
 	e.llmRunner = runner
+}
+
+func (e *Engine) SetWorkflowRunner(runner WorkflowRunner) {
+	if e == nil {
+		return
+	}
+	e.workflowRunner = runner
 }
 
 func (e *Engine) SetUserTaskTimeout(timeout time.Duration) {
@@ -242,6 +250,8 @@ func (e *Engine) buildTaskDispatchText(ctx context.Context, task Task) (string, 
 		}
 		result, err := e.llmRunner.Run(ctx, llm.RunRequest{
 			UserText: prompt,
+			Model:    task.Action.Model,
+			Profile:  task.Action.Profile,
 			Env:      buildTaskRunEnv(task),
 		})
 		if err != nil {
@@ -250,6 +260,40 @@ func (e *Engine) buildTaskDispatchText(ctx context.Context, task Task) (string, 
 		reply := strings.TrimSpace(result.Reply)
 		if reply == "" {
 			return "", errors.New("llm reply is empty")
+		}
+		prefix := renderActionTemplate(task.Action.Text, runAt)
+		message := reply
+		if prefix != "" {
+			message = prefix + "\n" + reply
+		}
+		return BuildDispatchText(Action{
+			Type:           ActionTypeSendText,
+			Text:           message,
+			MentionUserIDs: task.Action.MentionUserIDs,
+		})
+	case ActionTypeRunWorkflow:
+		if e.workflowRunner == nil {
+			return "", errors.New("automation workflow runner is nil")
+		}
+		prompt := renderActionTemplate(task.Action.Prompt, runAt)
+		if prompt == "" {
+			return "", errors.New("action prompt is empty for run_workflow")
+		}
+		result, err := e.workflowRunner.Run(ctx, WorkflowRunRequest{
+			Workflow: task.Action.Workflow,
+			TaskID:   task.ID,
+			StateKey: task.Action.StateKey,
+			Prompt:   prompt,
+			Model:    task.Action.Model,
+			Profile:  task.Action.Profile,
+			Env:      buildTaskRunEnv(task),
+		})
+		if err != nil {
+			return "", err
+		}
+		reply := strings.TrimSpace(result.Message)
+		if reply == "" {
+			return "", errors.New("workflow reply is empty")
 		}
 		prefix := renderActionTemplate(task.Action.Text, runAt)
 		message := reply

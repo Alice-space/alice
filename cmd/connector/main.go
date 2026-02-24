@@ -14,6 +14,7 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 
 	"gitee.com/alicespace/alice/internal/automation"
+	"gitee.com/alicespace/alice/internal/codearmy"
 	corecodex "gitee.com/alicespace/alice/internal/codex"
 	"gitee.com/alicespace/alice/internal/config"
 	"gitee.com/alicespace/alice/internal/connector"
@@ -107,6 +108,7 @@ func main() {
 	automationEngine := automation.NewEngine(automation.NewStore(automationStatePath), sender)
 	automationEngine.SetUserTaskTimeout(cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(backend)
+	automationEngine.SetWorkflowRunner(codearmy.NewRunner(filepath.Join(memoryDir, "code_army"), backend))
 	if err := automationEngine.RegisterSystemTask("system.idle_summary_scan", 60*time.Second, func(runCtx context.Context) {
 		processor.RunIdleSummaryScan(runCtx, cfg.IdleSummaryIdle)
 	}); err != nil {

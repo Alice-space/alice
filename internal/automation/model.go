@@ -31,8 +31,9 @@ const (
 type ActionType string
 
 const (
-	ActionTypeSendText ActionType = "send_text"
-	ActionTypeRunLLM   ActionType = "run_llm"
+	ActionTypeSendText    ActionType = "send_text"
+	ActionTypeRunLLM      ActionType = "run_llm"
+	ActionTypeRunWorkflow ActionType = "run_workflow"
 )
 
 type TaskStatus string
@@ -76,6 +77,10 @@ type Action struct {
 	Type           ActionType `json:"type"`
 	Text           string     `json:"text"`
 	Prompt         string     `json:"prompt,omitempty"`
+	Model          string     `json:"model,omitempty"`
+	Profile        string     `json:"profile,omitempty"`
+	Workflow       string     `json:"workflow,omitempty"`
+	StateKey       string     `json:"state_key,omitempty"`
 	MentionUserIDs []string   `json:"mention_user_ids,omitempty"`
 }
 
@@ -121,6 +126,10 @@ func NormalizeTask(task Task) Task {
 	task.Action.Type = ActionType(strings.ToLower(strings.TrimSpace(string(task.Action.Type))))
 	task.Action.Text = strings.TrimSpace(task.Action.Text)
 	task.Action.Prompt = strings.TrimSpace(task.Action.Prompt)
+	task.Action.Model = strings.TrimSpace(task.Action.Model)
+	task.Action.Profile = strings.TrimSpace(task.Action.Profile)
+	task.Action.Workflow = strings.ToLower(strings.TrimSpace(task.Action.Workflow))
+	task.Action.StateKey = strings.TrimSpace(task.Action.StateKey)
 	task.Action.MentionUserIDs = uniqueNonEmptyStrings(task.Action.MentionUserIDs)
 	task.Status = TaskStatus(strings.ToLower(strings.TrimSpace(string(task.Status))))
 	task.LastResult = strings.TrimSpace(task.LastResult)
@@ -183,6 +192,16 @@ func ValidateTask(task Task) error {
 	case ActionTypeRunLLM:
 		if strings.TrimSpace(task.Action.Prompt) == "" {
 			return errors.New("action prompt is empty for run_llm")
+		}
+		if _, err := buildMentionParts(task.Action.MentionUserIDs); err != nil {
+			return err
+		}
+	case ActionTypeRunWorkflow:
+		if task.Action.Workflow != WorkflowCodeArmy {
+			return fmt.Errorf("unsupported workflow %q", task.Action.Workflow)
+		}
+		if strings.TrimSpace(task.Action.Prompt) == "" {
+			return errors.New("action prompt is empty for run_workflow")
 		}
 		if _, err := buildMentionParts(task.Action.MentionUserIDs); err != nil {
 			return err

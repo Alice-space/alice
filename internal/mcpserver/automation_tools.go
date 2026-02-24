@@ -41,9 +41,13 @@ func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
 		mcp.WithString("schedule_type", mcp.Description("调度类型：interval 或 cron；默认 interval"), mcp.Enum("interval", "cron")),
 		mcp.WithNumber("every_seconds", mcp.Description("interval 调度间隔秒数，最小60秒"), mcp.Min(60)),
 		mcp.WithString("cron_expr", mcp.Description("cron 调度表达式，支持 5 段标准格式，如 0 9 * * *")),
-		mcp.WithString("action_type", mcp.Description("任务动作类型：send_text 或 run_llm；默认 send_text"), mcp.Enum("send_text", "run_llm")),
+		mcp.WithString("action_type", mcp.Description("任务动作类型：send_text、run_llm 或 run_workflow；默认 send_text"), mcp.Enum("send_text", "run_llm", "run_workflow")),
 		mcp.WithString("text", mcp.Description("发送文本，可选；与 mention_user_ids 至少一项非空")),
 		mcp.WithString("prompt", mcp.Description("run_llm 动作的提示词；支持模板变量 {{now}}/{{date}}/{{time}}/{{unix}}")),
+		mcp.WithString("model", mcp.Description("run_llm 可选模型名，透传至 codex -m")),
+		mcp.WithString("profile", mcp.Description("run_llm 可选 profile，透传至 codex -p")),
+		mcp.WithString("workflow", mcp.Description("run_workflow 名称，当前支持 code_army")),
+		mcp.WithString("state_key", mcp.Description("run_workflow 状态key，可选，默认任务ID")),
 		mcp.WithArray("mention_user_ids", mcp.Description("要@的用户id列表，私聊仅允许@当前用户"), mcp.WithStringItems()),
 		mcp.WithNumber("max_runs", mcp.Description("任务执行次数上限，0表示不限制；1表示仅执行一次"), mcp.Min(0)),
 		mcp.WithBoolean("enabled", mcp.Description("是否启用，默认 true")),
@@ -71,9 +75,13 @@ func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
 		mcp.WithString("schedule_type", mcp.Description("新调度类型：interval 或 cron"), mcp.Enum("interval", "cron")),
 		mcp.WithNumber("every_seconds", mcp.Description("interval 的新间隔秒数，最小60秒"), mcp.Min(60)),
 		mcp.WithString("cron_expr", mcp.Description("cron 的新表达式，如 0 9 * * *")),
-		mcp.WithString("action_type", mcp.Description("新动作类型：send_text 或 run_llm"), mcp.Enum("send_text", "run_llm")),
+		mcp.WithString("action_type", mcp.Description("新动作类型：send_text、run_llm 或 run_workflow"), mcp.Enum("send_text", "run_llm", "run_workflow")),
 		mcp.WithString("text", mcp.Description("新文本")),
 		mcp.WithString("prompt", mcp.Description("run_llm 动作的新提示词；支持模板变量 {{now}}/{{date}}/{{time}}/{{unix}}")),
+		mcp.WithString("model", mcp.Description("run_llm 的新模型名，透传至 codex -m")),
+		mcp.WithString("profile", mcp.Description("run_llm 的新 profile，透传至 codex -p")),
+		mcp.WithString("workflow", mcp.Description("run_workflow 新名称，当前支持 code_army")),
+		mcp.WithString("state_key", mcp.Description("run_workflow 新状态key")),
 		mcp.WithArray("mention_user_ids", mcp.Description("新的@用户id列表"), mcp.WithStringItems()),
 		mcp.WithNumber("max_runs", mcp.Description("新的执行次数上限，0表示不限制"), mcp.Min(0)),
 		mcp.WithBoolean("enabled", mcp.Description("设置启用状态")),
@@ -104,7 +112,11 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 	title := strings.TrimSpace(request.GetString("title", ""))
 	text := strings.TrimSpace(request.GetString("text", ""))
 	prompt := strings.TrimSpace(request.GetString("prompt", ""))
-	actionType, err := resolveActionType(request.GetString("action_type", ""), prompt)
+	model := strings.TrimSpace(request.GetString("model", ""))
+	profile := strings.TrimSpace(request.GetString("profile", ""))
+	workflow := strings.TrimSpace(request.GetString("workflow", ""))
+	stateKey := strings.TrimSpace(request.GetString("state_key", ""))
+	actionType, err := resolveActionType(request.GetString("action_type", ""), prompt, workflow)
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
 	}
@@ -142,6 +154,10 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 			Type:           actionType,
 			Text:           text,
 			Prompt:         prompt,
+			Model:          model,
+			Profile:        profile,
+			Workflow:       workflow,
+			StateKey:       stateKey,
 			MentionUserIDs: mentionUserIDs,
 		},
 		Status: status,
@@ -239,6 +255,18 @@ func (s *service) handleAutomationTaskUpdate(_ context.Context, request mcp.Call
 		}
 		if hasArgument(request, "prompt") {
 			task.Action.Prompt = strings.TrimSpace(request.GetString("prompt", ""))
+		}
+		if hasArgument(request, "model") {
+			task.Action.Model = strings.TrimSpace(request.GetString("model", ""))
+		}
+		if hasArgument(request, "profile") {
+			task.Action.Profile = strings.TrimSpace(request.GetString("profile", ""))
+		}
+		if hasArgument(request, "workflow") {
+			task.Action.Workflow = strings.TrimSpace(request.GetString("workflow", ""))
+		}
+		if hasArgument(request, "state_key") {
+			task.Action.StateKey = strings.TrimSpace(request.GetString("state_key", ""))
 		}
 		if hasArgument(request, "action_type") {
 			actionType, err := parseActionType(request.GetString("action_type", ""))

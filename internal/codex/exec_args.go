@@ -5,28 +5,41 @@ import (
 	"strings"
 )
 
-func buildExecArgs(threadID string, prompt string) []string {
+func buildExecArgs(threadID string, prompt string, model string, profile string) []string {
 	threadID = strings.TrimSpace(threadID)
-	if threadID != "" {
-		return []string{
-			"exec",
-			"resume",
+	model = strings.TrimSpace(model)
+	profile = strings.TrimSpace(profile)
+
+	buildFlags := func() []string {
+		args := []string{
 			"--json",
 			"--skip-git-repo-check",
 			"--dangerously-bypass-approvals-and-sandbox",
-			"--",
-			threadID,
-			prompt,
 		}
+		if model != "" {
+			args = append(args, "-m", model)
+		}
+		if profile != "" {
+			args = append(args, "-p", profile)
+		}
+		return args
 	}
-	return []string{
+
+	if threadID != "" {
+		args := []string{
+			"exec",
+			"resume",
+		}
+		args = append(args, buildFlags()...)
+		args = append(args, "--", threadID, prompt)
+		return args
+	}
+	args := []string{
 		"exec",
-		"--json",
-		"--skip-git-repo-check",
-		"--dangerously-bypass-approvals-and-sandbox",
-		"--",
-		prompt,
 	}
+	args = append(args, buildFlags()...)
+	args = append(args, "--", prompt)
+	return args
 }
 
 func buildPrompt(threadID string, promptPrefix string, userText string) string {
