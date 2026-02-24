@@ -1,0 +1,3 @@
+interface:
+  display_name: "飞书任务"
+  short_description: "用飞书Task v2管理任务与清单CRUD分派及截止时间"
