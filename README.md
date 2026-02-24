@@ -63,6 +63,8 @@ Run all checks manually:
 make check
 ```
 
+`make check` includes secret scanning (`make secret-check`) to block accidental key/token commits.
+
 Install git hooks:
 
 - `pre-commit`: runs `make check` before commit

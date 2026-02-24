@@ -35,6 +35,7 @@ make check
 
 `make check` 包含：
 
+- `make secret-check`（疑似密钥扫描）
 - `make fmt-check`（`gofmt` 检查）
 - `go vet ./...`
 - `go test ./...`

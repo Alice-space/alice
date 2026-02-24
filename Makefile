@@ -1,4 +1,4 @@
-.PHONY: fmt fmt-check vet test check precommit-install
+.PHONY: fmt fmt-check vet test secret-check check precommit-install
 
 fmt:
 	gofmt -w $(shell find . -name '*.go' -type f)
@@ -17,7 +17,10 @@ vet:
 test:
 	go test ./...
 
-check: fmt-check vet test
+secret-check:
+	./scripts/secret-check.sh
+
+check: secret-check fmt-check vet test
 
 precommit-install:
 	@mkdir -p .githooks

@@ -63,6 +63,8 @@ go build -o bin/alice-connector ./cmd/connector
 make check
 ```
 
+`make check` 包含密钥扫描（`make secret-check`），用于拦截误提交的 key/token。
+
 安装 git hooks：
 
 - `pre-commit`：提交前自动执行 `make check`
