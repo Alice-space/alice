@@ -26,7 +26,7 @@ Use this skill to work safely on an Alice repository with reproducible runtime/d
   - `internal/config/config.go`
   - `internal/connector/app.go`
   - `internal/connector/processor.go`
-  - `internal/codex/codex.go`
+  - `internal/llm/codex/codex.go`
   - `internal/memory/memory.go`
 - Expand to tests only when needed.
 

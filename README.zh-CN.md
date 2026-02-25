@@ -211,6 +211,6 @@ log_level: "info"
 - `internal/automation/`：Alice 自动化任务的调度、存储与执行
 - `internal/llm/`：LLM 后端抽象与工厂
 - `internal/memory/memory.go`：记忆模块（长期记忆 + 按日期短期记忆文件）
-- `internal/codex/codex.go`：Codex CLI 调用与 JSONL 解析
+- `internal/llm/codex/codex.go`：Codex CLI 调用与 JSONL 解析
 - `internal/connector/app.go`：长连接应用循环、任务队列与 worker 编排
 - `internal/connector/processor.go`：Prompt 组装、Codex 调用与回复回退链路

@@ -4,7 +4,7 @@ import (
 	"context"
 	"strings"
 
-	corecodex "gitee.com/alicespace/alice/internal/codex"
+	corecodex "gitee.com/alicespace/alice/internal/llm/codex"
 )
 
 type codexBackend struct {

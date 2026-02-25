@@ -38,7 +38,7 @@ Purpose: Feishu bot connector that forwards user messages to Codex and sends rep
 3. Job processing:
 - `internal/connector/processor.go`
 - Build prompt/context (reply context + memory + mention context).
-- Invoke backend (`internal/codex/codex.go` for Codex provider).
+- Invoke backend (`internal/llm/codex/codex.go` for Codex provider).
 - Send progress/final result through card-first fallback pipeline.
 
 4. Runtime/memory persistence:

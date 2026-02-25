@@ -205,6 +205,6 @@ Note: this project now uses a card-first reply flow and no longer uses interacti
 - `internal/automation/`: scheduler, persistence, and action execution for Alice automation tasks
 - `internal/llm/`: LLM backend abstraction and backend factory
 - `internal/memory/memory.go`: memory module (long-term + date-based short-term memory files)
-- `internal/codex/codex.go`: Codex CLI call + JSONL parsing
+- `internal/llm/codex/codex.go`: Codex CLI call + JSONL parsing
 - `internal/connector/app.go`: long-connection app loop, job queue, worker orchestration
 - `internal/connector/processor.go`: prompt building, Codex invocation, reply fallback pipeline

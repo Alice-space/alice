@@ -15,7 +15,7 @@
 
 - `cmd/connector`：仅负责启动编排（加载配置、组装依赖、运行主循环）。
 - `internal/connector`：飞书事件接入、排队、按会话串行、回复编排。
-- `internal/codex`：Codex CLI 调用与流式事件解析。
+- `internal/llm/codex`：Codex CLI 调用与流式事件解析。
 - `internal/memory`：长期记忆与分日期记忆持久化。
 - `internal/automation`：自动化任务调度、存储与执行引擎。
 - `cmd/alice-mcp-server` + `internal/mcpserver`：MCP 服务入口与处理逻辑。

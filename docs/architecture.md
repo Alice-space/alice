@@ -15,7 +15,7 @@ This document defines the target architecture for `alice` and tracks ongoing ref
 
 - `cmd/connector`: process bootstrap only (config load, dependency wiring, run loop).
 - `internal/connector`: Feishu event intake, queueing, per-session sequencing, reply orchestration.
-- `internal/codex`: Codex CLI invocation and stream parsing.
+- `internal/llm/codex`: Codex CLI invocation and stream parsing.
 - `internal/memory`: long-term and daily memory persistence.
 - `internal/automation`: task scheduling, persistence, and execution engine.
 - `cmd/alice-mcp-server` + `internal/mcpserver`: MCP server entry and handlers.

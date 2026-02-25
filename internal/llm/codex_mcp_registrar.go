@@ -3,7 +3,7 @@ package llm
 import (
 	"context"
 
-	corecodex "gitee.com/alicespace/alice/internal/codex"
+	corecodex "gitee.com/alicespace/alice/internal/llm/codex"
 )
 
 type codexMCPRegistrar struct {

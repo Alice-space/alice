@@ -84,8 +84,8 @@ func TestParseEventLine_FileChange(t *testing.T) {
 }
 
 func TestParseEventLine_FileChangeWithChangesArray(t *testing.T) {
-	_, _, fileChange, _ := parseEventLine(`{"type":"item.completed","item":{"id":"item_28","type":"file_change","changes":[{"path":"/home/codexbot/alice/internal/codex/codex.go","kind":"update"}],"status":"completed"}}`)
-	if fileChange != "- `internal/codex/codex.go` 已更改" {
+	_, _, fileChange, _ := parseEventLine(`{"type":"item.completed","item":{"id":"item_28","type":"file_change","changes":[{"path":"/home/codexbot/alice/internal/llm/codex/codex.go","kind":"update"}],"status":"completed"}}`)
+	if fileChange != "- `internal/llm/codex/codex.go` 已更改" {
 		t.Fatalf("unexpected file change message from changes array: %q", fileChange)
 	}
 }
