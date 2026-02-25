@@ -9,18 +9,20 @@ feishu_base_url: "https://open.feishu.cn"
 feishu_bot_open_id: ""
 feishu_bot_user_id: ""
 
-# LLM runtime (current supported provider: codex)
+# LLM runtime (supported providers: codex, claude)
 llm_provider: "codex"
 codex_command: "codex"
 codex_timeout_secs: 172800
-# Automatically register MCP server into Codex at startup.
+claude_command: "claude"
+claude_timeout_secs: 120
+# Automatically register MCP server into the selected LLM CLI at startup.
 codex_mcp_auto_register: true
 # If true, startup fails when MCP registration fails.
 codex_mcp_register_strict: false
-# MCP server name used in `codex mcp` commands.
+# MCP server name used in `codex mcp` / `claude mcp` commands.
 codex_mcp_server_name: "alice-feishu"
 workspace_dir: "."
-# Optional: environment variables passed to `codex` process (proxy, etc.)
+# Optional: environment variables passed to LLM process (proxy, etc.)
 env:
   HTTPS_PROXY: "http://127.0.0.1:7890"
   ALL_PROXY: "socks5://127.0.0.1:7891"
@@ -30,6 +32,7 @@ memory_dir: ".memory"
 # Prompt and fallback
 # Optional, default is empty. Set this only if you want a global instruction prefix.
 codex_prompt_prefix: ""
+claude_prompt_prefix: ""
 failure_message: "Codex 暂时不可用，请稍后重试。"
 thinking_message: "正在思考中..."
 

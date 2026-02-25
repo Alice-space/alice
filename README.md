@@ -113,6 +113,8 @@ feishu_bot_user_id: ""
 llm_provider: "codex"
 codex_command: "codex"
 codex_timeout_secs: 120
+claude_command: "claude"
+claude_timeout_secs: 120
 codex_mcp_auto_register: true
 codex_mcp_register_strict: false
 codex_mcp_server_name: "alice-feishu"
@@ -123,6 +125,7 @@ env:
 memory_dir: ".memory"
 
 codex_prompt_prefix: ""
+claude_prompt_prefix: ""
 failure_message: "Codex 暂时不可用，请稍后重试。"
 thinking_message: "正在思考中..."
 
@@ -142,12 +145,13 @@ Required keys:
 
 Optional:
 
-- `llm_provider`: LLM backend provider selector. Current supported value: `codex` (default).
-- `env`: key-value environment variables injected into `codex` process (for example HTTP/HTTPS/SOCKS proxy settings).
-- `codex_prompt_prefix`: global instruction prefix prepended for new threads only; default is empty.
-- `codex_mcp_auto_register`: whether to auto-run `codex mcp add` at startup for the bundled `alice-mcp-server` command (default `true`).
+- `llm_provider`: LLM backend provider selector. Supported values: `codex` (default) and `claude`.
+- `codex_command` / `codex_timeout_secs`, `claude_command` / `claude_timeout_secs`: CLI command path and timeout (seconds) for each backend.
+- `env`: key-value environment variables injected into the selected LLM process (for example HTTP/HTTPS/SOCKS proxy settings).
+- `codex_prompt_prefix` / `claude_prompt_prefix`: global instruction prefix prepended for new threads only; default is empty.
+- `codex_mcp_auto_register`: whether to auto-run `codex mcp add` or `claude mcp add` at startup for the bundled `alice-mcp-server` command (default `true`).
 - `codex_mcp_register_strict`: when `true`, startup fails if MCP registration fails; when `false`, registration failure only logs warning and startup continues (default `false`).
-- `codex_mcp_server_name`: MCP server name used in `codex mcp` registration (default `alice-feishu`).
+- `codex_mcp_server_name`: MCP server name used in LLM MCP registration (default `alice-feishu`).
 - `automation_task_timeout_secs`: timeout window for a single automation user task execution (`send_text`/`run_llm`), default `600`.
 - `idle_summary_hours`: idle threshold (hours) before background daily summary write (default `8`).
 - `group_context_window_minutes`: sliding window duration (minutes) for caching non-`@bot` group messages (text + multimedia), merged on later `@bot` trigger (default `5`).

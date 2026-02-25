@@ -13,6 +13,7 @@ import (
 
 const DefaultConfigPath = "config.yaml"
 const DefaultLLMProvider = "codex"
+const LLMProviderClaude = "claude"
 
 type Config struct {
 	FeishuAppID     string `mapstructure:"feishu_app_id"`
@@ -31,6 +32,10 @@ type Config struct {
 	CodexMCPAutoRegister   bool              `mapstructure:"codex_mcp_auto_register"`
 	CodexMCPRegisterStrict bool              `mapstructure:"codex_mcp_register_strict"`
 	CodexMCPServerName     string            `mapstructure:"codex_mcp_server_name"`
+	ClaudeCommand          string            `mapstructure:"claude_command"`
+	ClaudeTimeout          time.Duration     `mapstructure:"-"`
+	ClaudeTimeoutSecs      int               `mapstructure:"claude_timeout_secs"`
+	ClaudePromptPrefix     string            `mapstructure:"claude_prompt_prefix"`
 	FailureMessage         string            `mapstructure:"failure_message"`
 	ThinkingMessage        string            `mapstructure:"thinking_message"`
 	WorkspaceDir           string            `mapstructure:"workspace_dir"`
@@ -60,6 +65,8 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("codex_mcp_auto_register", true)
 	v.SetDefault("codex_mcp_register_strict", false)
 	v.SetDefault("codex_mcp_server_name", "alice-feishu")
+	v.SetDefault("claude_command", "claude")
+	v.SetDefault("claude_timeout_secs", 120)
 	v.SetDefault("failure_message", "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault("thinking_message", "正在思考中...")
 	v.SetDefault("workspace_dir", ".")
@@ -94,6 +101,8 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.CodexEnv = normalizeEnvMap(envMap)
 	cfg.CodexPromptPrefix = strings.TrimSpace(cfg.CodexPromptPrefix)
 	cfg.CodexMCPServerName = strings.TrimSpace(cfg.CodexMCPServerName)
+	cfg.ClaudeCommand = strings.TrimSpace(cfg.ClaudeCommand)
+	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
 	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)
 	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
@@ -115,6 +124,9 @@ func LoadFromFile(path string) (Config, error) {
 	if cfg.CodexCommand == "" {
 		cfg.CodexCommand = "codex"
 	}
+	if cfg.ClaudeCommand == "" {
+		cfg.ClaudeCommand = "claude"
+	}
 	if cfg.CodexMCPServerName == "" {
 		cfg.CodexMCPServerName = "alice-feishu"
 	}
@@ -133,12 +145,23 @@ func LoadFromFile(path string) (Config, error) {
 	if cfg.ThinkingMessage == "" {
 		cfg.ThinkingMessage = "正在思考中..."
 	}
-	if cfg.LLMProvider != DefaultLLMProvider {
+	switch cfg.LLMProvider {
+	case DefaultLLMProvider, LLMProviderClaude:
+	default:
 		return Config{}, fmt.Errorf("unsupported llm_provider %q", cfg.LLMProvider)
 	}
 
 	if cfg.CodexTimeoutSecs <= 0 {
-		return Config{}, errors.New("codex_timeout_secs must be > 0")
+		if cfg.LLMProvider == DefaultLLMProvider {
+			return Config{}, errors.New("codex_timeout_secs must be > 0")
+		}
+		cfg.CodexTimeoutSecs = 120
+	}
+	if cfg.ClaudeTimeoutSecs <= 0 {
+		if cfg.LLMProvider == LLMProviderClaude {
+			return Config{}, errors.New("claude_timeout_secs must be > 0")
+		}
+		cfg.ClaudeTimeoutSecs = 120
 	}
 	for key := range cfg.CodexEnv {
 		if key == "" {
@@ -164,6 +187,7 @@ func LoadFromFile(path string) (Config, error) {
 		return Config{}, errors.New("group_context_window_minutes must be > 0")
 	}
 	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
+	cfg.ClaudeTimeout = time.Duration(cfg.ClaudeTimeoutSecs) * time.Second
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 	cfg.IdleSummaryIdle = time.Duration(cfg.IdleSummaryHours) * time.Hour
 	cfg.GroupContextWindowTTL = time.Duration(cfg.GroupContextWindowMinutes) * time.Minute

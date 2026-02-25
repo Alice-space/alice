@@ -33,6 +33,15 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if cfg.CodexTimeout != 120*time.Second {
 		t.Fatalf("unexpected codex_timeout: %s", cfg.CodexTimeout)
 	}
+	if cfg.ClaudeCommand != "claude" {
+		t.Fatalf("unexpected claude_command: %s", cfg.ClaudeCommand)
+	}
+	if cfg.ClaudeTimeout != 120*time.Second {
+		t.Fatalf("unexpected claude_timeout: %s", cfg.ClaudeTimeout)
+	}
+	if cfg.ClaudePromptPrefix != "" {
+		t.Fatalf("unexpected claude_prompt_prefix: %q", cfg.ClaudePromptPrefix)
+	}
 	if cfg.QueueCapacity != 256 {
 		t.Fatalf("unexpected queue_capacity: %d", cfg.QueueCapacity)
 	}
@@ -269,5 +278,86 @@ llm_provider: "  CoDeX  "
 	}
 	if cfg.LLMProvider != DefaultLLMProvider {
 		t.Fatalf("unexpected llm_provider: %q", cfg.LLMProvider)
+	}
+}
+
+func TestLoadFromFile_LLMProviderClaude(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_provider: "  ClAuDe  "
+claude_command: "  claude-custom  "
+claude_timeout_secs: 233
+claude_prompt_prefix: "  你是Claude助手  "
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	cfg, err := LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("load config failed: %v", err)
+	}
+	if cfg.LLMProvider != LLMProviderClaude {
+		t.Fatalf("unexpected llm_provider: %q", cfg.LLMProvider)
+	}
+	if cfg.ClaudeCommand != "claude-custom" {
+		t.Fatalf("unexpected claude_command: %q", cfg.ClaudeCommand)
+	}
+	if cfg.ClaudeTimeout != 233*time.Second {
+		t.Fatalf("unexpected claude_timeout: %s", cfg.ClaudeTimeout)
+	}
+	if cfg.ClaudePromptPrefix != "你是Claude助手" {
+		t.Fatalf("unexpected claude_prompt_prefix: %q", cfg.ClaudePromptPrefix)
+	}
+}
+
+func TestLoadFromFile_ClaudeTimeoutInvalid(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_provider: claude
+claude_timeout_secs: 0
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "claude_timeout_secs must be > 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_CodexTimeoutIgnoredWhenClaudeProvider(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_provider: claude
+codex_timeout_secs: 0
+claude_timeout_secs: 60
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	cfg, err := LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("load config failed: %v", err)
+	}
+	if cfg.CodexTimeout != 120*time.Second {
+		t.Fatalf("unexpected codex_timeout fallback: %s", cfg.CodexTimeout)
+	}
+	if cfg.ClaudeTimeout != 60*time.Second {
+		t.Fatalf("unexpected claude_timeout: %s", cfg.ClaudeTimeout)
 	}
 }

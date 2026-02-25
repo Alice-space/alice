@@ -7,13 +7,23 @@ import (
 )
 
 const ProviderCodex = "codex"
+const ProviderClaude = "claude"
 
 type FactoryConfig struct {
 	Provider string
 	Codex    CodexConfig
+	Claude   ClaudeConfig
 }
 
 type CodexConfig struct {
+	Command      string
+	Timeout      time.Duration
+	Env          map[string]string
+	PromptPrefix string
+	WorkspaceDir string
+}
+
+type ClaudeConfig struct {
 	Command      string
 	Timeout      time.Duration
 	Env          map[string]string
@@ -42,6 +52,11 @@ func NewProvider(cfg FactoryConfig) (Provider, error) {
 		return providerBundle{
 			backend:      newCodexBackend(cfg.Codex),
 			mcpRegistrar: newCodexMCPRegistrar(cfg.Codex),
+		}, nil
+	case ProviderClaude:
+		return providerBundle{
+			backend:      newClaudeBackend(cfg.Claude),
+			mcpRegistrar: newClaudeMCPRegistrar(cfg.Claude),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported llm_provider %q", provider)

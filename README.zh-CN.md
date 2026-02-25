@@ -113,6 +113,8 @@ feishu_bot_user_id: ""
 llm_provider: "codex"
 codex_command: "codex"
 codex_timeout_secs: 120
+claude_command: "claude"
+claude_timeout_secs: 120
 codex_mcp_auto_register: true
 codex_mcp_register_strict: false
 codex_mcp_server_name: "alice-feishu"
@@ -123,6 +125,7 @@ env:
 memory_dir: ".memory"
 
 codex_prompt_prefix: ""
+claude_prompt_prefix: ""
 failure_message: "Codex 暂时不可用，请稍后重试。"
 thinking_message: "正在思考中..."
 
@@ -142,12 +145,13 @@ log_level: "info"
 
 可选项：
 
-- `llm_provider`：LLM 后端类型选择。当前支持 `codex`（默认）。
-- `env`：注入到 `codex` 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
-- `codex_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
-- `codex_mcp_auto_register`：启动时是否自动执行 `codex mcp add` 注册内置 `alice-mcp-server`（默认 `true`）。
+- `llm_provider`：LLM 后端类型选择。支持 `codex`（默认）与 `claude`。
+- `codex_command` / `codex_timeout_secs`、`claude_command` / `claude_timeout_secs`：对应后端 CLI 命令路径与超时秒数。
+- `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
+- `codex_prompt_prefix` / `claude_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
+- `codex_mcp_auto_register`：启动时是否自动执行 `codex mcp add` 或 `claude mcp add` 注册内置 `alice-mcp-server`（默认 `true`）。
 - `codex_mcp_register_strict`：为 `true` 时，MCP 注册失败将导致启动失败；为 `false` 时仅记录告警并继续启动（默认 `false`）。
-- `codex_mcp_server_name`：注册到 `codex mcp` 的 MCP 服务名（默认 `alice-feishu`）。
+- `codex_mcp_server_name`：注册到 LLM MCP 的服务名（默认 `alice-feishu`）。
 - `automation_task_timeout_secs`：单次自动化用户任务（`send_text`/`run_llm`）的执行超时秒数，默认 `600`。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
 - `group_context_window_minutes`：群聊中未艾特机器人的消息缓存窗口（分钟，默认 `5`）。窗口内文本与多媒体会在后续艾特触发时并入上下文。

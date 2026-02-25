@@ -34,6 +34,13 @@ func buildFactoryConfig(cfg config.Config) llm.FactoryConfig {
 			PromptPrefix: cfg.CodexPromptPrefix,
 			WorkspaceDir: cfg.WorkspaceDir,
 		},
+		Claude: llm.ClaudeConfig{
+			Command:      cfg.ClaudeCommand,
+			Timeout:      cfg.ClaudeTimeout,
+			Env:          cfg.CodexEnv,
+			PromptPrefix: cfg.ClaudePromptPrefix,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 	}
 }
 
