@@ -83,37 +83,16 @@ fi
 
 after_commit="$(git -C "$repo" rev-parse --short HEAD)"
 
-(
-  cd "$repo"
-  go build -o bin/alice-connector ./cmd/connector
-  go build -o bin/alice-mcp-server ./cmd/alice-mcp-server
-)
-
-restart_result="skipped"
-if [[ "$skip_restart" -eq 0 ]]; then
-  if command -v systemctl >/dev/null 2>&1; then
-    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
-    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
-    systemctl --user restart --no-block "$service_name"
-    sleep 1
-    restart_result="$(systemctl --user is-active "$service_name" 2>/dev/null || true)"
-  else
-    restart_result="systemctl-missing"
-  fi
-fi
-
+last_commit_subject="$(git -C "$repo" log -1 --pretty=%s | tr -d '\r')"
+updated_at=""
 service_active="unknown"
 service_enabled="unknown"
-if command -v systemctl >/dev/null 2>&1; then
-  service_active="$(systemctl --user is-active "$service_name" 2>/dev/null || echo unknown)"
-  service_enabled="$(systemctl --user is-enabled "$service_name" 2>/dev/null || echo unknown)"
-fi
+restart_result="skipped"
 
-last_commit_subject="$(git -C "$repo" log -1 --pretty=%s | tr -d '\r')"
-updated_at="$(date -Iseconds)"
-
-mkdir -p "$(dirname "$sync_state_file")"
-cat >"$sync_state_file" <<STATE
+write_sync_state() {
+  updated_at="$(date -Iseconds)"
+  mkdir -p "$(dirname "$sync_state_file")"
+  cat >"$sync_state_file" <<STATE
 # Skill Sync State
 
 - updated_at: $updated_at
@@ -140,6 +119,36 @@ $pull_result
 $restart_result
 \`\`\`
 STATE
+}
+
+(
+  cd "$repo"
+  go build -o bin/alice-connector ./cmd/connector
+  go build -o bin/alice-mcp-server ./cmd/alice-mcp-server
+)
+
+if command -v systemctl >/dev/null 2>&1; then
+  service_active="$(systemctl --user is-active "$service_name" 2>/dev/null || echo unknown)"
+  service_enabled="$(systemctl --user is-enabled "$service_name" 2>/dev/null || echo unknown)"
+fi
+
+if [[ "$skip_restart" -eq 0 ]]; then
+  if command -v systemctl >/dev/null 2>&1; then
+    export XDG_RUNTIME_DIR="/run/user/$(id -u)"
+    export DBUS_SESSION_BUS_ADDRESS="unix:path=$XDG_RUNTIME_DIR/bus"
+    restart_result="requested (snapshot written before restart; if self-update restarts current process, post-restart status may not be recorded)"
+    write_sync_state
+    systemctl --user restart --no-block "$service_name"
+    sleep 1
+    service_active="$(systemctl --user is-active "$service_name" 2>/dev/null || echo unknown)"
+    service_enabled="$(systemctl --user is-enabled "$service_name" 2>/dev/null || echo unknown)"
+    restart_result="$service_active"
+  else
+    restart_result="systemctl-missing"
+  fi
+fi
+
+write_sync_state
 
 echo "=== update-self-and-sync-skill done ==="
 echo "repo: $repo"
