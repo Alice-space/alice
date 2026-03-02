@@ -89,6 +89,7 @@ func (r Runner) RunWithThreadAndProgress(
 
 	cmdArgs := buildExecArgs(threadID, prompt, model, profile)
 	cmd := exec.CommandContext(tctx, r.Command, cmdArgs...)
+	configureInterruptibleCommand(cmd, "codex")
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}

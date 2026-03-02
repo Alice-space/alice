@@ -2,6 +2,7 @@ package codex
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -258,6 +259,46 @@ EOF
 	}
 	if !slices.Contains(updates, "最终答复") {
 		t.Fatalf("final agent message should be synced, got: %#v", updates)
+	}
+}
+
+func TestRunnerCancelStopsChildProcessGroup(t *testing.T) {
+	tempDir := t.TempDir()
+	fakeCodexPath := filepath.Join(tempDir, "fake-codex.sh")
+	script := `#!/bin/sh
+echo '{"type":"thread.started","thread_id":"thread_cancel"}'
+sleep 5 &
+wait $!
+`
+	if err := os.WriteFile(fakeCodexPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex script failed: %v", err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	runner := Runner{
+		Command: fakeCodexPath,
+		Timeout: 10 * time.Second,
+	}
+
+	done := make(chan error, 1)
+	startedAt := time.Now()
+	go func() {
+		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "hello", "", "", nil, nil)
+		done <- err
+	}()
+
+	time.Sleep(200 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.Canceled) {
+			t.Fatalf("expected context canceled, got %v", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatalf("runner did not stop promptly after cancel, elapsed=%s", time.Since(startedAt))
 	}
 }
 
