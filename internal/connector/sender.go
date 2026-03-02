@@ -13,6 +13,8 @@ import (
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
+
+	"gitee.com/alicespace/alice/internal/memory"
 )
 
 type LarkSender struct {
@@ -27,11 +29,11 @@ func NewLarkSender(client *lark.Client, resourceDir string) *LarkSender {
 	}
 }
 
-func (s *LarkSender) ResourceRoot() string {
+func (s *LarkSender) ResourceRootForScope(memoryScopeKey string) string {
 	if s == nil {
 		return ""
 	}
-	return strings.TrimSpace(s.resourceDir)
+	return memory.ResolveScopedResourceRoot(strings.TrimSpace(s.resourceDir), memoryScopeKey)
 }
 
 func (s *LarkSender) SendText(ctx context.Context, receiveIDType, receiveID, text string) error {
@@ -240,7 +242,7 @@ func (s *LarkSender) GetMessageText(ctx context.Context, messageID string) (stri
 	return clipText(content, 1200), nil
 }
 
-func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID string, attachment *Attachment) error {
+func (s *LarkSender) DownloadAttachment(ctx context.Context, memoryScopeKey, sourceMessageID string, attachment *Attachment) error {
 	if attachment == nil {
 		return errors.New("attachment is nil")
 	}
@@ -251,6 +253,10 @@ func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID str
 	if strings.TrimSpace(s.resourceDir) == "" {
 		return errors.New("resource dir is empty")
 	}
+	resourceRoot := strings.TrimSpace(s.ResourceRootForScope(memoryScopeKey))
+	if resourceRoot == "" {
+		return errors.New("resource root is empty")
+	}
 
 	kind := strings.ToLower(strings.TrimSpace(attachment.Kind))
 	switch kind {
@@ -260,10 +266,10 @@ func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID str
 		if imageKey != "" {
 			fileName, fileReader, err := s.downloadMessageResource(ctx, sourceMessageID, imageKey, "image")
 			if err == nil {
-				return s.writeAttachmentFile(sourceMessageID, kind, imageKey, fileName, fileReader, attachment)
+				return s.writeAttachmentFile(resourceRoot, sourceMessageID, kind, imageKey, fileName, fileReader, attachment)
 			}
 			if fallbackName, fallbackReader, fallbackErr := s.downloadImage(ctx, imageKey); fallbackErr == nil {
-				return s.writeAttachmentFile(sourceMessageID, kind, imageKey, fallbackName, fallbackReader, attachment)
+				return s.writeAttachmentFile(resourceRoot, sourceMessageID, kind, imageKey, fallbackName, fallbackReader, attachment)
 			}
 			if fileKey == "" {
 				return err
@@ -274,7 +280,7 @@ func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID str
 			if err != nil {
 				return err
 			}
-			return s.writeAttachmentFile(sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
+			return s.writeAttachmentFile(resourceRoot, sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
 		}
 		return errors.New("image attachment missing image_key and file_key")
 	case "sticker":
@@ -283,7 +289,7 @@ func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID str
 		if fileKey != "" {
 			fileName, fileReader, err := s.downloadMessageResource(ctx, sourceMessageID, fileKey, "file")
 			if err == nil {
-				return s.writeAttachmentFile(sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
+				return s.writeAttachmentFile(resourceRoot, sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
 			}
 			if imageKey == "" {
 				return err
@@ -294,7 +300,7 @@ func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID str
 			if err != nil {
 				return err
 			}
-			return s.writeAttachmentFile(sourceMessageID, kind, imageKey, fileName, fileReader, attachment)
+			return s.writeAttachmentFile(resourceRoot, sourceMessageID, kind, imageKey, fileName, fileReader, attachment)
 		}
 		return errors.New("sticker attachment missing file_key and image_key")
 	case "audio", "file":
@@ -306,7 +312,7 @@ func (s *LarkSender) DownloadAttachment(ctx context.Context, sourceMessageID str
 		if err != nil {
 			return err
 		}
-		return s.writeAttachmentFile(sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
+		return s.writeAttachmentFile(resourceRoot, sourceMessageID, kind, fileKey, fileName, fileReader, attachment)
 	default:
 		return fmt.Errorf("unsupported attachment kind: %s", kind)
 	}
@@ -349,6 +355,7 @@ func (s *LarkSender) downloadMessageResource(ctx context.Context, messageID, res
 }
 
 func (s *LarkSender) writeAttachmentFile(
+	resourceRoot string,
 	sourceMessageID, kind, key, suggestedFileName string,
 	reader io.Reader,
 	attachment *Attachment,
@@ -364,9 +371,8 @@ func (s *LarkSender) writeAttachmentFile(
 		return errors.New("attachment file is empty")
 	}
 
-	resourceDir := strings.TrimSpace(s.resourceDir)
 	subDir := filepath.Join(
-		resourceDir,
+		strings.TrimSpace(resourceRoot),
 		time.Now().Format("2006-01-02"),
 		sanitizePathToken(sourceMessageID),
 	)

@@ -357,6 +357,7 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	job.MessageType = strings.TrimSpace(job.MessageType)
 	job.RawContent = strings.TrimSpace(job.RawContent)
 	job.EventID = strings.TrimSpace(job.EventID)
+	job.MemoryScopeKey = strings.TrimSpace(job.MemoryScopeKey)
 	job.SessionKey = strings.TrimSpace(job.SessionKey)
 	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
 	if len(job.Attachments) > 0 {
@@ -372,6 +373,9 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	}
 	if job.SessionKey == "" {
 		job.SessionKey = buildSessionKey(job.ReceiveIDType, job.ReceiveID)
+	}
+	if job.MemoryScopeKey == "" {
+		job.MemoryScopeKey = memoryScopeKeyForJob(job)
 	}
 	if job.SessionKey == "" || job.SessionVersion == 0 {
 		return Job{}, false

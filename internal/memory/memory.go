@@ -57,14 +57,8 @@ func (m *Manager) Init() error {
 		return errors.New("memory dir is empty")
 	}
 
-	if err := os.MkdirAll(m.Dir, 0o755); err != nil {
-		return fmt.Errorf("create memory dir failed: %w", err)
-	}
-	if err := os.MkdirAll(filepath.Join(m.Dir, ShortTermDirName), 0o755); err != nil {
-		return fmt.Errorf("create short-term memory dir failed: %w", err)
-	}
-	if err := ensureFileExists(filepath.Join(m.Dir, LongTermFileName), 0o644); err != nil {
-		return fmt.Errorf("create long-term memory file failed: %w", err)
+	if err := ensureLayoutDirs(m.Dir); err != nil {
+		return fmt.Errorf("create scoped memory layout failed: %w", err)
 	}
 	return nil
 }
@@ -77,7 +71,7 @@ func ensureFileExists(path string, perm os.FileMode) error {
 	return f.Close()
 }
 
-func (m *Manager) BuildPrompt(userText string) (string, error) {
+func (m *Manager) BuildPrompt(memoryScopeKey, userText string) (string, error) {
 	userText = strings.TrimSpace(userText)
 	if userText == "" {
 		return "", errors.New("empty user text")
@@ -89,38 +83,62 @@ func (m *Manager) BuildPrompt(userText string) (string, error) {
 	if strings.TrimSpace(m.Dir) == "" {
 		return "", errors.New("memory dir is empty")
 	}
-
-	now := m.now()
-	longTermPath := filepath.Join(m.Dir, LongTermFileName)
-	longText, err := readOptionalFile(longTermPath)
-	if err != nil {
-		return "", fmt.Errorf("read long-term memory failed: %w", err)
+	if err := ensureLayoutDirs(m.Dir); err != nil {
+		return "", fmt.Errorf("prepare scoped memory layout failed: %w", err)
 	}
 
-	longText = normalizeMemoryText(longText, m.maxLongTermRunes())
-	longTermPromptPath := absOrSame(longTermPath)
+	scope, err := resolveScopePaths(m.Dir, memoryScopeKey)
+	if err != nil {
+		return "", fmt.Errorf("resolve memory scope failed: %w", err)
+	}
+	if err := ensureScopeDirs(scope); err != nil {
+		return "", fmt.Errorf("prepare scoped memory dir failed: %w", err)
+	}
+
+	now := m.now()
+	globalLongPath := globalLongTermPath(m.Dir)
+	globalLongText, err := readOptionalFile(globalLongPath)
+	if err != nil {
+		return "", fmt.Errorf("read global long-term memory failed: %w", err)
+	}
+	scopeLongText, err := readOptionalFile(scope.LongTermPath)
+	if err != nil {
+		return "", fmt.Errorf("read scoped long-term memory failed: %w", err)
+	}
+
+	globalLongText = normalizeMemoryText(globalLongText, m.maxLongTermRunes())
+	scopeLongText = normalizeMemoryText(scopeLongText, m.maxLongTermRunes())
+	globalLongPromptPath := absOrSame(globalLongPath)
+	scopeLongPromptPath := absOrSame(scope.LongTermPath)
 	shortTermName := shortTermFileName(now)
-	shortTermDir := absOrSame(filepath.Join(m.Dir, ShortTermDirName))
+	scopeShortTermDir := absOrSame(scope.DailyDir)
 
 	prompt := "---\n" +
 		"记忆内容与更新规则：\n" +
-		"长期记忆：\n" +
-		"- 文件位置：" + longTermPromptPath + "\n- 文件内容：\n" +
-		longText + "\n\n" +
-		"分日期记忆：\n" +
-		"- 目录位置：" + shortTermDir + "\n" +
+		"全局基线记忆：\n" +
+		"- 文件位置：" + globalLongPromptPath + "\n- 文件内容：\n" +
+		globalLongText + "\n\n" +
+		"当前会话记忆：\n" +
+		"- 会话标识：" + scope.Key + "\n" +
+		"- 长期记忆文件：" + scopeLongPromptPath + "\n" +
+		"- 长期记忆内容：\n" + scopeLongText + "\n" +
+		"- 分日期记忆目录：" + scopeShortTermDir + "\n" +
 		"- 文件命名：YYYY-MM-DD.md（例如：" + shortTermName + "）\n" +
-		"- 需要历史信息时，请按日期自行检索对应文件。\n\n" +
+		"- 需要当前会话的历史信息时，请按日期自行检索对应文件。\n" +
+		"- 不要读取或修改其他群聊、私聊的记忆目录。\n\n" +
 		"按需记忆更新：\n" +
-		"- 系统仅会在会话空闲超时后自动追加“空闲摘要”到分日期记忆；其余记忆更新请你自行编辑上述文件。\n" +
+		"- 系统仅会在会话空闲超时后自动追加“空闲摘要”到当前会话的分日期记忆；其余记忆更新请你自行编辑当前会话对应的记忆文件。\n" +
+		"- 全局基线记忆仅保留跨所有会话都生效的稳定规则；群聊/私聊特有信息应写入当前会话记忆。\n" +
 		"- 长期记忆内容有限，若用户未明确要求，不要将临时任务细节升级为长期偏好。\n" +
 		"---\n\n" +
 		"当前用户消息：\n" + userText
 	logging.Debugf(
-		"memory prompt assembled dir=%s long_term_file=%s short_term_dir=%s user_text=%q prompt=%q",
+		"memory prompt assembled dir=%s scope=%s global_long_term_file=%s scoped_long_term_file=%s scoped_short_term_dir=%s user_text=%q prompt=%q",
 		m.Dir,
-		longTermPromptPath,
-		shortTermDir,
+		scope.Key,
+		globalLongPromptPath,
+		scopeLongPromptPath,
+		scopeShortTermDir,
 		userText,
 		prompt,
 	)
@@ -128,10 +146,11 @@ func (m *Manager) BuildPrompt(userText string) (string, error) {
 	return prompt, nil
 }
 
-func (m *Manager) SaveInteraction(userText, assistantText string, failed bool) (bool, error) {
+func (m *Manager) SaveInteraction(memoryScopeKey, userText, assistantText string, failed bool) (bool, error) {
 	logging.Debugf(
-		"memory save delegated to llm dir=%s changed=false user_text=%q assistant_text=%q failed=%t",
+		"memory save delegated to llm dir=%s scope=%s changed=false user_text=%q assistant_text=%q failed=%t",
 		m.Dir,
+		normalizeMemoryScopeKey(memoryScopeKey),
 		strings.TrimSpace(userText),
 		strings.TrimSpace(assistantText),
 		failed,
@@ -139,12 +158,23 @@ func (m *Manager) SaveInteraction(userText, assistantText string, failed bool) (
 	return false, nil
 }
 
-func (m *Manager) AppendDailySummary(sessionKey, summary string, at time.Time) error {
+func (m *Manager) AppendDailySummary(memoryScopeKey, sessionKey, summary string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	if strings.TrimSpace(m.Dir) == "" {
 		return errors.New("memory dir is empty")
+	}
+	if err := ensureLayoutDirs(m.Dir); err != nil {
+		return fmt.Errorf("prepare scoped memory layout failed: %w", err)
+	}
+
+	scope, err := resolveScopePaths(m.Dir, memoryScopeKey)
+	if err != nil {
+		return fmt.Errorf("resolve memory scope failed: %w", err)
+	}
+	if err := ensureScopeDirs(scope); err != nil {
+		return fmt.Errorf("prepare scoped memory dir failed: %w", err)
 	}
 
 	sessionKey = strings.TrimSpace(sessionKey)
@@ -163,12 +193,7 @@ func (m *Manager) AppendDailySummary(sessionKey, summary string, at time.Time) e
 	}
 	at = at.Local()
 
-	dailyDir := filepath.Join(m.Dir, ShortTermDirName)
-	if err := os.MkdirAll(dailyDir, 0o755); err != nil {
-		return fmt.Errorf("create daily memory dir failed: %w", err)
-	}
-
-	dailyPath := filepath.Join(dailyDir, shortTermFileName(at))
+	dailyPath := filepath.Join(scope.DailyDir, shortTermFileName(at))
 	f, err := os.OpenFile(dailyPath, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
 		return fmt.Errorf("open daily memory file failed: %w", err)
@@ -182,8 +207,9 @@ func (m *Manager) AppendDailySummary(sessionKey, summary string, at time.Time) e
 	}
 
 	logging.Debugf(
-		"daily memory appended dir=%s session=%s file=%s summary=%q",
+		"daily memory appended dir=%s scope=%s session=%s file=%s summary=%q",
 		m.Dir,
+		scope.Key,
 		sessionKey,
 		absOrSame(dailyPath),
 		summary,

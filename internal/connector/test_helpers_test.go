@@ -11,6 +11,7 @@ import (
 
 	"gitee.com/alicespace/alice/internal/config"
 	"gitee.com/alicespace/alice/internal/llm"
+	"gitee.com/alicespace/alice/internal/memory"
 )
 
 type codexStub struct {
@@ -226,42 +227,48 @@ type memoryStub struct {
 	prompt string
 
 	buildCalls     int
+	lastBuildScope string
 	lastBuildInput string
 
 	saveCalls      int
+	lastSaveScope  string
 	lastSaveUser   string
 	lastSaveReply  string
 	lastSaveFailed bool
 
 	dailySummaryCalls  int
+	lastSummaryScope   string
 	lastSummarySession string
 	lastSummaryText    string
 	lastSummaryAt      time.Time
 	appendSummaryErr   error
 }
 
-func (m *memoryStub) BuildPrompt(userText string) (string, error) {
+func (m *memoryStub) BuildPrompt(memoryScopeKey, userText string) (string, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.buildCalls++
+	m.lastBuildScope = memoryScopeKey
 	m.lastBuildInput = userText
 	return m.prompt, nil
 }
 
-func (m *memoryStub) SaveInteraction(userText, assistantText string, failed bool) (bool, error) {
+func (m *memoryStub) SaveInteraction(memoryScopeKey, userText, assistantText string, failed bool) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.saveCalls++
+	m.lastSaveScope = memoryScopeKey
 	m.lastSaveUser = userText
 	m.lastSaveReply = assistantText
 	m.lastSaveFailed = failed
 	return true, nil
 }
 
-func (m *memoryStub) AppendDailySummary(sessionKey, summary string, at time.Time) error {
+func (m *memoryStub) AppendDailySummary(memoryScopeKey, sessionKey, summary string, at time.Time) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	m.dailySummaryCalls++
+	m.lastSummaryScope = memoryScopeKey
 	m.lastSummarySession = sessionKey
 	m.lastSummaryText = summary
 	m.lastSummaryAt = at
@@ -278,6 +285,12 @@ func (m *memoryStub) LastSummarySession() string {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	return m.lastSummarySession
+}
+
+func (m *memoryStub) LastSummaryScope() string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.lastSummaryScope
 }
 
 type senderStub struct {
@@ -321,9 +334,12 @@ type senderStub struct {
 	messageTextByID     map[string]string
 
 	downloadCalls            int
+	downloadScopeKeys        []string
 	downloadSourceMessageIDs []string
 	downloadPathByKey        map[string]string
 	downloadErrByKey         map[string]error
+
+	resourceRoot string
 
 	resolveUserNameCalls int
 	resolveUserNameErr   error
@@ -388,6 +404,16 @@ func (s *senderStub) UploadFile(_ context.Context, localPath, _ string) (string,
 		key = "file_uploaded"
 	}
 	return key, nil
+}
+
+func (s *senderStub) ResourceRootForScope(memoryScopeKey string) string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	root := strings.TrimSpace(s.resourceRoot)
+	if root == "" {
+		return ""
+	}
+	return memory.ResolveScopedResourceRoot(root, memoryScopeKey)
 }
 
 func (s *senderStub) SendCard(_ context.Context, _, _ string, cardContent string) error {
@@ -507,10 +533,11 @@ func (s *senderStub) ResolveChatMemberName(_ context.Context, chatID, openID, us
 	return "", nil
 }
 
-func (s *senderStub) DownloadAttachment(_ context.Context, sourceMessageID string, attachment *Attachment) error {
+func (s *senderStub) DownloadAttachment(_ context.Context, memoryScopeKey, sourceMessageID string, attachment *Attachment) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.downloadCalls++
+	s.downloadScopeKeys = append(s.downloadScopeKeys, strings.TrimSpace(memoryScopeKey))
 	s.downloadSourceMessageIDs = append(s.downloadSourceMessageIDs, strings.TrimSpace(sourceMessageID))
 	if attachment == nil {
 		return errors.New("attachment is nil")

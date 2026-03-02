@@ -80,6 +80,9 @@ func BuildConnectorRuntime(cfg config.Config, provider llm.Provider) (*Connector
 	}
 
 	memoryDir := ResolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
+	if err := memory.MigrateToScopedLayout(memoryDir); err != nil {
+		return nil, err
+	}
 	memoryManager := memory.NewManager(memoryDir)
 	if err := memoryManager.Init(); err != nil {
 		return nil, err

@@ -67,6 +67,7 @@ func BuildJob(event *larkim.P2MessageReceiveV1) (*Job, error) {
 		RawContent:           strings.TrimSpace(deref(message.Content)),
 		EventID:              eventID(event),
 		ReceivedAt:           time.Now(),
+		MemoryScopeKey:       buildMemoryScopeKey(receiveIDType, receiveID),
 		SessionKey:           buildSessionKeyForMessage(receiveIDType, receiveID, message),
 	}, nil
 }
@@ -406,6 +407,33 @@ func buildSessionKey(receiveIDType, receiveID string) string {
 		return ""
 	}
 	return idType + ":" + id
+}
+
+func buildMemoryScopeKey(receiveIDType, receiveID string) string {
+	return buildSessionKey(receiveIDType, receiveID)
+}
+
+func memoryScopeKeyForJob(job Job) string {
+	scopeKey := strings.TrimSpace(job.MemoryScopeKey)
+	if scopeKey != "" {
+		return scopeKey
+	}
+	scopeKey = buildMemoryScopeKey(job.ReceiveIDType, job.ReceiveID)
+	if scopeKey != "" {
+		return scopeKey
+	}
+	return memoryScopeKeyFromSessionKey(job.SessionKey)
+}
+
+func memoryScopeKeyFromSessionKey(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+	if idx := strings.Index(sessionKey, "|"); idx >= 0 {
+		sessionKey = strings.TrimSpace(sessionKey[:idx])
+	}
+	return sessionKey
 }
 
 func buildSessionKeyForMessage(receiveIDType, receiveID string, message *larkim.EventMessage) string {

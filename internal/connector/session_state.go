@@ -15,6 +15,7 @@ import (
 )
 
 type sessionState struct {
+	MemoryScopeKey        string    `json:"memory_scope_key"`
 	ThreadID              string    `json:"thread_id"`
 	LastMessageAt         time.Time `json:"last_message_at"`
 	LastIdleSummaryAnchor time.Time `json:"last_idle_summary_anchor"`
@@ -57,6 +58,28 @@ func (p *Processor) setThreadID(sessionKey string, threadID string) {
 		return
 	}
 	state.ThreadID = threadID
+	p.sessions[sessionKey] = state
+	p.markStateChangedLocked()
+}
+
+func (p *Processor) rememberSessionScope(sessionKey, memoryScopeKey string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	memoryScopeKey = strings.TrimSpace(memoryScopeKey)
+	if sessionKey == "" || memoryScopeKey == "" {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	state, ok := p.sessions[sessionKey]
+	if !ok {
+		state = sessionState{}
+	}
+	if state.MemoryScopeKey == memoryScopeKey {
+		return
+	}
+	state.MemoryScopeKey = memoryScopeKey
 	p.sessions[sessionKey] = state
 	p.markStateChangedLocked()
 }
@@ -116,6 +139,7 @@ func (p *Processor) LoadSessionState(path string) error {
 		if key == "" {
 			continue
 		}
+		state.MemoryScopeKey = strings.TrimSpace(state.MemoryScopeKey)
 		state.ThreadID = strings.TrimSpace(state.ThreadID)
 		state.SummaryRunning = false
 		loaded[key] = state
@@ -227,9 +251,10 @@ func (p *Processor) RunIdleSummaryScan(ctx context.Context, idleThreshold time.D
 		state.SummaryRunning = true
 		p.sessions[sessionKey] = state
 		candidates = append(candidates, idleSummaryCandidate{
-			SessionKey: sessionKey,
-			ThreadID:   state.ThreadID,
-			Anchor:     state.LastMessageAt,
+			SessionKey:     sessionKey,
+			MemoryScopeKey: defaultIfEmpty(state.MemoryScopeKey, memoryScopeKeyFromSessionKey(sessionKey)),
+			ThreadID:       state.ThreadID,
+			Anchor:         state.LastMessageAt,
 		})
 	}
 	p.mu.Unlock()
@@ -267,7 +292,7 @@ func (p *Processor) runIdleSummaryTask(ctx context.Context, candidate idleSummar
 		logging.Debugf("idle summary skipped write session=%s reason=no_memory_manager", candidate.SessionKey)
 		return
 	}
-	if err := p.memory.AppendDailySummary(candidate.SessionKey, summary, p.now()); err != nil {
+	if err := p.memory.AppendDailySummary(candidate.MemoryScopeKey, candidate.SessionKey, summary, p.now()); err != nil {
 		log.Printf("append daily summary failed session=%s: %v", candidate.SessionKey, err)
 		return
 	}
@@ -314,7 +339,8 @@ func (p *Processor) isSummaryAnchorCurrent(sessionKey string, anchor time.Time) 
 }
 
 type idleSummaryCandidate struct {
-	SessionKey string
-	ThreadID   string
-	Anchor     time.Time
+	SessionKey     string
+	MemoryScopeKey string
+	ThreadID       string
+	Anchor         time.Time
 }

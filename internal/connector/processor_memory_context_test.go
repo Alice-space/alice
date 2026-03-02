@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,7 +12,7 @@ import (
 
 func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	fakeCodex := &codexCaptureStub{resp: "final answer"}
-	sender := &senderStub{}
+	sender := &senderStub{resourceRoot: "/tmp/resources"}
 	memory := &memoryStub{prompt: "记忆上下文 + 用户消息"}
 
 	processor := NewProcessorWithMemory(
@@ -32,6 +33,9 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	if memory.buildCalls != 1 {
 		t.Fatalf("unexpected memory build call count: %+v", memory)
 	}
+	if memory.lastBuildScope != "chat_id:oc_chat" {
+		t.Fatalf("unexpected memory build scope: %q", memory.lastBuildScope)
+	}
 	if !strings.Contains(memory.lastBuildInput, "send_image/send_file 无需传 receive_id_type、receive_id、source_message_id") ||
 		!strings.Contains(memory.lastBuildInput, "hello") {
 		t.Fatalf("first memory build input should include concise tool hint and user text, got: %q", memory.lastBuildInput)
@@ -41,6 +45,9 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	}
 	if memory.saveCalls != 1 {
 		t.Fatalf("expected 1 memory save, got %d", memory.saveCalls)
+	}
+	if memory.lastSaveScope != "chat_id:oc_chat" {
+		t.Fatalf("unexpected saved scope: %q", memory.lastSaveScope)
 	}
 	if memory.lastSaveUser != "hello" {
 		t.Fatalf("unexpected saved user text: %s", memory.lastSaveUser)
@@ -59,6 +66,10 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	}
 	if fakeCodex.lastEnv[mcpbridge.EnvSourceMessageID] != "om_source" {
 		t.Fatalf("missing mcp source message env: %#v", fakeCodex.lastEnv)
+	}
+	wantResourceRoot := filepath.Join("/tmp/resources", "scopes", "chat_id", "oc_chat")
+	if fakeCodex.lastEnv[mcpbridge.EnvResourceRoot] != wantResourceRoot {
+		t.Fatalf("unexpected scoped mcp resource root env: %#v", fakeCodex.lastEnv)
 	}
 }
 

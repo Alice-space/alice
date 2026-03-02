@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"gitee.com/alicespace/alice/internal/llm"
@@ -73,7 +74,7 @@ func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID
 		return userText
 	}
 
-	prompt, err := p.memory.BuildPrompt(userText)
+	prompt, err := p.memory.BuildPrompt(memoryScopeKeyForJob(job), userText)
 	if err != nil {
 		log.Printf("build memory prompt failed event_id=%s: %v", job.EventID, err)
 		logging.Debugf("prompt assemble fallback event_id=%s strategy=direct reason=%v final_prompt=%q", job.EventID, err, userText)
@@ -156,6 +157,7 @@ func sessionKeyForJob(job Job) string {
 }
 
 func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
+	scopeKey := memoryScopeKeyForJob(job)
 	sessionContext := mcpbridge.SessionContext{
 		ReceiveIDType:   strings.TrimSpace(job.ReceiveIDType),
 		ReceiveID:       strings.TrimSpace(job.ReceiveID),
@@ -165,10 +167,15 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 		ChatType:        strings.TrimSpace(job.ChatType),
 	}
 	type resourceRootProvider interface {
-		ResourceRoot() string
+		ResourceRootForScope(memoryScopeKey string) string
 	}
 	if provider, ok := p.sender.(resourceRootProvider); ok {
-		sessionContext.ResourceRoot = strings.TrimSpace(provider.ResourceRoot())
+		sessionContext.ResourceRoot = strings.TrimSpace(provider.ResourceRootForScope(scopeKey))
+		if sessionContext.ResourceRoot != "" {
+			if err := os.MkdirAll(sessionContext.ResourceRoot, 0o755); err != nil {
+				log.Printf("prepare scoped resource root failed event_id=%s scope=%s err=%v", job.EventID, scopeKey, err)
+			}
+		}
 	}
 	if err := sessionContext.Validate(); err != nil {
 		return nil
@@ -190,6 +197,7 @@ func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {
 		}
 		return
 	}
+	scopeKey := memoryScopeKeyForJob(*job)
 
 	for i := range job.Attachments {
 		attachment := &job.Attachments[i]
@@ -200,11 +208,12 @@ func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {
 		if downloadSourceMessageID == "" {
 			downloadSourceMessageID = strings.TrimSpace(job.SourceMessageID)
 		}
-		if err := downloader.DownloadAttachment(ctx, downloadSourceMessageID, attachment); err != nil {
+		if err := downloader.DownloadAttachment(ctx, scopeKey, downloadSourceMessageID, attachment); err != nil {
 			attachment.DownloadError = err.Error()
 			log.Printf(
-				"download attachment failed event_id=%s message_type=%s kind=%s source_message_id=%s file_key=%s image_key=%s err=%v",
+				"download attachment failed event_id=%s scope=%s message_type=%s kind=%s source_message_id=%s file_key=%s image_key=%s err=%v",
 				job.EventID,
+				scopeKey,
 				job.MessageType,
 				attachment.Kind,
 				downloadSourceMessageID,
@@ -389,7 +398,7 @@ func (p *Processor) recordInteraction(job Job, userText, reply string, failed bo
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=no_memory_manager", job.EventID)
 		return
 	}
-	changed, err := p.memory.SaveInteraction(strings.TrimSpace(userText), reply, failed)
+	changed, err := p.memory.SaveInteraction(memoryScopeKeyForJob(job), strings.TrimSpace(userText), reply, failed)
 	if err != nil {
 		log.Printf("save memory failed event_id=%s: %v", job.EventID, err)
 		logging.Debugf("memory update result event_id=%s changed=unknown error=%v", job.EventID, err)

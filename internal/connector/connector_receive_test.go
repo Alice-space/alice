@@ -243,6 +243,9 @@ func TestApp_OnMessageReceive_SameFeishuThreadSharesSessionKey(t *testing.T) {
 	if job2.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
 	}
+	if job1.MemoryScopeKey != "chat_id:oc_chat" || job2.MemoryScopeKey != "chat_id:oc_chat" {
+		t.Fatalf("unexpected memory scope keys: %q %q", job1.MemoryScopeKey, job2.MemoryScopeKey)
+	}
 	if job1.SessionVersion != 1 {
 		t.Fatalf("unexpected first session version: %d", job1.SessionVersion)
 	}
@@ -294,6 +297,9 @@ func TestApp_OnMessageReceive_ThreadReplyReusesRootMessageSessionKey(t *testing.
 	}
 	if job2.SessionKey != "chat_id:oc_chat|message:om_root_1" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
+	}
+	if job1.MemoryScopeKey != "chat_id:oc_chat" || job2.MemoryScopeKey != "chat_id:oc_chat" {
+		t.Fatalf("unexpected memory scope keys: %q %q", job1.MemoryScopeKey, job2.MemoryScopeKey)
 	}
 	if job1.SessionVersion != 1 {
 		t.Fatalf("unexpected first session version: %d", job1.SessionVersion)
@@ -348,6 +354,9 @@ func TestApp_OnMessageReceive_ExistingThreadSessionPreferredWhenRootAppears(t *t
 	if job2.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
 	}
+	if job1.MemoryScopeKey != "chat_id:oc_chat" || job2.MemoryScopeKey != "chat_id:oc_chat" {
+		t.Fatalf("unexpected memory scope keys: %q %q", job1.MemoryScopeKey, job2.MemoryScopeKey)
+	}
 	if job1.SessionVersion != 1 {
 		t.Fatalf("unexpected first session version: %d", job1.SessionVersion)
 	}
@@ -397,6 +406,9 @@ func TestApp_OnMessageReceive_NonThreadMessagesUseNewSessionKey(t *testing.T) {
 	}
 	if job2.SessionKey != "chat_id:oc_chat|message:om_msg_2" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
+	}
+	if job1.MemoryScopeKey != "chat_id:oc_chat" || job2.MemoryScopeKey != "chat_id:oc_chat" {
+		t.Fatalf("unexpected memory scope keys: %q %q", job1.MemoryScopeKey, job2.MemoryScopeKey)
 	}
 	if job1.SessionVersion != 1 {
 		t.Fatalf("unexpected first session version: %d", job1.SessionVersion)

@@ -24,6 +24,7 @@ func TestProcessor_SessionStatePersistAndLoad(t *testing.T) {
 
 	now := time.Date(2026, 2, 20, 18, 0, 0, 0, time.UTC)
 	sessionKey := "chat_id:oc_chat"
+	processor.rememberSessionScope(sessionKey, "chat_id:oc_chat")
 	processor.setThreadID(sessionKey, "thread_1")
 	processor.touchSessionMessage(sessionKey, now)
 	processor.mu.Lock()
@@ -54,6 +55,9 @@ func TestProcessor_SessionStatePersistAndLoad(t *testing.T) {
 	loaded.mu.Lock()
 	loadedState := loaded.sessions[sessionKey]
 	loaded.mu.Unlock()
+	if loadedState.MemoryScopeKey != "chat_id:oc_chat" {
+		t.Fatalf("unexpected memory scope key after reload: %q", loadedState.MemoryScopeKey)
+	}
 	if !loadedState.LastMessageAt.Equal(now) {
 		t.Fatalf("unexpected last message time after reload: %v", loadedState.LastMessageAt)
 	}
@@ -80,6 +84,7 @@ func TestProcessor_IdleSummaryOncePerIdlePeriod(t *testing.T) {
 	base := time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC)
 	now := base.Add(9 * time.Hour)
 	processor.now = func() time.Time { return now }
+	processor.rememberSessionScope(sessionKey, "chat_id:oc_chat")
 	processor.setThreadID(sessionKey, "thread_1")
 	processor.touchSessionMessage(sessionKey, base)
 
@@ -89,6 +94,9 @@ func TestProcessor_IdleSummaryOncePerIdlePeriod(t *testing.T) {
 	}, "idle summary should be written once")
 	if mem.LastSummarySession() != sessionKey {
 		t.Fatalf("unexpected summary session key: %s", mem.LastSummarySession())
+	}
+	if mem.LastSummaryScope() != "chat_id:oc_chat" {
+		t.Fatalf("unexpected summary scope key: %s", mem.LastSummaryScope())
 	}
 
 	processor.RunIdleSummaryScan(context.Background(), 8*time.Hour)
@@ -120,6 +128,7 @@ func TestProcessor_IdleSummaryAnchorChangedSkipsWriteAndNoParallelRun(t *testing
 	sessionKey := "chat_id:oc_chat"
 	base := time.Date(2026, 2, 20, 9, 0, 0, 0, time.UTC)
 	processor.now = func() time.Time { return base.Add(9 * time.Hour) }
+	processor.rememberSessionScope(sessionKey, "chat_id:oc_chat")
 	processor.setThreadID(sessionKey, "thread_1")
 	processor.touchSessionMessage(sessionKey, base)
 

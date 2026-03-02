@@ -90,6 +90,7 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 	}
 
 	sessionKey := sessionKeyForJob(job)
+	p.rememberSessionScope(sessionKey, memoryScopeKeyForJob(job))
 	p.touchSessionMessage(sessionKey, p.now())
 
 	logging.Debugf(
@@ -150,6 +151,7 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 
 func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcessState {
 	sessionKey := sessionKeyForJob(job)
+	p.rememberSessionScope(sessionKey, memoryScopeKeyForJob(job))
 	ackMessageID, err := p.replyCardWithFallback(ctx, job, job.SourceMessageID, "收到！")
 	if err != nil {
 		log.Printf("send ack reply failed event_id=%s: %v", job.EventID, err)

@@ -331,6 +331,9 @@ func TestProcessor_ResolvesAttachmentsAndPassesLocalPathToCodex(t *testing.T) {
 	if sender.downloadCalls != 1 {
 		t.Fatalf("expected 1 attachment download, got %d", sender.downloadCalls)
 	}
+	if len(sender.downloadScopeKeys) != 1 || sender.downloadScopeKeys[0] != "chat_id:oc_chat" {
+		t.Fatalf("expected attachment download to use scoped resource root key, got %#v", sender.downloadScopeKeys)
+	}
 	if len(sender.downloadSourceMessageIDs) != 1 || sender.downloadSourceMessageIDs[0] != "om_media" {
 		t.Fatalf("expected attachment download to use attachment source message id, got %#v", sender.downloadSourceMessageIDs)
 	}

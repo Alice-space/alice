@@ -22,9 +22,9 @@ func wasInterruptedByNewMessage(ctx context.Context) bool {
 }
 
 type MemoryManager interface {
-	BuildPrompt(userText string) (string, error)
-	SaveInteraction(userText, assistantText string, failed bool) (changed bool, err error)
-	AppendDailySummary(sessionKey, summary string, at time.Time) error
+	BuildPrompt(memoryScopeKey, userText string) (string, error)
+	SaveInteraction(memoryScopeKey, userText, assistantText string, failed bool) (changed bool, err error)
+	AppendDailySummary(memoryScopeKey, sessionKey, summary string, at time.Time) error
 }
 
 type Sender interface {
@@ -40,7 +40,7 @@ type ReplyContextProvider interface {
 }
 
 type AttachmentDownloader interface {
-	DownloadAttachment(ctx context.Context, sourceMessageID string, attachment *Attachment) error
+	DownloadAttachment(ctx context.Context, memoryScopeKey, sourceMessageID string, attachment *Attachment) error
 }
 
 type UserNameResolver interface {
@@ -90,6 +90,7 @@ type Job struct {
 	RawContent           string
 	EventID              string
 	ReceivedAt           time.Time
+	MemoryScopeKey       string
 	SessionKey           string
 	SessionVersion       uint64
 	WorkflowPhase        string
