@@ -597,3 +597,33 @@ func TestShouldProcessIncomingMessage_GroupPrefixModeRequiresPrefixOrMention(t *
 		t.Fatal("group message without prefix should be ignored in prefix mode even if bot IDs exist")
 	}
 }
+
+func TestShouldProcessIncomingMessage_BuiltinCommandBypassesGroupTrigger(t *testing.T) {
+	event := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				ChatType:    strPtr("group"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/codearmy status"}`),
+				ChatId:      strPtr("oc_chat"),
+			},
+		},
+	}
+
+	if !shouldProcessIncomingMessage(event, "prefix", "!alice", "", "") {
+		t.Fatal("builtin slash command should be processed before normal group trigger matching")
+	}
+}
+
+func TestNormalizeIncomingGroupJobTextForTriggerMode_PreservesBuiltinCommand(t *testing.T) {
+	job := &Job{
+		ChatType: "group",
+		Text:     "/codearmy status",
+	}
+
+	normalizeIncomingGroupJobTextForTriggerMode(job, "prefix", "/")
+
+	if job.Text != "/codearmy status" {
+		t.Fatalf("expected builtin command text to stay intact, got %q", job.Text)
+	}
+}

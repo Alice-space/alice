@@ -13,7 +13,12 @@ import (
 	"gitee.com/alicespace/alice/internal/codearmy"
 )
 
-const codeArmyCommandName = "codearmy"
+const (
+	codeArmyCommandName         = "/codearmy"
+	codeArmyHistoryPreviewLimit = 3
+)
+
+var codeArmyStatusLocation = time.FixedZone("Asia/Shanghai", 8*60*60)
 
 type codeArmyTaskStore interface {
 	ListTasks(scope automation.Scope, statusFilter string, limit int) ([]automation.Task, error)
@@ -49,7 +54,6 @@ func parseCodeArmyCommand(text string) (codeArmyCommand, bool) {
 		return codeArmyCommand{}, false
 	}
 	command := strings.ToLower(strings.TrimSpace(fields[0]))
-	command = strings.TrimPrefix(command, "/")
 	if command != codeArmyCommandName {
 		return codeArmyCommand{}, false
 	}
@@ -85,61 +89,80 @@ func (p *Processor) processCodeArmyStatusCommand(ctx context.Context, job Job, s
 }
 
 func (p *Processor) buildCodeArmyStatusReply(job Job, requestedStateKey string) string {
+	requestedStateKey = strings.TrimSpace(requestedStateKey)
 	states, stateErr := p.loadCodeArmyStates(job, requestedStateKey)
 	tasks, taskErr := p.loadActiveCodeArmyTasks(job, requestedStateKey)
 
 	if stateErr != nil && taskErr != nil {
 		return fmt.Sprintf(
-			"code_army 状态查询失败。\n任务错误：%v\n状态错误：%v",
+			"## Code Army 状态\n\n> 查询失败。\n> 任务错误：`%v`\n> 状态错误：`%v`",
 			taskErr,
 			stateErr,
 		)
 	}
 	if stateErr != nil {
-		return fmt.Sprintf("code_army 状态读取失败：%v", stateErr)
+		return fmt.Sprintf("## Code Army 状态\n\n> 状态读取失败：`%v`", stateErr)
 	}
 	if taskErr != nil {
-		return fmt.Sprintf("code_army 任务读取失败：%v", taskErr)
+		return fmt.Sprintf("## Code Army 状态\n\n> 任务读取失败：`%v`", taskErr)
 	}
 
 	if len(tasks) == 0 && len(states) == 0 {
-		if strings.TrimSpace(requestedStateKey) != "" {
-			return fmt.Sprintf("当前会话没有找到 state_key=%s 的 code_army 状态。", requestedStateKey)
+		if requestedStateKey != "" {
+			return fmt.Sprintf("## Code Army 状态\n\n> 当前会话没有找到 `state_key=%s` 的 `code_army` 状态。", requestedStateKey)
 		}
-		return "当前会话暂无 code_army 任务或状态。"
+		return "## Code Army 状态\n\n> 当前会话暂无 `code_army` 任务或状态。"
 	}
+	return buildCodeArmyStatusMarkdown(requestedStateKey, tasks, states)
+}
 
-	lines := []string{"当前会话的 code_army 状态："}
+func buildCodeArmyStatusMarkdown(
+	requestedStateKey string,
+	tasks []automation.Task,
+	states []codearmy.StateSnapshot,
+) string {
+	lines := []string{
+		"## Code Army 状态",
+		fmt.Sprintf("**运行中的任务**：`%d`", len(tasks)),
+		fmt.Sprintf("**工作流快照**：`%d`", len(states)),
+	}
 	if requestedStateKey != "" {
-		lines = append(lines, "查询 state_key："+requestedStateKey)
+		lines = append(lines, fmt.Sprintf("**筛选 state_key**：`%s`", requestedStateKey))
 	}
 
+	lines = append(lines, "", "### 运行中的任务")
 	if len(tasks) == 0 {
-		lines = append(lines, "", "运行中的任务：0")
+		lines = append(lines, "> 暂无正在运行的 `code_army` 任务。")
 	} else {
-		lines = append(lines, "", fmt.Sprintf("运行中的任务：%d", len(tasks)))
 		for i, task := range tasks {
 			lines = append(lines,
-				fmt.Sprintf("%d. state_key: %s", i+1, defaultIfEmpty(task.Action.StateKey, "default")),
-				fmt.Sprintf("   task_id: %s", task.ID),
-				fmt.Sprintf("   status: %s", task.Status),
-				fmt.Sprintf("   next_run_at: %s", formatCommandTime(task.NextRunAt)),
+				fmt.Sprintf("**%d. `%s`**", i+1, defaultIfEmpty(task.Action.StateKey, "default")),
+				fmt.Sprintf("- `task_id`: `%s`", task.ID),
+				fmt.Sprintf("- `status`: `%s`", task.Status),
+				fmt.Sprintf("- `next_run_at`: `%s`", formatCommandTime(task.NextRunAt)),
 			)
 		}
 	}
 
+	lines = append(lines, "", "### 工作流快照")
 	if len(states) == 0 {
-		lines = append(lines, "", "工作流快照：0")
+		lines = append(lines, "> 暂无可用的 `code_army` 工作流快照。")
 	} else {
-		lines = append(lines, "", fmt.Sprintf("工作流快照：%d", len(states)))
 		for i, state := range states {
 			lines = append(lines,
-				fmt.Sprintf("%d. state_key: %s", i+1, defaultIfEmpty(state.StateKey, "default")),
-				fmt.Sprintf("   phase: %s", defaultIfEmpty(state.Phase, "unknown")),
-				fmt.Sprintf("   iteration: %d", state.Iteration),
-				fmt.Sprintf("   last_decision: %s", defaultIfEmpty(state.LastDecision, "n/a")),
-				fmt.Sprintf("   updated_at: %s", formatCommandTime(state.UpdatedAt)),
+				fmt.Sprintf("**%d. `%s`**", i+1, defaultIfEmpty(state.StateKey, "default")),
+				fmt.Sprintf("- `phase`: `%s`", formatCodeArmyPhase(state.Phase)),
+				fmt.Sprintf("- `iteration`: `%d`", state.Iteration),
+				fmt.Sprintf("- `last_decision`: `%s`", formatCodeArmyDecision(state.LastDecision)),
+				fmt.Sprintf("- `updated_at`: `%s`", formatCommandTime(state.UpdatedAt)),
 			)
+			if objective := compactCodeArmyText(state.Objective, 140); objective != "" {
+				lines = append(lines, fmt.Sprintf("- `objective`: %s", objective))
+			}
+			if historyLines := formatCodeArmyHistory(state.History, codeArmyHistoryPreviewLimit); len(historyLines) > 0 {
+				lines = append(lines, "- 最近记录：")
+				lines = append(lines, historyLines...)
+			}
 		}
 	}
 
@@ -274,9 +297,65 @@ func codeArmySessionKeysForJob(job Job) []string {
 	return keys
 }
 
+func formatCodeArmyPhase(phase string) string {
+	switch strings.ToLower(strings.TrimSpace(phase)) {
+	case "manager":
+		return "manager · 规划"
+	case "worker":
+		return "worker · 执行"
+	case "reviewer":
+		return "reviewer · 评审"
+	case "gate":
+		return "gate · 决策"
+	default:
+		return defaultIfEmpty(strings.TrimSpace(phase), "unknown")
+	}
+}
+
+func formatCodeArmyDecision(decision string) string {
+	switch strings.ToLower(strings.TrimSpace(decision)) {
+	case "pass":
+		return "pass · 通过"
+	case "fail":
+		return "fail · 返工"
+	default:
+		return defaultIfEmpty(strings.TrimSpace(decision), "n/a")
+	}
+}
+
+func formatCodeArmyHistory(history []codearmy.HistoryRecord, limit int) []string {
+	if len(history) == 0 || limit <= 0 {
+		return nil
+	}
+	start := 0
+	if len(history) > limit {
+		start = len(history) - limit
+	}
+	lines := make([]string, 0, len(history)-start)
+	for _, item := range history[start:] {
+		line := fmt.Sprintf("  - `%s` · `%s`", formatCommandTime(item.At), formatCodeArmyPhase(item.Phase))
+		if decision := strings.TrimSpace(item.Decision); decision != "" {
+			line += fmt.Sprintf(" · `%s`", formatCodeArmyDecision(decision))
+		}
+		if summary := compactCodeArmyText(item.Summary, 80); summary != "" {
+			line += " · " + summary
+		}
+		lines = append(lines, line)
+	}
+	return lines
+}
+
+func compactCodeArmyText(text string, maxRunes int) string {
+	normalized := strings.Join(strings.Fields(strings.TrimSpace(text)), " ")
+	if normalized == "" {
+		return ""
+	}
+	return clipText(normalized, maxRunes)
+}
+
 func formatCommandTime(value time.Time) string {
 	if value.IsZero() {
 		return "n/a"
 	}
-	return value.UTC().Format(time.RFC3339)
+	return value.In(codeArmyStatusLocation).Format("2006-01-02 15:04:05") + " Asia/Shanghai"
 }

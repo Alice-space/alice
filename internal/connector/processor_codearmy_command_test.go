@@ -41,6 +41,20 @@ func TestProcessor_CodeArmyStatusCommand_ListsActiveTasksAndStates(t *testing.T)
 		"last_decision": "pass",
 		"objective":     "推进 code army",
 		"updated_at":    time.Date(2026, 3, 3, 8, 15, 47, 0, time.UTC),
+		"history": []map[string]any{
+			{
+				"at":       time.Date(2026, 3, 3, 7, 59, 21, 0, time.UTC),
+				"phase":    "worker",
+				"summary":  "完成 rust 终端计算器初版",
+				"decision": "",
+			},
+			{
+				"at":       time.Date(2026, 3, 3, 8, 14, 26, 0, time.UTC),
+				"phase":    "reviewer",
+				"summary":  "reviewer 通过，建议补两个测试",
+				"decision": "pass",
+			},
+		},
 	})
 	if err != nil {
 		t.Fatalf("marshal state failed: %v", err)
@@ -80,7 +94,7 @@ func TestProcessor_CodeArmyStatusCommand_ListsActiveTasksAndStates(t *testing.T)
 		SenderOpenID:    "ou_actor",
 		SourceMessageID: "om_src",
 		SessionKey:      "chat_id:oc_chat|message:om_root",
-		Text:            "codearmy status",
+		Text:            "/codearmy status",
 	})
 	if state != JobProcessCompleted {
 		t.Fatalf("expected completed state, got %s", state)
@@ -96,12 +110,15 @@ func TestProcessor_CodeArmyStatusCommand_ListsActiveTasksAndStates(t *testing.T)
 	}
 	reply := sender.replyCards[0]
 	for _, want := range []string{
-		"当前会话的 code_army 状态",
-		"运行中的任务：1",
-		"state_key: rust-cli-calculator",
-		"phase: manager",
-		"iteration: 2",
-		"last_decision: pass",
+		"## Code Army 状态",
+		"### 运行中的任务",
+		"### 工作流快照",
+		"`rust-cli-calculator`",
+		"`phase`: `manager · 规划`",
+		"`iteration`: `2`",
+		"`last_decision`: `pass · 通过`",
+		"Asia/Shanghai",
+		"最近记录",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected reply to contain %q, got %q", want, reply)
@@ -109,12 +126,10 @@ func TestProcessor_CodeArmyStatusCommand_ListsActiveTasksAndStates(t *testing.T)
 	}
 }
 
-func TestParseCodeArmyCommand_AcceptsSlashAndBareCommand(t *testing.T) {
+func TestParseCodeArmyCommand_RequiresSlashCommand(t *testing.T) {
 	for _, text := range []string{
 		"/codearmy status",
-		"codearmy status",
 		"/codearmy status rust-cli-calculator",
-		"codearmy status rust-cli-calculator",
 	} {
 		cmd, ok := parseCodeArmyCommand(text)
 		if !ok {
@@ -122,6 +137,14 @@ func TestParseCodeArmyCommand_AcceptsSlashAndBareCommand(t *testing.T) {
 		}
 		if cmd.action != "status" {
 			t.Fatalf("expected status action for %q, got %q", text, cmd.action)
+		}
+	}
+	for _, text := range []string{
+		"codearmy status",
+		"codearmy status rust-cli-calculator",
+	} {
+		if _, ok := parseCodeArmyCommand(text); ok {
+			t.Fatalf("expected command %q to be rejected without slash prefix", text)
 		}
 	}
 }
@@ -150,7 +173,7 @@ func TestProcessor_CodeArmyStatusCommand_NoStateOrTask(t *testing.T) {
 	if sender.replyCardCalls != 1 {
 		t.Fatalf("expected one direct reply card, got %d", sender.replyCardCalls)
 	}
-	if !strings.Contains(sender.replyCards[0], "当前会话暂无 code_army 任务或状态") {
+	if !strings.Contains(sender.replyCards[0], "当前会话暂无 `code_army` 任务或状态") {
 		t.Fatalf("unexpected empty status reply: %q", sender.replyCards[0])
 	}
 }

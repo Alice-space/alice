@@ -265,6 +265,9 @@ func shouldProcessIncomingMessage(
 	if !isGroupChatType(deref(message.ChatType)) {
 		return true
 	}
+	if isBuiltinCommandEvent(event) {
+		return true
+	}
 	mentionAccepted := isGroupMentionAccepted(message, botOpenID, botUserID)
 
 	switch normalizedTriggerMode(triggerMode) {
@@ -304,10 +307,26 @@ func normalizeIncomingGroupJobTextForTriggerMode(job *Job, triggerMode, triggerP
 	if job == nil || !isGroupChatType(job.ChatType) {
 		return
 	}
+	if isBuiltinCommandText(job.Text) {
+		return
+	}
 	if normalizedTriggerMode(triggerMode) != config.TriggerModePrefix {
 		return
 	}
 	job.Text = trimGroupTriggerPrefix(job.Text, triggerPrefix)
+}
+
+func isBuiltinCommandEvent(event *larkim.P2MessageReceiveV1) bool {
+	job, err := BuildJob(event)
+	if err != nil || job == nil {
+		return false
+	}
+	return isBuiltinCommandText(job.Text)
+}
+
+func isBuiltinCommandText(text string) bool {
+	_, ok := parseCodeArmyCommand(text)
+	return ok
 }
 
 func trimGroupTriggerPrefix(text, triggerPrefix string) string {
