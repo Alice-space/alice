@@ -2,6 +2,8 @@ package mcpserver
 
 import (
 	"context"
+	"encoding/json"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -9,6 +11,7 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"gitee.com/alicespace/alice/internal/automation"
+	"gitee.com/alicespace/alice/internal/codearmy"
 	"gitee.com/alicespace/alice/internal/mcpbridge"
 )
 
@@ -77,6 +80,8 @@ func TestAutomationTaskCreate_GroupScopeAllowsMentionOthers(t *testing.T) {
 				return "ou_actor"
 			case mcpbridge.EnvChatType:
 				return "group"
+			case mcpbridge.EnvSessionKey:
+				return "chat_id:oc_group|thread:omt_alpha"
 			default:
 				return ""
 			}
@@ -124,6 +129,8 @@ func TestAutomationTaskCreate_RunLLMByPromptDefaultActionType(t *testing.T) {
 				return "ou_actor"
 			case mcpbridge.EnvChatType:
 				return "group"
+			case mcpbridge.EnvSessionKey:
+				return "chat_id:oc_group|thread:omt_alpha"
 			default:
 				return ""
 			}
@@ -181,6 +188,8 @@ func TestAutomationTaskCreate_RunWorkflow(t *testing.T) {
 				return "ou_actor"
 			case mcpbridge.EnvChatType:
 				return "group"
+			case mcpbridge.EnvSessionKey:
+				return "chat_id:oc_group|thread:omt_alpha"
 			default:
 				return ""
 			}
@@ -220,6 +229,9 @@ func TestAutomationTaskCreate_RunWorkflow(t *testing.T) {
 	}
 	if list[0].Action.StateKey != "project_alpha" {
 		t.Fatalf("expected workflow state_key to be stored, got %+v", list[0].Action)
+	}
+	if list[0].Action.SessionKey != "chat_id:oc_group|thread:omt_alpha" {
+		t.Fatalf("expected workflow session_key to be stored, got %+v", list[0].Action)
 	}
 }
 
@@ -267,6 +279,62 @@ func TestAutomationTaskCreate_RunWorkflowByWorkflowFieldDefaultActionType(t *tes
 	}
 	if list[0].Action.Type != automation.ActionTypeRunWorkflow {
 		t.Fatalf("expected run_workflow action type, got %s", list[0].Action.Type)
+	}
+}
+
+func TestCodeArmyStatusGet_CurrentSession(t *testing.T) {
+	stateDir := t.TempDir()
+	sessionKey := "chat_id:oc_group|thread:omt_alpha"
+	sessionDir := filepath.Join(stateDir, "chat_id_oc_group_thread_omt_alpha")
+	if err := os.MkdirAll(sessionDir, 0o755); err != nil {
+		t.Fatalf("mkdir session dir failed: %v", err)
+	}
+	raw, err := json.Marshal(map[string]any{
+		"version":       1,
+		"workflow":      "code_army",
+		"key":           "default",
+		"session_key":   sessionKey,
+		"task_id":       "task_001",
+		"phase":         "reviewer",
+		"iteration":     2,
+		"objective":     "推进 code army",
+		"last_decision": "pass",
+		"updated_at":    time.Date(2026, 3, 3, 4, 5, 6, 0, time.UTC),
+	})
+	if err != nil {
+		t.Fatalf("marshal state failed: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(sessionDir, "default.json"), raw, 0o644); err != nil {
+		t.Fatalf("write state file failed: %v", err)
+	}
+
+	svc := &service{
+		sender:         &senderStub{},
+		codeArmyStatus: codearmy.NewInspector(stateDir),
+		getenv: func(key string) string {
+			switch key {
+			case mcpbridge.EnvReceiveIDType:
+				return "chat_id"
+			case mcpbridge.EnvReceiveID:
+				return "oc_group"
+			case mcpbridge.EnvActorUserID:
+				return "ou_actor"
+			case mcpbridge.EnvChatType:
+				return "group"
+			case mcpbridge.EnvSessionKey:
+				return sessionKey
+			default:
+				return ""
+			}
+		},
+	}
+
+	result, err := svc.handleCodeArmyStatusGet(context.Background(), mcp.CallToolRequest{})
+	if err != nil {
+		t.Fatalf("unexpected status handler error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected non-error status result, got %#v", result)
 	}
 }
 
@@ -449,6 +517,8 @@ func TestAutomationTaskUpdate_CanSwitchToRunLLM(t *testing.T) {
 				return "ou_creator"
 			case mcpbridge.EnvChatType:
 				return "group"
+			case mcpbridge.EnvSessionKey:
+				return "chat_id:oc_group|thread:omt_alpha"
 			default:
 				return ""
 			}
@@ -518,6 +588,8 @@ func TestAutomationTaskUpdate_CanSwitchToRunWorkflow(t *testing.T) {
 				return "ou_creator"
 			case mcpbridge.EnvChatType:
 				return "group"
+			case mcpbridge.EnvSessionKey:
+				return "chat_id:oc_group|thread:omt_alpha"
 			default:
 				return ""
 			}
@@ -552,6 +624,9 @@ func TestAutomationTaskUpdate_CanSwitchToRunWorkflow(t *testing.T) {
 	}
 	if updated.Action.StateKey != "project_alpha" {
 		t.Fatalf("expected updated state_key, got %+v", updated.Action)
+	}
+	if updated.Action.SessionKey != "chat_id:oc_group|thread:omt_alpha" {
+		t.Fatalf("expected updated session_key, got %+v", updated.Action)
 	}
 }
 

@@ -52,7 +52,10 @@ func TestRunner_Run_TransitionsAndPersistsState(t *testing.T) {
 		Prompt:   "实现自动化代码军队流程",
 		Model:    "gpt-4.1-mini",
 		Profile:  "worker-cheap",
-		Env:      map[string]string{"ALICE_MCP_RECEIVE_ID": "oc_group"},
+		Env: map[string]string{
+			"ALICE_MCP_RECEIVE_ID":  "oc_group",
+			"ALICE_MCP_SESSION_KEY": "chat_id:oc_group|thread:omt_alpha",
+		},
 	}
 
 	msg1, err := runner.Run(context.Background(), req)
@@ -104,7 +107,7 @@ func TestRunner_Run_TransitionsAndPersistsState(t *testing.T) {
 	}
 	backend.mu.Unlock()
 
-	statePath := runner.stateFilePath("task_001")
+	statePath := runner.stateFilePath("chat_id:oc_group|thread:omt_alpha", "default")
 	raw, err := os.ReadFile(statePath)
 	if err != nil {
 		t.Fatalf("read state file failed: %v", err)
@@ -121,5 +124,8 @@ func TestRunner_Run_TransitionsAndPersistsState(t *testing.T) {
 	}
 	if state.ManagerThreadID == "" || state.WorkerThreadID == "" || state.ReviewerThreadID == "" {
 		t.Fatalf("expected role thread ids persisted, got %+v", state)
+	}
+	if state.SessionKey != "chat_id:oc_group|thread:omt_alpha" {
+		t.Fatalf("expected session key persisted, got %+v", state)
 	}
 }

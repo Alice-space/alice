@@ -20,6 +20,7 @@ func MergeSessionContext(primary, fallback SessionContext) SessionContext {
 		ActorUserID:     strings.TrimSpace(primary.ActorUserID),
 		ActorOpenID:     strings.TrimSpace(primary.ActorOpenID),
 		ChatType:        strings.TrimSpace(primary.ChatType),
+		SessionKey:      strings.TrimSpace(primary.SessionKey),
 	}
 	if merged.ReceiveIDType == "" {
 		merged.ReceiveIDType = strings.TrimSpace(fallback.ReceiveIDType)
@@ -41,6 +42,9 @@ func MergeSessionContext(primary, fallback SessionContext) SessionContext {
 	}
 	if merged.ChatType == "" {
 		merged.ChatType = strings.TrimSpace(fallback.ChatType)
+	}
+	if merged.SessionKey == "" {
+		merged.SessionKey = strings.TrimSpace(fallback.SessionKey)
 	}
 	return merged
 }
@@ -92,6 +96,7 @@ func sessionContextFromEnviron(raw []byte) SessionContext {
 		ActorUserID:     strings.TrimSpace(readEnvValue(raw, EnvActorUserID)),
 		ActorOpenID:     strings.TrimSpace(readEnvValue(raw, EnvActorOpenID)),
 		ChatType:        strings.TrimSpace(readEnvValue(raw, EnvChatType)),
+		SessionKey:      strings.TrimSpace(readEnvValue(raw, EnvSessionKey)),
 	}
 }
 

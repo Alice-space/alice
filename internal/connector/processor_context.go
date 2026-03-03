@@ -165,6 +165,7 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 		ActorUserID:     strings.TrimSpace(job.SenderUserID),
 		ActorOpenID:     strings.TrimSpace(job.SenderOpenID),
 		ChatType:        strings.TrimSpace(job.ChatType),
+		SessionKey:      sessionKeyForJob(job),
 	}
 	type resourceRootProvider interface {
 		ResourceRootForScope(memoryScopeKey string) string

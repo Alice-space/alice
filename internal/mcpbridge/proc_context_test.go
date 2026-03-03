@@ -18,6 +18,7 @@ func TestMergeSessionContext(t *testing.T) {
 		ActorUserID:     "ou_actor",
 		ActorOpenID:     "ou_open",
 		ChatType:        "group",
+		SessionKey:      "chat_id:oc_chat|thread:omt_thread",
 	}
 
 	merged := MergeSessionContext(primary, fallback)
@@ -29,7 +30,8 @@ func TestMergeSessionContext(t *testing.T) {
 		merged.SourceMessageID != "om_source" ||
 		merged.ActorUserID != "ou_actor" ||
 		merged.ActorOpenID != "ou_open" ||
-		merged.ChatType != "group" {
+		merged.ChatType != "group" ||
+		merged.SessionKey != "chat_id:oc_chat|thread:omt_thread" {
 		t.Fatalf("unexpected merge result: %+v", merged)
 	}
 }
@@ -46,7 +48,8 @@ func TestSessionContextFromProcessTree(t *testing.T) {
 				"ALICE_MCP_RECEIVE_ID_TYPE=chat_id\x00" +
 					"ALICE_MCP_RECEIVE_ID=oc_chat\x00" +
 					"ALICE_MCP_ACTOR_USER_ID=ou_actor\x00" +
-					"ALICE_MCP_CHAT_TYPE=group\x00",
+					"ALICE_MCP_CHAT_TYPE=group\x00" +
+					"ALICE_MCP_SESSION_KEY=chat_id:oc_chat|thread:omt_thread\x00",
 			), nil
 		case "/proc/200/status":
 			return []byte("Name:\tcodex\nPPid:\t1\n"), nil
@@ -59,7 +62,8 @@ func TestSessionContextFromProcessTree(t *testing.T) {
 	if ctx.ReceiveIDType != "chat_id" ||
 		ctx.ReceiveID != "oc_chat" ||
 		ctx.ActorUserID != "ou_actor" ||
-		ctx.ChatType != "group" {
+		ctx.ChatType != "group" ||
+		ctx.SessionKey != "chat_id:oc_chat|thread:omt_thread" {
 		t.Fatalf("unexpected process tree context: %+v", ctx)
 	}
 }

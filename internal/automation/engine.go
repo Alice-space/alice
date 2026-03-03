@@ -353,6 +353,7 @@ func buildTaskRunEnv(task Task) map[string]string {
 		ReceiveID:     task.Route.ReceiveID,
 		ActorUserID:   task.Creator.UserID,
 		ActorOpenID:   task.Creator.OpenID,
+		SessionKey:    task.Action.SessionKey,
 	}
 	switch task.Scope.Kind {
 	case ScopeKindChat:

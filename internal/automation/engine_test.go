@@ -261,6 +261,7 @@ func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
 			Prompt:         "请推进代码军队流程",
 			Workflow:       WorkflowCodeArmy,
 			StateKey:       "project_alpha",
+			SessionKey:     "chat_id:oc_chat|thread:omt_alpha",
 			Model:          "gpt-4.1-mini",
 			Profile:        "workflow-runner",
 			MentionUserIDs: []string{"ou_actor"},
@@ -303,6 +304,10 @@ func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
 	if runner.lastReq.Profile != "workflow-runner" {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected workflow profile: %q", runner.lastReq.Profile)
+	}
+	if got := runner.lastReq.Env["ALICE_MCP_SESSION_KEY"]; got != "chat_id:oc_chat|thread:omt_alpha" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow session key env: %q", got)
 	}
 	runner.mu.Unlock()
 

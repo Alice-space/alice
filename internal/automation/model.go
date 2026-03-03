@@ -81,6 +81,7 @@ type Action struct {
 	Profile        string     `json:"profile,omitempty"`
 	Workflow       string     `json:"workflow,omitempty"`
 	StateKey       string     `json:"state_key,omitempty"`
+	SessionKey     string     `json:"session_key,omitempty"`
 	MentionUserIDs []string   `json:"mention_user_ids,omitempty"`
 }
 
@@ -130,6 +131,7 @@ func NormalizeTask(task Task) Task {
 	task.Action.Profile = strings.TrimSpace(task.Action.Profile)
 	task.Action.Workflow = strings.ToLower(strings.TrimSpace(task.Action.Workflow))
 	task.Action.StateKey = strings.TrimSpace(task.Action.StateKey)
+	task.Action.SessionKey = strings.TrimSpace(task.Action.SessionKey)
 	task.Action.MentionUserIDs = uniqueNonEmptyStrings(task.Action.MentionUserIDs)
 	task.Status = TaskStatus(strings.ToLower(strings.TrimSpace(string(task.Status))))
 	task.LastResult = strings.TrimSpace(task.LastResult)

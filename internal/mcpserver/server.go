@@ -12,6 +12,7 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"gitee.com/alicespace/alice/internal/automation"
+	"gitee.com/alicespace/alice/internal/codearmy"
 	"gitee.com/alicespace/alice/internal/mcpbridge"
 )
 
@@ -46,9 +47,10 @@ type service struct {
 	getppid         func() int
 	readFile        func(string) ([]byte, error)
 	automationStore *automation.Store
+	codeArmyStatus  *codearmy.Inspector
 }
 
-func New(sender Sender, getenv func(string) string, automationStore *automation.Store) (*server.MCPServer, error) {
+func New(sender Sender, getenv func(string) string, automationStore *automation.Store, codeArmyStateDir string) (*server.MCPServer, error) {
 	if sender == nil {
 		return nil, errors.New("sender is nil")
 	}
@@ -56,7 +58,12 @@ func New(sender Sender, getenv func(string) string, automationStore *automation.
 		getenv = os.Getenv
 	}
 
-	svc := &service{sender: sender, getenv: getenv, automationStore: automationStore}
+	svc := &service{
+		sender:          sender,
+		getenv:          getenv,
+		automationStore: automationStore,
+		codeArmyStatus:  codearmy.NewInspector(codeArmyStateDir),
+	}
 	svc.getppid = os.Getppid
 	svc.readFile = os.ReadFile
 	mcpServer := server.NewMCPServer(

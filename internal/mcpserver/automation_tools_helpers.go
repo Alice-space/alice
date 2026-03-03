@@ -188,6 +188,39 @@ func validateMentionPermission(scopeCtx automationScopeContext, mentionUserIDs [
 	return nil
 }
 
+func workflowSessionKey(scopeCtx automationScopeContext, actionType automation.ActionType) string {
+	if actionType != automation.ActionTypeRunWorkflow {
+		return ""
+	}
+	if sessionKey := strings.TrimSpace(scopeCtx.session.SessionKey); sessionKey != "" {
+		return sessionKey
+	}
+	return buildAutomationSessionKey(scopeCtx.route.ReceiveIDType, scopeCtx.route.ReceiveID)
+}
+
+func updatedWorkflowSessionKey(scopeCtx automationScopeContext, task automation.Task) string {
+	task = automation.NormalizeTask(task)
+	if task.Action.Type != automation.ActionTypeRunWorkflow {
+		return ""
+	}
+	if strings.TrimSpace(task.Action.SessionKey) != "" {
+		return strings.TrimSpace(task.Action.SessionKey)
+	}
+	return workflowSessionKey(scopeCtx, task.Action.Type)
+}
+
+func buildAutomationSessionKey(receiveIDType, receiveID string) string {
+	receiveIDType = strings.TrimSpace(receiveIDType)
+	if receiveIDType == "" {
+		receiveIDType = "unknown"
+	}
+	receiveID = strings.TrimSpace(receiveID)
+	if receiveID == "" {
+		return ""
+	}
+	return receiveIDType + ":" + receiveID
+}
+
 func canManageTask(task automation.Task, actorID string) bool {
 	actorID = strings.TrimSpace(actorID)
 	if actorID == "" {

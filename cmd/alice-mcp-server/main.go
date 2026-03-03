@@ -35,8 +35,9 @@ func main() {
 	memoryDir := bootstrap.ResolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
 	resourceDir := filepath.Join(memoryDir, "resources")
 	automationStatePath := filepath.Join(memoryDir, "automation_state.json")
+	codeArmyStateDir := filepath.Join(memoryDir, "code_army")
 	sender := connector.NewLarkSender(botClient, resourceDir)
-	mcpSrv, err := mcpserver.New(sender, nil, automation.NewStore(automationStatePath))
+	mcpSrv, err := mcpserver.New(sender, nil, automation.NewStore(automationStatePath), codeArmyStateDir)
 	if err != nil {
 		log.Fatalf("init mcp server failed: %v", err)
 	}

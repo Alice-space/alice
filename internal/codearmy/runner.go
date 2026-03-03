@@ -14,10 +14,12 @@ import (
 
 	"gitee.com/alicespace/alice/internal/automation"
 	"gitee.com/alicespace/alice/internal/llm"
+	"gitee.com/alicespace/alice/internal/mcpbridge"
 )
 
 const (
-	stateVersion = 1
+	stateVersion    = 1
+	defaultStateKey = "default"
 
 	phaseManager  = "manager"
 	phaseWorker   = "worker"
@@ -42,6 +44,7 @@ type workflowState struct {
 	Version          int              `json:"version"`
 	Workflow         string           `json:"workflow"`
 	Key              string           `json:"key"`
+	SessionKey       string           `json:"session_key,omitempty"`
 	TaskID           string           `json:"task_id"`
 	Phase            string           `json:"phase"`
 	Iteration        int              `json:"iteration"`
@@ -90,9 +93,14 @@ func (r *Runner) Run(ctx context.Context, req automation.WorkflowRunRequest) (au
 		return automation.WorkflowRunResult{}, errors.New("workflow task id is empty")
 	}
 
+	sessionKey := strings.TrimSpace(req.Env[mcpbridge.EnvSessionKey])
 	stateKey := sanitizeStateKey(req.StateKey)
 	if stateKey == "" {
-		stateKey = sanitizeStateKey(taskID)
+		if sessionKey != "" {
+			stateKey = defaultStateKey
+		} else {
+			stateKey = sanitizeStateKey(taskID)
+		}
 	}
 	if stateKey == "" {
 		return automation.WorkflowRunResult{}, errors.New("workflow state key is empty")
@@ -101,8 +109,8 @@ func (r *Runner) Run(ctx context.Context, req automation.WorkflowRunRequest) (au
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
-	statePath := r.stateFilePath(stateKey)
-	state, err := r.loadState(statePath, workflow, stateKey, taskID)
+	statePath := r.stateFilePath(sessionKey, stateKey)
+	state, err := r.loadState(statePath, workflow, sessionKey, stateKey, taskID)
 	if err != nil {
 		return automation.WorkflowRunResult{}, err
 	}
@@ -277,19 +285,20 @@ func parseDecision(reply string) string {
 	}
 }
 
-func (r *Runner) loadState(path, workflow, stateKey, taskID string) (workflowState, error) {
+func (r *Runner) loadState(path, workflow, sessionKey, stateKey, taskID string) (workflowState, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
 			now := r.nowUTC()
 			return workflowState{
-				Version:   stateVersion,
-				Workflow:  workflow,
-				Key:       stateKey,
-				TaskID:    taskID,
-				Phase:     phaseManager,
-				Iteration: 1,
-				UpdatedAt: now,
+				Version:    stateVersion,
+				Workflow:   workflow,
+				Key:        stateKey,
+				SessionKey: strings.TrimSpace(sessionKey),
+				TaskID:     taskID,
+				Phase:      phaseManager,
+				Iteration:  1,
+				UpdatedAt:  now,
 			}, nil
 		}
 		return workflowState{}, fmt.Errorf("read code_army state failed: %w", err)
@@ -302,6 +311,7 @@ func (r *Runner) loadState(path, workflow, stateKey, taskID string) (workflowSta
 	state = normalizeState(state)
 	state.Workflow = workflow
 	state.Key = stateKey
+	state.SessionKey = strings.TrimSpace(sessionKey)
 	if state.TaskID == "" {
 		state.TaskID = taskID
 	}
@@ -345,6 +355,7 @@ func (r *Runner) saveState(path string, state workflowState) error {
 func normalizeState(state workflowState) workflowState {
 	state.Workflow = strings.ToLower(strings.TrimSpace(state.Workflow))
 	state.Key = sanitizeStateKey(state.Key)
+	state.SessionKey = strings.TrimSpace(state.SessionKey)
 	state.TaskID = strings.TrimSpace(state.TaskID)
 	state.Phase = normalizePhase(state.Phase)
 	state.Objective = strings.TrimSpace(state.Objective)
@@ -399,12 +410,20 @@ func (r *Runner) nowUTC() time.Time {
 	return now.UTC()
 }
 
-func (r *Runner) stateFilePath(stateKey string) string {
+func (r *Runner) stateFilePath(sessionKey, stateKey string) string {
 	root := strings.TrimSpace(r.stateDir)
 	if root == "" {
 		root = filepath.Join(".memory", "code_army")
 	}
-	return filepath.Join(root, sanitizeStateKey(stateKey)+".json")
+	stateKey = sanitizeStateKey(stateKey)
+	if stateKey == "" {
+		stateKey = defaultStateKey
+	}
+	sessionKey = sanitizeSessionKey(sessionKey)
+	if sessionKey == "" {
+		return filepath.Join(root, stateKey+".json")
+	}
+	return filepath.Join(root, sessionKey, stateKey+".json")
 }
 
 func sanitizeStateKey(raw string) string {
@@ -415,6 +434,10 @@ func sanitizeStateKey(raw string) string {
 	key = invalidStateKeyPattern.ReplaceAllString(key, "_")
 	key = strings.Trim(key, "._-")
 	return strings.ToLower(strings.TrimSpace(key))
+}
+
+func sanitizeSessionKey(raw string) string {
+	return sanitizeStateKey(raw)
 }
 
 func defaultIfEmpty(value, fallback string) string {

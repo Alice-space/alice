@@ -11,6 +11,8 @@ import (
 	"github.com/mark3labs/mcp-go/server"
 
 	"gitee.com/alicespace/alice/internal/automation"
+	"gitee.com/alicespace/alice/internal/codearmy"
+	"gitee.com/alicespace/alice/internal/mcpbridge"
 )
 
 const (
@@ -19,6 +21,7 @@ const (
 	ToolAutomationTaskGet    = "automation_task_get"
 	ToolAutomationTaskUpdate = "automation_task_update"
 	ToolAutomationTaskDelete = "automation_task_delete"
+	ToolCodeArmyStatusGet    = "code_army_status_get"
 )
 
 type automationScopeContext struct {
@@ -27,6 +30,7 @@ type automationScopeContext struct {
 	creator automation.Actor
 	actorID string
 	isGroup bool
+	session mcpbridge.SessionContext
 }
 
 func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
@@ -94,6 +98,12 @@ func (s *service) registerAutomationTools(mcpServer *server.MCPServer) {
 		mcp.WithDescription("删除自动化任务（软删除，状态改为deleted）。"),
 		mcp.WithString("task_id", mcp.Required(), mcp.Description("任务ID")),
 	), s.handleAutomationTaskDelete)
+
+	mcpServer.AddTool(mcp.NewTool(
+		ToolCodeArmyStatusGet,
+		mcp.WithDescription("查看当前对话下 code_army 的状态。默认返回当前对话绑定的全部状态；传 state_key 可查看指定状态。"),
+		mcp.WithString("state_key", mcp.Description("可选，指定当前对话下某个 code_army 状态key")),
+	), s.handleCodeArmyStatusGet)
 }
 
 func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -158,6 +168,7 @@ func (s *service) handleAutomationTaskCreate(_ context.Context, request mcp.Call
 			Profile:        profile,
 			Workflow:       workflow,
 			StateKey:       stateKey,
+			SessionKey:     workflowSessionKey(scopeCtx, actionType),
 			MentionUserIDs: mentionUserIDs,
 		},
 		Status: status,
@@ -315,6 +326,7 @@ func (s *service) handleAutomationTaskUpdate(_ context.Context, request mcp.Call
 		if task.Status == automation.TaskStatusActive && task.NextRunAt.IsZero() {
 			task.NextRunAt = automation.NextRunAt(time.Now().UTC(), task.Schedule)
 		}
+		task.Action.SessionKey = updatedWorkflowSessionKey(scopeCtx, *task)
 		return nil
 	})
 	if err != nil {
@@ -364,6 +376,48 @@ func (s *service) handleAutomationTaskDelete(_ context.Context, request mcp.Call
 	}, "automation task deleted"), nil
 }
 
+func (s *service) handleCodeArmyStatusGet(_ context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	if s.codeArmyStatus == nil {
+		return mcp.NewToolResultError("code_army inspector is unavailable"), nil
+	}
+
+	sessionContext, err := s.loadSessionContext()
+	if err != nil {
+		return mcp.NewToolResultError(err.Error()), nil
+	}
+	sessionKey := strings.TrimSpace(sessionContext.SessionKey)
+	if sessionKey == "" {
+		return mcp.NewToolResultError("missing current conversation session key in mcp context"), nil
+	}
+
+	stateKey := strings.TrimSpace(request.GetString("state_key", ""))
+	if stateKey != "" {
+		state, err := s.codeArmyStatus.Get(sessionKey, stateKey)
+		if err != nil {
+			if errors.Is(err, codearmy.ErrStateNotFound) {
+				return mcp.NewToolResultError("code_army state not found in current conversation"), nil
+			}
+			return mcp.NewToolResultError(fmt.Sprintf("get code_army status failed: %v", err)), nil
+		}
+		return mcp.NewToolResultStructured(map[string]any{
+			"status":      "ok",
+			"session_key": sessionKey,
+			"state":       state,
+		}, "code_army status loaded"), nil
+	}
+
+	states, err := s.codeArmyStatus.List(sessionKey)
+	if err != nil {
+		return mcp.NewToolResultError(fmt.Sprintf("list code_army status failed: %v", err)), nil
+	}
+	return mcp.NewToolResultStructured(map[string]any{
+		"status":      "ok",
+		"session_key": sessionKey,
+		"count":       len(states),
+		"states":      states,
+	}, "code_army statuses loaded"), nil
+}
+
 func (s *service) resolveAutomationScope() (automationScopeContext, error) {
 	sessionContext, err := s.loadSessionContext()
 	if err != nil {
@@ -388,6 +442,7 @@ func (s *service) resolveAutomationScope() (automationScopeContext, error) {
 		},
 		actorID: actorID,
 		isGroup: isGroup,
+		session: sessionContext,
 	}
 	if isGroup {
 		receiveID := strings.TrimSpace(sessionContext.ReceiveID)

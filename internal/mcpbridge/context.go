@@ -13,6 +13,7 @@ const (
 	EnvActorUserID     = "ALICE_MCP_ACTOR_USER_ID"
 	EnvActorOpenID     = "ALICE_MCP_ACTOR_OPEN_ID"
 	EnvChatType        = "ALICE_MCP_CHAT_TYPE"
+	EnvSessionKey      = "ALICE_MCP_SESSION_KEY"
 )
 
 type SessionContext struct {
@@ -23,6 +24,7 @@ type SessionContext struct {
 	ActorUserID     string
 	ActorOpenID     string
 	ChatType        string
+	SessionKey      string
 }
 
 func (c SessionContext) Validate() error {
@@ -36,7 +38,7 @@ func (c SessionContext) Validate() error {
 }
 
 func (c SessionContext) ToEnv() map[string]string {
-	env := make(map[string]string, 7)
+	env := make(map[string]string, 8)
 	env[EnvReceiveIDType] = strings.TrimSpace(c.ReceiveIDType)
 	env[EnvReceiveID] = strings.TrimSpace(c.ReceiveID)
 	if root := strings.TrimSpace(c.ResourceRoot); root != "" {
@@ -54,6 +56,9 @@ func (c SessionContext) ToEnv() map[string]string {
 	if chatType := strings.TrimSpace(c.ChatType); chatType != "" {
 		env[EnvChatType] = chatType
 	}
+	if sessionKey := strings.TrimSpace(c.SessionKey); sessionKey != "" {
+		env[EnvSessionKey] = sessionKey
+	}
 	return env
 }
 
@@ -69,5 +74,6 @@ func SessionContextFromEnv(getenv func(key string) string) SessionContext {
 		ActorUserID:     strings.TrimSpace(getenv(EnvActorUserID)),
 		ActorOpenID:     strings.TrimSpace(getenv(EnvActorOpenID)),
 		ChatType:        strings.TrimSpace(getenv(EnvChatType)),
+		SessionKey:      strings.TrimSpace(getenv(EnvSessionKey)),
 	}
 }

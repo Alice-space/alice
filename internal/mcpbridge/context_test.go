@@ -11,6 +11,7 @@ func TestSessionContext_ToEnv(t *testing.T) {
 		ActorUserID:     "ou_actor",
 		ActorOpenID:     "ou_open",
 		ChatType:        "group",
+		SessionKey:      "chat_id:oc_chat|thread:omt_thread",
 	}
 	env := ctx.ToEnv()
 	if env[EnvReceiveIDType] != "chat_id" {
@@ -34,6 +35,9 @@ func TestSessionContext_ToEnv(t *testing.T) {
 	if env[EnvChatType] != "group" {
 		t.Fatalf("unexpected chat type env: %#v", env)
 	}
+	if env[EnvSessionKey] != "chat_id:oc_chat|thread:omt_thread" {
+		t.Fatalf("unexpected session key env: %#v", env)
+	}
 }
 
 func TestSessionContextFromEnv(t *testing.T) {
@@ -53,6 +57,8 @@ func TestSessionContextFromEnv(t *testing.T) {
 			return "ou_open"
 		case EnvChatType:
 			return "group"
+		case EnvSessionKey:
+			return "chat_id:oc_chat|thread:omt_thread"
 		default:
 			return ""
 		}
@@ -63,7 +69,8 @@ func TestSessionContextFromEnv(t *testing.T) {
 		ctx.SourceMessageID != "om_source" ||
 		ctx.ActorUserID != "ou_actor" ||
 		ctx.ActorOpenID != "ou_open" ||
-		ctx.ChatType != "group" {
+		ctx.ChatType != "group" ||
+		ctx.SessionKey != "chat_id:oc_chat|thread:omt_thread" {
 		t.Fatalf("unexpected context: %+v", ctx)
 	}
 }
