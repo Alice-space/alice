@@ -89,6 +89,8 @@ func BuildConnectorRuntime(cfg config.Config, provider llm.Provider) (*Connector
 	}
 	resourceDir := filepath.Join(memoryDir, "resources")
 	sender := connector.NewLarkSender(botClient, resourceDir)
+	codeArmyStateDir := filepath.Join(memoryDir, "code_army")
+	codeArmyInspector := codearmy.NewInspector(codeArmyStateDir)
 
 	processor := connector.NewProcessorWithMemory(
 		backend,
@@ -97,6 +99,9 @@ func BuildConnectorRuntime(cfg config.Config, provider llm.Provider) (*Connector
 		cfg.ThinkingMessage,
 		memoryManager,
 	)
+	automationStatePath := filepath.Join(memoryDir, "automation_state.json")
+	automationStore := automation.NewStore(automationStatePath)
+	processor.SetCodeArmyCommandDependencies(codeArmyInspector, automationStore)
 	processor.SetImmediateFeedback(cfg.ImmediateFeedbackMode, cfg.ImmediateFeedbackReaction)
 	sessionStatePath := filepath.Join(memoryDir, "session_state.json")
 	if err := processor.LoadSessionState(sessionStatePath); err != nil {
@@ -112,12 +117,10 @@ func BuildConnectorRuntime(cfg config.Config, provider llm.Provider) (*Connector
 	} else {
 		log.Printf("runtime state enabled file=%s", runtimeStatePath)
 	}
-
-	automationStatePath := filepath.Join(memoryDir, "automation_state.json")
-	automationEngine := automation.NewEngine(automation.NewStore(automationStatePath), sender)
+	automationEngine := automation.NewEngine(automationStore, sender)
 	automationEngine.SetUserTaskTimeout(cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(backend)
-	automationEngine.SetWorkflowRunner(codearmy.NewRunner(filepath.Join(memoryDir, "code_army"), backend))
+	automationEngine.SetWorkflowRunner(codearmy.NewRunner(codeArmyStateDir, backend))
 
 	if err := automationEngine.RegisterSystemTask("system.idle_summary_scan", 60*time.Second, func(runCtx context.Context) {
 		processor.RunIdleSummaryScan(runCtx, cfg.IdleSummaryIdle)

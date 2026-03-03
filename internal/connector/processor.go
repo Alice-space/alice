@@ -11,6 +11,8 @@ import (
 	"sync"
 	"time"
 
+	"gitee.com/alicespace/alice/internal/automation"
+	"gitee.com/alicespace/alice/internal/codearmy"
 	"gitee.com/alicespace/alice/internal/llm"
 	"gitee.com/alicespace/alice/internal/logging"
 )
@@ -29,6 +31,8 @@ type Processor struct {
 	stateVersion    uint64
 	flushedVersion  uint64
 	now             func() time.Time
+	codeArmyStatus  *codearmy.Inspector
+	automationStore *automation.Store
 }
 
 const interruptedReplyMessage = "已收到你的新消息，当前回复已中断并切换到最新输入。"
@@ -103,6 +107,9 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 	}
 	if job.WorkflowPhase == jobWorkflowPhasePostRestartFinalize {
 		return p.processPostRestartFinalize(ctx, job)
+	}
+	if handled, state := p.processBuiltinCommand(ctx, job); handled {
+		return state
 	}
 
 	sessionKey := sessionKeyForJob(job)
