@@ -13,7 +13,7 @@ import (
 	"gitee.com/alicespace/alice/internal/codearmy"
 )
 
-const codeArmyCommandName = "/codearmy"
+const codeArmyCommandName = "codearmy"
 
 type codeArmyTaskStore interface {
 	ListTasks(scope automation.Scope, statusFilter string, limit int) ([]automation.Task, error)
@@ -48,7 +48,9 @@ func parseCodeArmyCommand(text string) (codeArmyCommand, bool) {
 	if len(fields) < 2 {
 		return codeArmyCommand{}, false
 	}
-	if strings.ToLower(strings.TrimSpace(fields[0])) != codeArmyCommandName {
+	command := strings.ToLower(strings.TrimSpace(fields[0]))
+	command = strings.TrimPrefix(command, "/")
+	if command != codeArmyCommandName {
 		return codeArmyCommand{}, false
 	}
 	if strings.ToLower(strings.TrimSpace(fields[1])) != "status" {

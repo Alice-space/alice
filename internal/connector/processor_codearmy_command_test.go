@@ -80,7 +80,7 @@ func TestProcessor_CodeArmyStatusCommand_ListsActiveTasksAndStates(t *testing.T)
 		SenderOpenID:    "ou_actor",
 		SourceMessageID: "om_src",
 		SessionKey:      "chat_id:oc_chat|message:om_root",
-		Text:            "/codearmy status",
+		Text:            "codearmy status",
 	})
 	if state != JobProcessCompleted {
 		t.Fatalf("expected completed state, got %s", state)
@@ -105,6 +105,23 @@ func TestProcessor_CodeArmyStatusCommand_ListsActiveTasksAndStates(t *testing.T)
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected reply to contain %q, got %q", want, reply)
+		}
+	}
+}
+
+func TestParseCodeArmyCommand_AcceptsSlashAndBareCommand(t *testing.T) {
+	for _, text := range []string{
+		"/codearmy status",
+		"codearmy status",
+		"/codearmy status rust-cli-calculator",
+		"codearmy status rust-cli-calculator",
+	} {
+		cmd, ok := parseCodeArmyCommand(text)
+		if !ok {
+			t.Fatalf("expected command %q to parse", text)
+		}
+		if cmd.action != "status" {
+			t.Fatalf("expected status action for %q, got %q", text, cmd.action)
 		}
 	}
 }
