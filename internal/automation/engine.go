@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -16,6 +17,10 @@ import (
 
 type TextSender interface {
 	SendText(ctx context.Context, receiveIDType, receiveID, text string) error
+}
+
+type cardSender interface {
+	SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error
 }
 
 type LLMRunner interface {
@@ -45,6 +50,11 @@ type systemTaskRuntime struct {
 	run      SystemTaskFunc
 	nextRun  time.Time
 	running  bool
+}
+
+type taskDispatch struct {
+	text        string
+	cardContent string
 }
 
 func NewEngine(store *Store, sender TextSender) *Engine {
@@ -222,31 +232,42 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) error {
 	if strings.TrimSpace(task.Route.ReceiveIDType) == "" || strings.TrimSpace(task.Route.ReceiveID) == "" {
 		return errors.New("task route is incomplete")
 	}
-	text, err := e.buildTaskDispatchText(ctx, task)
+	dispatch, err := e.buildTaskDispatch(ctx, task)
 	if err != nil {
 		return err
 	}
-	return e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, text)
+	if strings.TrimSpace(dispatch.cardContent) != "" {
+		if sender, ok := e.sender.(cardSender); ok {
+			if err := sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.cardContent); err == nil {
+				return nil
+			}
+		}
+	}
+	return e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
 }
 
-func (e *Engine) buildTaskDispatchText(ctx context.Context, task Task) (string, error) {
+func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch, error) {
 	task = NormalizeTask(task)
 	runAt := e.nowTime()
 	switch task.Action.Type {
 	case ActionTypeSendText:
 		rendered := renderActionTemplate(task.Action.Text, runAt)
-		return BuildDispatchText(Action{
+		text, err := BuildDispatchText(Action{
 			Type:           ActionTypeSendText,
 			Text:           rendered,
 			MentionUserIDs: task.Action.MentionUserIDs,
 		})
+		if err != nil {
+			return taskDispatch{}, err
+		}
+		return taskDispatch{text: text}, nil
 	case ActionTypeRunLLM:
 		if e.llmRunner == nil {
-			return "", errors.New("automation llm runner is nil")
+			return taskDispatch{}, errors.New("automation llm runner is nil")
 		}
 		prompt := renderActionTemplate(task.Action.Prompt, runAt)
 		if prompt == "" {
-			return "", errors.New("action prompt is empty for run_llm")
+			return taskDispatch{}, errors.New("action prompt is empty for run_llm")
 		}
 		result, err := e.llmRunner.Run(ctx, llm.RunRequest{
 			UserText: prompt,
@@ -255,29 +276,33 @@ func (e *Engine) buildTaskDispatchText(ctx context.Context, task Task) (string, 
 			Env:      buildTaskRunEnv(task),
 		})
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		reply := strings.TrimSpace(result.Reply)
 		if reply == "" {
-			return "", errors.New("llm reply is empty")
+			return taskDispatch{}, errors.New("llm reply is empty")
 		}
 		prefix := renderActionTemplate(task.Action.Text, runAt)
 		message := reply
 		if prefix != "" {
 			message = prefix + "\n" + reply
 		}
-		return BuildDispatchText(Action{
+		text, err := BuildDispatchText(Action{
 			Type:           ActionTypeSendText,
 			Text:           message,
 			MentionUserIDs: task.Action.MentionUserIDs,
 		})
+		if err != nil {
+			return taskDispatch{}, err
+		}
+		return taskDispatch{text: text}, nil
 	case ActionTypeRunWorkflow:
 		if e.workflowRunner == nil {
-			return "", errors.New("automation workflow runner is nil")
+			return taskDispatch{}, errors.New("automation workflow runner is nil")
 		}
 		prompt := renderActionTemplate(task.Action.Prompt, runAt)
 		if prompt == "" {
-			return "", errors.New("action prompt is empty for run_workflow")
+			return taskDispatch{}, errors.New("action prompt is empty for run_workflow")
 		}
 		result, err := e.workflowRunner.Run(ctx, WorkflowRunRequest{
 			Workflow: task.Action.Workflow,
@@ -289,24 +314,32 @@ func (e *Engine) buildTaskDispatchText(ctx context.Context, task Task) (string, 
 			Env:      buildTaskRunEnv(task),
 		})
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		reply := strings.TrimSpace(result.Message)
 		if reply == "" {
-			return "", errors.New("workflow reply is empty")
+			return taskDispatch{}, errors.New("workflow reply is empty")
 		}
 		prefix := renderActionTemplate(task.Action.Text, runAt)
 		message := reply
 		if prefix != "" {
-			message = prefix + "\n" + reply
+			message = prefix + "\n\n" + reply
 		}
-		return BuildDispatchText(Action{
+		text, err := BuildDispatchText(Action{
 			Type:           ActionTypeSendText,
 			Text:           message,
 			MentionUserIDs: task.Action.MentionUserIDs,
 		})
+		if err != nil {
+			return taskDispatch{}, err
+		}
+		dispatch := taskDispatch{text: text}
+		if task.Action.Workflow == WorkflowCodeArmy && len(task.Action.MentionUserIDs) == 0 {
+			dispatch.cardContent = buildMarkdownCardContent(message)
+		}
+		return dispatch, nil
 	default:
-		return "", fmt.Errorf("unsupported action type %q", task.Action.Type)
+		return taskDispatch{}, fmt.Errorf("unsupported action type %q", task.Action.Type)
 	}
 }
 
@@ -365,4 +398,28 @@ func buildTaskRunEnv(task Task) map[string]string {
 		return nil
 	}
 	return ctx.ToEnv()
+}
+
+func buildMarkdownCardContent(markdown string) string {
+	content := strings.TrimSpace(markdown)
+	if content == "" {
+		content = " "
+	}
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"enable_forward": true,
+			"update_multi":   true,
+		},
+		"body": map[string]any{
+			"elements": []any{
+				map[string]any{
+					"tag":     "markdown",
+					"content": content,
+				},
+			},
+		},
+	}
+	raw, _ := json.Marshal(card)
+	return string(raw)
 }

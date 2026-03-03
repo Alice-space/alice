@@ -97,6 +97,12 @@ func TestRunner_Run_TransitionsAndPersistsState(t *testing.T) {
 	if err != nil {
 		t.Fatalf("run workflow failed: %v", err)
 	}
+	if !strings.Contains(msg1.Message, "## Code Army 进度") {
+		t.Fatalf("expected markdown workflow summary, got %q", msg1.Message)
+	}
+	if !strings.Contains(msg1.Message, "**本次推进**") {
+		t.Fatalf("expected step section in workflow summary, got %q", msg1.Message)
+	}
 	for _, needle := range []string{"manager", "worker", "reviewer", "gate"} {
 		if !strings.Contains(strings.ToLower(msg1.Message), needle) {
 			t.Fatalf("expected workflow summary to include %q, got %q", needle, msg1.Message)

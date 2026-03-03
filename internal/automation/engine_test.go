@@ -13,9 +13,12 @@ import (
 type senderStub struct {
 	mu              sync.Mutex
 	sendTextCalls   int
+	sendCardCalls   int
 	lastReceiveType string
 	lastReceiveID   string
 	lastText        string
+	lastCard        string
+	sendCardErr     error
 }
 
 func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text string) error {
@@ -26,6 +29,16 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	s.lastReceiveID = receiveID
 	s.lastText = text
 	return nil
+}
+
+func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardContent string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sendCardCalls++
+	s.lastReceiveType = receiveIDType
+	s.lastReceiveID = receiveID
+	s.lastCard = cardContent
+	return s.sendCardErr
 }
 
 type deadlineSenderStub struct {
@@ -256,15 +269,14 @@ func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
 		Creator:  Actor{UserID: "ou_actor"},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
 		Action: Action{
-			Type:           ActionTypeRunWorkflow,
-			Text:           "流程播报",
-			Prompt:         "请推进代码军队流程",
-			Workflow:       WorkflowCodeArmy,
-			StateKey:       "project_alpha",
-			SessionKey:     "chat_id:oc_chat|thread:omt_alpha",
-			Model:          "gpt-4.1-mini",
-			Profile:        "workflow-runner",
-			MentionUserIDs: []string{"ou_actor"},
+			Type:       ActionTypeRunWorkflow,
+			Text:       "流程播报",
+			Prompt:     "请推进代码军队流程",
+			Workflow:   WorkflowCodeArmy,
+			StateKey:   "project_alpha",
+			SessionKey: "chat_id:oc_chat|thread:omt_alpha",
+			Model:      "gpt-4.1-mini",
+			Profile:    "workflow-runner",
 		},
 	})
 	if err != nil {
@@ -312,13 +324,17 @@ func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
 	runner.mu.Unlock()
 
 	sender.mu.Lock()
-	if sender.sendTextCalls == 0 {
+	if sender.sendCardCalls == 0 {
 		sender.mu.Unlock()
-		t.Fatal("expected run_workflow task to send text")
+		t.Fatal("expected run_workflow task to send card")
 	}
-	if sender.lastText == "" {
+	if sender.sendTextCalls != 0 {
 		sender.mu.Unlock()
-		t.Fatal("expected non-empty run_workflow dispatch text")
+		t.Fatalf("expected run_workflow task to avoid text fallback, got %d text sends", sender.sendTextCalls)
+	}
+	if sender.lastCard == "" {
+		sender.mu.Unlock()
+		t.Fatal("expected non-empty run_workflow card content")
 	}
 	sender.mu.Unlock()
 
@@ -328,6 +344,99 @@ func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
 	}
 	if stored.LastResult == "" {
 		t.Fatalf("expected last result to be recorded, task=%+v", stored)
+	}
+}
+
+func TestEngine_RunUserTask_RunWorkflow_WithMentionsFallsBackToText(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation_state.json"))
+	store.now = func() time.Time { return base }
+
+	_, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:           ActionTypeRunWorkflow,
+			Text:           "流程播报",
+			Prompt:         "请推进代码军队流程",
+			Workflow:       WorkflowCodeArmy,
+			StateKey:       "project_alpha",
+			MentionUserIDs: []string{"ou_actor"},
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{Message: "## Code Army 进度\n**状态**：第 `2` 轮"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if sender.sendCardCalls != 0 {
+		t.Fatalf("expected mention workflow task to skip card, got %d card sends", sender.sendCardCalls)
+	}
+	if sender.sendTextCalls == 0 {
+		t.Fatal("expected mention workflow task to fall back to text")
+	}
+	if sender.lastText == "" {
+		t.Fatal("expected mention workflow text dispatch to be non-empty")
+	}
+}
+
+func TestEngine_RunUserTask_RunWorkflow_CardFailureFallsBackToText(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation_state.json"))
+	store.now = func() time.Time { return base }
+
+	_, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:     ActionTypeRunWorkflow,
+			Prompt:   "请推进代码军队流程",
+			Workflow: WorkflowCodeArmy,
+			StateKey: "project_alpha",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{sendCardErr: context.DeadlineExceeded}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{Message: "## Code Army 进度\n**状态**：第 `2` 轮"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if sender.sendCardCalls == 0 {
+		t.Fatal("expected card send to be attempted before fallback")
+	}
+	if sender.sendTextCalls == 0 {
+		t.Fatal("expected card failure to fall back to text")
 	}
 }
 

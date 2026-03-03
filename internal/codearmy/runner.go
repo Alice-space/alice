@@ -119,19 +119,27 @@ func (r *Runner) Run(ctx context.Context, req automation.WorkflowRunRequest) (au
 		return automation.WorkflowRunResult{}, errors.New("workflow objective is empty")
 	}
 
-	message, err := r.advance(ctx, &state, req)
+	progressMessages, err := r.advance(ctx, &state, req)
 	if err != nil {
 		return automation.WorkflowRunResult{}, err
 	}
 	if err := r.saveState(statePath, state); err != nil {
 		return automation.WorkflowRunResult{}, err
 	}
+	message := buildRunReplyMarkdown(state, stateKey, progressMessages)
+	if strings.TrimSpace(message) == "" {
+		message = strings.Join(progressMessages, "\n")
+	}
 	return automation.WorkflowRunResult{Message: message}, nil
 }
 
-func (r *Runner) advance(ctx context.Context, state *workflowState, req automation.WorkflowRunRequest) (string, error) {
+func (r *Runner) advance(
+	ctx context.Context,
+	state *workflowState,
+	req automation.WorkflowRunRequest,
+) ([]string, error) {
 	if state == nil {
-		return "", errors.New("workflow state is nil")
+		return nil, errors.New("workflow state is nil")
 	}
 
 	steps := phaseStepsPerRun(state.Phase)
@@ -139,7 +147,7 @@ func (r *Runner) advance(ctx context.Context, state *workflowState, req automati
 	for i := 0; i < steps; i++ {
 		message, stop, err := r.advanceOne(ctx, state, req)
 		if err != nil {
-			return "", err
+			return nil, err
 		}
 		if strings.TrimSpace(message) != "" {
 			messages = append(messages, message)
@@ -148,7 +156,7 @@ func (r *Runner) advance(ctx context.Context, state *workflowState, req automati
 			break
 		}
 	}
-	return strings.Join(messages, "\n"), nil
+	return messages, nil
 }
 
 func (r *Runner) advanceOne(
@@ -173,9 +181,8 @@ func (r *Runner) advanceOne(
 		state.UpdatedAt = now
 		state.appendHistory(now, phaseManager, clipText(state.ManagerPlan, 120), "")
 		return fmt.Sprintf(
-			"code-army manager 已完成第%d轮规划，下一步进入 worker。\n规划摘要：%s",
+			"`manager` 完成第 %d 轮规划，进入 `worker`。",
 			state.Iteration,
-			clipText(state.ManagerPlan, 160),
 		), false, nil
 	case phaseWorker:
 		reply, nextThreadID, err := r.runLLM(ctx, state.WorkerThreadID, buildWorkerPrompt(*state), req)
@@ -187,7 +194,7 @@ func (r *Runner) advanceOne(
 		state.Phase = phaseReviewer
 		state.UpdatedAt = now
 		state.appendHistory(now, phaseWorker, clipText(state.WorkerOutput, 120), "")
-		return "code-army worker 已产出实现方案，下一步进入 reviewer 审核。", false, nil
+		return "`worker` 已产出实现方案，进入 `reviewer`。", false, nil
 	case phaseReviewer:
 		reply, nextThreadID, err := r.runLLM(ctx, state.ReviewerThreadID, buildReviewerPrompt(*state), req)
 		if err != nil {
@@ -200,7 +207,7 @@ func (r *Runner) advanceOne(
 		state.UpdatedAt = now
 		state.appendHistory(now, phaseReviewer, clipText(state.ReviewerReport, 120), state.LastDecision)
 		return fmt.Sprintf(
-			"code-army reviewer 已给出结论：%s。下一步进入 gate。",
+			"`reviewer` 完成审核，结论 `%s`，进入 `gate`。",
 			strings.ToUpper(state.LastDecision),
 		), false, nil
 	case phaseGate:
@@ -210,19 +217,116 @@ func (r *Runner) advanceOne(
 			state.Phase = phaseManager
 			state.appendHistory(now, phaseGate, "gate passed", decisionPass)
 			return fmt.Sprintf(
-				"code-army gate 通过，进入第%d轮迭代。",
+				"`gate` 通过，进入第 `%d` 轮。",
 				state.Iteration,
 			), true, nil
 		}
 		state.Phase = phaseWorker
 		state.appendHistory(now, phaseGate, "gate rejected, back to worker", decisionFail)
-		return "code-army gate 未通过，已回退到 worker 进行整改。", true, nil
+		return "`gate` 未通过，回退到 `worker`。", true, nil
 	default:
 		state.Phase = phaseManager
 		state.UpdatedAt = now
 		state.appendHistory(now, phaseManager, "phase reset to manager", "")
-		return "code-army 状态异常已自动修复，已重置到 manager。", true, nil
+		return "`system` 修复异常状态，重置到 `manager`。", true, nil
 	}
+}
+
+func buildRunReplyMarkdown(state workflowState, stateKey string, stepMessages []string) string {
+	state = normalizeState(state)
+	key := defaultIfEmpty(state.Key, sanitizeStateKey(stateKey))
+	if key == "" {
+		key = defaultStateKey
+	}
+
+	status := fmt.Sprintf("**状态**：第 `%d` 轮 · 待执行 `%s`", state.Iteration, state.Phase)
+	if decision := strings.TrimSpace(state.LastDecision); decision != "" {
+		status += " · 最近结论 `" + strings.ToUpper(decision) + "`"
+	}
+
+	lines := []string{
+		"## Code Army 进度",
+		status,
+		fmt.Sprintf("**state_key**：`%s`", key),
+	}
+	if objective := clipText(compactText(state.Objective), 160); objective != "" {
+		lines = append(lines, fmt.Sprintf("**目标**：%s", objective))
+	}
+	if len(stepMessages) > 0 {
+		lines = append(lines, "", "**本次推进**")
+		for _, step := range stepMessages {
+			step = strings.TrimSpace(step)
+			if step == "" {
+				continue
+			}
+			lines = append(lines, "- "+step)
+		}
+	}
+
+	highlights := buildStateHighlights(state)
+	if len(highlights) > 0 {
+		lines = append(lines, "", "**关键摘要**")
+		for _, highlight := range highlights {
+			lines = append(lines, "- "+highlight)
+		}
+	}
+
+	if next := buildNextStepSummary(state); next != "" {
+		lines = append(lines, "", "**下一步**", "- "+next)
+	}
+	return strings.Join(lines, "\n")
+}
+
+func buildStateHighlights(state workflowState) []string {
+	highlights := make([]string, 0, 3)
+	if summary := clipText(compactText(state.ManagerPlan), 140); summary != "" {
+		highlights = append(highlights, "规划："+summary)
+	}
+	if summary := clipText(compactText(state.WorkerOutput), 140); summary != "" {
+		highlights = append(highlights, "产出："+summary)
+	}
+	if summary := clipText(compactText(stripDecisionLines(state.ReviewerReport)), 140); summary != "" {
+		highlights = append(highlights, "评审："+summary)
+	}
+	return highlights
+}
+
+func buildNextStepSummary(state workflowState) string {
+	switch normalizePhase(state.Phase) {
+	case phaseManager:
+		return fmt.Sprintf("从 `manager` 开始第 `%d` 轮规划。", state.Iteration)
+	case phaseWorker:
+		if strings.TrimSpace(state.LastDecision) == decisionFail {
+			return "回到 `worker` 整改 reviewer 反馈，再进入复审。"
+		}
+		return "由 `worker` 继续推进实现细节。"
+	case phaseReviewer:
+		return "等待 `reviewer` 审核最新产出。"
+	case phaseGate:
+		return "等待 `gate` 根据 reviewer 结论做最终判定。"
+	default:
+		return ""
+	}
+}
+
+func stripDecisionLines(value string) string {
+	lines := strings.Split(strings.TrimSpace(value), "\n")
+	filtered := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		if decisionPattern.MatchString(line) {
+			continue
+		}
+		filtered = append(filtered, line)
+	}
+	return strings.TrimSpace(strings.Join(filtered, " "))
+}
+
+func compactText(value string) string {
+	return strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
 }
 
 func phaseStepsPerRun(phase string) int {
@@ -491,8 +595,12 @@ func defaultIfEmpty(value, fallback string) string {
 
 func clipText(value string, max int) string {
 	value = strings.TrimSpace(value)
-	if max <= 0 || len(value) <= max {
+	if max <= 0 {
 		return value
 	}
-	return value[:max] + "..."
+	runes := []rune(value)
+	if len(runes) <= max {
+		return value
+	}
+	return string(runes[:max]) + "..."
 }
