@@ -21,6 +21,7 @@ type Processor struct {
 	llm             llm.Backend
 	memory          MemoryManager
 	sender          Sender
+	replies         *replyDispatcher
 	failureMessage  string
 	thinkingMessage string
 	feedbackMode    string
@@ -78,6 +79,7 @@ func NewProcessorWithMemory(
 		llm:             backend,
 		memory:          memoryManager,
 		sender:          sender,
+		replies:         newReplyDispatcher(sender),
 		failureMessage:  failureMessage,
 		thinkingMessage: thinkingMessage,
 		feedbackMode:    immediateFeedbackModeReply,
@@ -166,7 +168,7 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 	}
 	p.recordInteraction(job, p.buildCurrentUserInput(job), reply, failed)
 
-	if sendErr := p.sendCardWithFallback(ctx, job, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
+	if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
 		log.Printf("send message failed event_id=%s: %v", job.EventID, sendErr)
 	}
 	return JobProcessCompleted
@@ -193,19 +195,19 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		if isFileChange {
 			delivered := false
 			for _, replyTarget := range fileChangeReplyTargets(job) {
-				if _, sendErr := p.replyCardWithFallback(ctx, job, replyTarget, normalized); sendErr == nil {
+				if _, sendErr := p.replies.reply(ctx, job, replyTarget, normalized); sendErr == nil {
 					delivered = true
 					break
 				}
 			}
 			if !delivered {
-				if sendErr := p.sendCardWithFallback(ctx, job, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
+				if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
 					log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
 					return
 				}
 			}
 		} else {
-			if _, sendErr := p.replyCardWithFallback(ctx, job, job.SourceMessageID, normalized); sendErr != nil {
+			if _, sendErr := p.replies.reply(ctx, job, job.SourceMessageID, normalized); sendErr != nil {
 				log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
 				return
 			}
@@ -228,10 +230,10 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		if wasInterruptedByNewMessage(ctx) {
 			notifyCtx := context.WithoutCancel(ctx)
 			if ackDelivered {
-				if _, replyErr := p.replyCardWithFallback(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
+				if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
 					log.Printf("send interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 				}
-			} else if _, replyErr := p.replyCardWithFallback(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
+			} else if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
 				log.Printf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 			}
 			logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
@@ -256,10 +258,10 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		}
 		notifyCtx := context.WithoutCancel(ctx)
 		if ackDelivered {
-			if _, replyErr := p.replyCardWithFallback(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
+			if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
 				log.Printf("send interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 			}
-		} else if _, replyErr := p.replyCardWithFallback(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
+		} else if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
 			log.Printf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 		}
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
@@ -273,7 +275,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	p.recordInteraction(job, p.buildCurrentUserInput(job), finalReply, failed)
 	if strings.TrimSpace(finalReply) != "" &&
 		strings.TrimSpace(finalReply) != lastSentAgentMessage {
-		if _, replyErr := p.replyCardWithFallback(ctx, job, job.SourceMessageID, finalReply); replyErr != nil {
+		if _, replyErr := p.replies.reply(ctx, job, job.SourceMessageID, finalReply); replyErr != nil {
 			log.Printf("send final reply failed event_id=%s: %v", job.EventID, replyErr)
 		}
 	}
@@ -292,7 +294,7 @@ func (p *Processor) sendImmediateFeedback(ctx context.Context, job Job) bool {
 		}
 	}
 
-	if _, err := p.replyCardWithFallback(ctx, job, job.SourceMessageID, immediateFeedbackReplyText); err != nil {
+	if _, err := p.replies.reply(ctx, job, job.SourceMessageID, immediateFeedbackReplyText); err != nil {
 		log.Printf("send ack reply failed event_id=%s: %v", job.EventID, err)
 		return false
 	}
@@ -341,85 +343,6 @@ func fileChangeReplyTargets(job Job) []string {
 	return targets
 }
 
-func (p *Processor) replyMarkdownPostWithFallback(
-	ctx context.Context,
-	sourceMessageID,
-	markdown string,
-	forceText bool,
-) (string, error) {
-	normalized := strings.TrimSpace(markdown)
-	if normalized == "" {
-		return "", nil
-	}
-	if forceText {
-		return p.sender.ReplyText(ctx, sourceMessageID, normalized)
-	}
-	if messageID, richErr := p.sender.ReplyRichTextMarkdown(ctx, sourceMessageID, normalized); richErr == nil {
-		return messageID, nil
-	}
-	messageID, textErr := p.sender.ReplyText(ctx, sourceMessageID, normalized)
-	if textErr != nil {
-		return "", textErr
-	}
-	return messageID, nil
-}
-
-func (p *Processor) replyCardWithFallback(
-	ctx context.Context,
-	job Job,
-	sourceMessageID,
-	markdown string,
-) (string, error) {
-	normalized, forceText := normalizeOutgoingReplyWithMentions(markdown, job)
-	if normalized == "" {
-		return "", nil
-	}
-	if forceText {
-		if messageID, textErr := p.sender.ReplyText(ctx, sourceMessageID, normalized); textErr == nil {
-			return messageID, nil
-		}
-		normalized = strings.TrimSpace(markdown)
-		if normalized == "" {
-			return "", nil
-		}
-	}
-	if messageID, cardErr := p.sender.ReplyCard(ctx, sourceMessageID, buildReplyCardContent(normalized)); cardErr == nil {
-		return messageID, nil
-	}
-	return p.replyMarkdownPostWithFallback(ctx, sourceMessageID, normalized, false)
-}
-
-func (p *Processor) sendCardWithFallback(
-	ctx context.Context,
-	job Job,
-	receiveIDType,
-	receiveID,
-	markdown string,
-) error {
-	normalized, forceText := normalizeOutgoingReplyWithMentions(markdown, job)
-	if normalized == "" {
-		return nil
-	}
-	if forceText {
-		if textErr := p.sender.SendText(ctx, receiveIDType, receiveID, normalized); textErr == nil {
-			return nil
-		}
-		normalized = strings.TrimSpace(markdown)
-		if normalized == "" {
-			return nil
-		}
-	}
-	type sendCardCapable interface {
-		SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error
-	}
-	if sender, ok := p.sender.(sendCardCapable); ok {
-		if cardErr := sender.SendCard(ctx, receiveIDType, receiveID, buildReplyCardContent(normalized)); cardErr == nil {
-			return nil
-		}
-	}
-	return p.sender.SendText(ctx, receiveIDType, receiveID, normalized)
-}
-
 func isRestartIntentJob(job Job) bool {
 	candidates := []string{
 		strings.TrimSpace(job.Text),
@@ -439,12 +362,7 @@ func isRestartIntentJob(job Job) bool {
 }
 
 func (p *Processor) processRestartNotification(ctx context.Context, job Job) JobProcessState {
-	var sendErr error
-	if strings.TrimSpace(job.SourceMessageID) != "" {
-		_, sendErr = p.replyCardWithFallback(ctx, job, job.SourceMessageID, restartNotificationMessage)
-	} else {
-		sendErr = p.sendCardWithFallback(ctx, job, job.ReceiveIDType, job.ReceiveID, restartNotificationMessage)
-	}
+	sendErr := p.replies.respond(ctx, job, restartNotificationMessage)
 	if sendErr != nil {
 		log.Printf("send restart notification failed event_id=%s: %v", job.EventID, sendErr)
 		logging.Debugf(
@@ -478,12 +396,7 @@ func (p *Processor) processPostRestartFinalize(ctx context.Context, job Job) Job
 		defaultIfEmpty(threadID, "无"),
 	)
 
-	var sendErr error
-	if strings.TrimSpace(job.SourceMessageID) != "" {
-		_, sendErr = p.replyCardWithFallback(ctx, job, job.SourceMessageID, summary)
-	} else {
-		sendErr = p.sendCardWithFallback(ctx, job, job.ReceiveIDType, job.ReceiveID, summary)
-	}
+	sendErr := p.replies.respond(ctx, job, summary)
 	if sendErr != nil {
 		log.Printf("send post-restart finalize reply failed event_id=%s: %v", job.EventID, sendErr)
 		logging.Debugf(

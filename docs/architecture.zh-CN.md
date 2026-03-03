@@ -30,9 +30,9 @@
 ## 运行链路
 
 1. 飞书 WS 事件进入 `App`（`internal/connector/app.go`）。
-2. 事件被标准化为 `Job`，按 session key 路由并入队。
+2. 会话路由、排队与抢占控制由独立运行态辅助模块处理（`internal/connector/app_queue.go`）。
 3. Worker 通过 session 级互斥保证同会话串行处理。
-4. `Processor` 构造上下文并调用后端，然后通过发送器回退链路输出进度与结果。
+4. `Processor` 构造上下文并调用后端，消息降级发送策略委托给 `replyDispatcher`（`internal/connector/reply_dispatcher.go`）。
 5. 会话/运行态与记忆模块异步落盘。
 
 ## 本次重构已完成
@@ -44,10 +44,15 @@
   - 会话互斥锁映射
   - 运行态持久化版本信息
 - `App` 与运行态/上下文窗口相关逻辑已统一改为使用 `runtimeStore`。
+- 按职责拆分 connector 编排：
+  - `internal/connector/app.go`：WebSocket 生命周期与 worker 主循环
+  - `internal/connector/app_queue.go`：会话路由、入队和 active-run 抢占
+- 新增 `replyDispatcher`（`internal/connector/reply_dispatcher.go`），把卡片/富文本/纯文本回退策略从 `Processor` 中抽离。
+- 启动装配改为分阶段 builder：`internal/bootstrap/connector_runtime_builder.go`。
 - 删除废弃的交互卡片增量更新链路：移除 `Sender` 接口及实现中的 `PatchCard`。
 
 ## 后续重构切片
 
-1. 抽离消息发送回退策略（卡片/富文本/纯文本）为独立传输策略组件。
-2. 将 `Processor` 拆分为 `上下文构建`、`后端调用`、`回复渲染` 三段流水线，提升可测性。
-3. 把 `cmd/connector/main.go` 的装配逻辑拆成可组合初始化器/构建器。
+1. 将 `Processor` 拆分为 `上下文构建`、`后端调用`、`回复渲染` 三段流水线，提升可测性。
+2. 梳理记忆模块归属，引入更明确的协调边界，区分 prompt 组装、空闲摘要与持久化职责。
+3. 继续压薄 `cmd/connector/main.go`，让启动入口只保留稳定的装配调用。

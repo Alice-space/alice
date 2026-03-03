@@ -15,10 +15,8 @@ Purpose: Feishu bot connector that forwards user messages to Codex and sends rep
 - Start long-connection app loop.
 
 2. `internal/bootstrap/connector_runtime.go`
-- Build Feishu sender, LLM backend, memory manager.
-- Load session/runtime state from `.memory`.
-- Register automation system tasks (idle summary + state flush).
-- Return assembled connector runtime.
+- Delegate assembly to `connectorRuntimeBuilder` (`internal/bootstrap/connector_runtime_builder.go`).
+- Keep only stable bootstrap-facing APIs: provider factory, MCP registration, runtime build entry.
 
 3. `cmd/alice-mcp-server/main.go`
 - Load same config.
@@ -31,6 +29,7 @@ Purpose: Feishu bot connector that forwards user messages to Codex and sends rep
 - `internal/connector/app.go` creates WS client and dispatches `im.message.receive_v1`.
 
 2. Queue and steering:
+- `internal/connector/app_queue.go`
 - Jobs enter bounded queue (`queue_capacity`).
 - Session key prioritizes chat/thread context.
 - Per-session mutex guarantees serial processing.
@@ -39,7 +38,7 @@ Purpose: Feishu bot connector that forwards user messages to Codex and sends rep
 - `internal/connector/processor.go`
 - Build prompt/context (reply context + memory + mention context).
 - Invoke backend (`internal/llm/codex/codex.go` for Codex provider).
-- Send progress/final result through card-first fallback pipeline.
+- Delegate reply/send downgrade rules to `internal/connector/reply_dispatcher.go`.
 
 4. Runtime/memory persistence:
 - Runtime queue/session metadata in `.memory/runtime_state.json`.

@@ -30,9 +30,9 @@ This document defines the target architecture for `alice` and tracks ongoing ref
 ## Runtime flow
 
 1. Feishu WS event enters `App` (`internal/connector/app.go`).
-2. Event is normalized into a `Job`, routed by session key, and queued.
+2. Queue/session steering is handled by dedicated runtime helpers (`internal/connector/app_queue.go`).
 3. Worker serializes processing by session-level mutex.
-4. `Processor` builds prompt/context, invokes backend, emits progress/final reply via sender fallback chain.
+4. `Processor` builds prompt/context, invokes backend, and delegates reply downgrade policy to `replyDispatcher` (`internal/connector/reply_dispatcher.go`).
 5. Session/runtime state and memory are flushed asynchronously.
 
 ## Refactor status (this iteration)
@@ -44,10 +44,15 @@ This document defines the target architecture for `alice` and tracks ongoing ref
   - per-session mutex map
   - runtime-state persistence metadata
 - Updated `App` and related runtime/media-window paths to use the centralized store.
+- Split connector orchestration by responsibility:
+  - `internal/connector/app.go`: websocket lifecycle and worker loop
+  - `internal/connector/app_queue.go`: session routing, queueing, and active-run steering
+- Extracted `replyDispatcher` (`internal/connector/reply_dispatcher.go`) so transport fallback policy is no longer embedded in `Processor`.
+- Refactored connector bootstrap into staged builder steps in `internal/bootstrap/connector_runtime_builder.go`.
 - Removed deprecated interactive card patch path (`PatchCard`) from `Sender` abstractions and concrete sender implementation.
 
 ## Next slices
 
-1. Extract message send/reply fallback policies into a dedicated transport policy component.
-2. Split `Processor` into pipeline stages (`context build`, `backend invoke`, `reply render`) for better test isolation.
-3. Refactor `cmd/connector/main.go` wiring into composable initializers/builders.
+1. Split `Processor` into pipeline stages (`context build`, `backend invoke`, `reply render`) for better test isolation.
+2. Clarify memory ownership by introducing a coordinator boundary between prompt assembly, idle summaries, and persistence hooks.
+3. Continue shrinking `cmd/connector/main.go` into thinner startup wiring as more builder slices stabilize.

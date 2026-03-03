@@ -76,12 +76,7 @@ func (p *Processor) processCodeArmyStatusCommand(ctx context.Context, job Job, s
 		reply = "当前会话暂无 code_army 任务或状态。"
 	}
 
-	var sendErr error
-	if strings.TrimSpace(job.SourceMessageID) != "" {
-		_, sendErr = p.replyCardWithFallback(ctx, job, job.SourceMessageID, reply)
-	} else {
-		sendErr = p.sendCardWithFallback(ctx, job, job.ReceiveIDType, job.ReceiveID, reply)
-	}
+	sendErr := p.replies.respond(ctx, job, reply)
 	if sendErr != nil {
 		log.Printf("send code_army status reply failed event_id=%s: %v", job.EventID, sendErr)
 	}
