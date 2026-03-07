@@ -276,6 +276,7 @@
 | `intent_kind` | `task_request` / `setting_change` / `state_query` / `approval_response` / `manual_signal` |
 | `scope` | `global` / `project` / `run` |
 | `parsed_payload` | 结构化意图载荷 |
+| `compiler_profile` | 生成该意图的模型编译器配置或模型档位 |
 | `confidence` | 解释置信度 |
 | `risk_level` | 风险等级 |
 | `requires_confirmation` | 是否必须回显确认 |
@@ -283,6 +284,7 @@
 规则：
 
 - 高风险、低置信度或涉及静态基线配置的意图必须确认。
+- 对人类自然语言入口，`intent_kind` 必须由模型推理产生；关键词、前缀或正则只能用于后处理归一化与安全校验，不得单独决定意图类别。
 - `setting_change` 不直接产生副作用，必须先通过设置验证。
 - `manual_signal` 与 `approval_response` 不同；前者改变工作流方向，后者只回答一张待处理审批票。
 

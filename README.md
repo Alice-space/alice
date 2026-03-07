@@ -81,6 +81,8 @@ Contribution rules are documented in [CONTRIBUTING.md](./CONTRIBUTING.md).
 ## Architecture
 
 - [Architecture and refactor plan](./docs/architecture.md)
+- [Design docs index](./docs/design/README.md)
+- [Concept design report](./docs/design/plan.md)
 
 ## Bundled Skills
 

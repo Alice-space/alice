@@ -5,7 +5,7 @@
 控制平面是系统唯一的协调中枢，负责：
 
 - 接收来自 CLI、飞书等通道的自然语言请求，以及 webhook、scheduler 等系统事件。
-- 将人类输入解释成 `IntentSpec`。
+- 使用基于模型的 `IntentCompiler` 将人类输入解释成 `IntentSpec`。
 - 调用 `TaskClassifier` 进行入口分诊。
 - 创建 `TaskSpec`、`RunRecord`、`workflow_id` 和必要的 `ScheduleEntry` / `ConfigChangeProposal`。
 - 推进运行状态与工作流阶段。
@@ -43,6 +43,7 @@ Natural Language / Webhook / Scheduler
 
 规则：
 
+- 自然语言入口的 `intent_kind` 必须以模型输出为准，不允许用关键词匹配、前缀匹配或正则规则直接做分流。
 - 所有可执行请求都必须落成 `TaskSpec`，即使是 `fast path`。
 - `setting_change` 不直接执行外部副作用，必须先验证可变边界。
 - `manual_signal` 不新建工作流，而是向目标运行注入结构化信号。
