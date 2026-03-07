@@ -1,4 +1,0 @@
-interface:
-  display_name: "文件打印（CUPS）"
-  short_description: "接收用户发送的文件并通过CUPS提交到默认打印机并反馈作业状态"
-  default_prompt: "使用 $file-printing 将用户提供的文件发送到默认打印机并返回作业号与队列状态。"

@@ -1,1 +1,0 @@
-../../../scripts/update-self-and-sync-skill.sh

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Alice Codebase Onboarding"
-  short_description: "Inspect alice codebase, runtime, and deployment status."
-  default_prompt: "Use $alice-codebase-onboarding to analyze the current Alice repository flow and deployment health, then provide concrete fix commands."

@@ -1,4 +1,0 @@
-interface:
-  display_name: "Alice Code Army"
-  short_description: "运行和管理 Alice code_army 工作流"
-  default_prompt: "Use $alice-code-army to start or inspect a code_army workflow in the current Alice chat."
