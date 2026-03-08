@@ -1,0 +1,36 @@
+# macOS
+.DS_Store
+
+# Go build artifacts
+bin/
+dist/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+coverage.out
+coverage.txt
+*.coverprofile
+*.prof
+*.pprof
+
+# Go workspace cache
+go.work.sum
+
+# Environment and local overrides
+.env
+.env.*
+!.env.example
+
+# Editor and IDE files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Temporary files
+tmp/
+.tmp/
