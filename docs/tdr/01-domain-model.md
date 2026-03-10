@@ -1,416 +1,958 @@
-# TDR 01: 领域模型与状态机
+# TDR 01: 核心领域模型与审计对象
 
 ## 1. 目标
 
-本文定义第一版的领域对象、命令、事件、状态与不变式。实现代码必须直接复用本文命名，避免 `draft` 的 CamelCase、`cdr` 的 snake_case 和代码枚举三套并存。
+本文把 CDR 中的核心概念落成可编码的领域模型。v1 的实现必须直接复用本文命名，避免再出现一套旧的 `Task/RouteDecision` 影子模型。
 
 建议目录：
 
-- `internal/domain/task.go`
+- `internal/domain/id.go`
 - `internal/domain/event.go`
-- `internal/domain/command.go`
-- `internal/domain/types.go`
-- `internal/domain/validate.go`
+- `internal/domain/request.go`
+- `internal/domain/task.go`
+- `internal/domain/workflow.go`
+- `internal/domain/audit.go`
+- `internal/domain/validation.go`
 
-## 2. 核心枚举
+## 2. 领域对象总表
+
+| 对象 | 作用 | 是否 durable |
+| --- | --- | --- |
+| `ExternalEvent` | 所有输入的统一入口封套 | 是 |
+| `EphemeralRequest` | 低风险、只读、短时请求容器 | 是 |
+| `PromotionDecision` | promote 与否的结构化判断 | 是 |
+| `DurableTask` | 需要治理与恢复的长期对象 | 是 |
+| `WorkflowBinding` | task 绑定到某个 workflow revision 的记录 | 是 |
+| `StepExecution` | 某个 step 的运行记录 | 是 |
+| `Artifact` | workflow step 产物 | 是 |
+| `ContextPack` | 子 agent 可消费的上下文快照 | 是 |
+| `AgentDispatch` | 子 agent 调度契约 | 是 |
+| `ApprovalRequest` | 通用 gate 对象 | 是 |
+| `HumanWaitRecord` | `WaitingInput` / `WaitingRecovery` 的持久等待锚点 | 是 |
+| `OutboxRecord` | 外部副作用动作 | 是 |
+| `ReplyRecord` | 对用户或外部系统可见的回复 | 是 |
+| `TerminalResult` | request/task 的终态摘要 | 是 |
+| `UsageLedgerEntry` | token/成本/资源用量账本 | 是 |
+| `ScheduledTask` | 调度对象 | 是 |
+| `AgentProfile` | agent 可执行能力描述 | 否，来自注册表投影 |
+| `MCPProfile` | MCP 域健康与配额描述 | 否，来自注册表投影 |
+
+## 3. ID 与基础类型
+
+### 3.1 ID 规范
+
+所有主对象 ID 使用 ULID，建议保留前缀方便人工排查：
+
+- `evt_`
+- `req_`
+- `dec_`
+- `task_`
+- `bind_`
+- `exec_`
+- `art_`
+- `ctx_`
+- `disp_`
+- `apr_`
+- `obx_`
+- `rpl_`
+- `res_`
+- `sch_`
+
+### 3.2 枚举
 
 ```go
-type TaskType string
+type RequestStatus string
 type TaskStatus string
-type RouteType string
-type DeliveryMode string
 type WaitingReason string
-type RiskLevel string
-type AuditTargetType string
-type AuditVerdictStatus string
-type OutboxActionType string
-type MCPDomain string
+type PromotionResult string
+type GateType string
+type GateStatus string
+type StepStatus string
+type DispatchStatus string
+type OutboxStatus string
+type EventType string
+type Role string
 ```
 
 推荐枚举值：
 
-- `TaskType`: `query`, `control`, `async_code`, `scheduled_task`
-- `RouteType`: `sync_direct`, `sync_mcp_read`, `control_write`, `async_issue`, `wait_human`
-- `DeliveryMode`: `merge`, `report_only`
-- `TaskStatus`: `task_created`, `waiting_human`, `sync_running`, `issue_sync_pending`, `issue_created`, `planning`, `plan_audit`, `coding`, `evaluation`, `budget_exceeded`, `code_audit`, `pending_arbitration`, `merge_approval_pending`, `merging`, `merged`, `closed`, `failed`, `cancelled`
-- `WaitingReason`: `waiting_input`, `waiting_confirmation`, `waiting_budget`, `waiting_recovery`
-- `RiskLevel`: `low`, `medium`, `high`, `critical`
-- `AuditTargetType`: `plan`, `code`
-- `AuditVerdictStatus`: `accepted`, `approve`, `reject`, `abstain`, `missing`
-- `MCPDomain`: `control`, `github`, `gitlab`, `cluster`
+- `RequestStatus`: `Open`, `Answered`, `Promoted`, `Expired`
+- `TaskStatus`: `NewTask`, `Active`, `WaitingHuman`, `Succeeded`, `Failed`, `Cancelled`
+- `WaitingReason`: `WaitingInput`, `WaitingConfirmation`, `WaitingBudget`, `WaitingRecovery`
+- `PromotionResult`: `direct_answer`, `promote`, `ask_followup`, `escalate_human`
+- `GateType`: `approval`, `confirmation`, `budget`, `evaluation`
+- `GateStatus`: `open`, `approved`, `rejected`, `expired`, `superseded`
+- `StepStatus`: `ready`, `running`, `succeeded`, `failed`, `superseded`, `cancelled`
+- `DispatchStatus`: `created`, `dispatched`, `running`, `completed`, `failed`, `cancelled`, `expired`
+- `OutboxStatus`: `pending`, `dispatching`, `succeeded`, `retry_wait`, `dead`
+- `Role`: `reception`, `leader`, `helper`, `worker`, `reviewer`, `evaluator`
 
-## 3. Task 聚合根
+## 4. 核心聚合与记录
 
-`Task` 是系统聚合根。所有状态推进都必须以 `Task` 为中心。
+### 4.1 `ExternalEvent`
 
 ```go
-type Task struct {
+type ExternalEvent struct {
+    EventID            string
+    EventType          EventType
+    SourceKind         string
+    SourceRef          string
+    ActorRef           string
+    RequestID          string
     TaskID             string
-    TraceID            string
-    Type               TaskType
-    Status             TaskStatus
-    WaitingReason      WaitingReason
-    RiskLevel          RiskLevel
-    TaskVersion        uint64
-    GlobalHLC          string
-    Source             TaskSource
-    DeliveryMode       DeliveryMode
-    Identity           IdentityContext
-    Budget             BudgetState
-    ActiveIssueRef     *IssueRef
-    ActivePRRef        *PRRef
-    ActivePlan         *PlanRef
-    ActiveEvalSpec     *EvalSpecRef
-    ActiveCancelToken  *CancellationTokenRef
-    PlanAuditRound     uint32
-    CodeAuditRound     uint32
-    LastError          *TaskError
-    CreatedAt          time.Time
-    UpdatedAt          time.Time
-    ClosedAt           *time.Time
+    ReplyToEventID     string
+    ConversationID     string
+    ThreadID           string
+    RepoRef            string
+    IssueRef           string
+    PRRef              string
+    CommentRef         string
+    ScheduledTaskID    string
+    ControlObjectRef   string
+    WorkflowObjectRef  string
+    CoalescingKey      string
+    ParentEventID      string
+    CausationID        string
+    IdempotencyKey     string
+    Verified           bool
+    PayloadRef         string
+    ReceivedAt         time.Time
 }
 ```
 
 约束：
 
-- `TaskVersion` 每次成功状态推进后加 1
-- `WaitingReason` 仅在 `waiting_human` 状态有值
-- `Task.Type` 是稳定业务类型，不随入口瞬时路由变化
-- `ActiveIssueRef` 在 `issue_created` 及之后阶段必须非空
-- `ActivePRRef` 在 `coding` 之后通常非空；报告型任务可为空
-- `ActivePlan` 在 `plan_audit`、`coding` 及之后阶段必须非空
-- `DeliveryMode=report_only` 的任务才允许从 `code_audit` 直接进入 `closed`
+- 所有输入先成为 `ExternalEvent`
+- `ExternalEvent` 是 route 的输入，不是“原始消息 DTO”
+- scheduler 触发、人类按钮回流、repo comment、webhook 都用同一对象
 
-## 4. 附属对象
-
-### 4.1 输入与身份
+### 4.2 `EphemeralRequest`
 
 ```go
-type UserRequest struct {
-    RequestID       string
-    SourceChannel   string
-    ThreadID        string
-    AliceUserID     string
-    ExternalActorID string
-    RawText         string
-    Attachments     []AttachmentRef
-    CoalescingKey   string
-    ReceivedAt      time.Time
-}
-
-type IngressTraceStage string
-
-type IngressTrace struct {
-    TraceID         string
-    RequestID       string
-    Stage           IngressTraceStage
-    RouteDecision   *RouteDecision
-    ReasonSummary   string
-    OccurredAt      time.Time
-}
-
-type TaskSource struct {
-    SourceType      string
-    SourceID        string
-    ExternalEventID string
-    ScheduleID      string
-    ScheduleFireID  string
-    IdempotencyKey  string
-}
-
-type IdentityContext struct {
-    AliceUserID  string
-    Roles        []string
-    MFAValidated bool
-    Bindings     []IdentityBinding
+type EphemeralRequest struct {
+    RequestID             string
+    Status                RequestStatus
+    OpenedByEventID       string
+    LastEventID           string
+    TraceID               string
+    IntentSummary         string
+    RouteSnapshot         RouteSnapshot
+    PromotionDecisionID   string
+    ContextPackIDs        []string
+    AgentDispatchIDs      []string
+    LastReplyID           string
+    TerminalResultID      string
+    PromotedTaskID        string
+    ExpiresAt             time.Time
+    UpdatedAt             time.Time
 }
 ```
 
-推荐阶段值：
+约束：
 
-- `IngressTraceStage`: `received`, `classified`
+- `EphemeralRequest` 不是迷你 task
+- request 不绑定 workflow
+- `Answered` / `Expired` 默认不复用
 
-说明：
-
-- `received` 与 `classified` 只属于入口审计轨迹，不属于 `TaskStatus`
-- `CreateTask` 之前系统可能已经有 `IngressTrace`，但此时还没有正式 `Task` 聚合
-- `RouteDecision` 是入口瞬时执行决策，可持久化到 `IngressTrace` 或事件审计，但不是 `Task` 真值字段
-- `IngressTrace` 应按 `trace_id` append-only 存储，供入口恢复、排障和安全审计使用
-
-### 4.2 计划、审核与评测
+### 4.3 `PromotionDecision`
 
 ```go
-type PlanRef struct {
-    PlanArtifactID string
-    PlanVersion    uint32
-}
-
-type EvalSpecRef struct {
-    EvalSpecID string
-    Version    uint32
-}
-
-type AuditRoundState struct {
-    TargetType      AuditTargetType
-    TargetVersion   string
-    Round           uint32
-    RequestID       string
-    ExpectedAgents  []string
-    DeadlineAt      time.Time
-    LeaseDuration   time.Duration
-    Status          string
+type PromotionDecision struct {
+    DecisionID                 string
+    RequestID                  string
+    IntentKind                 string
+    RequiredRefs               []string
+    RiskLevel                  string
+    ExternalWrite              bool
+    CreatePersistentObject     bool
+    Async                      bool
+    MultiStep                  bool
+    MultiAgent                 bool
+    ApprovalRequired           bool
+    BudgetRequired             bool
+    RecoveryRequired           bool
+    ProposedWorkflowIDs        []string
+    SelectedWorkflowID         string
+    Result                     PromotionResult
+    ReasonCodes                []string
+    Confidence                 float64
+    ProducedBy                 string
+    ProducedAt                 time.Time
 }
 ```
 
-### 4.3 Issue / PR / 副作用
+约束：
+
+- `Reception` 只能提出 `PromotionDecision`
+- 是否 promote 由策略层裁决
+- `SelectedWorkflowID` 只有在候选唯一且校验通过时才可写入
+
+### 4.4 `DurableTask`
 
 ```go
-type IssueRef struct {
-    Provider   string
-    Repo       string
-    IssueID    string
-    IssueURL   string
-}
-
-type PRRef struct {
-    Provider    string
-    Repo        string
-    PRID        string
-    PRURL       string
-    HeadSHA     string
-    MergeStatus string
-}
-
-type OutboxRecord struct {
-    ActionID       string
-    TaskID         string
-    Domain         MCPDomain
-    ActionType     OutboxActionType
-    IdempotencyKey string
-    PayloadRef     string
-    Status         string
-    AttemptCount   uint32
-    NextAttemptAt  time.Time
-    LastError      string
+type DurableTask struct {
+    TaskID                 string
+    SourceRequestID        string
+    OpenedByEventID        string
+    TraceID                string
+    Status                 TaskStatus
+    WaitingReason          WaitingReason
+    CurrentBindingID       string
+    CurrentStepExecutionID string
+    RiskLevel              string
+    BudgetPolicyRef        string
+    CancellationRef        string
+    UpdatedAt              time.Time
 }
 ```
 
-### 4.4 确认与调度
+顶层不允许出现：
+
+- `planning`
+- `code_audit`
+- `merge_approval_pending`
+- `budget_exceeded`
+
+这些都属于 workflow step 或 gate 结果，不是 task 顶层状态。
+
+### 4.5 `WorkflowBinding`
 
 ```go
-type Confirmation struct {
-    ConfirmationID    string
-    ConfirmationToken string
+type WorkflowBinding struct {
+    BindingID         string
     TaskID            string
-    ActionHash        string
-    RequestedBy       string
-    ApproverID        string
-    Channel           string
-    ExpiresAt         time.Time
-    Status            string
-}
-
-type ScheduledTask struct {
-    ScheduleID      string
-    OwnerID         string
-    TriggerSpec     string
-    Payload         json.RawMessage
-    NextRunAt       time.Time
-    LastRunAt       *time.Time
-    LastFireID      string
-    Status          string
-}
-
-type ScheduleFire struct {
-    FireID         string
-    ScheduleID     string
-    ScheduledFor   time.Time
-    TaskID         string
-    IdempotencyKey string
-    Status         string
+    WorkflowID        string
+    WorkflowSource    string
+    WorkflowRev       string
+    ManifestDigest    string
+    ManifestRef       string
+    EntryStepID       string
+    BoundByEventID    string
+    BoundReason       string
+    SupersededBy      string
+    Active            bool
+    BoundAt           time.Time
 }
 ```
 
-推荐状态值：
+约束：
 
-- `ScheduleFire.Status`: `registered`, `task_create_pending`, `task_created`, `abandoned`
+- 单条 binding 记录不可原地改写
+- 若允许重规划，只能追加新 binding 记录
+- 旧 binding 的 step/gate/outbox 审计必须保留
 
-## 5. 命令模型
+### 4.6 `StepExecution`
 
-命令由入口、workflow、reconciler 或 outbox 回执发起，交给 `bus` 执行。
+```go
+type StepExecution struct {
+    ExecutionID        string
+    TaskID             string
+    BindingID          string
+    StepID             string
+    Role               Role
+    Status             StepStatus
+    Attempt            uint32
+    ParentDispatchID   string
+    InputArtifactIDs   []string
+    OutputArtifactIDs  []string
+    CheckpointRef      string
+    ResumeToken        string
+    RemoteExecutionRef string
+    LeaseOwner         string
+    LeaseExpiresAt     time.Time
+    LastHeartbeatAt    time.Time
+    FailureCode        string
+    FailureMessage     string
+    SupersededBy       string
+    StartedAt          time.Time
+    FinishedAt         time.Time
+}
+```
 
-| 命令 | 用途 |
-| --- | --- |
-| `CreateTask` | 创建新任务并进入 `task_created` |
-| `RegisterExternalEvent` | 记录外部事件受理与稳定 dedupe 键 |
-| `BindIssue` | 绑定现有 issue 或新建镜像 issue，并进入 `issue_created` |
-| `MarkIssueSyncPending` | 标记等待 issue 镜像建立 |
-| `MarkWaitingHuman` | 进入 `waiting_human`，附 `waiting_reason` |
-| `ConsumeConfirmation` | 消费确认对象并恢复后续流程 |
-| `StartSyncRun` | 启动同步处理 |
-| `MarkOutboxInflight` | 把某个 `outbox` 动作标记为 `inflight` |
-| `CompleteOutboxAction` | 把某个 `outbox` 动作标记为完成并写入外部回执摘要 |
-| `RequeueOutboxAction` | 把某个 `outbox` 动作按退避重新排队 |
-| `MarkOutboxDead` | 把某个 `outbox` 动作标记为 `dead` |
-| `PublishPlan` | 保存计划、切换到 `plan_audit` |
-| `StartAuditRound` | 为计划或代码启动一轮审核 |
-| `RecordAuditLease` | 审核 Agent 接单或续租 |
-| `SubmitAuditVerdict` | 记录审核意见 |
-| `FinalizeAuditRound` | 聚合审核结论 |
-| `StartCoding` | 进入 `coding` |
-| `AttachOrUpdatePR` | 绑定或更新活动 PR |
-| `StartEvaluation` | 进入 `evaluation` |
-| `RecordEvalResult` | 写入评测结果 |
-| `TripBudgetFuse` | 进入 `budget_exceeded` |
-| `RequestMergeApproval` | 进入 `merge_approval_pending` |
-| `StartMerging` | 进入 `merging` |
-| `MarkMerged` | 标记已合并 |
-| `CloseTask` | 进入 `closed` |
-| `FailTask` | 进入 `failed` |
-| `CancelTask` | 进入 `cancelled` |
-| `RegisterScheduleFire` | 注册一次定时触发实例，确保补偿触发可幂等 |
-| `MarkScheduleFireTaskCreatePending` | 把某次 fire 标记为正在补建 task |
-| `AttachScheduleFireTask` | 把已创建的 `task_id` 绑定回对应 fire |
-| `AbandonScheduleFire` | 多次补建失败后放弃某次 fire 并进入人工处理 |
-| `ResumeTask` | 人工恢复 `waiting_human` 或恢复型挂起任务 |
-| `RetryOutboxAction` | 对指定 `outbox` 动作发起人工重试 |
-| `ResolveDeadLetter` | 对死信对象给出人工处理结论 |
+### 4.7 `Artifact`
 
-规则：
+```go
+type Artifact struct {
+    ArtifactID       string
+    TaskID           string
+    BindingID        string
+    ExecutionID      string
+    Family           string
+    SchemaID         string
+    SchemaVersion    string
+    ContentRef       string
+    Summary          string
+    SupersededBy     string
+    CreatedAt        time.Time
+}
+```
 
-- 命令不直接持久化；命令处理器先校验状态，再产生事件
-- 同一命令重复提交时，必须能通过 `task_version` 或幂等键拒绝重复执行
-- 所有管理面写接口都必须映射到这里定义的命令，不能直接绕过 BUS 改 store
+artifact family 基线：
 
-## 6. 事件模型
+- `task_brief`
+- `plan`
+- `analysis_notes`
+- `candidate_patch`
+- `test_notes`
+- `review_result`
+- `evaluation_result`
+- `report`
+- `schedule_request`
+- `workflow_change_request`
+- `validation_report`
 
-事件是状态变更的事实记录，必须 append-only。
+### 4.8 `ContextPack` 与 `AgentDispatch`
 
-推荐事件：
+```go
+type ContextPack struct {
+    ContextPackID        string
+    OwnerKind            string
+    OwnerID              string
+    SummaryRef           string
+    ConversationSliceRef string
+    ArtifactIDs          []string
+    ExternalRefSnapshot  map[string]string
+    WorkingStateRef      string
+    ContextDigest        string
+    CreatedAt            time.Time
+}
 
-- `TaskCreated`
-- `ExternalEventAccepted`
-- `ExternalEventRejected`
-- `TaskWaitingHumanMarked`
-- `SyncRunStarted`
-- `SyncRunCompleted`
-- `IssueSyncPendingMarked`
-- `IssueBound`
-- `PlanPublished`
-- `AuditRoundStarted`
-- `AuditLeaseAccepted`
-- `AuditVerdictSubmitted`
-- `AuditRoundFinalized`
-- `CodingStarted`
-- `PRAttached`
-- `EvaluationStarted`
-- `EvaluationCompleted`
-- `BudgetFuseTripped`
-- `MergeApprovalRequested`
-- `MergeStarted`
-- `TaskMerged`
-- `TaskClosed`
-- `TaskFailed`
-- `TaskCancelled`
-- `OutboxActionCreated`
-- `OutboxActionInflightMarked`
-- `OutboxActionRequeued`
-- `OutboxActionCompleted`
-- `OutboxActionFailed`
-- `OutboxActionDeadMarked`
-- `ConfirmationIssued`
-- `ConfirmationConsumed`
-- `ScheduleFireRegistered`
-- `ScheduleFireTaskCreatePending`
-- `ScheduleFireTaskAttached`
-- `ScheduleFireAbandoned`
-- `ArbitrationRequested`
-- `ArbitrationResolved`
-- `DeadLetterRaised`
-- `DeadLetterResolved`
+type AgentDispatch struct {
+    DispatchID        string
+    OwnerKind         string
+    OwnerID           string
+    ParentExecutionID string
+    InitiatorRole     Role
+    AgentLabel        string
+    RequestedRole     Role
+    Goal              string
+    ContextPackID     string
+    InputRefs         []string
+    ExpectedOutputs   []string
+    AllowedTools      []string
+    AllowedMCP        []string
+    SandboxTemplate   string
+    BudgetCapRef      string
+    DeadlineAt        time.Time
+    WriteScopeRef     string
+    ReturnToRef       string
+    IdempotencyKey    string
+    RunnerKind        string
+    Attempt           uint32
+    RemoteExecutionRef string
+    CheckpointRef     string
+    ResumeToken       string
+    LeaseOwner        string
+    LeaseExpiresAt    time.Time
+    LastHeartbeatAt   time.Time
+    FailureCode       string
+    FailureMessage    string
+    Status            DispatchStatus
+    CreatedAt         time.Time
+    CompletedAt       time.Time
+}
+```
 
-推荐事件信封：
+关键约束：
+
+- request 内 helper 默认只读
+- 子 agent 默认不能直接推进 task 顶层状态
+- `allowed_tools`、`allowed_mcp`、`write_scope` 不能超过父 execution 的上界
+
+### 4.9 `ApprovalRequest`
+
+```go
+type ApprovalRequest struct {
+    ApprovalRequestID  string
+    TaskID             string
+    BindingID          string
+    StepExecutionID    string
+    GateType           GateType
+    Status             GateStatus
+    TargetVersionRef   string
+    RequiredSlots      []string
+    DeadlineAt         time.Time
+    AggregationPolicy  string
+    OpenedByEventID    string
+    ResolvedByEventID  string
+}
+```
+
+`ApprovalRequest` 只承载需要人类回流的 gate：
+
+- `approval`
+- `confirmation`
+- `budget`
+
+`evaluation` gate 默认不实例化 `ApprovalRequest`；它由 `evaluation_result` 和 runtime 自动判定是否继续、回退或结束。只有 manifest 明确要求“评测后转人工决策”时，才额外打开 `approval` / `budget` gate。
+
+### 4.10 `HumanWaitRecord`
+
+`HumanWaitRecord` 只承载非 gate 型的人类等待：
+
+- `WaitingInput`
+- `WaitingRecovery`
+
+```go
+type HumanWaitRecord struct {
+    HumanWaitID       string
+    TaskID            string
+    BindingID         string
+    StepExecutionID   string
+    WaitingReason     WaitingReason
+    InputSchemaID     string
+    ResumeOptions     []string
+    PromptRef         string
+    Status            string
+    OpenedByEventID   string
+    ResolvedByEventID string
+    DeadlineAt        time.Time
+}
+```
+
+`WaitingBudget` 和 `WaitingConfirmation` 继续由 `ApprovalRequest` 承载，不复用 `HumanWaitRecord`。
+
+### 4.11 `OutboxRecord`
+
+```go
+type OutboxRecord struct {
+    ActionID          string
+    TaskID            string
+    BindingID         string
+    ExecutionID       string
+    MCPDomain         string
+    ActionType        string
+    ExternalTargetRef string
+    IdempotencyKey    string
+    PayloadRef        string
+    Status            OutboxStatus
+    RemoteRequestID   string
+    LastExternalRef   string
+    LastReceiptStatus string
+    ReceiptWindowUntil time.Time
+    AttemptCount      uint32
+    NextAttemptAt     time.Time
+    LastErrorCode     string
+    LastErrorMessage  string
+    CreatedAt         time.Time
+    UpdatedAt         time.Time
+}
+```
+
+幂等键基线：
+
+```text
+<task_id>:<causation_id>:<action_type>
+```
+
+对于 schedule fire 派生动作：
+
+```text
+<scheduled_task_id>:<fire_id>:<action_type>
+```
+
+### 4.12 `ToolCallRecord`
+
+```go
+type ToolCallRecord struct {
+    CallID          string
+    OwnerKind       string
+    OwnerID         string
+    ExecutionID     string
+    DispatchID      string
+    ToolOrMCP       string
+    RequestRef      string
+    ResponseRef     string
+    Status          string
+    StartedAt       time.Time
+    FinishedAt      time.Time
+}
+```
+
+### 4.13 `ReplyRecord`
+
+```go
+type ReplyRecord struct {
+    ReplyID          string
+    OwnerKind        string
+    OwnerID          string
+    ReplyChannel     string
+    ReplyToEventID   string
+    PayloadRef       string
+    Final            bool
+    DeliveryStatus   string
+    DeliveredAt      time.Time
+}
+```
+
+### 4.14 `TerminalResult`
+
+```go
+type TerminalResult struct {
+    ResultID        string
+    OwnerKind       string
+    OwnerID         string
+    FinalStatus     string
+    SummaryRef      string
+    FinalReplyID    string
+    PrimaryRef      string
+    ClosedAt        time.Time
+}
+```
+
+### 4.15 `UsageLedgerEntry`
+
+```go
+type UsageLedgerEntry struct {
+    EntryID         string
+    TaskID          string
+    ExecutionID     string
+    Domain          string
+    Kind            string
+    TokenUsed       int64
+    CostMicros      int64
+    ResourceUnits   int64
+    BudgetRemaining int64
+    RecordedAt      time.Time
+}
+```
+
+## 5. 事件封套
+
+所有事件写入日志前必须进入统一封套：
 
 ```go
 type EventEnvelope struct {
-    EventID         string
-    EventType       string
-    TaskID          string
-    TaskVersion     uint64
-    GlobalHLC       string
-    ParentEventID   string
-    CausationID     string
-    OriginActor     string
-    OccurredAt      time.Time
-    Payload         json.RawMessage
+    EventID        string
+    AggregateKind  string
+    AggregateID    string
+    EventType      string
+    Sequence       uint64
+    GlobalHLC      string
+    ParentEventID  string
+    CausationID    string
+    CorrelationID  string
+    TraceID        string
+    ProducedAt     time.Time
+    Producer       string
+    PayloadSchemaID string
+    PayloadVersion string
+    Payload        json.RawMessage
 }
 ```
 
-## 7. 状态转移规则
+规则：
 
-实现中必须维护显式状态转移表，而不是在 handler 里散落判断。
-`Task` 生命周期从 `task_created` 开始；`received` 与 `classified` 只能出现在 `IngressTrace`。
+- 一个命令可以产生一个事件批次
+- 批次内 `GlobalHLC` 单调递增
+- 同一 aggregate 的 `Sequence` 必须连续
+- `EventType -> PayloadSchemaID + PayloadVersion` 的映射必须由静态注册表冻结
+- reducer、snapshot、dead letter、admin replay 只按 schema 版本解码，不允许“按当前代码猜 payload”
 
-| 当前状态 | 允许转移 |
-| --- | --- |
-| `task_created` | `sync_running`, `waiting_human`, `issue_sync_pending`, `issue_created`, `failed`, `cancelled` |
-| `sync_running` | `closed`, `failed`, `cancelled` |
-| `issue_sync_pending` | `issue_created`, `waiting_human`, `failed`, `cancelled` |
-| `issue_created` | `planning`, `failed`, `cancelled` |
-| `planning` | `plan_audit`, `failed`, `cancelled` |
-| `plan_audit` | `planning`, `coding`, `pending_arbitration`, `cancelled` |
-| `coding` | `evaluation`, `code_audit`, `failed`, `cancelled` |
-| `evaluation` | `coding`, `code_audit`, `budget_exceeded`, `waiting_human`, `failed`, `cancelled` |
-| `budget_exceeded` | `waiting_human`, `cancelled` |
-| `code_audit` | `coding`, `pending_arbitration`, `merge_approval_pending`, `merging`, `closed`, `cancelled` |
-| `merge_approval_pending` | `merging`, `coding`, `cancelled` |
-| `merging` | `merged`, `waiting_human`, `failed`, `cancelled` |
-| `merged` | `closed` |
-| `waiting_human` | `sync_running`, `issue_sync_pending`, `planning`, `coding`, `evaluation`, `merge_approval_pending`, `cancelled` |
-| `pending_arbitration` | `planning`, `coding`, `code_audit`, `cancelled` |
+### 5.1 payload ABI 注册表
 
-## 8. 不变式
+v1 必须在 `api/events/v1alpha1/` 下维护 JSON Schema，并在代码中保留同名 Go struct。
 
-实现必须至少校验以下不变式：
+最低事件注册表如下：
 
-1. 同一 `task_id` 任意时刻只允许一个活动编码轮次。
-2. 同一 `task_id` 任意时刻只允许一个活动 PR。
-3. `plan_audit` 中的 verdict 必须绑定当前 `plan_version`。
-4. `code_audit` 中的 verdict 必须绑定当前 `pr_head_sha`。
-5. 旧版本 verdict 只能落审计，不允许推进主状态。
-6. `waiting_human` 必须带 `waiting_reason`。
-7. `budget_exceeded` 触发后，不得再创建新的 `coding` / `evaluation` 任务。
-8. 外部副作用必须先生成 `OutboxActionCreated`，后执行。
-9. `outbox` 队列和外部事件 dedupe 索引必须能仅由事件日志重放重建，不能额外要求第二耐久化提交边界。
-10. 同一 `schedule_id + scheduled_for` 只能注册一个 `ScheduleFire`。
-11. 进入 `waiting_human`、`pending_arbitration`、`failed`、`cancelled`、`budget_exceeded` 等挂起或终态前，必须先撤销活动 `CancellationToken`。
-12. `received`、`classified` 不得作为 `TaskStatus` 或 reducer 分支条件出现。
+| `EventType` | `AggregateKind` | `PayloadSchemaID` | 用途 |
+| --- | --- | --- | --- |
+| `ExternalEventIngested` | `request` | `event.external_event_ingested` | 记录标准化后的入口事件 |
+| `EphemeralRequestOpened` | `request` | `event.request_opened` | 打开 request |
+| `PromotionAssessed` | `request` | `event.promotion_assessed` | 固化 `PromotionDecision` |
+| `RequestPromoted` | `request` | `event.request_promoted` | request 原子转入 durable path |
+| `RequestAnswered` | `request` | `event.request_answered` | 直答完成 |
+| `ContextPackRecorded` | `request`, `task` | `event.context_pack_recorded` | 记录上下文裁剪结果 |
+| `AgentDispatchRecorded` | `request`, `task` | `event.agent_dispatch_recorded` | 创建 agent dispatch |
+| `AgentDispatchCheckpointed` | `request`, `task` | `event.agent_dispatch_checkpointed` | 更新 dispatch checkpoint / heartbeat |
+| `AgentDispatchCompleted` | `request`, `task` | `event.agent_dispatch_completed` | dispatch 收口 |
+| `ToolCallRecorded` | `request`, `task` | `event.tool_call_recorded` | 工具或只读 MCP 调用记录 |
+| `TaskPromotedAndBound` | `task` | `event.task_promoted_and_bound` | 原子创建 task + binding |
+| `TaskWaitingHumanMarked` | `task` | `event.task_waiting_human_marked` | task 进入 `WaitingHuman` |
+| `TaskResumed` | `task` | `event.task_resumed` | 人类回流后恢复 task |
+| `WorkflowBindingSuperseded` | `task` | `event.binding_superseded` | 追加式 rebind |
+| `StepExecutionStarted` | `task` | `event.step_execution_started` | step attempt 开始 |
+| `StepExecutionCheckpointed` | `task` | `event.step_execution_checkpointed` | 持久 checkpoint / heartbeat |
+| `StepExecutionCompleted` | `task` | `event.step_execution_completed` | step 成功完成 |
+| `StepExecutionFailed` | `task` | `event.step_execution_failed` | step 失败 |
+| `StepExecutionCancelled` | `task` | `event.step_execution_cancelled` | step 显式取消 |
+| `StepExecutionRewound` | `task` | `event.step_execution_rewound` | runtime 按规则回退 step |
+| `ApprovalRequestOpened` | `task` | `event.approval_request_opened` | 打开人工 gate |
+| `ApprovalRequestResolved` | `task` | `event.approval_request_resolved` | 人工 gate 关闭 |
+| `HumanWaitRecorded` | `task` | `event.human_wait_recorded` | 打开 `WaitingInput/WaitingRecovery` 等待锚点 |
+| `HumanWaitResolved` | `task` | `event.human_wait_resolved` | 关闭等待锚点 |
+| `OutboxQueued` | `task` | `event.outbox_queued` | 排队外部副作用 |
+| `OutboxReceiptRecorded` | `task` | `event.outbox_receipt_recorded` | 记录 MCP 提交/查询/回执结果 |
+| `ReplyRecorded` | `request`, `task` | `event.reply_recorded` | 结构化回复 |
+| `TerminalResultRecorded` | `request`, `task` | `event.terminal_result_recorded` | 终态摘要 |
+| `UsageLedgerRecorded` | `task` | `event.usage_ledger_recorded` | 记录预算/成本 |
+| `ScheduledTaskRegistered` | `task` | `event.scheduled_task_registered` | 注册或更新 schedule |
+| `ScheduleTriggered` | `task` | `event.schedule_triggered` | 固化 fire 实例 |
 
-## 9. reducer 实现要求
+除了显式标注可空的字段，payload schema 默认不允许新增必填字段时不升版本。
 
-每个事件必须由纯 reducer 更新内存态和投影态：
+### 5.2 最小 payload struct
+
+建议最低 Go payload 基线如下：
 
 ```go
-type Reducer interface {
-    Apply(task *Task, event EventEnvelope) error
+type ExternalEventIngestedPayload struct {
+    Event ExternalEvent `json:"event"`
+}
+
+type EphemeralRequestOpenedPayload struct {
+    RequestID         string    `json:"request_id"`
+    OpenedByEventID   string    `json:"opened_by_event_id"`
+    RouteSnapshotRef  string    `json:"route_snapshot_ref"`
+    ActivatedRouteKeys []string `json:"activated_route_keys"`
+    ExpiresAt         time.Time `json:"expires_at"`
+}
+
+type PromotionAssessedPayload struct {
+    RequestID          string    `json:"request_id"`
+    DecisionID         string    `json:"decision_id"`
+    Result             string    `json:"result"`
+    SelectedWorkflowID string    `json:"selected_workflow_id"`
+    ReasonCodes        []string  `json:"reason_codes"`
+    Confidence         float64   `json:"confidence"`
+}
+
+type RequestPromotedPayload struct {
+    RequestID         string    `json:"request_id"`
+    TaskID            string    `json:"task_id"`
+    RouteSnapshotRef  string    `json:"route_snapshot_ref"`
+    RevokedRouteKeys  []string  `json:"revoked_route_keys"`
+    PromotedAt        time.Time `json:"promoted_at"`
+}
+
+type RequestAnsweredPayload struct {
+    RequestID         string    `json:"request_id"`
+    FinalReplyID      string    `json:"final_reply_id"`
+    RevokedRouteKeys  []string  `json:"revoked_route_keys"`
+    AnsweredAt        time.Time `json:"answered_at"`
+}
+
+type ContextPackRecordedPayload struct {
+    ContextPackID     string            `json:"context_pack_id"`
+    OwnerKind         string            `json:"owner_kind"`
+    OwnerID           string            `json:"owner_id"`
+    SummaryRef        string            `json:"summary_ref"`
+    ArtifactIDs       []string          `json:"artifact_ids"`
+    ExternalRefs      map[string]string `json:"external_refs"`
+    ContextDigest     string            `json:"context_digest"`
+    CreatedAt         time.Time         `json:"created_at"`
+}
+
+type AgentDispatchRecordedPayload struct {
+    DispatchID        string    `json:"dispatch_id"`
+    OwnerKind         string    `json:"owner_kind"`
+    OwnerID           string    `json:"owner_id"`
+    ParentExecutionID string    `json:"parent_execution_id"`
+    RequestedRole     string    `json:"requested_role"`
+    Goal              string    `json:"goal"`
+    ContextPackID     string    `json:"context_pack_id"`
+    AllowedTools      []string  `json:"allowed_tools"`
+    AllowedMCP        []string  `json:"allowed_mcp"`
+    WriteScopeRef     string    `json:"write_scope_ref"`
+    ReturnToRef       string    `json:"return_to_ref"`
+    DeadlineAt        time.Time `json:"deadline_at"`
+}
+
+type AgentDispatchCheckpointedPayload struct {
+    DispatchID        string    `json:"dispatch_id"`
+    Attempt           uint32    `json:"attempt"`
+    Status            string    `json:"status"`
+    RemoteExecutionRef string   `json:"remote_execution_ref"`
+    CheckpointRef     string    `json:"checkpoint_ref"`
+    ResumeToken       string    `json:"resume_token"`
+    LastHeartbeatAt   time.Time `json:"last_heartbeat_at"`
+}
+
+type AgentDispatchCompletedPayload struct {
+    DispatchID        string    `json:"dispatch_id"`
+    Status            string    `json:"status"`
+    OutputArtifactRefs []string `json:"output_artifact_refs"`
+    FailureCode       string    `json:"failure_code"`
+    FailureMessage    string    `json:"failure_message"`
+    CompletedAt       time.Time `json:"completed_at"`
+}
+
+type ToolCallRecordedPayload struct {
+    CallID           string    `json:"call_id"`
+    OwnerKind        string    `json:"owner_kind"`
+    OwnerID          string    `json:"owner_id"`
+    ExecutionID      string    `json:"execution_id"`
+    DispatchID       string    `json:"dispatch_id"`
+    ToolOrMCP        string    `json:"tool_or_mcp"`
+    RequestRef       string    `json:"request_ref"`
+    ResponseRef      string    `json:"response_ref"`
+    Status           string    `json:"status"`
+    StartedAt        time.Time `json:"started_at"`
+    FinishedAt       time.Time `json:"finished_at"`
+}
+
+type TaskPromotedAndBoundPayload struct {
+    RequestID          string    `json:"request_id"`
+    TaskID             string    `json:"task_id"`
+    BindingID          string    `json:"binding_id"`
+    WorkflowID         string    `json:"workflow_id"`
+    WorkflowSource     string    `json:"workflow_source"`
+    WorkflowRev        string    `json:"workflow_rev"`
+    ManifestDigest     string    `json:"manifest_digest"`
+    EntryStepID        string    `json:"entry_step_id"`
+    ReplyToEventID     string    `json:"reply_to_event_id"`
+    RepoRef            string    `json:"repo_ref"`
+    IssueRef           string    `json:"issue_ref"`
+    PRRef              string    `json:"pr_ref"`
+    ScheduledTaskID    string    `json:"scheduled_task_id"`
+    ControlObjectRef   string    `json:"control_object_ref"`
+    WorkflowObjectRef  string    `json:"workflow_object_ref"`
+    ActivatedRouteKeys []string  `json:"activated_route_keys"`
+    RouteSnapshotRef   string    `json:"route_snapshot_ref"`
+    PromotedAt         time.Time `json:"promoted_at"`
+}
+
+type TaskWaitingHumanMarkedPayload struct {
+    TaskID           string    `json:"task_id"`
+    WaitingReason    string    `json:"waiting_reason"`
+    StepExecutionID  string    `json:"step_execution_id"`
+    WaitRef          string    `json:"wait_ref"`
+    EnteredAt        time.Time `json:"entered_at"`
+}
+
+type TaskResumedPayload struct {
+    TaskID           string    `json:"task_id"`
+    WaitingReason    string    `json:"waiting_reason"`
+    StepExecutionID  string    `json:"step_execution_id"`
+    ResumeDecision   string    `json:"resume_decision"`
+    ResumePointRef   string    `json:"resume_point_ref"`
+    ResumedAt        time.Time `json:"resumed_at"`
+}
+
+type StepExecutionStartedPayload struct {
+    ExecutionID        string    `json:"execution_id"`
+    TaskID             string    `json:"task_id"`
+    BindingID          string    `json:"binding_id"`
+    StepID             string    `json:"step_id"`
+    Attempt            uint32    `json:"attempt"`
+    ParentDispatchID   string    `json:"parent_dispatch_id"`
+    InputArtifactIDs   []string  `json:"input_artifact_ids"`
+    LeaseOwner         string    `json:"lease_owner"`
+    LeaseExpiresAt     time.Time `json:"lease_expires_at"`
+    RemoteExecutionRef string    `json:"remote_execution_ref"`
+}
+
+type StepExecutionCheckpointedPayload struct {
+    ExecutionID        string    `json:"execution_id"`
+    Attempt            uint32    `json:"attempt"`
+    CheckpointRef      string    `json:"checkpoint_ref"`
+    ResumeToken        string    `json:"resume_token"`
+    RemoteExecutionRef string    `json:"remote_execution_ref"`
+    LastHeartbeatAt    time.Time `json:"last_heartbeat_at"`
+}
+
+type StepExecutionCompletedPayload struct {
+    ExecutionID        string    `json:"execution_id"`
+    Attempt            uint32    `json:"attempt"`
+    OutputArtifactRefs []string  `json:"output_artifact_refs"`
+    SummaryRef         string    `json:"summary_ref"`
+    CompletedAt        time.Time `json:"completed_at"`
+}
+
+type StepExecutionFailedPayload struct {
+    ExecutionID    string    `json:"execution_id"`
+    Attempt        uint32    `json:"attempt"`
+    FailureCode    string    `json:"failure_code"`
+    FailureMessage string    `json:"failure_message"`
+    Retryable      bool      `json:"retryable"`
+    FailedAt       time.Time `json:"failed_at"`
+}
+
+type StepExecutionCancelledPayload struct {
+    ExecutionID        string    `json:"execution_id"`
+    Attempt            uint32    `json:"attempt"`
+    ReasonCode         string    `json:"reason_code"`
+    RemoteExecutionRef string    `json:"remote_execution_ref"`
+    CancelledAt        time.Time `json:"cancelled_at"`
+}
+
+type StepExecutionRewoundPayload struct {
+    TaskID            string    `json:"task_id"`
+    FromExecutionID   string    `json:"from_execution_id"`
+    ToStepID          string    `json:"to_step_id"`
+    DecisionRef       string    `json:"decision_ref"`
+    RewoundAt         time.Time `json:"rewound_at"`
+}
+
+type ApprovalRequestOpenedPayload struct {
+    ApprovalRequestID string    `json:"approval_request_id"`
+    TaskID            string    `json:"task_id"`
+    StepExecutionID   string    `json:"step_execution_id"`
+    GateType          string    `json:"gate_type"`
+    TargetVersionRef  string    `json:"target_version_ref"`
+    RequiredSlots     []string  `json:"required_slots"`
+    DeadlineAt        time.Time `json:"deadline_at"`
+}
+
+type ApprovalRequestResolvedPayload struct {
+    ApprovalRequestID string    `json:"approval_request_id"`
+    Resolution        string    `json:"resolution"`
+    ResolvedByActor   string    `json:"resolved_by_actor"`
+    ResolutionRef     string    `json:"resolution_ref"`
+    ResolvedAt        time.Time `json:"resolved_at"`
+}
+
+type HumanWaitRecordedPayload struct {
+    HumanWaitID      string    `json:"human_wait_id"`
+    TaskID           string    `json:"task_id"`
+    StepExecutionID  string    `json:"step_execution_id"`
+    WaitingReason    string    `json:"waiting_reason"`
+    InputSchemaID    string    `json:"input_schema_id"`
+    ResumeOptions    []string  `json:"resume_options"`
+    PromptRef        string    `json:"prompt_ref"`
+    DeadlineAt       time.Time `json:"deadline_at"`
+}
+
+type HumanWaitResolvedPayload struct {
+    HumanWaitID      string    `json:"human_wait_id"`
+    WaitingReason    string    `json:"waiting_reason"`
+    Resolution       string    `json:"resolution"`
+    ResolvedByActor  string    `json:"resolved_by_actor"`
+    ResolutionRef    string    `json:"resolution_ref"`
+    ResolvedAt       time.Time `json:"resolved_at"`
+}
+
+type OutboxQueuedPayload struct {
+    ActionID       string    `json:"action_id"`
+    Domain         string    `json:"domain"`
+    ActionType     string    `json:"action_type"`
+    TargetRef      string    `json:"target_ref"`
+    IdempotencyKey string    `json:"idempotency_key"`
+    PayloadRef     string    `json:"payload_ref"`
+    DeadlineAt     time.Time `json:"deadline_at"`
+}
+
+type OutboxReceiptRecordedPayload struct {
+    ActionID        string    `json:"action_id"`
+    ReceiptSource   string    `json:"receipt_source"`
+    ReceiptKind     string    `json:"receipt_kind"`
+    ReceiptStatus   string    `json:"receipt_status"`
+    RemoteRequestID string    `json:"remote_request_id"`
+    ExternalRef     string    `json:"external_ref"`
+    ErrorCode       string    `json:"error_code"`
+    ErrorMessage    string    `json:"error_message"`
+    RecordedAt      time.Time `json:"recorded_at"`
+}
+
+type ReplyRecordedPayload struct {
+    ReplyID         string    `json:"reply_id"`
+    OwnerKind       string    `json:"owner_kind"`
+    OwnerID         string    `json:"owner_id"`
+    ReplyChannel    string    `json:"reply_channel"`
+    ReplyToEventID  string    `json:"reply_to_event_id"`
+    PayloadRef      string    `json:"payload_ref"`
+    Final           bool      `json:"final"`
+    DeliveredAt     time.Time `json:"delivered_at"`
+}
+
+type TerminalResultRecordedPayload struct {
+    ResultID          string    `json:"result_id"`
+    OwnerKind         string    `json:"owner_kind"`
+    OwnerID           string    `json:"owner_id"`
+    FinalStatus       string    `json:"final_status"`
+    FinalReplyID      string    `json:"final_reply_id"`
+    RevokedRouteKeys  []string  `json:"revoked_route_keys"`
+    ClosedAt          time.Time `json:"closed_at"`
+}
+
+type UsageLedgerRecordedPayload struct {
+    EntryID          string    `json:"entry_id"`
+    TaskID           string    `json:"task_id"`
+    ExecutionID      string    `json:"execution_id"`
+    Domain           string    `json:"domain"`
+    Kind             string    `json:"kind"`
+    TokenUsed        int64     `json:"token_used"`
+    CostMicros       int64     `json:"cost_micros"`
+    ResourceUnits    int64     `json:"resource_units"`
+    BudgetRemaining  int64     `json:"budget_remaining"`
+    RecordedAt       time.Time `json:"recorded_at"`
+}
+
+type ScheduledTaskRegisteredPayload struct {
+    ScheduledTaskID    string    `json:"scheduled_task_id"`
+    ScheduleRevision   string    `json:"schedule_revision"`
+    TargetWorkflowID   string    `json:"target_workflow_id"`
+    TargetWorkflowRev  string    `json:"target_workflow_rev"`
+    Enabled            bool      `json:"enabled"`
+    NextFireAt         time.Time `json:"next_fire_at"`
+    RegisteredAt       time.Time `json:"registered_at"`
 }
 ```
 
-禁止行为：
+实现要求：
 
-- reducer 内做网络调用
-- reducer 内生成新 ID
-- reducer 内读取外部当前时间
+- payload struct 名称与 schema 文件名保持一一对应
+- 新增字段必须先改 schema，再改 reducer
+- `ScheduleTriggeredPayload` 继续以 [07-external-effects-control-plane-and-scheduler.md](/Users/alice/Developer/alice/docs/tdr/07-external-effects-control-plane-and-scheduler.md) 为准
 
-这些值应在命令处理阶段准备好，再作为事件 payload 落盘。
+## 6. 命令基线
 
-## 10. 最小测试矩阵
+第一版至少需要这些命令族：
 
-`internal/domain` 至少要有以下测试：
+- `IngestExternalEvent`
+- `OpenEphemeralRequest`
+- `AppendRequestEvent`
+- `AssessPromotion`
+- `CreateContextPack`
+- `RecordAgentDispatch`
+- `CheckpointAgentDispatch`
+- `CompleteAgentDispatch`
+- `RecordToolCall`
+- `PromoteAndBindWorkflow`
+- `MarkTaskWaitingHuman`
+- `ResumeTask`
+- `StartStepExecution`
+- `CompleteStepExecution`
+- `FailStepExecution`
+- `CancelStepExecution`
+- `RewindStepExecution`
+- `SupersedeBinding`
+- `CreateApprovalRequest`
+- `ResolveApprovalRequest`
+- `CreateHumanWaitRecord`
+- `ResolveHumanWaitRecord`
+- `QueueOutboxRecord`
+- `RecordOutboxResult`
+- `UpdateUsageLedger`
+- `RecordReply`
+- `CloseRequest`
+- `CloseTask`
+- `RegisterScheduledTask`
+- `RecordScheduleFire`
 
-- 状态转移表测试
-- 旧 `plan_version` verdict 被拒绝测试
-- 旧 `pr_head_sha` verdict 被拒绝测试
-- `waiting_human` 缺少 `waiting_reason` 校验测试
-- `budget_exceeded` 后禁止新评测测试
-- 事件 reducer 幂等重放测试
+命令名按“意图”命名，不按旧平台级业务阶段命名。
+
+## 7. 顶层不变式
+
+1. 任何输入在进入业务逻辑前都必须先变成 `ExternalEvent`。
+2. 任何直接回答都必须关联某个 `EphemeralRequest`。
+3. 任何 `DurableTask` 都必须拥有且仅有一个 active `WorkflowBinding`。
+4. task 从创建起就必须拥有 active binding，不允许存在“已 promote 但未绑定”的中间态。
+5. 单条 `WorkflowBinding` 记录不可原地改写。
+6. 任何外部副作用都必须先有 `OutboxRecord`。
+7. 任何人类 gate 回流都必须先写成新的 `ExternalEvent`。
+8. `reply_to_event_id` 命中普通 task，但显式控制面对象键指向另一个治理域时，不能继续吞进原 task。
+9. `Answered` / `Expired` 的 request 与终态 task 默认不复用。
+10. `WaitingInput` / `WaitingRecovery` 状态下，必须存在且仅存在一个 active `HumanWaitRecord`。
+11. `WaitingBudget` / `WaitingConfirmation` 状态下，必须存在且仅存在一个 active `ApprovalRequest`。
+
+## 8. 面向 API 的最小只读视图
+
+为了降低 API 读取复杂度，建议从领域模型直接派生以下只读视图：
+
+- `DirectAnswerView`
+- `WorkflowTaskView`
+- `HumanActionQueueView`
+- `OpsOverviewView`
+
+这些视图来自事件重放与 bbolt 物化层，不是新的持久化真源。

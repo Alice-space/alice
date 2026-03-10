@@ -2,7 +2,15 @@
 
 ## 1. 目标
 
-本文定义 `cmd/alice` 与 `internal/app` 的实现边界，确保核心运行时可启动、可恢复、可优雅停机。
+本文定义 `cmd/alice` 的装配、启动、停机和 worker 生命周期，确保系统在：
+
+- 启动恢复
+- 接收新流量
+- 派发 workflow step
+- 派发 outbox
+- 执行 scheduler / reconciler
+
+这些环节中没有“半启动”或“未恢复先接单”的窗口。
 
 建议目录：
 
@@ -10,79 +18,136 @@
 - `internal/app/app.go`
 - `internal/app/bootstrap.go`
 - `internal/app/runtime.go`
+- `internal/app/workers.go`
 
 ## 2. App 结构
 
 ```go
 type App struct {
-    Config        *config.Config
-    Logger        *zap.Logger
-    Clock         clock.Clock
-    IDGen         id.Generator
-    HTTPServer    *http.Server
-    GRPCServer    *grpc.Server
-    Bus           *bus.Bus
-    Store         *store.Store
-    Ingress       *ingress.Router
-    Workflow      *workflow.Manager
-    MCPRegistry   *mcp.Registry
-    Ops           *ops.Manager
-    Workers       []Worker
-    ShutdownGroup *shutdown.Group
+    Config          *Config
+    Logger          *slog.Logger
+    Clock           clock.Clock
+    IDGen           IDGenerator
+    HTTPServer      *http.Server
+    Store           *store.Store
+    Bus             *bus.Runtime
+    Policy          *policy.Engine
+    WorkflowRuntime *workflow.Runtime
+    AgentRegistry   *agent.Registry
+    MCPRegistry     *mcp.Registry
+    Ops             *ops.Manager
+    Workers         []Worker
 }
 ```
 
-`App` 只做装配，不持有业务逻辑。
+`App` 只负责装配，不承载领域规则。
 
-## 3. 启动顺序
+## 3. 配置模型
+
+### 3.1 配置来源
+
+v1 采用：
+
+- YAML 配置文件
+- 环境变量覆盖
+- 极少量命令行 flag 覆盖
+
+不引入动态配置中心。
+
+### 3.2 配置分组
+
+```go
+type Config struct {
+    HTTP       HTTPConfig
+    Storage    StorageConfig
+    Runtime    RuntimeConfig
+    Promotion  PromotionConfig
+    Workflow   WorkflowConfig
+    MCP        MCPConfig
+    Scheduler  SchedulerConfig
+    Ops        OpsConfig
+    Auth       AuthConfig
+}
+```
+
+关键字段：
+
+- `HTTP.ListenAddr`
+- `Storage.RootDir`
+- `Storage.SnapshotInterval`
+- `Runtime.ShardCount`
+- `Runtime.OutboxWorkers`
+- `Promotion.MinConfidence`
+- `Workflow.ManifestRoots`
+- `MCP.Domains[*].BaseURL`
+- `Scheduler.PollInterval`
+- `Ops.MetricsEnabled`
+
+## 4. 启动顺序
 
 启动必须严格分阶段：
 
-1. 读取配置并校验
-2. 初始化日志、时钟、ID 生成器
-3. 打开持久化目录与文件句柄
-4. 初始化 `store`
-5. 加载快照并回放事件
-6. 初始化 `bus`、`workflow`、`mcp`、`ops`
-7. 运行恢复对账
-8. 启动 outbox worker、audit lease checker、scheduler、reconciler
-9. 最后才对外开放 HTTP / webhook / admin API
+1. 读取配置并做 schema 校验
+2. 初始化 `slog`、clock、ULID 生成器
+3. 打开存储目录与文件句柄
+4. 初始化事件日志、快照和 bbolt 物化层
+5. 载入最新快照并重放事件日志
+6. 构建 `bus`、`policy`、`workflow runtime`、`mcp registry`
+7. 执行恢复任务：
+   - 重建 outbox pending index
+   - 重建 route index
+   - 对账 inflight outbox
+   - 重建 human action queue
+8. 注册并启动后台 workers
+9. 最后再开放 HTTP 监听
+10. 标记 `/readyz=true`
 
 原因：
 
-- 先恢复状态，再接收新事件
-- 避免系统还没 ready 就接受 webhook
+- 先恢复，再接流量
+- 避免 scheduler 或 webhook 在系统未 ready 时推进新状态
 
-## 4. 停机顺序
+## 5. 停机顺序
 
-优雅停机顺序必须与启动反向：
+优雅停机必须按反向顺序：
 
-1. 拒绝新流量
-2. 停止 scheduler 产生新任务
-3. 停止 ingress 消费
-4. 等待 in-flight command 执行完成或超时
-5. flush event log / snapshot checkpoints
-6. 停止 worker 与 notifier
-7. 关闭 MCP 连接与服务器
+1. 标记 `/readyz=false`
+2. 停止接收新 webhook / admin 写请求
+3. 停止 scheduler、step dispatcher、outbox dispatcher
+4. 等待正在执行的命令批次结束
+5. 刷新投影和必要快照
+6. 关闭 HTTP server
+7. 关闭 bbolt 与日志句柄
 
-推荐总停机窗口：`30s`。超过窗口时输出未完成任务摘要。
+停止过程不要求“杀死所有外部动作”，但必须保证：
 
-## 5. Worker 模型
+- 不再启动新的动作
+- 当前 inflight 状态可由恢复流程继续
 
-核心运行时至少包含以下后台 worker：
+## 6. Worker 模型
 
-| Worker | 周期/触发 | 职责 |
-| --- | --- | --- |
-| `outbox_dispatcher` | 常驻 | 消费待执行 `outbox` |
-| `audit_lease_checker` | 5s | 处理审核租约超时 |
-| `eval_job_reconciler` | 30s | 对账集群作业状态 |
-| `issue_sync_reconciler` | 1m | 重试 issue 镜像建立 |
-| `snapshotter` | N 条事件或 M 分钟 | 生成快照 |
-| `scheduler_runner` | 常驻 | 触发定时任务 |
-| `ops_projector` | 事件触发 | 刷新只读视图 |
-| `health_reporter` | 30s | 上报 MCP、队列、磁盘状态 |
+### 6.1 固定 worker 列表
 
-这些 worker 都应通过统一接口注册：
+v1 建议固定以下 worker：
+
+- `request-expirer`
+- `step-ready-dispatcher`
+- `outbox-dispatcher`
+- `approval-expirer`
+- `scheduler`
+- `schedule-fire-reconciler`
+- `outbox-reconciler`
+- `projection-rebuilder`
+- `notifier`
+
+其中：
+
+- route index、dedupe、pending outbox 这些 commit-critical 索引不作为后台 worker，它们必须在事件 append 后同步应用
+- `projection-rebuilder` 只负责 lagging view 或灾后重建，不承担路由正确性
+
+这些 worker 都是平台内核的一部分，不是业务 workflow step。
+
+### 6.2 Worker 接口
 
 ```go
 type Worker interface {
@@ -91,95 +156,92 @@ type Worker interface {
 }
 ```
 
-## 6. 配置模型
-
-建议配置结构：
-
-```go
-type Config struct {
-    Runtime     RuntimeConfig
-    HTTP        HTTPConfig
-    Store       StoreConfig
-    Bus         BusConfig
-    Ingress     IngressConfig
-    MCP         MCPConfig
-    Audit       AuditConfig
-    Budget      BudgetConfig
-    Notify      NotifyConfig
-    Scheduler   SchedulerConfig
-}
-```
-
-关键配置项：
-
-- `Store.EventLogDir`
-- `Store.SnapshotDir`
-- `Store.SnapshotEveryNEvents`
-- `Store.SnapshotEveryDuration`
-- `Bus.ShardCount`
-- `Bus.LowPriorityQueueLimit`
-- `Bus.HighPriorityQueueLimit`
-- `Audit.DefaultDeadline`
-- `Audit.LeaseDuration`
-- `Budget.DefaultHardLimit`
-- `MCP.Domains[*].Endpoint`
-- `MCP.Domains[*].Timeout`
-- `Notify.FeishuWebhook`
-
-## 7. Ready / Live 语义
-
-### 7.1 Liveness
-
-进程活着即可返回 200，但应包含：
-
-- goroutine 泄漏阈值
-- event log writer 心跳
-- 主循环 panic 保护状态
-
-### 7.2 Readiness
-
-只有以下条件满足才返回 ready：
-
-- 快照回放完成
-- 事件日志可写
-- `bus` shard 全部启动
-- 至少必需的 MCP 域已连接
-- 初始 reconciler 已完成一轮
-
-## 8. panic 与错误策略
-
-规则：
-
-- 单个 webhook handler panic 不得导致进程退出
-- 单个 worker panic 由 supervisor 拉起，并记录严重告警
-- event log writer panic 应触发进程 fail-fast，因为会破坏状态真源
-
-建议：
-
-- 入口 goroutine 使用 recover
-- 写路径关键 goroutine 使用 fail-fast + crash-only restart
-
-## 9. 依赖注入要求
-
-第一版不引入重量级 DI 框架，使用显式构造函数：
-
-```go
-func NewStore(cfg StoreConfig, deps StoreDeps) (*Store, error)
-func NewBus(cfg BusConfig, deps BusDeps) (*Bus, error)
-func NewWorkflow(cfg WorkflowConfig, deps WorkflowDeps) (*Manager, error)
-func NewApp(cfg *Config) (*App, error)
-```
-
 要求：
 
-- 构造函数不做后台启动
-- `Start(ctx)` 与 `Close(ctx)` 明确分离
-- 便于测试中构造半成品依赖
+- 每个 worker 都必须可独立关闭
+- 每个 worker 都必须暴露健康状态
+- 每个 worker 的 panic 都必须被捕获并转为日志 + 进程级 fail-fast 策略判定
 
-## 10. 最小测试矩阵
+## 7. 运行时并发模型
 
-- 冷启动恢复测试
-- snapshot + replay 一致性测试
-- readiness 在恢复前拒绝流量测试
-- shutdown 时 in-flight 命令 drain 测试
-- 必需 MCP 不可用时启动失败测试
+### 7.1 命令执行
+
+- 入口适配层只提交命令，不直接改状态
+- `bus` 按 aggregate key 做分片串行执行
+- 同一 aggregate 的命令绝不并发写
+
+### 7.2 MCP 调用
+
+- MCP 调用在 `outbox-dispatcher` 内并发执行
+- 并发度按 MCP 域单独限制
+- 断路器和限流器都挂在 MCP 域边界
+
+### 7.3 Step 执行
+
+- `step-ready-dispatcher` 只做“把 ready step 交给合适执行器”
+- 真正的 step 运行要带 lease
+- 同一 task 同一时刻只允许一个 active step execution
+
+## 8. 健康检查与管理接口
+
+### 8.1 基础接口
+
+- `GET /healthz`
+- `GET /readyz`
+- `GET /metrics`
+
+### 8.2 Admin 只写接口
+
+建议保留以下内部管理接口：
+
+- `POST /v1/admin/replay/from/{hlc}`
+- `POST /v1/admin/reconcile/outbox`
+- `POST /v1/admin/reconcile/schedules`
+- `POST /v1/admin/rebuild/indexes`
+- `POST /v1/admin/tasks/{task_id}/cancel`
+
+这些接口都必须：
+
+- 经过单独鉴权
+- 留 `ExternalEvent` 或 admin audit 日志
+- 不能绕过事件日志直接写 durable 状态
+
+## 9. panic 与 fail-fast 策略
+
+默认原则：
+
+- 核心状态推进路径 panic：记录 fatal 日志并退出进程
+- 单个 MCP 调用 panic：隔离在 worker 内，写错误并按 outbox 失败处理
+- 单个 notifier panic：只影响通知 worker，不影响主状态
+
+这里不追求“永不退出”，而追求“退出后可以靠恢复流程重建”。
+
+## 10. 运行目录布局
+
+```text
+data/
+  eventlog/
+  snapshots/
+  indexes/
+  deadletters/
+  blobs/
+```
+
+建议说明：
+
+- `eventlog/`：JSONL 段文件
+- `snapshots/`：快照文件
+- `indexes/`：bbolt 物化索引
+- `deadletters/`：无法继续处理的事件引用
+- `blobs/`：大 payload、artifact、原始 webhook 体
+
+## 11. 测试建议
+
+启动装配至少覆盖：
+
+- 空目录冷启动
+- 快照 + 日志恢复启动
+- `readyz` 在恢复完成前为 false
+- outbox inflight 恢复
+- scheduler 在 fake clock 下的启动/停机测试
+- worker panic 不会 silently swallow

@@ -206,12 +206,13 @@ ExternalEvent
 
 当 `PromotionDecision` 命中硬规则时，入口阶段应做以下动作：
 
-1. 在 BUS 中把当前 `EphemeralRequest` promote 成 `DurableTask`
-2. 写入本次 `PromotionDecision`
-3. 由 `Reception`/模型给出 workflow 建议或候选集合
-4. BUS 依据路由键优先级、主成功条件和 manifest 约束裁决是否存在唯一可接受 workflow
-5. 只有在存在唯一可接受 workflow 时，BUS 才写入 `WorkflowBinding`
-6. 把 route keys、外部对象引用、上下文摘要和必要的 artifact 交给 durable workflow
+1. 写入本次 `PromotionDecision`
+2. 由 `Reception`/模型给出 workflow 建议或候选集合
+3. BUS 依据路由键优先级、主成功条件和 manifest 约束裁决是否存在唯一可接受 workflow
+4. 只有在存在唯一可接受 workflow 时，BUS 才执行单个原子动作：把 request 标成 `Promoted`，并同时创建 `DurableTask`、active `WorkflowBinding` 和必要的首个 `StepExecution`
+5. 把 route keys、外部对象引用、上下文摘要和必要的 artifact 交给 durable workflow
+
+第一版不允许出现“request 已 promote，但 task 还没绑定 workflow”的 durable 中间态。
 
 ### 6.3 补充信息与等待人类
 

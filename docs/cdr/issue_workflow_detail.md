@@ -122,7 +122,8 @@ durable workflow 内部的外部动作一律遵循：
 | `Artifact` | workflow 内部 step 的结构化产物 |
 | `AgentDispatch` | 一次子 agent 调度 |
 | `ContextPack` | 调度时传递的上下文快照 |
-| `ApprovalRequest` | approval / confirmation / budget / evaluation 等 gate |
+| `ApprovalRequest` | approval / confirmation / budget gate |
+| `HumanWaitRecord` | `WaitingInput` / `WaitingRecovery` 的持久等待锚点 |
 | `OutboxRecord` | 外部副作用动作 |
 | `UsageLedger` | 预算、token 和资源账本 |
 
@@ -288,9 +289,9 @@ durable workflow 内部的外部动作一律遵循：
 | 场景 | 必填关联键 | 最小字段 | 生效前置条件 | 不满足时处理 |
 | --- | --- | --- | --- | --- |
 | `approval` / `confirmation` | `approval_request_id`、`task_id`、`step_execution_id` | `decision`、操作者、时间戳、可选备注 | gate 仍处于活跃状态，task 未终态，目标 step 未 superseded | 只记审计，不恢复执行 |
-| `budget` 恢复 | `task_id`、`step_execution_id`、`waiting_reason=WaitingBudget` | `decision`、预算变更或继续/终止指令、操作者 | task 仍在 `WaitingHuman`，预算 gate 未过期 | 只记审计，不恢复执行 |
-| 补充输入 | `task_id` 或 `reply_to_event_id`、当前 `waiting_reason` | 字段补丁或补充文本、操作者、时间戳 | 当前等待原因仍是 `WaitingInput`，且 task 未被新事件 supersede | 只记审计，并要求重新路由 |
-| 恢复 / 回退决定 | `task_id`、`step_execution_id`、`waiting_reason=WaitingRecovery` | `decision`、恢复点或回退点、操作者 | 当前恢复点仍有效，task 未终态 | 只记审计，不改变执行状态 |
+| `budget` 恢复 | `approval_request_id`、`task_id`、`step_execution_id`、`waiting_reason=WaitingBudget` | `decision`、预算变更或继续/终止指令、操作者 | task 仍在 `WaitingHuman`，预算 gate 未过期 | 只记审计，不恢复执行 |
+| 补充输入 | `task_id` 或 `reply_to_event_id`、当前 `waiting_reason`、durable 路径下的 `human_wait_id` | 字段补丁或补充文本、操作者、时间戳 | 当前等待原因仍是 `WaitingInput`，且 task 未被新事件 supersede | 只记审计，并要求重新路由 |
+| 恢复 / 回退决定 | `human_wait_id`、`task_id`、`step_execution_id`、`waiting_reason=WaitingRecovery` | `decision`、恢复点或回退点、操作者 | 当前恢复点仍有效，task 未终态 | 只记审计，不改变执行状态 |
 
 补充约束：
 

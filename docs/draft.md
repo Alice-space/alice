@@ -363,9 +363,9 @@ request/task 生命周期事件：
 - `RequestUpdated`：已有 `EphemeralRequest` 命中新输入并更新上下文。
 - `PromotionAssessed`：`Reception`/策略层为 request 写入结构化 `PromotionDecision`。
 - `RequestAnswered`：直接查询路径产出最终回复。
-- `RequestPromoted`：`EphemeralRequest` 被提升为 `DurableTask`。
-- `TaskCreated`：新 `DurableTask` 创建。
-- `TaskWaitingHuman`：task 进入 `WaitingHuman`。
+- `RequestPromoted`：request 进入 durable path，并且只能与 task 创建/绑定同批次出现。
+- `TaskPromotedAndBound`：新 `DurableTask` 创建并同时绑定 active `WorkflowBinding`。
+- `TaskWaitingHumanMarked`：task 进入 `WaitingHuman`。
 - `TaskResumed`：人类补充/批准后恢复推进。
 - `TaskSucceeded`：task 达成停止条件。
 - `TaskFailed`：task 致命失败或恢复失败。
@@ -373,8 +373,7 @@ request/task 生命周期事件：
 
 workflow/step 事件：
 - `WorkflowSuggested`：agent 或模型提出 workflow 建议。
-- `WorkflowBound`：BUS 接受建议并写入 `WorkflowBinding`。
-- `WorkflowRebound`：在允许的重规划点显式切换 workflow revision。
+- `WorkflowBindingSuperseded`：在允许的重规划点显式切换 workflow revision。
 - `StepReady`：某个 step 满足执行前置条件。
 - `StepStarted`：`StepExecution` 开始。
 - `StepCompleted`：`StepExecution` 正常结束并回写结果。
@@ -382,15 +381,17 @@ workflow/step 事件：
 - `StepRewound`：按 workflow 回退规则回到早先 step。
 
 子 agent / 工具 / 副作用事件：
-- `AgentDispatched`：提交 `AgentDispatch` 唤醒子 agent。
+- `ContextPackRecorded`：上下文快照被裁剪并持久化。
+- `AgentDispatchRecorded`：提交 `AgentDispatch` 唤醒子 agent。
 - `AgentDispatchCompleted`：子 agent 返回结果。
 - `ArtifactRecorded`：artifact 被 BUS 接收并持久化。
 - `ToolCallRecorded`：工具或只读 MCP 调用被记录。
-- `ApprovalRequested`：创建审批或确认 gate。
-- `ApprovalResolved`：审批或确认 gate 被通过/拒绝/超时。
+- `ApprovalRequestOpened`：创建审批或确认 gate。
+- `ApprovalRequestResolved`：审批或确认 gate 被通过/拒绝/超时。
+- `HumanWaitRecorded`：打开 `WaitingInput/WaitingRecovery` 等待锚点。
+- `HumanWaitResolved`：关闭等待锚点。
 - `OutboxQueued`：副作用动作进入 `outbox`。
-- `OutboxDelivered`：副作用动作执行成功并确认写回。
-- `OutboxFailed`：副作用动作失败，等待重试或人工处理。
+- `OutboxReceiptRecorded`：副作用动作提交、确认或失败结果被写回。
 
 配置发布事件：
 - `WorkflowPublishRequested`：workflow 版本发布请求进入 BUS。
