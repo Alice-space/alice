@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "event.task_promoted_and_bound",
+  "type": "object",
+  "required": [
+    "request_id",
+    "task_id",
+    "binding_id",
+    "workflow_id",
+    "workflow_source",
+    "workflow_rev",
+    "manifest_digest",
+    "entry_step_id",
+    "promoted_at"
+  ],
+  "properties": {
+    "request_id": {
+      "type": "string"
+    },
+    "task_id": {
+      "type": "string"
+    },
+    "binding_id": {
+      "type": "string"
+    },
+    "workflow_id": {
+      "type": "string"
+    },
+    "workflow_source": {
+      "type": "string"
+    },
+    "workflow_rev": {
+      "type": "string"
+    },
+    "manifest_digest": {
+      "type": "string"
+    },
+    "entry_step_id": {
+      "type": "string"
+    },
+    "activated_route_keys": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "promoted_at": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "additionalProperties": true
+}

@@ -1,0 +1,59 @@
+workflow_id: schedule-management
+workflow_source: file://configs/workflows/schedule-management/manifest.yaml
+workflow_rev: v1
+entry:
+  required_refs: [control_object_ref]
+  allowed_mcp: [control]
+  allowed_tools: [schedule_parser, schedule_validator]
+  max_risk: high
+steps:
+  - id: parse_request
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: schedule_request
+        schema_id: artifact.schedule_request
+        required: true
+    on_success: validate_request
+  - id: validate_request
+    runner_kind: agent
+    slot: leader
+    inputs:
+      - family: schedule_request
+        schema_id: artifact.schedule_request
+        required: true
+    outputs:
+      - family: validation_report
+        schema_id: artifact.validation_report
+        required: true
+    on_success: apply_change
+    on_failure: parse_request
+  - id: apply_change
+    runner_kind: agent
+    slot: leader
+    inputs:
+      - family: validation_report
+        schema_id: artifact.validation_report
+        required: true
+    outputs:
+      - family: schedule_request
+        schema_id: artifact.schedule_request
+        required: true
+    on_success: report
+    on_failure: validate_request
+  - id: report
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: report
+        schema_id: artifact.report
+        required: true
+gates:
+  - id: schedule_confirmation
+    type: confirmation
+    attach_after: validate_request
+    required_slots: [owner]
+    timeout_seconds: 86400
+    on_approve: apply_change
+    on_reject: parse_request
+    on_expire: WaitingHuman

@@ -1,0 +1,112 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workflow.manifest.v1alpha1",
+  "type": "object",
+  "required": [
+    "workflow_id",
+    "workflow_source",
+    "workflow_rev",
+    "entry",
+    "steps"
+  ],
+  "properties": {
+    "workflow_id": {
+      "type": "string"
+    },
+    "workflow_source": {
+      "type": "string"
+    },
+    "workflow_rev": {
+      "type": "string"
+    },
+    "entry": {
+      "type": "object",
+      "properties": {
+        "requires": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "required_refs": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "forbids": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed_mcp": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "allowed_tools": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "max_risk": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": true
+    },
+    "steps": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "runner_kind",
+          "slot"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "runner_kind": {
+            "type": "string"
+          },
+          "slot": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    },
+    "gates": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "id",
+          "type"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "type": {
+            "type": "string"
+          },
+          "attach_after": {
+            "type": "string"
+          },
+          "attach_before": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      }
+    }
+  },
+  "additionalProperties": false
+}

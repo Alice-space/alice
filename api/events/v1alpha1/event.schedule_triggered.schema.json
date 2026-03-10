@@ -1,0 +1,39 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "event.schedule_triggered",
+  "type": "object",
+  "required": [
+    "fire_id",
+    "scheduled_task_id",
+    "scheduled_for_window",
+    "source_schedule_revision",
+    "target_workflow_id",
+    "target_workflow_source",
+    "target_workflow_rev"
+  ],
+  "properties": {
+    "fire_id": {
+      "type": "string"
+    },
+    "scheduled_task_id": {
+      "type": "string"
+    },
+    "scheduled_for_window": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "source_schedule_revision": {
+      "type": "string"
+    },
+    "target_workflow_id": {
+      "type": "string"
+    },
+    "target_workflow_source": {
+      "type": "string"
+    },
+    "target_workflow_rev": {
+      "type": "string"
+    }
+  },
+  "additionalProperties": false
+}

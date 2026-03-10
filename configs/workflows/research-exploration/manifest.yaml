@@ -1,0 +1,71 @@
+workflow_id: research-exploration
+workflow_source: file://configs/workflows/research-exploration/manifest.yaml
+workflow_rev: v1
+entry:
+  required_refs: [repo_ref]
+  allowed_mcp: [cluster, github, gitlab]
+  allowed_tools: [repo_read, repo_write, experiment_runner]
+  max_risk: high
+steps:
+  - id: plan
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: plan
+        schema_id: artifact.plan
+        required: true
+    on_success: code
+  - id: code
+    runner_kind: agent
+    slot: worker
+    inputs:
+      - family: plan
+        schema_id: artifact.plan
+        required: true
+    outputs:
+      - family: candidate_patch
+        schema_id: artifact.candidate_patch
+        required: true
+    on_success: evaluate
+    on_failure: plan
+  - id: evaluate
+    runner_kind: agent
+    slot: evaluator
+    inputs:
+      - family: candidate_patch
+        schema_id: artifact.candidate_patch
+        required: true
+    outputs:
+      - family: evaluation_result
+        schema_id: artifact.evaluation_result
+        required: true
+    on_success: report
+    on_failure: code
+  - id: report
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: report
+        schema_id: artifact.report
+        required: true
+gates:
+  - id: plan_approval
+    type: approval
+    attach_after: plan
+    required_slots: [owner]
+    timeout_seconds: 86400
+    on_approve: code
+    on_reject: plan
+    on_expire: WaitingHuman
+  - id: eval_gate
+    type: evaluation
+    attach_after: evaluate
+    result_family: evaluation_result
+    rules:
+      - metric: primary_score
+        op: gte
+        threshold: 0.85
+    aggregate: all
+    on_pass: report
+    on_fail: code
+    on_error: WaitingHuman

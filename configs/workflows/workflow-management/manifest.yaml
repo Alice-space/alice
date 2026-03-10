@@ -1,0 +1,84 @@
+workflow_id: workflow-management
+workflow_source: file://configs/workflows/workflow-management/manifest.yaml
+workflow_rev: v1
+entry:
+  required_refs: [workflow_object_ref]
+  allowed_mcp: [workflow-registry, github, gitlab]
+  allowed_tools: [workflow_reader, workflow_editor, schema_validator]
+  max_risk: high
+steps:
+  - id: parse_change_request
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: workflow_change_request
+        schema_id: artifact.workflow_change_request
+        required: true
+    on_success: read_current_workflow
+  - id: read_current_workflow
+    runner_kind: agent
+    slot: helper
+    inputs:
+      - family: workflow_change_request
+        schema_id: artifact.workflow_change_request
+        required: true
+    outputs:
+      - family: analysis_notes
+        schema_id: artifact.analysis_notes
+        required: true
+    on_success: produce_diff
+  - id: produce_diff
+    runner_kind: agent
+    slot: worker
+    inputs:
+      - family: analysis_notes
+        schema_id: artifact.analysis_notes
+        required: true
+    outputs:
+      - family: candidate_patch
+        schema_id: artifact.candidate_patch
+        required: true
+    on_success: validate_change
+    on_failure: parse_change_request
+  - id: validate_change
+    runner_kind: agent
+    slot: reviewer
+    inputs:
+      - family: candidate_patch
+        schema_id: artifact.candidate_patch
+        required: true
+    outputs:
+      - family: validation_report
+        schema_id: artifact.validation_report
+        required: true
+    on_success: publish
+    on_failure: produce_diff
+  - id: publish
+    runner_kind: agent
+    slot: leader
+    inputs:
+      - family: validation_report
+        schema_id: artifact.validation_report
+        required: true
+    outputs:
+      - family: workflow_change_request
+        schema_id: artifact.workflow_change_request
+        required: true
+    on_success: report
+    on_failure: validate_change
+  - id: report
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: report
+        schema_id: artifact.report
+        required: true
+gates:
+  - id: publish_approval
+    type: approval
+    attach_after: validate_change
+    required_slots: [owner]
+    timeout_seconds: 86400
+    on_approve: publish
+    on_reject: produce_diff
+    on_expire: WaitingHuman

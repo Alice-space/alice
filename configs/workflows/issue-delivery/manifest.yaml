@@ -1,0 +1,88 @@
+workflow_id: issue-delivery
+workflow_source: file://configs/workflows/issue-delivery/manifest.yaml
+workflow_rev: v1
+entry:
+  requires: [repo_ref]
+  required_refs: [repo_ref]
+  allowed_mcp: [github, gitlab, cluster]
+  allowed_tools: [repo_read, repo_write, test_runner]
+  max_risk: high
+steps:
+  - id: triage
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: task_brief
+        schema_id: artifact.task_brief
+        required: true
+    on_success: plan
+  - id: plan
+    runner_kind: agent
+    slot: leader
+    inputs:
+      - family: task_brief
+        schema_id: artifact.task_brief
+        required: true
+    outputs:
+      - family: plan
+        schema_id: artifact.plan
+        required: true
+    on_success: code
+    on_failure: triage
+  - id: code
+    runner_kind: agent
+    slot: worker
+    inputs:
+      - family: plan
+        schema_id: artifact.plan
+        required: true
+    outputs:
+      - family: candidate_patch
+        schema_id: artifact.candidate_patch
+        required: true
+      - family: test_notes
+        schema_id: artifact.test_notes
+        required: false
+    allowed_tools: [repo_read, repo_write, test_runner]
+    allowed_mcp: [github, gitlab]
+    timeout_seconds: 1800
+    max_retries: 2
+    on_success: review
+    on_failure: plan
+  - id: review
+    runner_kind: agent
+    slot: reviewer
+    inputs:
+      - family: candidate_patch
+        schema_id: artifact.candidate_patch
+        required: true
+    outputs:
+      - family: review_result
+        schema_id: artifact.review_result
+        required: true
+    on_success: report
+    on_failure: code
+  - id: report
+    runner_kind: agent
+    slot: leader
+    outputs:
+      - family: report
+        schema_id: artifact.report
+        required: true
+gates:
+  - id: plan_approval
+    type: approval
+    attach_after: plan
+    required_slots: [owner]
+    timeout_seconds: 86400
+    on_approve: code
+    on_reject: plan
+    on_expire: WaitingHuman
+  - id: merge_approval
+    type: approval
+    attach_after: review
+    required_slots: [owner]
+    timeout_seconds: 86400
+    on_approve: report
+    on_reject: code
+    on_expire: WaitingHuman
