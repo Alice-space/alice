@@ -96,6 +96,7 @@ type ExternalEvent struct {
     EventID            string
     EventType          EventType
     SourceKind         string
+    TransportKind      string
     SourceRef          string
     ActorRef           string
     RequestID          string
@@ -125,6 +126,20 @@ type ExternalEvent struct {
 - 所有输入先成为 `ExternalEvent`
 - `ExternalEvent` 是 route 的输入，不是“原始消息 DTO”
 - scheduler 触发、人类按钮回流、repo comment、webhook 都用同一对象
+- `SourceKind` 表示语义输入类型，用于 route/coalescing/policy
+- `TransportKind` 表示 adapter 入口，用于审计与诊断，不参与 route key 选择
+
+`ExternalEvent.EventType` 的最低 ingress 基线：
+
+- `DirectInputReceived`
+- `WebFormMessageReceived`
+- `RepoIssueCommentReceived`
+- `RepoPRCommentReceived`
+- `ControlPlaneMessageReceived`
+- `HumanActionSubmitted`
+- `ScheduleTriggered`
+
+这些 ingress 类型被事件日志持久化时，仍统一包在 `ExternalEventIngested` 的 payload 里；它们不是新的 `EventEnvelope.EventType` 行。
 
 ### 4.2 `EphemeralRequest`
 

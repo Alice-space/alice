@@ -75,6 +75,8 @@ TDR 不冻结：
    作用：`outbox + MCP`、控制面 workflow、`ScheduledTask`、`ScheduleTriggered`、发布与不漂移规则。
 9. [08-ops-scheduler-and-recovery.md](./08-ops-scheduler-and-recovery.md)
    作用：只读投影、运维接口、告警、巡检、reconciler、人工待办和恢复工具。
+10. [09-cli-and-kernel-test-surface.md](./09-cli-and-kernel-test-surface.md)
+   作用：`cmd/alice` 的 CLI client mode、测试入口、只读运维面和受控恢复命令。
 
 ## 5. 技术基线
 
@@ -144,6 +146,7 @@ v1 不同时冻结 `HTTP/JSON` 和 `gRPC/protobuf` 两套传输栈。先把 HTTP
 | `internal/ops/` | 投影、告警、通知、scheduler、reconciler、admin API |
 | `internal/platform/` | `slog`、clock、ID、auth、HTTP middleware、文件布局 |
 | `api/` | workflow schema、MCP schema、HTTP payload schema 草案 |
+| `internal/cli/` | CLI client mode 的命令树、渲染、HTTP 客户端与输出格式 |
 
 ## 7. 实现顺序
 
@@ -155,6 +158,7 @@ v1 不同时冻结 `HTTP/JSON` 和 `gRPC/protobuf` 两套传输栈。先把 HTTP
 4. `07`：然后补 `outbox + MCP`、控制面 workflow 与 scheduler。
 5. `06`：最后再把 `issue-delivery` 和 `research-exploration` manifest/runtime 补齐。
 6. `08`：并行补运维投影、告警、恢复工具。
+7. `09`：最后把 CLI 测试面和 admin/read model 门面稳定下来。
 
 也就是说，先做“薄内核”，再做“业务 workflow”。
 

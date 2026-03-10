@@ -305,11 +305,46 @@ scheduler 每次扫描到应触发的 `ScheduledTask` 时，先生成：
 
 然后再进入统一入口。
 
+`fire_id`、`source_schedule_revision`、`target_workflow_*` 都属于 scheduler/server 派生字段，外部客户端不能自带。
+
 ### 6.2 `fire_id`
 
 ```text
 fire_id = sha256(<scheduled_task_id> + ":" + <scheduled_for_window>)
 ```
+
+### 6.2b admin fire replay
+
+为测试和受控恢复允许保留 `POST /v1/admin/submit/fires`，但它不是“自定义 fire payload”入口。它只接受：
+
+- `scheduled_task_id`
+- `scheduled_for_window`
+- 可选 `reason`
+- 可选 `actor_ref`
+- 可选 `idempotency_key`
+- 可选 `trace_id`
+
+server 侧必须：
+
+- 读取权威 `ScheduledTask`
+- 校验 schedule 仍存在且可用于回放
+- 派生 `fire_id`
+- 派生 `source_schedule_revision`
+- 派生 `target_workflow_id/source/rev`
+- 写 admin audit
+- 再生成新的 `ScheduleTriggered` 事件进入统一入口
+
+replay provenance 约束：
+
+- `SourceKind` 仍为 `scheduler`
+- `TransportKind` 固定为 `cli_admin_fire_replay`
+- `SourceRef` 记录为 `cli:<actor_ref>`
+- `CausationID` 关联 `admin_action_id`
+
+默认策略：
+
+- 生产默认关闭该 endpoint
+- 测试/演练/恢复模式显式开启
 
 ### 6.2a `ScheduleTriggered` payload
 

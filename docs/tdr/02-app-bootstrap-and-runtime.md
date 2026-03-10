@@ -15,6 +15,7 @@
 建议目录：
 
 - `cmd/alice/main.go`
+- `internal/cli/root.go`
 - `internal/app/app.go`
 - `internal/app/bootstrap.go`
 - `internal/app/runtime.go`
@@ -67,6 +68,7 @@ type Config struct {
     Scheduler  SchedulerConfig
     Ops        OpsConfig
     Auth       AuthConfig
+    CLI        CLIConfig
 }
 ```
 
@@ -82,6 +84,15 @@ type Config struct {
 - `MCP.Domains[*].BaseURL`
 - `Scheduler.PollInterval`
 - `Ops.MetricsEnabled`
+
+client mode 额外使用：
+
+- `CLI.ServerBaseURL`
+- `CLI.DefaultOutput`
+- `CLI.Timeout`
+- `CLI.WaitTimeout`
+- `Ops.AdminEventInjectionEnabled`
+- `Ops.AdminScheduleFireReplayEnabled`
 
 ## 4. 启动顺序
 
@@ -106,6 +117,8 @@ type Config struct {
 
 - 先恢复，再接流量
 - 避免 scheduler 或 webhook 在系统未 ready 时推进新状态
+
+CLI client mode 不参与上述启动序列。它只解析配置、构建 HTTP client，然后通过远端 server 执行动作。
 
 ## 5. 停机顺序
 
@@ -194,17 +207,51 @@ type Worker interface {
 
 建议保留以下内部管理接口：
 
+- `POST /v1/admin/submit/events`
+- `POST /v1/admin/submit/fires`
+- `POST /v1/admin/resolve/approval`
+- `POST /v1/admin/resolve/wait`
 - `POST /v1/admin/replay/from/{hlc}`
 - `POST /v1/admin/reconcile/outbox`
 - `POST /v1/admin/reconcile/schedules`
 - `POST /v1/admin/rebuild/indexes`
 - `POST /v1/admin/tasks/{task_id}/cancel`
+- `POST /v1/admin/deadletters/{id}/redrive`
 
 这些接口都必须：
 
 - 经过单独鉴权
 - 留 `ExternalEvent` 或 admin audit 日志
 - 不能绕过事件日志直接写 durable 状态
+
+### 8.3 CLI client mode
+
+`cmd/alice` 的 client 子命令模式建议按下列模块组织：
+
+```go
+type CLIApp struct {
+    Config     *Config
+    Logger     *slog.Logger
+    HTTPClient *http.Client
+    Renderer   *cli.Renderer
+}
+```
+
+```go
+type CLIConfig struct {
+    ServerBaseURL string
+    DefaultOutput string
+    Timeout       time.Duration
+    WaitTimeout   time.Duration
+    TokenEnvVar   string
+}
+```
+
+约束：
+
+- client mode 不能打开 store、快照或 bbolt 文件
+- client mode 只能依赖配置、鉴权、HTTP client 与输出渲染
+- `serve` 和 client mode 共用一份配置模型，但运行路径严格分离
 
 ## 9. panic 与 fail-fast 策略
 

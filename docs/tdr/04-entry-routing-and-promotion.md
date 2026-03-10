@@ -16,13 +16,17 @@
 
 ### 2.1 入口类型
 
-v1 入口统一分为五类：
+v1 入口统一分为五类语义输入，再加一个 CLI 传输门面：
 
 - IM 消息
 - Web 表单 / 管理页动作
 - GitHub webhook
 - GitLab webhook
 - scheduler 触发
+
+CLI 不是第六种语义输入。`alice submit message` 只是“直接输入”这一类的 CLI transport；`submit event` 和 `submit fire` 则分别走受控 admin/test surface。
+
+这里的 “admin/test surface” 不是“原样追加任意 `ExternalEvent`”。它们只接受受控输入，由 server 侧补齐并生成新的规范事件。
 
 它们最终都必须落成 `ExternalEvent`。
 
@@ -33,6 +37,7 @@ v1 入口统一分为五类：
 | 接口 | 用途 |
 | --- | --- |
 | `POST /v1/ingress/im/feishu` | 接收 IM 消息 |
+| `POST /v1/ingress/cli/messages` | 接收 CLI 消息输入 |
 | `POST /v1/ingress/web/messages` | 接收 Web 管理页输入 |
 | `POST /v1/webhooks/github` | 接收 GitHub webhook |
 | `POST /v1/webhooks/gitlab` | 接收 GitLab webhook |
@@ -40,6 +45,15 @@ v1 入口统一分为五类：
 | `POST /v1/scheduler/fires` | scheduler 内部投递 fire 事件 |
 
 这些接口都只能提交 `IngestExternalEvent` 命令，不能直接修改 request/task。
+
+结构化事件注入和手工 fire 回放不属于普通 ingress，它们必须走 admin/test endpoint，并且保留更强鉴权和 admin audit。
+
+附加约束：
+
+- `POST /v1/admin/submit/events` 接受的是 `ExternalEventInput`，不是完整 `ExternalEvent`
+- `event_id`、`received_at`、`verified`、`normalized route keys` 一律由 server 生成
+- `POST /v1/admin/submit/fires` 只能接受 `scheduled_task_id + scheduled_for_window + reason`，`fire_id` 与 `source_schedule_revision` 只能由 server 从权威 `ScheduledTask` 派生
+- 以上两个 endpoint 默认只在测试/演练/受控恢复模式开启，生产默认关闭
 
 ## 3. 标准化
 
@@ -49,6 +63,7 @@ v1 入口统一分为五类：
 type NormalizedEvent struct {
     EventType         domain.EventType
     SourceKind        string
+    TransportKind     string
     SourceRef         string
     ActorRef          string
     RequestID         string
@@ -69,6 +84,11 @@ type NormalizedEvent struct {
 }
 ```
 
+其中：
+
+- `SourceKind` 表示语义输入类型，用于路由、coalescing 与策略判定
+- `TransportKind` 表示接入传输方式，用于审计与 adapter 诊断
+
 ### 3.2 标准化原则
 
 - 入口适配层负责验签和 actor 识别
@@ -76,6 +96,9 @@ type NormalizedEvent struct {
 - 不在适配层做 business routing
 - scheduler fire 也必须走同一套标准化
 - `request_id` / `task_id` 这类显式对象键，只允许来自已鉴权的人类动作、内部 scheduler 或 admin 通道，不能直接信任第三方 webhook 自报
+- `submit message` 允许客户端提供 `idempotency_key`、`source_ref`、`actor_ref`，但不允许客户端提供最终 `event_id`
+- CLI / Web / IM 这类 transport 差异只落到 `TransportKind`，不应额外制造新的 `SourceKind` 路由域
+- 当多个 transport 共享同一 `SourceKind` 时，adapter 必须先把 `conversation_id` 做 transport 级命名空间化，例如 `cli:<id>`、`feishu:<id>`、`web:<id>`
 
 ## 4. 路由算法
 
@@ -351,6 +374,25 @@ type HumanActionTokenClaims struct {
 5. 路由到当前 request/task
 6. 校验 gate/task 是否仍活跃
 7. 只在条件满足时恢复执行
+
+### 9.2a admin/CLI 合成回流
+
+CLI admin 命令不是直接推进状态，而是 server 侧先写 admin audit，再合成新的 `ExternalEvent`：
+
+- `resolve approval` -> `HumanActionSubmitted`
+- `resolve wait` -> `HumanActionSubmitted`
+- `cancel task` -> `HumanActionSubmitted`
+
+这些事件的公共约束：
+
+- `SourceKind` 固定为 `human_action`
+- `TransportKind` 固定为 `cli_admin`
+- `SourceRef` 固定为 `cli:<actor_ref>`
+- `CausationID` 必须等于对应 `admin_action_id`
+- 事件体只允许包含该动作所需最小字段
+- 仍然必须经过 route、活跃性校验、dedupe 和事件落盘
+
+这里的 `HumanActionSubmitted` 与上游 draft 中的 `HumanDecisionReceived` 属于同一类外部回流事件；TDR 在实现层统一采用 `HumanActionSubmitted` 作为 ingress 名称。
 
 ### 9.3 回流动作类型
 

@@ -48,6 +48,7 @@ cmd/mcp-workflow-registry
 其中：
 
 - `cmd/alice` 是唯一真实状态持有者
+- `cmd/alice` 同时承载 `serve` 与 CLI client mode
 - MCP 二进制不持有任务真状态
 - 外部平台的状态变化只有回流 BUS 后才算完成
 
@@ -83,6 +84,7 @@ flowchart LR
 | 目录 | 责任 | 不能做什么 |
 | --- | --- | --- |
 | `cmd/alice` | 参数解析、配置装配、服务启动 | 不写业务决策 |
+| `internal/cli` | CLI client mode 的命令树、HTTP client、输出渲染 | 不旁路 HTTP 直接连 BUS/store |
 | `internal/app` | 依赖装配、生命周期、worker 注册 | 不做领域状态推进 |
 | `internal/domain` | 核心对象、命令、事件、不变式 | 不依赖 IO |
 | `internal/bus` | 分片执行、路由、命令处理、状态推进 | 不直接访问外部系统 |
@@ -101,7 +103,10 @@ flowchart LR
 
 ```text
 cmd -> app
+cmd -> cli
 app -> platform + store + bus + ingress + workflow + policy + mcp + ops
+cli -> platform
+cli -> api client
 bus -> domain + store + policy + workflow
 workflow -> domain + policy + agent
 ingress -> domain + bus + platform
@@ -116,6 +121,7 @@ domain -> no internal dependency
 - `internal/bus` 不直接 import 某个具体 MCP 域实现
 - `internal/agent` 只能返回结构化结果，不能回写真状态
 - `internal/ops` 只读事件和投影，不成为第二真源
+- CLI client mode 只能走已冻结的 ingress/admin/read-model API，不能读写 `data/` 目录
 
 ## 5. 核心运行时职责
 
@@ -129,6 +135,14 @@ domain -> no internal dependency
 - 运行 step、gate、预算、等待人类和回退逻辑
 - 通过 `outbox + MCP` 发出外部副作用
 - 维护只读投影、运维指标和恢复流程
+
+作为同一二进制的另一种运行模式，CLI client mode 的固定职责只有：
+
+- 把消息、结构化测试事件或 schedule fire 提交给 ingress/admin API
+- 读取 request/task/schedule/event/ops 等只读投影
+- 触发受控的审批、等待恢复、取消和恢复工具
+
+CLI client mode 不持有真状态，也不引入第二套路由、恢复或调度逻辑。
 
 `cmd/alice` 不固定这些内容：
 
@@ -210,6 +224,11 @@ TDR 的承接方式应保持简单：
 
 - CDR 说“什么对象存在、边界是什么”
 - TDR 说“这些对象怎样落到 Go 包、文件、接口和协议”
+
+CLI 在这里的定位也保持一致：
+
+- CDR/TDR 定义哪些对象、事件和恢复动作存在
+- CLI 只是这些对象和动作的一个薄门面
 
 如果实现里又重新发明：
 

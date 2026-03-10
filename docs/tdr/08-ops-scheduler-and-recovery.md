@@ -20,6 +20,7 @@
 面向 `EphemeralRequest`：
 
 - `request_id`
+- `updated_hlc`
 - 输入摘要
 - `PromotionDecision` 结果
 - toolcall 摘要
@@ -31,6 +32,7 @@
 面向 `DurableTask`：
 
 - `task_id`
+- `updated_hlc`
 - 顶层状态
 - `waiting_reason`
 - 当前 binding
@@ -43,16 +45,88 @@
 ### 2.3 `HumanActionQueueView`
 
 - `entry_kind`
+- `entry_id`
 - `approval_request_id`
 - `human_wait_id`
 - `task_id`
 - `step_execution_id`
 - `gate_type`
-- 等待原因
-- 截止时间
+- `waiting_reason`
+- `status`
+- `allowed_decisions`
+- `expires_at`
+- `updated_hlc`
 - 操作入口
 
-### 2.4 `OpsOverviewView`
+### 2.4 `ScheduleView`
+
+- `scheduled_task_id`
+- `enabled`
+- `spec_kind`
+- `spec_text`
+- `timezone`
+- `target_workflow_id`
+- `target_workflow_source`
+- `target_workflow_rev`
+- `schedule_revision`
+- `next_fire_at`
+- `last_fire_at`
+- `updated_hlc`
+
+### 2.5 `EventView`
+
+- `event_id`
+- `event_type`
+- `aggregate_kind`
+- `aggregate_id`
+- `causation_id`
+- `payload_schema_id`
+- `payload_version`
+- `global_hlc`
+- 可选 `external.source_kind`
+- 可选 `external.transport_kind`
+- 可选 `external.source_ref`
+- 可选 `external.actor_ref`
+- 可选 `external.reply_to_event_id`
+- 可选 `external.payload_ref`
+
+### 2.6 `ApprovalView`
+
+- `approval_request_id`
+- `task_id`
+- `step_execution_id`
+- `gate_type`
+- `status`
+- `allowed_decisions`
+- `expires_at`
+- `updated_hlc`
+- `note`
+
+### 2.7 `HumanWaitView`
+
+- `human_wait_id`
+- `task_id`
+- `step_execution_id`
+- `waiting_reason`
+- `status`
+- `allowed_decisions`
+- `rewind_targets`
+- `expires_at`
+- `updated_hlc`
+- `note`
+
+### 2.8 `DeadLetterView`
+
+- `deadletter_id`
+- `source_event_id`
+- `failure_stage`
+- `last_error`
+- `retryable`
+- `first_failed_at`
+- `last_failed_at`
+- `updated_hlc`
+
+### 2.9 `OpsOverviewView`
 
 - shard backlog
 - pending outbox
@@ -61,33 +135,88 @@
 - 最近快照时间
 - 最近恢复结果
 
+### 2.10 通用列表响应
+
+所有单对象 `GET` 都应返回稳定 envelope：
+
+```go
+type GetResponse[T any] struct {
+    Item       T      `json:"item"`
+    VisibleHLC string `json:"visible_hlc"`
+}
+```
+
+所有 list endpoint 都应返回稳定 envelope：
+
+```go
+type ListResponse[T any] struct {
+    Items      []T    `json:"items"`
+    NextCursor string `json:"next_cursor"`
+    OrderBy    string `json:"order_by"`
+    VisibleHLC string `json:"visible_hlc"`
+}
+```
+
+默认约束：
+
+- 默认排序使用 `updated_hlc desc`
+- `events` 列表例外，使用 `global_hlc desc`
+- 所有 list/read endpoint 都支持 `min_hlc`
+- 当提供 `wait_timeout_ms` 时，server 可以等待投影追到指定 `min_hlc`
+- `--wait` 成功条件是 `visible_hlc >= min_hlc`
+
 ## 3. Admin 只读接口
 
 建议提供：
 
+- `GET /v1/events/{event_id}`
 - `GET /v1/requests/{request_id}`
+- `GET /v1/requests/{request_id}/events`
+- `GET /v1/requests/{request_id}/toolcalls`
+- `GET /v1/requests/{request_id}/reply`
+- `GET /v1/requests`
 - `GET /v1/tasks/{task_id}`
+- `GET /v1/tasks`
 - `GET /v1/tasks/{task_id}/steps`
 - `GET /v1/tasks/{task_id}/artifacts`
 - `GET /v1/tasks/{task_id}/outbox`
+- `GET /v1/schedules/{scheduled_task_id}`
+- `GET /v1/schedules`
+- `GET /v1/approvals/{approval_request_id}`
+- `GET /v1/human-waits/{human_wait_id}`
+- `GET /v1/events`
+- `GET /v1/deadletters`
+- `GET /v1/deadletters/{deadletter_id}`
 - `GET /v1/human-actions`
+- `GET /v1/human-actions/{entry_id}`
 - `GET /v1/ops/overview`
+
+读接口的最小查询参数应统一支持：
+
+- 单对象 `GET`：`min_hlc`、`wait_timeout_ms`
+- list endpoint：`min_hlc`、`wait_timeout_ms`、`limit`、`cursor`
 
 ## 4. Admin 运维接口
 
 建议提供：
 
+- `POST /v1/admin/submit/events`
+- `POST /v1/admin/submit/fires`
+- `POST /v1/admin/resolve/approval`
+- `POST /v1/admin/resolve/wait`
 - `POST /v1/admin/reconcile/outbox`
 - `POST /v1/admin/reconcile/schedules`
 - `POST /v1/admin/rebuild/indexes`
 - `POST /v1/admin/replay/from/{hlc}`
 - `POST /v1/admin/tasks/{task_id}/cancel`
+- `POST /v1/admin/deadletters/{id}/redrive`
 
 这些接口全部需要：
 
 - 单独鉴权
 - 独立审计日志
 - 不绕过事件日志直接改 durable 对象
+- 若会推进业务状态，必须额外生成新的 `ExternalEvent`
 
 ## 5. 指标
 

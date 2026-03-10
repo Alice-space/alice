@@ -104,6 +104,7 @@ data/eventlog/
 - 如果事件 append 成功，但 commit-critical index apply 失败，进程必须立刻标记 `ready=false` 并 fail-fast 退出
 - 恢复启动后必须先重建 commit-critical index，再开放入口流量
 - admin 只读视图允许基于 lagging projection 返回“最新已投影版本”，但路由与 dedupe 不允许 lag
+- 写接口返回给 CLI/API 的 `commit_hlc`，就是该请求同步承诺范围内最后一个 `EventEnvelope.global_hlc`
 
 ## 4. 分片执行模型
 
