@@ -29,6 +29,7 @@ Alice 是一个以 Go 为主语言的任务编排与协作系统仓库。
 
 ## 文档入口
 
+- 文档层级说明：[`docs/README.md`](./docs/README.md)
 - 顶层系统草案：[`docs/draft.md`](./docs/draft.md)
 - 架构决策记录：[`docs/adr/README.md`](./docs/adr/README.md)
 

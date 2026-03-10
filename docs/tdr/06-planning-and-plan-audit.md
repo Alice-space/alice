@@ -198,16 +198,28 @@ type ArbitrationRequest struct {
     TargetVersion        string
     TriggerRound         uint32
     DiffSummary          string
+    ResolutionAction     string
     ExpiresAt            time.Time
     Status               string
 }
 ```
 
-仲裁结果只能是：
+仲裁结果按目标类型约束：
 
-- `back_to_planning`
-- `continue_to_coding`
-- `cancel_task`
+- 当 `TargetType=plan`：
+  - `back_to_planning`
+  - `continue_to_coding`
+  - `cancel_task`
+- 当 `TargetType=code`：
+  - `continue_to_coding`
+  - `resume_code_audit`
+  - `approve_code`
+  - `cancel_task`
+
+其中：
+
+- `approve_code` 不是直接等价于“立刻 merge”，而是表示人工仲裁认定代码审核已通过；后续仍由 merge gate 决定进入 `merge_approval_pending` 还是 `merging`
+- `resume_code_audit` 用于人类要求保持当前 `pr_head_sha`，但回到代码审核阶段继续等待补充材料或后续门禁信号
 
 ## 11. issue 评论集成
 
@@ -224,5 +236,6 @@ type ArbitrationRequest struct {
 - 新 `plan_version` 自动使旧审核失效测试
 - verdict 未收齐但首个 reject 到达不立即推进测试
 - 两轮冲突回 `planning`，第三轮进仲裁测试
+- 代码审核仲裁可产生 `resume_code_audit` 或 `approve_code` 测试
 - Agent 失联后按 `missing` 聚合测试
 - 仲裁目标版本 supersede 后旧仲裁失效测试

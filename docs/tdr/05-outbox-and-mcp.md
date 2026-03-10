@@ -53,6 +53,14 @@ type OutboxAction struct {
 
 `OutboxAction` 是由 `OutboxActionCreated` 等事件物化出来的执行队列，不是独立于事件日志之外的第二真源。
 
+`OutboxAction.Status` 推荐状态机：
+
+- `pending`
+- `inflight`
+- `done`
+- `failed`
+- `dead`
+
 ## 3. 幂等键规则
 
 默认格式：
@@ -101,6 +109,10 @@ type Client interface {
 }
 
 type Request struct {
+    RequestID      string
+    TaskID         string
+    CausationID    string
+    OriginActor    string
     ActionType     string
     IdempotencyKey string
     Payload        json.RawMessage
@@ -126,19 +138,35 @@ type Response struct {
 
 ```text
 select pending outbox action
-  -> mark inflight
+  -> submit MarkOutboxInflight
   -> call domain MCP with idempotency key
   -> on success:
-       emit OutboxActionCompleted
+       submit CompleteOutboxAction
        submit follow-up command to update task state
   -> on retryable failure:
-       mark pending with backoff
+       submit RequeueOutboxAction(next_attempt_at, last_error)
   -> on non-retryable failure:
-       mark failed or dead
+       submit MarkOutboxDead(last_error) when retries exhausted or error is fatal
        submit workflow failure command if action is critical
 ```
 
 这里的 `pending outbox action` 来自 `outbox_queue` 物化索引。该索引损坏或缺失时，必须能够通过事件日志 replay 重建。
+
+因此，dispatcher 相关的运行时位置必须都有对应事实事件：
+
+- `OutboxActionInflightMarked`
+- `OutboxActionRequeued`
+- `OutboxActionCompleted`
+- `OutboxActionFailed`
+- `OutboxActionDeadMarked`
+
+恢复时必须依据这些事件重建：
+
+- 当前 `Status`
+- `AttemptCount`
+- `NextAttemptAt`
+- `LastErrorCode / LastErrorMessage`
+- 是否已经进入 `dead`
 
 建议接口：
 
@@ -163,6 +191,7 @@ type Dispatcher interface {
 - `Retryable=true` 才进入下一次退避
 - 达到最大次数后转 `dead`
 - `dead` 由巡检器和人工后台处理
+- `NextAttemptAt` 必须由 `OutboxActionRequeued` 事件显式记录，不能只保存在内存调度器里
 
 动作级别：
 
@@ -231,7 +260,7 @@ type DomainHealth struct {
 
 1. 用 `ExternalRef` 或幂等键查询外部状态
 2. 若外部已执行成功，则补写 `OutboxActionCompleted`
-3. 若外部未执行，则恢复为 `pending`
+3. 若外部未执行且动作此前是 `inflight`，则补写 `OutboxActionRequeued`
 4. 若状态不一致且无法判断，进入 `dead` 并告警
 
 特别规则：
@@ -246,15 +275,23 @@ type DomainHealth struct {
 - `idempotency_key`
 - `request_id`
 - `task_id`
+- `causation_id`
 - `timeout_ms`
 - `origin_actor`
 
 禁止把幂等和追踪元数据仅放在日志中而不放协议里。
 
+`causation_id` 的用途：
+
+- 把 Alice 主动发出的 comment / review / merge 请求与回流 webhook 关联起来
+- 在 webhook 回流时抑制把 Alice 自己的回执再次当成新的 Planner / Audit / Coding 输入
+
 ## 12. 最小测试矩阵
 
 - `OutboxAction` 重试与退避测试
+- `OutboxActionInflightMarked / Requeued / DeadMarked` 的 replay 重建测试
 - 非重试错误直接转 `failed/dead` 测试
 - MCP 返回成功但 BUS 回写失败的恢复对账测试
 - 相同幂等键重复调度不重复副作用测试
+- 回流 webhook 基于 `causation_id` 抑制自触发测试
 - 单域断路器打开不影响其他域测试

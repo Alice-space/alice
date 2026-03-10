@@ -2,7 +2,7 @@
 
 ## 1. 文档定位
 
-本文是 Alice 第一版系统的统一技术设计报告，用于把 `docs/` 下已经存在的草案与概念设计收敛成一份可评审、可落地、可继续拆分 ADR 的总设计。
+本文是 Alice 第一版系统的统一技术设计报告。可以把它理解为“根据 `docs/cdr/` 写出的技术设计文档”：它把 `docs/` 下已经存在的草案与概念设计继续收敛成一份可评审、可落地、可继续拆分 ADR 的总设计。
 
 本文基于以下文档整理：
 
@@ -188,7 +188,8 @@ flowchart LR
 | `Task` | BUS 中被正式管理的任务实体，承载状态、版本、来源、风险、关联对象与取消令牌 |
 | `UserRequest` | 来自飞书、Web 等入口的人类请求抽象 |
 | `IssueEvent` / `ExternalEvent` | 来自 issue、PR、评论、Review、审批回执等外部事件 |
-| `RouteDecision` | `ReceptionAgent` 产出的建议性分流结果 |
+| `IngressTrace` | 入口审计轨迹，记录 `received`、`classified` 等前置阶段，不进入 `Task` 主状态机 |
+| `RouteDecision` | `ReceptionAgent` 产出的建议性分流结果，包含稳定业务类型与瞬时执行路径 |
 | `ExternalIssueBinding` | `task_id` 与外部 issue 的绑定关系 |
 | `PlanArtifact` | 规划结果，包含 `plan_artifact_id` 与 `plan_version` |
 | `AuditRequest` | 对某一目标版本发起审核的控制对象，固定轮次、席位、截止时间和租约 |
@@ -211,10 +212,10 @@ flowchart LR
 
 本文统一采用 `docs/cdr` 中已经收敛的 snake_case 状态名，作为第一版实现命名基线。
 
-入口阶段前缀状态：
+`received` 与 `classified` 只属于 `IngressTrace`，不是 `TaskStatus`。
 
-- `received`
-- `classified`
+入口完成后的任务前缀状态：
+
 - `task_created`
 - `waiting_human`
 - `sync_running`
@@ -256,21 +257,23 @@ flowchart LR
 
 ```mermaid
 stateDiagram-v2
-    [*] --> received
-    received --> classified
-    classified --> task_created
+    [*] --> task_created
 
     task_created --> sync_running
     sync_running --> closed
     sync_running --> failed
+    sync_running --> cancelled
 
     task_created --> issue_sync_pending
     task_created --> issue_created
     issue_sync_pending --> issue_created
+    issue_sync_pending --> waiting_human
     issue_sync_pending --> failed
+    issue_sync_pending --> cancelled
 
     task_created --> waiting_human
     waiting_human --> cancelled
+    waiting_human --> sync_running
     waiting_human --> issue_sync_pending
     waiting_human --> planning
     waiting_human --> coding
@@ -321,11 +324,12 @@ stateDiagram-v2
 所有入口请求都遵循统一原则：
 
 1. 接入层生成 `UserRequest` 或 `ExternalEvent`
-2. `ReceptionAgent` 产出 `RouteDecision`
-3. BUS 创建或绑定正式 `Task`
-4. 按建议路径进入同步、等待人工或异步代码通道
+2. 记录入口审计轨迹 `received -> classified`
+3. `ReceptionAgent` 产出 `RouteDecision`
+4. BUS 创建或绑定正式 `Task`
+5. 按建议路径进入同步、等待人工或异步代码通道
 
-`RouteDecision` 在 TDR 层细化为五种实现结果：
+`RouteDecision` 由“稳定业务类型 + 瞬时执行路径”组成；其中执行路径在 TDR 层细化为五种实现结果：
 
 - `sync_direct`
 - `sync_mcp_read`
@@ -336,6 +340,7 @@ stateDiagram-v2
 边界策略如下：
 
 - 简单查询和单步控制优先走同步
+- `Task.Type` 是稳定业务类型，`RouteDecision.Route` 只用于入口后的第一跳分流
 - 明确代码修改、调试、测试、构建、仓库操作统一走 `async_issue`
 - 信息不足、高风险副作用或复杂多步编排优先进入 `waiting_human`
 - 非代码但复杂的长期任务不强行塞入 issue 工作流
@@ -349,7 +354,7 @@ stateDiagram-v2
 3. `PlanAuditAgent` 针对 `plan_version` 审核
 4. 审核通过后，`CodingAgent` 创建或更新唯一活动 PR
 5. 需要评测则进入 `evaluation`，否则直接进入 `code_audit`
-6. 代码审核通过后，进入 `merge_approval_pending` 或 `merging`
+6. 代码审核通过后，若 `DeliveryMode=merge` 则进入 `merge_approval_pending` 或 `merging`；若 `DeliveryMode=report_only` 则直接收口关闭
 7. 合并与 issue 收口完成后进入 `closed`
 
 ### 7.3 审核聚合与仲裁工作流
@@ -583,7 +588,7 @@ Alice 第一版的核心设计可以概括为：
 
 - BUS 是真实状态源，Issue / PR / 评论是协作表面和事件入口
 - 所有入口请求先进入 BUS，再决定同步闭环、等待人工或异步代码流程
-- 代码任务按 `planning -> plan_audit -> coding -> evaluation? -> code_audit -> merging -> closed` 推进
+- 代码任务按 `planning -> plan_audit -> coding -> evaluation? -> code_audit -> merge_approval_pending?/merging -> closed` 推进，`report_only` 任务则在 `code_audit` 通过后直接 `closed`
 - 审核、评测、仲裁和预算都绑定明确版本，不允许旧结论穿透到新版本
 - 所有外部副作用统一纳入 `outbox + 幂等键 + MCP` 的恢复式执行模型
 - 第一版优先保证可解释、可恢复、可观测和可审计

@@ -110,12 +110,28 @@ tick schedule
   -> compute scheduled_for_window
   -> derive fire_id
   -> submit RegisterScheduleFire(fire_id)
-  -> if fire already exists: no-op
-  -> else submit CreateTask(idempotency_key=fire_id)
+  -> if fire.status in {registered, task_create_pending} and fire.task_id is empty:
+       submit CreateTask(idempotency_key=fire_id)
+  -> if fire.status == task_created:
+       no-op
   -> update NextRunAt / LastRunAt / LastFireID
 ```
 
-这样即使在 `CreateTask` 后、更新 `LastRunAt` 前崩溃，恢复时也会因为相同 `fire_id` 被占用而避免重复创建“看起来全新的任务”。
+`ScheduleFire` 必须有显式状态推进：
+
+- `registered`
+- `task_create_pending`
+- `task_created`
+- `abandoned`
+
+推荐事实链路：
+
+1. `RegisterScheduleFire` 写入 `ScheduleFireRegistered(status=registered)`
+2. 在真正提交 `CreateTask` 前，先写 `ScheduleFireTaskCreatePending`
+3. `CreateTask` 成功时，`TaskCreated` 与 `ScheduleFireTaskAttached(task_id=...)` 必须在同一个已提交事件批次内出现
+4. 多次恢复仍无法建 task 时，才写 `ScheduleFireAbandoned`
+
+这样即使在 `RegisterScheduleFire` 成功后、`CreateTask` 失败前崩溃，恢复时仍会因为 fire 处于 `registered/task_create_pending` 且没有 `task_id`，被 scheduler 或 reconciler 继续补建，而不是永久丢掉这次触发。
 
 ## 5. Reconcilers
 
@@ -126,6 +142,7 @@ tick schedule
 | `outbox_reconciler` | 1m | 对账长时间 `pending/inflight` 动作 |
 | `audit_reconciler` | 30s | 检查审核租约、deadline、缺席席位 |
 | `eval_reconciler` | 30s | 查询 cluster job 状态并补写结果 |
+| `schedule_fire_reconciler` | 30s | 补建 `registered/task_create_pending` 且缺少 `task_id` 的 fire |
 | `issue_pr_reconciler` | 2m | 校验 issue / PR 与 BUS 镜像是否一致 |
 | `projection_rebuilder` | 手工/开机 | 重建损坏投影 |
 
@@ -217,6 +234,7 @@ type DeadLetter struct {
 
 - scheduler 补偿触发测试
 - 同一 `fire_id` 补偿重放不重复建任务测试
+- `ScheduleFireRegistered` 后崩溃，恢复时可继续补建 task 测试
 - outbox dead letter 产生测试
 - eval reconciler 补写结果测试
 - 只读 API 与写接口权限隔离测试

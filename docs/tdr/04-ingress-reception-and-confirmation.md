@@ -35,6 +35,7 @@
 - 提交 BUS 命令
 
 入口适配层不能直接决定业务状态。
+`received`、`classified` 只记录到 `IngressTrace`，不写入 `TaskStatus`。
 
 ## 3. ReceptionAgent 责任
 
@@ -43,6 +44,8 @@
 1. 识别任务类型
 2. 风险分级
 3. 产出 `RouteDecision`
+
+这里的“任务类型”是稳定业务类型；“路由结果”只是本次入口请求的即时执行决策。
 
 建议接口：
 
@@ -56,10 +59,9 @@ type ReceptionAgent interface {
 
 ```go
 type RouteDecision struct {
-    Route          string
     TaskType       domain.TaskType
+    Route          domain.RouteType
     RiskLevel      domain.RiskLevel
-    NeedsHuman     bool
     WaitingReason  domain.WaitingReason
     CoalescingKey  string
     ReasonSummary  string
@@ -74,16 +76,31 @@ Route 仅允许：
 - `async_issue`
 - `wait_human`
 
+约束：
+
+- `TaskType` 是最终写入 `Task.Type` 的稳定业务类型
+- `Route` 只用于决定入口后第一跳命令，不作为 `Task` 聚合持久化字段
+- `Route=wait_human` 即表示需要人工介入，`NeedsHuman` 不再单独建模
+- `WaitingReason` 仅在 `Route=wait_human` 时允许非空
+- `scheduled_task` 由 scheduler 创建，不经过 `ReceptionAgent.Classify`
+
+建议映射：
+
+- `TaskType=query` -> `sync_direct` 或 `wait_human`
+- `TaskType=control` -> `sync_mcp_read`、`control_write` 或 `wait_human`
+- `TaskType=async_code` -> `async_issue` 或 `wait_human`
+
 ## 4. 路由算法
 
 建议按规则优先级而不是自由生成执行：
 
-1. 若命中高风险动作且无有效确认，输出 `wait_human`
-2. 若请求明确要求改代码、改测试、改仓库、开 PR，输出 `async_issue`
-3. 若是只读 MCP 查询，例如用量或配置读取，输出 `sync_mcp_read`
-4. 若是有副作用的控制调用，例如改设置、改记忆、改定时任务，输出 `control_write`
-5. 若是轻量查询或只读分析，输出 `sync_direct`
-6. 其余无法稳定分类的情况输出 `wait_human`
+1. 先确定稳定 `TaskType`
+2. 若命中高风险动作且无有效确认，保留 `TaskType`，输出 `wait_human`
+3. 若请求明确要求改代码、改测试、改仓库、开 PR，输出 `TaskType=async_code` + `async_issue`
+4. 若是只读 MCP 查询，例如用量或配置读取，输出 `TaskType=control` + `sync_mcp_read`
+5. 若是有副作用的控制调用，例如改设置、改记忆、改定时任务，输出 `TaskType=control` + `control_write`
+6. 若是轻量查询或只读分析，输出 `TaskType=query` + `sync_direct`
+7. 其余无法稳定分类的情况，保留已识别 `TaskType`，输出 `wait_human`
 
 禁止：
 
@@ -98,8 +115,10 @@ Route 仅允许：
 receive message
   -> verify channel auth
   -> normalize UserRequest
+  -> append ingress trace(received)
   -> classify
-  -> CreateTask
+  -> append ingress trace(classified)
+  -> CreateTask(type=route_decision.task_type)
   -> branch:
        sync_direct / sync_mcp_read / control_write / async_issue / wait_human
 ```
@@ -297,6 +316,7 @@ X-Alice-Confirmation-Token: opaque-secret-token
 - 重复 `confirmation_token` 只消费一次测试
 - `confirmation_token` 不出现在路径与普通访问日志测试
 - 高风险动作无确认进入 `waiting_human` 测试
+- `control_write` 在确认回流后按 `waiting_human -> sync_running` 恢复测试
 - 代码任务从消息入口走 `issue_sync_pending` 测试
 - `sync_mcp_read` 直接返回结果且不生成 `outbox` 测试
 - `control_write` 生成 `outbox` 并返回受理状态测试
