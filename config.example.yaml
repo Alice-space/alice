@@ -1,0 +1,35 @@
+http:
+  listen_addr: ":8080"
+
+storage:
+  root_dir: "./data"
+  snapshot_interval: 100
+
+runtime:
+  shard_count: 16
+  outbox_workers: 4
+
+promotion:
+  min_confidence: 0.6
+
+workflow:
+  manifest_roots:
+    - "configs/workflows"
+
+mcp:
+  domains: {}
+
+scheduler:
+  poll_interval: "30s"
+
+ops:
+  metrics_enabled: true
+  admin_event_injection_enabled: true
+  admin_schedule_fire_replay_enabled: true
+
+auth:
+  admin_token: "dev-admin-token"
+  human_action_secret: "dev-human-action-secret"
+  github_webhook_secret: "dev-github-webhook-secret"
+  gitlab_webhook_secret: "dev-gitlab-webhook-secret"
+  scheduler_ingress_secret: "dev-scheduler-ingress-secret"
