@@ -3,21 +3,15 @@ package bus
 import (
 	"context"
 	"errors"
-	"time"
 
 	"alice/internal/agent"
 	"alice/internal/domain"
 	"alice/internal/platform"
 )
 
-// Clock provides time for testing.
-type Clock interface {
-	Now() time.Time
-}
-
-type realClock struct{}
-
-func (realClock) Now() time.Time { return time.Now().UTC() }
+// Clock is an alias to platform.Clock for backward compatibility.
+// Deprecated: Use platform.Clock directly.
+type Clock = platform.Clock
 
 // Reception assesses incoming events for promotion.
 type Reception interface {
@@ -50,20 +44,9 @@ var (
 	ErrScheduleSourceDisabled = errors.New("schedule source disabled")
 )
 
-// noopLogger is a no-op logger for testing.
-type noopLogger struct{}
-
-func (n *noopLogger) Debug(msg string, args ...any)          {}
-func (n *noopLogger) Info(msg string, args ...any)           {}
-func (n *noopLogger) Warn(msg string, args ...any)           {}
-func (n *noopLogger) Error(msg string, args ...any)          {}
-func (n *noopLogger) Fatal(msg string, args ...any)          {}
-func (n *noopLogger) WithComponent(name string) Logger       { return n }
-func (n *noopLogger) WithContext(ctx context.Context) Logger { return n }
-
 // Setters for Runtime configuration.
 
-func (r *Runtime) SetClock(clock Clock) {
+func (r *Runtime) SetClock(clock platform.Clock) {
 	if clock != nil {
 		r.clock = clock
 	}

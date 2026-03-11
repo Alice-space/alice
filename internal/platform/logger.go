@@ -117,6 +117,22 @@ func NewDefaultLogger() Logger {
 	}
 }
 
+// noopLogger is a no-op logger for testing.
+type noopLogger struct{}
+
+func (n *noopLogger) Debug(msg string, args ...any)          {}
+func (n *noopLogger) Info(msg string, args ...any)           {}
+func (n *noopLogger) Warn(msg string, args ...any)           {}
+func (n *noopLogger) Error(msg string, args ...any)          {}
+func (n *noopLogger) Fatal(msg string, args ...any)          {}
+func (n *noopLogger) WithComponent(name string) Logger       { return n }
+func (n *noopLogger) WithContext(ctx context.Context) Logger { return n }
+
+// NewNoopLogger creates a no-op logger for testing.
+func NewNoopLogger() Logger {
+	return &noopLogger{}
+}
+
 func (l *zerologLogger) log(level zerolog.Level, msg string, args []any) {
 	// Check component level
 	componentMu.RLock()

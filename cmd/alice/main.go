@@ -23,6 +23,18 @@ func main() {
 	}
 }
 
+// run executes the CLI with the given arguments and returns the exit code.
+// This is used for testing.
+func run(args []string) int {
+	root := newRootCmd()
+	root.SetArgs(args)
+	if err := root.Execute(); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	return 0
+}
+
 func newRootCmd() *cobra.Command {
 	var configPath string
 

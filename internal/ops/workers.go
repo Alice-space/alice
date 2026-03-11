@@ -5,6 +5,13 @@ import (
 	"time"
 )
 
+// Worker is the interface for background workers.
+type Worker interface {
+	Name() string
+	Start(ctx context.Context) error
+}
+
+// TickWorker is a simple worker that runs a function at regular intervals.
 type TickWorker struct {
 	name     string
 	interval time.Duration

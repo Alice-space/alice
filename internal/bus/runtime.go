@@ -5,6 +5,7 @@ import (
 
 	"alice/internal/agent"
 	"alice/internal/domain"
+	"alice/internal/platform"
 	"alice/internal/policy"
 	"alice/internal/store"
 	"alice/internal/workflow"
@@ -17,7 +18,7 @@ type Runtime struct {
 	workflow    *workflow.Runtime
 	routeKeys   domain.RouteKeyEncoder
 	idgen       domain.IDGenerator
-	clock       Clock
+	clock       platform.Clock
 	shardCount  int
 	mu          sync.Mutex
 	seqByAgg    map[string]uint64
@@ -34,7 +35,7 @@ func NewRuntime(s *store.Store, p *policy.Engine, wf *workflow.Runtime, idgen do
 		cfg.ShardCount = 16
 	}
 	if logger == nil {
-		logger = &noopLogger{}
+		logger = platform.NewNoopLogger()
 	}
 	return &Runtime{
 		store:      s,
@@ -42,7 +43,7 @@ func NewRuntime(s *store.Store, p *policy.Engine, wf *workflow.Runtime, idgen do
 		workflow:   wf,
 		routeKeys:  domain.NewCanonicalRouteKeyEncoder(),
 		idgen:      idgen,
-		clock:      realClock{},
+		clock:      platform.RealClock{},
 		shardCount: cfg.ShardCount,
 		seqByAgg:   map[string]uint64{},
 		routeByReq: map[string][]string{},

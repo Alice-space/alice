@@ -16,9 +16,11 @@ import (
 	"alice/internal/policy"
 	"alice/internal/store"
 	"alice/internal/workflow"
+
+	"github.com/gin-gonic/gin"
 )
 
-func newHTTPManagerTestFixture(t *testing.T) (*HTTPManager, *store.Store, *bus.Runtime, *policy.StaticReception, *http.ServeMux) {
+func newHTTPManagerTestFixture(t *testing.T) (*HTTPManager, *store.Store, *bus.Runtime, *policy.StaticReception, *gin.Engine) {
 	t.Helper()
 	ctx := context.Background()
 	st, err := store.Open(store.Config{RootDir: t.TempDir(), SnapshotInterval: 100})
@@ -43,19 +45,20 @@ func newHTTPManagerTestFixture(t *testing.T) (*HTTPManager, *store.Store, *bus.R
 		AdminEventInjectionEnabled:     true,
 		AdminScheduleFireReplayEnabled: true,
 	})
-	mux := http.NewServeMux()
-	mgr.RegisterRoutesGin(mux)
-	return mgr, st, runtime, reception, mux
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	mgr.RegisterRoutesGin(router)
+	return mgr, st, runtime, reception, router
 }
 
 func TestAdminSubmitEventRejectsForbiddenFieldsAndSetsCausation(t *testing.T) {
-	_, st, _, _, mux := newHTTPManagerTestFixture(t)
+	_, st, _, _, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	forbidden := []byte(`{"event_id":"evt_forged","input_kind":"web_form_message","body_schema_id":"web-form-message.v1","body":{"text":"hello"}}`)
 	reqForbidden := httptest.NewRequest(http.MethodPost, "/v1/admin/submit/events", bytes.NewReader(forbidden))
 	wForbidden := httptest.NewRecorder()
-	mux.ServeHTTP(wForbidden, reqForbidden)
+	router.ServeHTTP(wForbidden, reqForbidden)
 	if wForbidden.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for forbidden field, got %d", wForbidden.Code)
 	}
@@ -63,7 +66,7 @@ func TestAdminSubmitEventRejectsForbiddenFieldsAndSetsCausation(t *testing.T) {
 	duplicateRouteCritical := []byte(`{"input_kind":"control_plane_message","body_schema_id":"control-plane-message.v1","scheduled_task_id":"sch_1","body":{"text":"hello","scheduled_task_id":"sch_1"}}`)
 	reqDup := httptest.NewRequest(http.MethodPost, "/v1/admin/submit/events", bytes.NewReader(duplicateRouteCritical))
 	wDup := httptest.NewRecorder()
-	mux.ServeHTTP(wDup, reqDup)
+	router.ServeHTTP(wDup, reqDup)
 	if wDup.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for route-critical duplicate, got %d", wDup.Code)
 	}
@@ -71,7 +74,7 @@ func TestAdminSubmitEventRejectsForbiddenFieldsAndSetsCausation(t *testing.T) {
 	valid := []byte(`{"input_kind":"web_form_message","body_schema_id":"web-form-message.v1","conversation_id":"conv_submit_event_1","body":{"text":"hello from admin submit event"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/submit/events", bytes.NewReader(valid))
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected accepted for valid submit event, got %d", w.Code)
 	}
@@ -131,7 +134,7 @@ func TestAdminSubmitEventRejectsForbiddenFieldsAndSetsCausation(t *testing.T) {
 }
 
 func TestReadEndpointsExposeVisibleHLCAndWaitQuery(t *testing.T) {
-	_, st, runtime, reception, mux := newHTTPManagerTestFixture(t)
+	_, st, runtime, reception, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	result, err := runtime.IngestExternalEvent(context.Background(), domain.ExternalEvent{
@@ -151,7 +154,7 @@ func TestReadEndpointsExposeVisibleHLCAndWaitQuery(t *testing.T) {
 
 	getReq := httptest.NewRequest(http.MethodGet, "/v1/requests/"+result.RequestID+"?min_hlc="+result.CommitHLC+"&wait_timeout_ms=50", nil)
 	getW := httptest.NewRecorder()
-	mux.ServeHTTP(getW, getReq)
+	router.ServeHTTP(getW, getReq)
 	if getW.Code != http.StatusOK {
 		t.Fatalf("expected get request 200, got %d body=%s", getW.Code, getW.Body.String())
 	}
@@ -165,7 +168,7 @@ func TestReadEndpointsExposeVisibleHLCAndWaitQuery(t *testing.T) {
 
 	listReq := httptest.NewRequest(http.MethodGet, "/v1/requests?limit=10&min_hlc="+result.CommitHLC+"&wait_timeout_ms=50", nil)
 	listW := httptest.NewRecorder()
-	mux.ServeHTTP(listW, listReq)
+	router.ServeHTTP(listW, listReq)
 	if listW.Code != http.StatusOK {
 		t.Fatalf("expected list requests 200, got %d body=%s", listW.Code, listW.Body.String())
 	}
@@ -179,7 +182,7 @@ func TestReadEndpointsExposeVisibleHLCAndWaitQuery(t *testing.T) {
 }
 
 func TestAdminResolveApprovalAndSubmitFireCarryAdminCausation(t *testing.T) {
-	_, st, runtime, reception, mux := newHTTPManagerTestFixture(t)
+	_, st, runtime, reception, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	promoted, err := runtime.IngestExternalEvent(context.Background(), domain.ExternalEvent{
@@ -224,7 +227,7 @@ func TestAdminResolveApprovalAndSubmitFireCarryAdminCausation(t *testing.T) {
 	resolveBody := []byte(`{"approval_request_id":"apr_ops_101","task_id":"` + promoted.TaskID + `","step_execution_id":"exec_ops_101","decision":"approve","note":"approved by ops test"}`)
 	resolveReq := httptest.NewRequest(http.MethodPost, "/v1/admin/resolve/approval", bytes.NewReader(resolveBody))
 	resolveW := httptest.NewRecorder()
-	mux.ServeHTTP(resolveW, resolveReq)
+	router.ServeHTTP(resolveW, resolveReq)
 	if resolveW.Code != http.StatusAccepted {
 		t.Fatalf("expected resolve approval accepted, got %d body=%s", resolveW.Code, resolveW.Body.String())
 	}
@@ -272,7 +275,7 @@ func TestAdminResolveApprovalAndSubmitFireCarryAdminCausation(t *testing.T) {
 	fireBody := []byte(`{"scheduled_task_id":"sch_ops_fire_1","scheduled_for_window":"2026-03-10T09:00:00Z"}`)
 	fireReq := httptest.NewRequest(http.MethodPost, "/v1/admin/submit/fires", bytes.NewReader(fireBody))
 	fireW := httptest.NewRecorder()
-	mux.ServeHTTP(fireW, fireReq)
+	router.ServeHTTP(fireW, fireReq)
 	if fireW.Code != http.StatusAccepted {
 		t.Fatalf("expected submit fire accepted, got %d body=%s", fireW.Code, fireW.Body.String())
 	}
@@ -330,12 +333,12 @@ func TestAdminResolveApprovalAndSubmitFireCarryAdminCausation(t *testing.T) {
 }
 
 func TestAdminRuntimeErrorMappingUses404And412(t *testing.T) {
-	_, st, runtime, reception, mux := newHTTPManagerTestFixture(t)
+	_, st, runtime, reception, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	fireReq := httptest.NewRequest(http.MethodPost, "/v1/admin/submit/fires", bytes.NewReader([]byte(`{"scheduled_task_id":"missing_schedule","scheduled_for_window":"2026-03-10T09:00:00Z"}`)))
 	fireW := httptest.NewRecorder()
-	mux.ServeHTTP(fireW, fireReq)
+	router.ServeHTTP(fireW, fireReq)
 	if fireW.Code != http.StatusNotFound {
 		t.Fatalf("expected 404 for missing schedule source, got %d body=%s", fireW.Code, fireW.Body.String())
 	}
@@ -356,34 +359,34 @@ func TestAdminRuntimeErrorMappingUses404And412(t *testing.T) {
 
 	firstCancelReq := httptest.NewRequest(http.MethodPost, "/v1/admin/tasks/"+promoted.TaskID+"/cancel", nil)
 	firstCancelW := httptest.NewRecorder()
-	mux.ServeHTTP(firstCancelW, firstCancelReq)
+	router.ServeHTTP(firstCancelW, firstCancelReq)
 	if firstCancelW.Code != http.StatusAccepted {
 		t.Fatalf("expected first cancel accepted, got %d body=%s", firstCancelW.Code, firstCancelW.Body.String())
 	}
 
 	secondCancelReq := httptest.NewRequest(http.MethodPost, "/v1/admin/tasks/"+promoted.TaskID+"/cancel", nil)
 	secondCancelW := httptest.NewRecorder()
-	mux.ServeHTTP(secondCancelW, secondCancelReq)
+	router.ServeHTTP(secondCancelW, secondCancelReq)
 	if secondCancelW.Code != http.StatusPreconditionFailed {
 		t.Fatalf("expected 412 for terminal task cancel, got %d body=%s", secondCancelW.Code, secondCancelW.Body.String())
 	}
 }
 
 func TestSubmitEventRejectsRouteCriticalInsideBody(t *testing.T) {
-	_, st, _, _, mux := newHTTPManagerTestFixture(t)
+	_, st, _, _, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	body := []byte(`{"input_kind":"repo_issue_comment","body_schema_id":"repo-issue-comment.v1","body":{"comment_text":"hello","reply_to_event_id":"evt_1"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/submit/events", bytes.NewReader(body))
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 	if w.Code != http.StatusUnprocessableEntity {
 		t.Fatalf("expected 422 for route-critical field inside body, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
 func TestResolveWaitPatchValidationAndSchemaCheck(t *testing.T) {
-	_, st, runtime, reception, mux := newHTTPManagerTestFixture(t)
+	_, st, runtime, reception, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	promoted, err := runtime.IngestExternalEvent(context.Background(), domain.ExternalEvent{
@@ -430,7 +433,7 @@ func TestResolveWaitPatchValidationAndSchemaCheck(t *testing.T) {
 	invalidBody := []byte(`{"human_wait_id":"wait_ops_patch_1","task_id":"` + promoted.TaskID + `","waiting_reason":"WaitingInput","decision":"provide-input","input_patch":{"reason":null}}`)
 	invalidReq := httptest.NewRequest(http.MethodPost, "/v1/admin/resolve/wait", bytes.NewReader(invalidBody))
 	invalidW := httptest.NewRecorder()
-	mux.ServeHTTP(invalidW, invalidReq)
+	router.ServeHTTP(invalidW, invalidReq)
 	if invalidW.Code != http.StatusPreconditionFailed {
 		t.Fatalf("expected 412 for invalid patched document, got %d body=%s", invalidW.Code, invalidW.Body.String())
 	}
@@ -438,7 +441,7 @@ func TestResolveWaitPatchValidationAndSchemaCheck(t *testing.T) {
 	validBody := []byte(`{"human_wait_id":"wait_ops_patch_1","task_id":"` + promoted.TaskID + `","waiting_reason":"WaitingInput","decision":"provide-input","input_patch":{"reason":"fixed by human"}}`)
 	validReq := httptest.NewRequest(http.MethodPost, "/v1/admin/resolve/wait", bytes.NewReader(validBody))
 	validW := httptest.NewRecorder()
-	mux.ServeHTTP(validW, validReq)
+	router.ServeHTTP(validW, validReq)
 	if validW.Code != http.StatusAccepted {
 		t.Fatalf("expected resolve wait accepted with valid patch, got %d body=%s", validW.Code, validW.Body.String())
 	}
@@ -463,7 +466,7 @@ func TestResolveWaitPatchValidationAndSchemaCheck(t *testing.T) {
 }
 
 func TestResolveWaitRejectsMissingInputDraftBase(t *testing.T) {
-	_, st, runtime, reception, mux := newHTTPManagerTestFixture(t)
+	_, st, runtime, reception, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	promoted, err := runtime.IngestExternalEvent(context.Background(), domain.ExternalEvent{
@@ -510,20 +513,20 @@ func TestResolveWaitRejectsMissingInputDraftBase(t *testing.T) {
 	body := []byte(`{"human_wait_id":"wait_ops_missing_base_1","task_id":"` + promoted.TaskID + `","waiting_reason":"WaitingInput","decision":"provide-input","input_patch":{"reason":"resume"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/resolve/wait", bytes.NewReader(body))
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 	if w.Code != http.StatusPreconditionFailed {
 		t.Fatalf("expected 412 when wait input draft is unavailable, got %d body=%s", w.Code, w.Body.String())
 	}
 }
 
 func TestEventTransportKindIsStableField(t *testing.T) {
-	_, st, _, _, mux := newHTTPManagerTestFixture(t)
+	_, st, _, _, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	body := []byte(`{"input_kind":"web_form_message","body_schema_id":"web-form-message.v1","conversation_id":"conv_transport_kind_1","body":{"text":"hello transport"}}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/submit/events", bytes.NewReader(body))
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected submit event accepted, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -537,7 +540,7 @@ func TestEventTransportKindIsStableField(t *testing.T) {
 
 	getReq := httptest.NewRequest(http.MethodGet, "/v1/events/"+accepted.EventID, nil)
 	getW := httptest.NewRecorder()
-	mux.ServeHTTP(getW, getReq)
+	router.ServeHTTP(getW, getReq)
 	if getW.Code != http.StatusOK {
 		t.Fatalf("expected get event 200, got %d body=%s", getW.Code, getW.Body.String())
 	}
@@ -554,7 +557,7 @@ func TestEventTransportKindIsStableField(t *testing.T) {
 }
 
 func TestListFiltersAppliedOnRequestsTasksAndEvents(t *testing.T) {
-	_, st, runtime, reception, mux := newHTTPManagerTestFixture(t)
+	_, st, runtime, reception, router := newHTTPManagerTestFixture(t)
 	defer st.Close()
 
 	if _, err := runtime.IngestExternalEvent(context.Background(), domain.ExternalEvent{
@@ -584,7 +587,7 @@ func TestListFiltersAppliedOnRequestsTasksAndEvents(t *testing.T) {
 
 	reqList := httptest.NewRequest(http.MethodGet, "/v1/requests?conversation_id=conv_filter_match&actor=alice", nil)
 	reqListW := httptest.NewRecorder()
-	mux.ServeHTTP(reqListW, reqList)
+	router.ServeHTTP(reqListW, reqList)
 	if reqListW.Code != http.StatusOK {
 		t.Fatalf("requests list failed: %d %s", reqListW.Code, reqListW.Body.String())
 	}
@@ -600,7 +603,7 @@ func TestListFiltersAppliedOnRequestsTasksAndEvents(t *testing.T) {
 
 	eventListReq := httptest.NewRequest(http.MethodGet, "/v1/events?source_kind=direct_input&trace_id=trace_filter_1", nil)
 	eventListW := httptest.NewRecorder()
-	mux.ServeHTTP(eventListW, eventListReq)
+	router.ServeHTTP(eventListW, eventListReq)
 	if eventListW.Code != http.StatusOK {
 		t.Fatalf("events list failed: %d %s", eventListW.Code, eventListW.Body.String())
 	}
@@ -633,12 +636,13 @@ func TestDeadletterRedriveRequiresHook(t *testing.T) {
 		AdminEventInjectionEnabled:     true,
 		AdminScheduleFireReplayEnabled: true,
 	})
-	mux := http.NewServeMux()
-	mgr.RegisterRoutesGin(mux)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	mgr.RegisterRoutesGin(router)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/deadletters/dl_1/redrive", nil)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 	if w.Code != http.StatusNotImplemented {
 		t.Fatalf("expected redrive without hook to be rejected, got %d body=%s", w.Code, w.Body.String())
 	}
@@ -684,12 +688,13 @@ func TestDeadletterRedriveRejectsNonRetryableDeadletter(t *testing.T) {
 			return nil
 		},
 	}, SurfaceConfig{})
-	mux := http.NewServeMux()
-	mgr.RegisterRoutesGin(mux)
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	mgr.RegisterRoutesGin(router)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/deadletters/dl_action_dl_1/redrive", nil)
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	router.ServeHTTP(w, req)
 	if w.Code != http.StatusConflict {
 		t.Fatalf("expected non-retryable deadletter to be rejected, got %d body=%s", w.Code, w.Body.String())
 	}

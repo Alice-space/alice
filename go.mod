@@ -9,6 +9,7 @@ require (
 	github.com/gin-gonic/gin v1.10.0
 	github.com/go-resty/resty/v2 v2.16.2
 	github.com/golang-jwt/jwt/v5 v5.3.0
+	github.com/modelcontextprotocol/go-sdk v1.4.0
 	github.com/oklog/run v1.1.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/robfig/cron/v3 v3.0.1
@@ -50,7 +51,6 @@ require (
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/mapstructure v1.5.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect
-	github.com/modelcontextprotocol/go-sdk v1.4.0 // indirect
 	github.com/modern-go/concurrent v0.0.0-20180306012644-bacd9c7ef1dd // indirect
 	github.com/modern-go/reflect2 v1.0.2 // indirect
 	github.com/pelletier/go-toml/v2 v2.2.2 // indirect
