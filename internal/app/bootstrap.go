@@ -186,5 +186,3 @@ func provideGinEngineWithIngress(
 
 	return r
 }
-
-
