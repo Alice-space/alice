@@ -3,6 +3,8 @@ package bus
 import (
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -16,31 +18,44 @@ import (
 // 特点：简单、一次性、只读、不需要代码仓库写权限、不需要审批
 // 预期：留在 EphemeralRequest 内直接完成，不升级成 DurableTask
 //
-// 验证点：
-// 1. 创建 EphemeralRequest（不是 DurableTask）
-// 2. PromotionDecision 标记为 direct_answer（不是 promote）
-// 3. 记录 ToolCallRecord（模拟天气查询）
-// 4. 记录 ReplyRecord（回复用户）
-// 5. 记录 TerminalResult（结束）
-// 6. Request 进入 Answered 状态
+// 运行方式：
+//   go test ./internal/bus/... -run TestWeatherQueryDirectAnswer -v
+//
+// 查看日志：
+//   tail -f data/test_weather/eventlog/events.*.jsonl | jq .
 func TestWeatherQueryDirectAnswer(t *testing.T) {
+	// 使用固定目录以便查看日志文件
+	dataDir := "./data/test_weather"
+	
+	// 清理旧数据（可选，如果想保留历史就不清理）
+	// os.RemoveAll(dataDir)
+	
+	// 创建目录
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+	
+	t.Logf("📁 测试数据目录: %s", dataDir)
+	t.Logf("📁 事件日志: %s/eventlog/", dataDir)
+	
 	ctx := context.Background()
-	st, err := store.Open(store.Config{RootDir: t.TempDir(), SnapshotInterval: 100})
+	st, err := store.Open(store.Config{RootDir: dataDir, SnapshotInterval: 100})
 	if err != nil {
-		t.Fatal(err)
+		t.Fatalf("failed to open store: %v", err)
 	}
 	defer st.Close()
 
+	t.Log("✅ Store 初始化完成")
+	
 	runtime := newTestRuntime(t, st)
+	t.Log("✅ Runtime 初始化完成")
 
 	// 模拟 Reception 产出"留在 EphemeralRequest 内直接完成"的决策
-	// 关键字段：effects.external_write=false, async=false, approval_required=false
 	reception := fixedReception{decision: domain.PromotionDecision{
 		DecisionID:             "dec_weather_001",
-		RequestID:              "", // 由测试填充
 		IntentKind:             "weather_query",
 		RiskLevel:              "low",
-		ExternalWrite:          false, // 只读，不写外部系统
+		ExternalWrite:          false, // 只读
 		CreatePersistentObject: false, // 不创建持久化对象
 		Async:                  false, // 同步完成
 		MultiStep:              false, // 单步完成
@@ -55,13 +70,14 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 		ProducedAt:             time.Now().UTC(),
 	}}
 
+	t.Log("📝 Step 1: 发送天气查询请求...")
+	
 	// Step 1: 入口层接收消息，生成 ExternalEvent
-	// 来源：IM 消息
 	result, err := runtime.IngestExternalEvent(ctx, domain.ExternalEvent{
 		EventType:         domain.EventTypeExternalEventIngested,
-		SourceKind:        "im", // 来源渠道：IM
+		SourceKind:        "im",
 		TransportKind:     "webhook",
-		SourceRef:         "查询上海明天天气", // 原始文本
+		SourceRef:         "查询上海明天天气",
 		ActorRef:          "user://alice",
 		ConversationID:    "conv_weather_001",
 		ThreadID:          "root",
@@ -71,21 +87,27 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 	}, reception)
 
 	if err != nil {
-		t.Fatalf("failed to ingest weather query event: %v", err)
+		t.Fatalf("❌ 失败: %v", err)
 	}
 
-	// 验证：创建了 Request，没有创建 Task（直接回答路径）
+	t.Logf("✅ Step 1 完成: RequestID=%s", result.RequestID)
+	t.Logf("   TaskID=%s (应该为空)", result.TaskID)
+	t.Logf("   Promoted=%v (应该为false)", result.Promoted)
+
+	// 验证：创建了 Request，没有创建 Task
 	if result.RequestID == "" {
-		t.Fatal("expected RequestID to be set")
+		t.Fatal("❌ expected RequestID to be set")
 	}
 	if result.TaskID != "" {
-		t.Fatalf("weather query should not create DurableTask, got TaskID=%s", result.TaskID)
+		t.Fatalf("❌ weather query should not create DurableTask, got TaskID=%s", result.TaskID)
 	}
 	if result.Promoted {
-		t.Fatal("weather query should not be promoted to DurableTask")
+		t.Fatal("❌ weather query should not be promoted to DurableTask")
 	}
 
-	// Step 2-3: 验证 BUS 创建了 EphemeralRequest 和 PromotionDecision
+	// Step 2-3: 验证事件
+	t.Log("🔍 Step 2: 检查已记录的事件...")
+	
 	var events []domain.EventEnvelope
 	if err := st.Replay(ctx, "", func(evt domain.EventEnvelope) error {
 		events = append(events, evt)
@@ -103,21 +125,23 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 		case domain.EventTypeEphemeralRequestOpened:
 			hasRequestOpened = true
 			requestID = evt.AggregateID
+			t.Logf("   📨 EphemeralRequestOpened: %s", requestID)
 		case domain.EventTypePromotionAssessed:
 			hasPromotionAssessed = true
+			t.Logf("   📊 PromotionAssessed: direct_answer")
 		}
 	}
 
 	if !hasRequestOpened {
-		t.Fatal("expected EphemeralRequestOpened event")
+		t.Fatal("❌ expected EphemeralRequestOpened event")
 	}
 	if !hasPromotionAssessed {
-		t.Fatal("expected PromotionAssessed event")
+		t.Fatal("❌ expected PromotionAssessed event")
 	}
 
-	// Step 4-7: 模拟 agent 使用 Skill 解析查询并调用 tool
-	// 在实际系统中，这会由 Reception agent 完成
-	// 这里我们手动注入 ToolCallRecord 来模拟
+	// Step 4-7: 模拟 agent 调用 tool
+	t.Log("📝 Step 3: 模拟天气查询 ToolCall...")
+	
 	toolCallPayload, _ := json.Marshal(domain.ToolCallRecordedPayload{
 		CallID:      "call_weather_001",
 		OwnerKind:   "request",
@@ -147,8 +171,11 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 	if err := st.AppendBatch(ctx, []domain.EventEnvelope{toolCallEvent}); err != nil {
 		t.Fatalf("failed to append tool call event: %v", err)
 	}
+	t.Log("✅ Step 3 完成: ToolCallRecorded")
 
-	// Step 8-10: 模拟生成回复并结束 request
+	// Step 8-10: 生成回复并结束
+	t.Log("📝 Step 4: 生成回复并结束请求...")
+	
 	replyPayload, _ := json.Marshal(domain.ReplyRecordedPayload{
 		ReplyID:        "rpl_weather_001",
 		OwnerKind:      "request",
@@ -166,20 +193,15 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 		OwnerID:        requestID,
 		FinalStatus:    "answered",
 		FinalReplyID:   "rpl_weather_001",
-		RevokedRouteKeys: []string{
-			domain.NewCanonicalRouteKeyEncoder().Conversation("im", "conv_weather_001", "root"),
-		},
-		ClosedAt: time.Now().UTC(),
+		ClosedAt:       time.Now().UTC(),
 	})
 
 	answeredPayload, _ := json.Marshal(domain.RequestAnsweredPayload{
-		RequestID:        requestID,
-		FinalReplyID:     "rpl_weather_001",
-		RevokedRouteKeys: []string{},
-		AnsweredAt:       time.Now().UTC(),
+		RequestID:    requestID,
+		FinalReplyID: "rpl_weather_001",
+		AnsweredAt:   time.Now().UTC(),
 	})
 
-	// 批量写入结束事件
 	finalEvents := []domain.EventEnvelope{
 		{
 			EventID:         "evt_reply_001",
@@ -226,7 +248,9 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 		t.Fatalf("failed to append final events: %v", err)
 	}
 
-	// 验证所有关键事件都已记录
+	// 最终验证
+	t.Log("🔍 Step 5: 最终验证...")
+	
 	events = nil
 	if err := st.Replay(ctx, "", func(evt domain.EventEnvelope) error {
 		events = append(events, evt)
@@ -235,34 +259,39 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	var hasToolCall, hasReply, hasTerminal, hasAnswered bool
+	checks := map[string]bool{
+		"ToolCall":       false,
+		"Reply":          false,
+		"TerminalResult": false,
+		"Answered":       false,
+	}
+
 	for _, evt := range events {
 		switch evt.EventType {
 		case domain.EventTypeToolCallRecorded:
-			hasToolCall = true
+			checks["ToolCall"] = true
 		case domain.EventTypeReplyRecorded:
-			hasReply = true
+			checks["Reply"] = true
 		case domain.EventTypeTerminalResultRecorded:
-			hasTerminal = true
+			checks["TerminalResult"] = true
 		case domain.EventTypeRequestAnswered:
-			hasAnswered = true
+			checks["Answered"] = true
 		}
 	}
 
-	if !hasToolCall {
-		t.Error("expected ToolCallRecorded event (weather query)")
-	}
-	if !hasReply {
-		t.Error("expected ReplyRecorded event (reply to user)")
-	}
-	if !hasTerminal {
-		t.Error("expected TerminalResultRecorded event (end state)")
-	}
-	if !hasAnswered {
-		t.Error("expected RequestAnswered event (request closed)")
+	allPassed := true
+	for name, passed := range checks {
+		status := "❌"
+		if passed {
+			status = "✅"
+		}
+		t.Logf("   %s %s", status, name)
+		if !passed {
+			allPassed = false
+		}
 	}
 
-	// 最终验证：这是一个完整的直接回答路径，没有 DurableTask 相关事件
+	// 验证没有创建 DurableTask
 	var hasTaskCreated bool
 	for _, evt := range events {
 		if evt.EventType == domain.EventTypeTaskPromotedAndBound {
@@ -271,22 +300,51 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 		}
 	}
 	if hasTaskCreated {
-		t.Fatal("weather query should NOT create DurableTask, but TaskPromotedAndBound found")
+		t.Log("   ❌ DurableTask (不应该创建)")
+		allPassed = false
+	} else {
+		t.Log("   ✅ 没有创建 DurableTask")
 	}
 
-	t.Logf("✅ Weather query test passed: request=%s", requestID)
-	t.Logf("   - EphemeralRequest created and answered")
-	t.Logf("   - No DurableTask created (direct answer path)")
-	t.Logf("   - Tool call, reply, and terminal result recorded")
+	// 打印事件日志文件位置
+	eventLogPath := filepath.Join(dataDir, "eventlog")
+	if entries, err := os.ReadDir(eventLogPath); err == nil {
+		t.Logf("\n📁 事件日志文件 (%d 个):", len(entries))
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				t.Logf("   - %s/eventlog/%s", dataDir, entry.Name())
+			}
+		}
+	}
+
+	// 打印查看命令
+	t.Log("\n📖 查看事件日志:")
+	t.Logf("   cat %s/eventlog/*.jsonl | jq .", dataDir)
+	t.Log("\n📖 查看特定事件类型:")
+	t.Logf("   cat %s/eventlog/*.jsonl | jq 'select(.event_type==\"EphemeralRequestOpened\")'", dataDir)
+
+	if !allPassed {
+		t.Fatal("\n❌ 测试失败")
+	}
+
+	t.Log("\n✅ 测试通过！")
+	t.Logf("   Request ID: %s", requestID)
+	t.Log("   路径: EphemeralRequest -> ToolCall -> Reply -> Answered")
+	t.Log("   没有创建 DurableTask（符合直接回答路径预期）")
 }
 
-// TestWeatherQueryMidRequestChange 测试案例1变体：中途修改请求
-//
-// 场景：用户先问"查询上海明天天气"，紧接着说"改查北京后天"
-// 验证：第二个消息命中同一个 EphemeralRequest（如果仍在 Open 状态）
+// TestWeatherQueryMidRequestChange 测试中途修改请求
 func TestWeatherQueryMidRequestChange(t *testing.T) {
+	dataDir := "./data/test_weather_change"
+	
+	if err := os.MkdirAll(dataDir, 0755); err != nil {
+		t.Fatalf("failed to create data dir: %v", err)
+	}
+	
+	t.Logf("📁 测试数据目录: %s", dataDir)
+
 	ctx := context.Background()
-	st, err := store.Open(store.Config{RootDir: t.TempDir(), SnapshotInterval: 100})
+	st, err := store.Open(store.Config{RootDir: dataDir, SnapshotInterval: 100})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -294,47 +352,68 @@ func TestWeatherQueryMidRequestChange(t *testing.T) {
 
 	runtime := newTestRuntime(t, st)
 	reception := fixedReception{decision: domain.PromotionDecision{
-		IntentKind:  "weather_query",
-		RiskLevel:   "low",
+		IntentKind:    "weather_query",
+		RiskLevel:     "low",
 		ExternalWrite: false,
-		Result:      domain.PromotionResultDirectAnswer,
-		ReasonCodes: []string{"read_only_query"},
-		Confidence:  0.95,
-		ProducedAt:  time.Now().UTC(),
+		Result:        domain.PromotionResultDirectAnswer,
+		ReasonCodes:   []string{"read_only_query"},
+		Confidence:    0.95,
+		ProducedAt:    time.Now().UTC(),
 	}}
 
-	// 第一个消息：查询上海
+	t.Log("📝 发送第一个消息: 查询上海明天天气")
 	result1, err := runtime.IngestExternalEvent(ctx, domain.ExternalEvent{
-		EventType:         domain.EventTypeExternalEventIngested,
-		SourceKind:        "im",
-		SourceRef:         "查询上海明天天气",
-		ConversationID:    "conv_weather_002",
-		ThreadID:          "root",
-		IdempotencyKey:    "msg_shanghai",
-		ReceivedAt:        time.Now().UTC(),
+		EventType:      domain.EventTypeExternalEventIngested,
+		SourceKind:     "im",
+		SourceRef:      "查询上海明天天气",
+		ConversationID: "conv_weather_002",
+		ThreadID:       "root",
+		IdempotencyKey: "msg_shanghai",
+		ReceivedAt:     time.Now().UTC(),
 	}, reception)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("✅ Request1: %s", result1.RequestID)
 
-	// 第二个消息：改查北京（相同的 conversation_id + thread_id）
+	t.Log("📝 发送第二个消息: 改查北京后天")
 	result2, err := runtime.IngestExternalEvent(ctx, domain.ExternalEvent{
-		EventType:         domain.EventTypeExternalEventIngested,
-		SourceKind:        "im",
-		SourceRef:         "改查北京后天",
-		ConversationID:    "conv_weather_002", // 相同的会话
-		ThreadID:          "root",             // 相同的线程
-		IdempotencyKey:    "msg_beijing",
-		ReceivedAt:        time.Now().UTC(),
+		EventType:      domain.EventTypeExternalEventIngested,
+		SourceKind:     "im",
+		SourceRef:      "改查北京后天",
+		ConversationID: "conv_weather_002",
+		ThreadID:       "root",
+		IdempotencyKey: "msg_beijing",
+		ReceivedAt:     time.Now().UTC(),
 	}, reception)
 	if err != nil {
 		t.Fatal(err)
 	}
+	t.Logf("✅ Request2: %s", result2.RequestID)
 
-	// 验证：第二个消息命中了同一个 Request（通过 conversation_id + thread_id 路由）
 	if result2.RequestID != result1.RequestID {
-		t.Logf("Note: second message created new request (may be expected if first was already answered)")
+		t.Logf("⚠️ 第二个消息创建了新的 Request（第一个可能已关闭）")
 	} else {
-		t.Logf("✅ Second message hit same request: %s", result1.RequestID)
+		t.Logf("✅ 第二个消息命中了同一个 Request")
 	}
+	
+	t.Logf("\n📁 查看日志: cat %s/eventlog/*.jsonl | jq .", dataDir)
+}
+
+// TestWeatherQueryHelp 打印帮助信息
+func TestWeatherQueryHelp(t *testing.T) {
+	t.Log("天气查询测试帮助:")
+	t.Log("")
+	t.Log("运行测试:")
+	t.Log("  go test ./internal/bus/... -run TestWeatherQueryDirectAnswer -v")
+	t.Log("")
+	t.Log("查看事件日志:")
+	t.Log("  cat ./data/test_weather/eventlog/*.jsonl | jq .")
+	t.Log("")
+	t.Log("查看特定事件:")
+	t.Log("  cat ./data/test_weather/eventlog/*.jsonl | jq 'select(.event_type==\"EphemeralRequestOpened\")'")
+	t.Log("")
+	t.Log("清理测试数据:")
+	t.Log("  rm -rf ./data/test_weather")
+	t.Log("  rm -rf ./data/test_weather_change")
 }
