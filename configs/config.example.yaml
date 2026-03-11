@@ -33,3 +33,21 @@ auth:
   github_webhook_secret: "dev-github-webhook-secret"
   gitlab_webhook_secret: "dev-gitlab-webhook-secret"
   scheduler_ingress_secret: "dev-scheduler-ingress-secret"
+
+# Logging configuration
+logging:
+  level: "info"           # debug, info, warn, error, fatal
+  format: "json"          # json, text
+  console: true           # output to console
+  # File output (optional)
+  # file:
+  #   path: "./data/logs/alice.log"
+  #   max_size_mb: 100
+  #   max_backups: 5
+  #   max_age_days: 30
+  #   compress: true
+  # Per-component log levels
+  components:
+    bus: "info"
+    reception: "debug"
+    agent: "info"

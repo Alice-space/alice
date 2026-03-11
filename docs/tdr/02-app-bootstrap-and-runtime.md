@@ -69,6 +69,7 @@ type Config struct {
     Ops        OpsConfig
     Auth       AuthConfig
     CLI        CLIConfig
+    Logging    LoggingConfig
 }
 ```
 
@@ -84,6 +85,8 @@ type Config struct {
 - `MCP.Domains[*].BaseURL`
 - `Scheduler.PollInterval`
 - `Ops.MetricsEnabled`
+- `Logging.Level`
+- `Logging.Components`
 
 client mode 额外使用：
 
@@ -94,29 +97,53 @@ client mode 额外使用：
 - `Ops.AdminEventInjectionEnabled`
 - `Ops.AdminScheduleFireReplayEnabled`
 
+### 3.3 日志配置
+
+```go
+type LoggingConfig struct {
+    Level       string                     // debug, info, warn, error, fatal
+    Format      string                     // json, text
+    Console     bool                       // 输出到控制台
+    File        *FileLogConfig             // 文件输出配置（可选）
+    Components  map[string]string          // 按组件覆盖级别
+}
+
+type FileLogConfig struct {
+    Path        string
+    MaxSizeMB   int
+    MaxBackups  int
+    MaxAgeDays  int
+    Compress    bool
+}
+```
+
+日志级别优先级：`Components[component]` > `Level` > 默认值(`info`)
+
 ## 4. 启动顺序
 
 启动必须严格分阶段：
 
 1. 读取配置并做 schema 校验
-2. 初始化 `slog`、clock、ULID 生成器
-3. 打开存储目录与文件句柄
-4. 初始化事件日志、快照和 bbolt 物化层
-5. 载入最新快照并重放事件日志
-6. 构建 `bus`、`policy`、`workflow runtime`、`mcp registry`
-7. 执行恢复任务：
+2. **初始化日志系统**（根据 LoggingConfig 配置级别和输出）
+3. 初始化 clock、ULID 生成器
+4. 打开存储目录与文件句柄
+5. 初始化事件日志、快照和 bbolt 物化层
+6. 载入最新快照并重放事件日志
+7. 构建 `bus`、`policy`、`workflow runtime`、`mcp registry`
+8. 执行恢复任务：
    - 重建 outbox pending index
    - 重建 route index
    - 对账 inflight outbox
    - 重建 human action queue
-8. 注册并启动后台 workers
-9. 最后再开放 HTTP 监听
-10. 标记 `/readyz=true`
+9. 注册并启动后台 workers
+10. 最后再开放 HTTP 监听
+11. 标记 `/readyz=true`
 
 原因：
 
 - 先恢复，再接流量
 - 避免 scheduler 或 webhook 在系统未 ready 时推进新状态
+- **日志系统尽早初始化，确保后续步骤都有日志记录**
 
 CLI client mode 不参与上述启动序列。它只解析配置、构建 HTTP client，然后通过远端 server 执行动作。
 
@@ -272,15 +299,57 @@ data/
   indexes/
   deadletters/
   blobs/
+  logs/               # 应用日志目录
+    alice.log
+    alice-2026-03-10.log
 ```
 
 建议说明：
 
-- `eventlog/`：JSONL 段文件
+- `eventlog/`：JSONL 段文件（系统真源）
 - `snapshots/`：快照文件
 - `indexes/`：bbolt 物化索引
 - `deadletters/`：无法继续处理的事件引用
 - `blobs/`：大 payload、artifact、原始 webhook 体
+- `logs/`：**结构化应用日志**，与事件日志分离但关联
+
+## 12. 日志系统规范
+
+### 12.1 日志分层
+
+| 层级 | 组件示例 | 用途 |
+|-----|---------|------|
+| Application | reception, agent | 业务操作追踪 |
+| Runtime | bus, worker, scheduler | 系统运行时状态 |
+| Infrastructure | store, ingress | 基础设施操作 |
+
+### 12.2 标准日志字段
+
+所有日志必须包含：
+- `timestamp`: ISO8601 (e.g., `2026-03-10T18:00:00.123Z`)
+- `level`: DEBUG/INFO/WARN/ERROR/FATAL
+- `logger`: 组件名称
+- `msg`: 可读消息
+
+业务日志额外包含：
+- `trace_id`: 追踪ID
+- `request_id`: 请求ID
+- `task_id`: 任务ID
+- `event_id`: 事件ID
+- `operation`: 操作类型
+- `duration_ms`: 耗时
+
+### 12.3 关键日志点
+
+| 阶段 | 日志键 | 级别 | 说明 |
+|-----|-------|-----|------|
+| 入口 | `event_received` | INFO | 接收到外部事件 |
+| 路由 | `route_resolved` | DEBUG | 路由解析结果 |
+| 决策 | `promotion_decision` | INFO | Promotion决定 |
+| 执行 | `agent_dispatched` | INFO | Agent调用 |
+| 执行 | `agent_response` | INFO | Agent响应 |
+| 存储 | `events_appended` | DEBUG | 事件追加 |
+| 错误 | `operation_failed` | ERROR | 操作失败 |
 
 ## 11. 测试建议
 

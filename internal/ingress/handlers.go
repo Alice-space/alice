@@ -1,0 +1,225 @@
+package ingress
+
+import (
+	"net/http"
+	"strings"
+	"time"
+
+	"alice/internal/bus"
+	"alice/internal/domain"
+
+	"github.com/gin-gonic/gin"
+)
+
+// RegisterRoutes registers routes on a gin RouterGroup.
+func (h *HTTPIngress) RegisterRoutes(rg *gin.RouterGroup) {
+	rg.POST("/ingress/cli/messages", h.handleCLIMessage)
+	rg.POST("/ingress/im/feishu", h.handleIngress("direct_input", "im_feishu"))
+	rg.POST("/ingress/web/messages", h.handleIngress("direct_input", "web"))
+	rg.POST("/webhooks/github", h.handleWebhook("repo_comment", "github"))
+	rg.POST("/webhooks/gitlab", h.handleWebhook("repo_comment", "gitlab"))
+	rg.POST("/human-actions/*token", h.handleHumanAction)
+	rg.POST("/scheduler/fires", h.handleSchedulerFire)
+}
+
+func (h *HTTPIngress) handleIngress(sourceKind, transportKind string) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		var in NormalizedEvent
+		if err := c.ShouldBindJSON(&in); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		in = h.sanitizeIngressInput(sourceKind, transportKind, in)
+		evt := toExternalEvent(in)
+		result, err := h.runtime.IngestExternalEvent(c.Request.Context(), evt, h.reception)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		c.JSON(http.StatusAccepted, writeAcceptedFromResult(result, ""))
+	}
+}
+
+func (h *HTTPIngress) handleCLIMessage(c *gin.Context) {
+	var in domain.CLIMessageSubmitRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if strings.TrimSpace(in.Text) == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "text is required"})
+		return
+	}
+
+	threadID := strings.TrimSpace(in.ThreadID)
+	if threadID == "" {
+		threadID = "root"
+	}
+	sourceRef := strings.TrimSpace(in.SourceRef)
+	if sourceRef == "" {
+		sourceRef = strings.TrimSpace(in.Text)
+	}
+
+	evt := domain.ExternalEvent{
+		EventType:      domain.EventTypeExternalEventIngested,
+		SourceKind:     "direct_input",
+		TransportKind:  "cli",
+		SourceRef:      sourceRef,
+		ActorRef:       strings.TrimSpace(in.ActorRef),
+		ConversationID: strings.TrimSpace(in.ConversationID),
+		ThreadID:       threadID,
+		RepoRef:        strings.TrimSpace(in.RepoRef),
+		ReplyToEventID: strings.TrimSpace(in.ReplyToEventID),
+		IdempotencyKey: strings.TrimSpace(in.IdempotencyKey),
+		TraceID:        strings.TrimSpace(in.TraceID),
+		PayloadRef:     "cli-message:text",
+		Verified:       true,
+		ReceivedAt:     time.Now().UTC(),
+	}
+	result, err := h.runtime.IngestExternalEvent(c.Request.Context(), evt, h.reception)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, writeAcceptedFromResult(result, ""))
+}
+
+func (h *HTTPIngress) handleSchedulerFire(c *gin.Context) {
+	if err := h.authorizeSchedulerFire(c); err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var in SchedulerFireRequest
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if in.ScheduledTaskID == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "scheduled_task_id is required"})
+		return
+	}
+
+	if _, err := h.runtime.RequireEnabledScheduleSource(c.Request.Context(), in.ScheduledTaskID); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	window := in.ScheduledForWindow.UTC()
+	if window.IsZero() {
+		window = time.Now().UTC().Truncate(time.Minute)
+	}
+
+	payload, err := h.runtime.RecordScheduleFire(c.Request.Context(), domain.RecordScheduleFireCommand{
+		ScheduledTaskID:       in.ScheduledTaskID,
+		ScheduledForWindowUTC: window,
+	})
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, payload)
+}
+
+func (h *HTTPIngress) authorizeSchedulerFire(c *gin.Context) error {
+	secret := strings.TrimSpace(h.schedulerSecret)
+	if secret == "" {
+		return domain.ErrUnauthorized
+	}
+
+	token := strings.TrimSpace(c.GetHeader("X-Scheduler-Token"))
+	if token == "" {
+		auth := strings.TrimSpace(c.GetHeader("Authorization"))
+		if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+			token = strings.TrimSpace(auth[len("Bearer "):])
+		}
+	}
+
+	if token == "" || token != secret {
+		return domain.ErrUnauthorized
+	}
+	return nil
+}
+
+func (h *HTTPIngress) sanitizeIngressInput(sourceKind, transportKind string, in NormalizedEvent) NormalizedEvent {
+	in.SourceKind = sourceKind
+	in.TransportKind = transportKind
+	switch sourceKind {
+	case "direct_input":
+		in.EventType = domain.EventTypeExternalEventIngested
+		in.RequestID = ""
+		in.TaskID = ""
+		in.ActionKind = ""
+		in.ApprovalRequestID = ""
+		in.HumanWaitID = ""
+		in.StepExecutionID = ""
+		in.TargetStepID = ""
+		in.WaitingReason = ""
+		in.DecisionHash = ""
+		in.Verified = false
+	}
+	return in
+}
+
+func toExternalEvent(in NormalizedEvent) domain.ExternalEvent {
+	return domain.ExternalEvent{
+		EventType:         in.EventType,
+		SourceKind:        in.SourceKind,
+		TransportKind:     in.TransportKind,
+		SourceRef:         in.SourceRef,
+		ActorRef:          in.ActorRef,
+		ActionKind:        string(domain.NormalizeHumanActionKind(in.ActionKind)),
+		RequestID:         in.RequestID,
+		TaskID:            in.TaskID,
+		ApprovalRequestID: in.ApprovalRequestID,
+		HumanWaitID:       in.HumanWaitID,
+		StepExecutionID:   in.StepExecutionID,
+		TargetStepID:      in.TargetStepID,
+		WaitingReason:     in.WaitingReason,
+		DecisionHash:      in.DecisionHash,
+		ReplyToEventID:    in.ReplyToEventID,
+		ConversationID:    in.ConversationID,
+		ThreadID:          in.ThreadID,
+		RepoRef:           in.RepoRef,
+		IssueRef:          in.IssueRef,
+		PRRef:             in.PRRef,
+		CommentRef:        in.CommentRef,
+		ScheduledTaskID:   in.ScheduledTaskID,
+		ControlObjectRef:  in.ControlObjectRef,
+		WorkflowObjectRef: in.WorkflowObjectRef,
+		CoalescingKey:     in.CoalescingKey,
+		Verified:          in.Verified,
+		PayloadRef:        in.PayloadRef,
+		IdempotencyKey:    in.IdempotencyKey,
+		TraceID:           in.TraceID,
+		InputSchemaID:     in.InputSchemaID,
+		InputPatch:        in.InputPatch,
+		ReceivedAt:        time.Now().UTC(),
+	}
+}
+
+func writeAcceptedFromResult(result *bus.ProcessResult, adminActionID string) domain.WriteAcceptedResponse {
+	resp := domain.WriteAcceptedResponse{
+		Accepted:      true,
+		AdminActionID: strings.TrimSpace(adminActionID),
+	}
+	if result == nil {
+		return resp
+	}
+	resp.EventID = strings.TrimSpace(result.EventID)
+	resp.RequestID = strings.TrimSpace(result.RequestID)
+	resp.TaskID = strings.TrimSpace(result.TaskID)
+	resp.RouteTargetKind = strings.TrimSpace(result.RouteTargetKind)
+	resp.RouteTargetID = strings.TrimSpace(result.RouteTargetID)
+	if resp.RouteTargetKind == "" {
+		if resp.TaskID != "" {
+			resp.RouteTargetKind = string(domain.RouteTargetTask)
+			resp.RouteTargetID = resp.TaskID
+		} else if resp.RequestID != "" {
+			resp.RouteTargetKind = string(domain.RouteTargetRequest)
+			resp.RouteTargetID = resp.RequestID
+		}
+	}
+	resp.CommitHLC = strings.TrimSpace(result.CommitHLC)
+	return resp
+}

@@ -1,0 +1,21 @@
+分析以下用户请求并确定如何处理。
+
+用户输入：
+{{ .UserInput }}
+
+{{- if .RepoRef }}
+仓库: {{ .RepoRef }}
+{{- end }}
+{{- if .IssueRef }}
+Issue: {{ .IssueRef }}
+{{- end }}
+{{- if .PRRef }}
+PR: {{ .PRRef }}
+{{- end }}
+{{- if .ScheduledTaskID }}
+定时任务: {{ .ScheduledTaskID }}
+{{- end }}
+
+路由上下文：
+- 匹配规则: {{ .MatchedBy }}
+- 路由键: {{ .RouteKeys }}

@@ -36,6 +36,7 @@ func newTestRuntime(t *testing.T, st *store.Store) *Runtime {
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		Config{ShardCount: 8},
+		nil,
 	)
 }
 

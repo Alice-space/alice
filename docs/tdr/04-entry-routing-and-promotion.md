@@ -418,7 +418,57 @@ type PromotionEngine interface {
 }
 ```
 
-## 11. 测试建议
+## 11. 入口阶段日志规范
+
+### 11.1 关键日志点
+
+| 操作 | 日志键 | 级别 | 必需字段 |
+|-----|-------|-----|---------|
+| 事件接收 | `event_received` | INFO | `event_id`, `source_kind`, `transport_kind`, `trace_id` |
+| 事件标准化 | `event_normalized` | DEBUG | `event_id`, `route_keys` |
+| 去重检查 | `dedupe_checked` | DEBUG | `event_id`, `idempotency_key`, `seen` |
+| 路由解析 | `route_resolved` | INFO | `event_id`, `route_target_kind`, `route_target_id`, `route_key`, `conflict` |
+| 意图识别开始 | `reception_started` | DEBUG | `request_id`, `event_id` |
+| 意图识别完成 | `reception_completed` | INFO | `request_id`, `decision_id`, `intent_kind`, `risk_level`, `confidence` |
+| 策略评估 | `policy_evaluated` | INFO | `request_id`, `decision_id`, `result`, `reason_codes` |
+| 直接回答 | `direct_answer` | INFO | `request_id`, `reply_id`, `duration_ms` |
+| 提升决策 | `task_promoted` | INFO | `request_id`, `task_id`, `workflow_id`, `binding_id` |
+| 请求打开 | `request_opened` | INFO | `request_id`, `event_id`, `expires_at` |
+| 请求终态 | `request_closed` | INFO | `request_id`, `final_status`, `terminal_result_id` |
+
+### 11.2 日志示例
+
+```json
+{
+  "timestamp": "2026-03-10T18:00:00.123Z",
+  "level": "INFO",
+  "logger": "bus",
+  "msg": "event_received",
+  "trace_id": "trace_01HQMZ5J8XYC5QNPJ",
+  "event_id": "evt_01HQMZ5J8XYC5QNPJ1234",
+  "source_kind": "cli",
+  "transport_kind": "http",
+  "source_ref": "北京天气"
+}
+```
+
+```json
+{
+  "timestamp": "2026-03-10T18:00:01.456Z",
+  "level": "INFO",
+  "logger": "reception",
+  "msg": "reception_completed",
+  "trace_id": "trace_01HQMZ5J8XYC5QNPJ",
+  "request_id": "req_01HQMZ5J8XYC5QNPJ5678",
+  "decision_id": "dec_01HQMZ5J8XYC5QNPJ9012",
+  "intent_kind": "weather_query",
+  "risk_level": "low",
+  "external_write": false,
+  "confidence": 0.95
+}
+```
+
+## 12. 测试建议
 
 必须覆盖：
 
@@ -427,3 +477,4 @@ type PromotionEngine interface {
 - scheduler fire 仍走统一入口
 - direct-answer path 的最小审计不缺项
 - workflow 候选为 0 / 多个 / 低置信度时不会偷偷绑定
+- 日志字段完整性（trace_id贯穿、duration_ms准确）

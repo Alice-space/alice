@@ -109,11 +109,11 @@ func TestAdminCancelTaskProducesAuditAndCancelEvent(t *testing.T) {
 }
 
 func TestAdminRoutesRejectedWhenTokenNotConfigured(t *testing.T) {
-	handler := withAdminAuth(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)
-	}), "")
+	})
 
-	req := httptest.NewRequest(http.MethodPost, "/v1/admin/reconcile/outbox", nil)
+	req := withAdminAuth(httptest.NewRequest(http.MethodPost, "/v1/admin/reconcile/outbox", nil), "")
 	w := httptest.NewRecorder()
 	handler.ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable {
@@ -126,4 +126,9 @@ func TestAdminRoutesRejectedWhenTokenNotConfigured(t *testing.T) {
 	if nonAdminW.Code != http.StatusOK {
 		t.Fatalf("non-admin routes should pass through, got %d", nonAdminW.Code)
 	}
+}
+
+func withAdminAuth(req *http.Request, token string) *http.Request {
+	req.Header.Set("Authorization", "Bearer "+token)
+	return req
 }

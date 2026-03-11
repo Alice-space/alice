@@ -36,6 +36,25 @@
 | `ScheduledTask` | 调度对象 | 是 |
 | `AgentProfile` | agent 可执行能力描述 | 否，来自注册表投影 |
 | `MCPProfile` | MCP 域健康与配额描述 | 否，来自注册表投影 |
+| `OperationLog` | **操作日志记录（应用日志，非真源）** | 否，可重建 |
+
+### 2.1 关于 OperationLog
+
+`OperationLog` 是应用层面的可观测性日志，与事件日志分离但关联：
+
+- **事件日志（Event Log）**: 系统真源，JSONL 格式，记录所有状态变更事件
+- **应用日志（Operation Log）**: 可观测性日志，结构化格式，记录操作详情、耗时、调试信息
+
+两者通过以下字段关联：
+- `trace_id`: 分布式追踪ID
+- `request_id` / `task_id`: 业务对象ID
+- `event_id`: 关联事件ID（如适用）
+
+应用日志支持多级别（DEBUG/INFO/WARN/ERROR/FATAL）和组件级配置，用于：
+1. 请求生命周期追踪
+2. 性能分析
+3. 调试和故障排查
+4. 审计（辅助事件日志）
 
 ## 3. ID 与基础类型
 

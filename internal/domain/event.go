@@ -62,6 +62,7 @@ const (
 	EventTypeTerminalResultRecorded    EventType = "TerminalResultRecorded"
 	EventTypeUsageLedgerRecorded       EventType = "UsageLedgerRecorded"
 	EventTypeScheduledTaskRegistered   EventType = "ScheduledTaskRegistered"
+	EventTypeScheduleFire              EventType = "ScheduleFire"
 	EventTypeScheduleTriggered         EventType = "ScheduleTriggered"
 	EventTypeAdminAuditRecorded        EventType = "AdminAuditRecorded"
 )
@@ -97,6 +98,7 @@ var eventSchemaRegistry = map[EventType]EventSchema{
 	EventTypeTerminalResultRecorded:    {AggregateKind: AggregateKindRequest, PayloadSchemaID: "event.terminal_result_recorded", PayloadVersion: DefaultPayloadVersion},
 	EventTypeUsageLedgerRecorded:       {AggregateKind: AggregateKindTask, PayloadSchemaID: "event.usage_ledger_recorded", PayloadVersion: DefaultPayloadVersion},
 	EventTypeScheduledTaskRegistered:   {AggregateKind: AggregateKindTask, PayloadSchemaID: "event.scheduled_task_registered", PayloadVersion: DefaultPayloadVersion},
+	EventTypeScheduleFire:              {AggregateKind: AggregateKindSchedule, PayloadSchemaID: "event.schedule_fire", PayloadVersion: DefaultPayloadVersion},
 	EventTypeScheduleTriggered:         {AggregateKind: AggregateKindTask, PayloadSchemaID: "event.schedule_triggered", PayloadVersion: DefaultPayloadVersion},
 	EventTypeAdminAuditRecorded:        {AggregateKind: AggregateKindOther, PayloadSchemaID: "event.admin_audit_recorded", PayloadVersion: DefaultPayloadVersion},
 }

@@ -3,10 +3,7 @@ package app
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"net/http"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"alice/internal/bus"
@@ -17,11 +14,14 @@ import (
 	"alice/internal/policy"
 	"alice/internal/store"
 	"alice/internal/workflow"
+
+	"github.com/oklog/run"
 )
 
+// App holds all application components.
 type App struct {
 	Config          *platform.Config
-	Logger          *slog.Logger
+	Logger          platform.Logger
 	Clock           platform.Clock
 	IDGen           domain.IDGenerator
 	HTTPServer      *http.Server
@@ -33,22 +33,57 @@ type App struct {
 	OpsHTTP         *ops.HTTPManager
 	Workers         []ops.Worker
 
-	ready atomic.Bool
-	wg    sync.WaitGroup
-	stop  context.CancelFunc
+	ready    bool
+	runGroup *run.Group
 }
 
-func (a *App) Start(ctx context.Context) error {
-	if a == nil {
-		return fmt.Errorf("app is nil")
+// NewApp creates a new App with all dependencies injected.
+func NewApp(
+	cfg *platform.Config,
+	logger platform.Logger,
+	clock platform.Clock,
+	idGen domain.IDGenerator,
+	st *store.Store,
+	busRuntime *bus.Runtime,
+	policyEngine *policy.Engine,
+	workflowRuntime *workflow.Runtime,
+	mcpRegistry *mcp.Registry,
+	opsHTTP *ops.HTTPManager,
+	httpServer *http.Server,
+	workers []ops.Worker,
+) *App {
+	return &App{
+		Config:          cfg,
+		Logger:          logger,
+		Clock:           clock,
+		IDGen:           idGen,
+		Store:           st,
+		Bus:             busRuntime,
+		Policy:          policyEngine,
+		WorkflowRuntime: workflowRuntime,
+		MCPRegistry:     mcpRegistry,
+		OpsHTTP:         opsHTTP,
+		HTTPServer:      httpServer,
+		Workers:         workers,
+		runGroup:        &run.Group{},
 	}
-	a.ready.Store(false)
+}
+
+// Start starts the application and all its components.
+func (a *App) Start(ctx context.Context) error {
+	a.ready = false
+
+	// Initialize store
 	if err := a.Store.RebuildIndexes(ctx); err != nil {
 		return fmt.Errorf("startup rebuild indexes: %w", err)
 	}
+
+	// Restore bus state
 	if err := a.Bus.RestoreStateFromLog(ctx); err != nil {
 		return fmt.Errorf("startup restore runtime state: %w", err)
 	}
+
+	// Recover workers
 	for _, worker := range a.Workers {
 		if recoverer, ok := worker.(interface{ Recover(context.Context) error }); ok {
 			if err := recoverer.Recover(ctx); err != nil {
@@ -57,55 +92,79 @@ func (a *App) Start(ctx context.Context) error {
 		}
 	}
 
-	workerCtx, cancel := context.WithCancel(context.Background())
-	a.stop = cancel
-	for _, worker := range a.Workers {
-		w := worker
-		a.wg.Add(1)
-		go func() {
-			defer a.wg.Done()
-			defer func() {
-				if r := recover(); r != nil {
-					a.Logger.Error("worker panic", "worker", w.Name(), "panic", r)
-				}
-			}()
-			if err := w.Start(workerCtx); err != nil {
-				a.Logger.Error("worker exited", "worker", w.Name(), "error", err)
-			}
-		}()
-	}
+	// Setup oklog/run group for component lifecycle management
 
-	go func() {
+	// HTTP server actor
+	a.runGroup.Add(func() error {
+		a.Logger.Info("http_server_starting", "addr", a.HTTPServer.Addr)
 		err := a.HTTPServer.ListenAndServe()
 		if err != nil && err != http.ErrServerClosed {
-			a.Logger.Error("http server exited", "error", err)
+			return err
 		}
-	}()
-	a.ready.Store(true)
+		return nil
+	}, func(err error) {
+		a.Logger.Info("http_server_stopping")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = a.HTTPServer.Shutdown(shutdownCtx)
+	})
+
+	// Workers actor
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	a.runGroup.Add(func() error {
+		a.Logger.Info("workers_starting", "count", len(a.Workers))
+		// Run all workers and wait for any to exit
+		var g run.Group
+		for _, w := range a.Workers {
+			worker := w // capture range variable
+			g.Add(func() error {
+				return worker.Start(workerCtx)
+			}, func(err error) {
+				// Individual worker stop is handled by context cancellation
+			})
+		}
+		return g.Run()
+	}, func(err error) {
+		a.Logger.Info("workers_stopping")
+		workerCancel()
+	})
+
+	a.ready = true
+	a.Logger.Info("app_started")
+
 	return nil
 }
 
+// Shutdown gracefully shuts down the application.
 func (a *App) Shutdown(ctx context.Context) error {
-	a.ready.Store(false)
-	if a.stop != nil {
-		a.stop()
-	}
-	wait := make(chan struct{})
+	a.ready = false
+
+	// Use run.Group to gracefully stop all actors
+	// Note: run.Group.Run() blocks until all actors exit
+	// We need to trigger the interrupt functions and wait
+	errChan := make(chan error, 1)
 	go func() {
-		defer close(wait)
-		a.wg.Wait()
+		errChan <- a.runGroup.Run()
 	}()
+
+	// Trigger context cancellation for quick shutdown
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case <-wait:
+	case err := <-errChan:
+		if err != nil {
+			a.Logger.Error("shutdown_error", "error", err)
+		}
 	}
-	shutdownCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-	defer cancel()
-	if err := a.HTTPServer.Shutdown(shutdownCtx); err != nil {
+
+	// Close store
+	if err := a.Store.Close(); err != nil {
 		return err
 	}
-	return a.Store.Close()
+
+	a.Logger.Info("app_shutdown_complete")
+	return nil
 }
 
-func (a *App) Ready() bool { return a.ready.Load() }
+// Ready returns true if the app is ready to serve requests.
+func (a *App) Ready() bool { return a.ready }

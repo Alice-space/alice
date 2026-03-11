@@ -36,6 +36,7 @@ func newHTTPManagerTestFixture(t *testing.T) (*HTTPManager, *store.Store, *bus.R
 		workflow.NewRuntime(reg),
 		idgen,
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	reception := policy.NewStaticReception(idgen)
 	mgr := NewHTTPManager(st, runtime, reception, AdminHooks{}, SurfaceConfig{
@@ -43,7 +44,7 @@ func newHTTPManagerTestFixture(t *testing.T) (*HTTPManager, *store.Store, *bus.R
 		AdminScheduleFireReplayEnabled: true,
 	})
 	mux := http.NewServeMux()
-	mgr.RegisterRoutes(mux)
+	mgr.RegisterRoutesGin(mux)
 	return mgr, st, runtime, reception, mux
 }
 
@@ -633,7 +634,7 @@ func TestDeadletterRedriveRequiresHook(t *testing.T) {
 		AdminScheduleFireReplayEnabled: true,
 	})
 	mux := http.NewServeMux()
-	mgr.RegisterRoutes(mux)
+	mgr.RegisterRoutesGin(mux)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/deadletters/dl_1/redrive", nil)
 	w := httptest.NewRecorder()
@@ -684,7 +685,7 @@ func TestDeadletterRedriveRejectsNonRetryableDeadletter(t *testing.T) {
 		},
 	}, SurfaceConfig{})
 	mux := http.NewServeMux()
-	mgr.RegisterRoutes(mux)
+	mgr.RegisterRoutesGin(mux)
 
 	req := httptest.NewRequest(http.MethodPost, "/v1/admin/deadletters/dl_action_dl_1/redrive", nil)
 	w := httptest.NewRecorder()

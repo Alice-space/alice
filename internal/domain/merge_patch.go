@@ -4,35 +4,33 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+
+	jsonpatch "github.com/evanphx/json-patch/v5"
 )
 
+// ApplyJSONMergePatch applies a JSON Merge Patch (RFC 7396) to a base document.
+// Uses evanphx/json-patch for proper RFC 6902/7396 compliance.
 func ApplyJSONMergePatch(base, patch json.RawMessage) (json.RawMessage, error) {
-	baseValue := any(map[string]any{})
-	if len(strings.TrimSpace(string(base))) > 0 {
-		if err := json.Unmarshal(base, &baseValue); err != nil {
-			return nil, fmt.Errorf("invalid base document: %w", err)
-		}
-	}
-	if len(strings.TrimSpace(string(patch))) == 0 {
-		out, err := json.Marshal(baseValue)
-		if err != nil {
-			return nil, err
-		}
-		return out, nil
+	// Handle empty base
+	if len(strings.TrimSpace(string(base))) == 0 {
+		base = []byte("{}")
 	}
 
-	var patchValue any
-	if err := json.Unmarshal(patch, &patchValue); err != nil {
-		return nil, fmt.Errorf("invalid merge patch: %w", err)
+	// Handle empty patch
+	if len(strings.TrimSpace(string(patch))) == 0 {
+		return base, nil
 	}
-	merged := mergePatchValue(baseValue, patchValue)
-	out, err := json.Marshal(merged)
+
+	// Use json-patch's MergePatch implementation
+	merged, err := jsonpatch.MergePatch(base, patch)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("apply merge patch: %w", err)
 	}
-	return out, nil
+
+	return merged, nil
 }
 
+// ValidatePatchedInputSchema validates a patched input document against a schema.
 func ValidatePatchedInputSchema(schemaID string, document json.RawMessage) error {
 	var parsed any
 	if err := json.Unmarshal(document, &parsed); err != nil {
@@ -45,6 +43,7 @@ func ValidatePatchedInputSchema(schemaID string, document json.RawMessage) error
 	if len(obj) == 0 {
 		return fmt.Errorf("patched input must not be empty")
 	}
+
 	switch strings.TrimSpace(schemaID) {
 	case "recovery.schedule_trigger":
 		reason, _ := obj["reason"].(string)
@@ -53,24 +52,4 @@ func ValidatePatchedInputSchema(schemaID string, document json.RawMessage) error
 		}
 	}
 	return nil
-}
-
-func mergePatchValue(target any, patch any) any {
-	patchObj, isPatchObj := patch.(map[string]any)
-	if !isPatchObj {
-		return patch
-	}
-
-	targetObj, isTargetObj := target.(map[string]any)
-	if !isTargetObj {
-		targetObj = map[string]any{}
-	}
-	for key, value := range patchObj {
-		if value == nil {
-			delete(targetObj, key)
-			continue
-		}
-		targetObj[key] = mergePatchValue(targetObj[key], value)
-	}
-	return targetObj
 }

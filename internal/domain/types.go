@@ -96,9 +96,13 @@ const (
 )
 
 const (
-	AggregateKindRequest = "request"
-	AggregateKindTask    = "task"
-	AggregateKindOther   = "other"
+	AggregateKindRequest   = "request"
+	AggregateKindTask      = "task"
+	AggregateKindSchedule  = "schedule"
+	AggregateKindGate      = "gate"
+	AggregateKindHumanWait = "human_wait"
+	AggregateKindAdmin     = "admin"
+	AggregateKindOther     = "other"
 )
 
 var terminalTaskStatuses = map[TaskStatus]struct{}{

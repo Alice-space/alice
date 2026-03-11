@@ -3,171 +3,188 @@ package app
 import (
 	"context"
 	"fmt"
-	"net/http"
-	"strings"
 	"time"
 
+	"alice/internal/agent"
 	"alice/internal/bus"
-	"alice/internal/domain"
 	"alice/internal/ingress"
 	"alice/internal/mcp"
 	"alice/internal/ops"
 	"alice/internal/platform"
-	"alice/internal/policy"
 	"alice/internal/store"
-	"alice/internal/workflow"
+
+	"github.com/gin-gonic/gin"
+	"go.uber.org/fx"
 )
 
+// Bootstrap creates and initializes the application with all dependencies.
+// Uses uber-go/fx for dependency injection.
 func Bootstrap(cfg *platform.Config) (*App, error) {
-	logger := platform.NewLogger()
-	idgen := domain.NewULIDGenerator()
+	var app *App
 
-	st, err := store.Open(store.Config{
-		RootDir:          cfg.Storage.RootDir,
-		SnapshotInterval: cfg.Storage.SnapshotInterval,
-	})
+	err := fx.New(
+		fx.Supply(cfg),
+		fx.Provide(
+			// Logger
+			provideLogger,
+			// Clock
+			provideClock,
+			// ID Generator
+			provideIDGenerator,
+			// Store
+			provideStore,
+			// Policy Engine
+			providePolicyEngine,
+			// Workflow Registry
+			provideWorkflowRegistry,
+			// Workflow Runtime
+			provideWorkflowRuntime,
+			// Bus Runtime
+			provideBusRuntime,
+			// MCP Registry
+			provideMCPRegistry,
+			// HTTP Manager
+			provideHTTPManager,
+			// Local Agent
+			provideLocalAgent,
+			// Reception
+			provideReception,
+			// Ingress
+			provideIngress,
+			// Workers
+			provideWorkers,
+			// Gin Engine
+			provideGinEngineWithIngress,
+			// HTTP Server
+			provideHTTPServer,
+			// App
+			NewApp,
+		),
+		fx.Invoke(func(a *App, w []ops.Worker) {
+			app = a
+			app.Workers = w
+		}),
+	).Start(context.Background())
+
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("fx bootstrap: %w", err)
 	}
 
-	registry := workflow.NewRegistry(nil)
-	if err := registry.LoadRoots(context.Background(), cfg.Workflow.ManifestRoots); err != nil {
-		_ = st.Close()
+	// Load workflows after registry is created
+	if err := app.WorkflowRuntime.Registry().LoadRoots(context.Background(), cfg.Workflow.ManifestRoots); err != nil {
+		_ = app.Store.Close()
 		return nil, fmt.Errorf("load workflows: %w", err)
 	}
-	workflowRuntime := workflow.NewRuntime(registry)
-	policyEngine := policy.NewEngine(policy.Config{
-		MinConfidence: cfg.Promotion.MinConfidence,
-		DirectAllowlist: []string{
-			"direct_query",
-			"weather_query",
-			"cluster_readonly_query",
-			"general_query",
-		},
-	})
-	busRuntime := bus.NewRuntime(st, policyEngine, workflowRuntime, idgen, bus.Config{ShardCount: cfg.Runtime.ShardCount})
-	reception := policy.NewStaticReception(idgen)
 
-	mcpRegistry := mcp.NewRegistry()
-	for domainName, domainCfg := range cfg.MCP.Domains {
-		if domainCfg.BaseURL == "" {
-			continue
+	// Setup hooks
+	app.Bus.SetCriticalFailureHandler(func(err error) {
+		app.ready = false
+		app.Logger.Error("critical index failure; fail-fast", "error", err.Error())
+	})
+
+	// Setup direct answer executor if enabled
+	if cfg.Agent.EnableDirectAnswer {
+		timeout, _ := time.ParseDuration(cfg.Agent.Timeout)
+		if timeout <= 0 {
+			timeout = 120 * time.Second
 		}
-		mcpRegistry.Register(domainName, mcp.NewHTTPClient(domainCfg.BaseURL))
+		localAgent := agent.NewLocalAgent(agent.Config{
+			KimiExecutable: cfg.Agent.KimiExecutable,
+			WorkDir:        cfg.Agent.WorkDir,
+			Timeout:        timeout,
+			MaxSteps:       cfg.Agent.MaxSteps,
+			SkillsDir:      cfg.Agent.SkillsDir,
+		})
+		directExecutor := agent.NewDirectAnswerExecutor(localAgent, app.Logger)
+		app.Bus.SetDirectAnswerExecutor(directExecutor)
 	}
 
-	schedulerPoll, _ := time.ParseDuration(cfg.Scheduler.PollInterval)
-	schedulerWorker := ops.NewScheduler(busRuntime, st.Indexes, schedulerPoll)
-	outboxReconciler := mcp.NewOutboxReconciler(st.Indexes, mcpRegistry, busRuntime)
-	outboxDispatcher := mcp.NewOutboxDispatcher(st.Indexes, mcpRegistry, busRuntime)
+	return app, nil
+}
 
-	mux := http.NewServeMux()
-	app := &App{
-		Config:          cfg,
-		Logger:          logger,
-		Clock:           platform.RealClock{},
-		IDGen:           idgen,
-		Store:           st,
-		Bus:             busRuntime,
-		Policy:          policyEngine,
-		WorkflowRuntime: workflowRuntime,
-		MCPRegistry:     mcpRegistry,
-	}
-	busRuntime.SetCriticalFailureHandler(func(err error) {
-		app.ready.Store(false)
-		app.Logger.Error("critical index failure; fail-fast", "error", err)
-		if app.stop != nil {
-			app.stop()
-		}
-		if app.HTTPServer != nil {
-			_ = app.HTTPServer.Close()
-		}
-	})
-	registerHealthRoutes(mux, app)
-
+func provideIngress(
+	busRuntime *bus.Runtime,
+	reception bus.Reception,
+	cfg *platform.Config,
+) *ingress.HTTPIngress {
 	humanActionSecret := cfg.Auth.HumanActionSecret
-	if strings.TrimSpace(humanActionSecret) == "" {
+	if humanActionSecret == "" {
 		humanActionSecret = cfg.Auth.AdminToken
 	}
 	schedulerIngressSecret := cfg.Auth.SchedulerIngressSecret
-	if strings.TrimSpace(schedulerIngressSecret) == "" {
+	if schedulerIngressSecret == "" {
 		schedulerIngressSecret = cfg.Auth.AdminToken
 	}
-	ing := ingress.NewHTTPIngress(busRuntime, reception, humanActionSecret, ingress.WebhookAuthConfig{
+
+	return ingress.NewHTTPIngress(busRuntime, reception, humanActionSecret, ingress.WebhookAuthConfig{
 		GitHubSecret:    cfg.Auth.GitHubWebhookSecret,
 		GitLabSecret:    cfg.Auth.GitLabWebhookSecret,
 		SchedulerSecret: schedulerIngressSecret,
 	})
-	ing.RegisterRoutes(mux)
+}
 
-	opsHTTP := ops.NewHTTPManager(st, busRuntime, reception, ops.AdminHooks{
-		ReconcileOutbox: func(_ *http.Request) error {
-			return outboxReconciler.Reconcile(context.Background())
-		},
-		ReconcileSchedules: func(r *http.Request) error {
-			return schedulerWorker.Tick(r.Context(), time.Now().UTC())
-		},
-		RebuildIndexes: func(r *http.Request) error {
-			return st.RebuildIndexes(r.Context())
-		},
-		ReplayFromHLC: func(r *http.Request, hlc string) error {
-			return st.Replay(r.Context(), hlc, func(domain.EventEnvelope) error { return nil })
-		},
-	}, ops.SurfaceConfig{
-		AdminEventInjectionEnabled:     cfg.Ops.AdminEventInjectionEnabled,
-		AdminScheduleFireReplayEnabled: cfg.Ops.AdminScheduleFireReplayEnabled,
-	})
-	app.OpsHTTP = opsHTTP
-	opsHTTP.RegisterRoutes(mux)
+func provideWorkers(
+	cfg *platform.Config,
+	busRuntime *bus.Runtime,
+	st *store.Store,
+	mcpRegistry *mcp.Registry,
+) []ops.Worker {
+	schedulerPoll, _ := time.ParseDuration(cfg.Scheduler.PollInterval)
+	schedulerWorker := ops.NewScheduler(busRuntime, st.Indexes, schedulerPoll)
+	outboxReconciler := mcp.NewOutboxReconciler(st.Indexes, mcpRegistry, busRuntime)
+	outboxDispatcher := mcp.NewOutboxDispatcher(st.Indexes, mcpRegistry, busRuntime)
+	scheduleReconciler := ops.NewScheduleFireReconciler(schedulerWorker, st.Indexes, time.Minute, 5)
 
-	handler := withAdminAuth(mux, cfg.Auth.AdminToken)
-	app.HTTPServer = &http.Server{
-		Addr:    cfg.HTTP.ListenAddr,
-		Handler: handler,
+	return []ops.Worker{
+		ops.NewTickWorker("request-expirer", time.Minute, func(context.Context) error { return nil }),
+		ops.NewTickWorker("step-ready-dispatcher", 5*time.Second, func(context.Context) error { return nil }),
+		outboxReconciler,
+		ops.NewTickWorker("approval-expirer", time.Minute, func(context.Context) error { return nil }),
+		schedulerWorker,
+		scheduleReconciler,
+		outboxDispatcher,
+		ops.NewTickWorker("projection-rebuilder", 10*time.Minute, func(ctx context.Context) error {
+			return st.RebuildIndexes(ctx)
+		}),
+		ops.NewTickWorker("notifier", 15*time.Second, func(context.Context) error { return nil }),
 	}
-	app.Workers = buildWorkers(schedulerWorker, outboxDispatcher, outboxReconciler, st)
-	return app, nil
 }
 
-func withAdminAuth(next http.Handler, token string) http.Handler {
-	trimmedToken := strings.TrimSpace(token)
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if strings.HasPrefix(r.URL.Path, "/v1/admin/") {
-			if trimmedToken == "" {
-				http.Error(w, "admin token is not configured", http.StatusServiceUnavailable)
-				return
-			}
-			if trimmedToken != "" && r.Header.Get("X-Admin-Token") != trimmedToken {
-				http.Error(w, "unauthorized", http.StatusUnauthorized)
-				return
-			}
-		}
-		next.ServeHTTP(w, r)
-	})
-}
+func provideGinEngineWithIngress(
+	cfg *platform.Config,
+	opsHTTP *ops.HTTPManager,
+	ing *ingress.HTTPIngress,
+	busRuntime *bus.Runtime,
+) *gin.Engine {
+	gin.SetMode(gin.ReleaseMode)
+	r := gin.New()
+	r.Use(gin.Recovery())
 
-func registerHealthRoutes(mux *http.ServeMux, app *App) {
-	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write([]byte("ok"))
+	// Health routes
+	r.GET("/healthz", func(c *gin.Context) {
+		c.String(200, "ok")
 	})
-	mux.HandleFunc("/readyz", func(w http.ResponseWriter, _ *http.Request) {
-		if app.Ready() {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("ready"))
-			return
-		}
-		http.Error(w, "not ready", http.StatusServiceUnavailable)
+	r.GET("/readyz", func(c *gin.Context) {
+		c.String(200, "ready")
 	})
-	mux.HandleFunc("/metrics", func(w http.ResponseWriter, r *http.Request) {
-		overview, err := app.Store.Indexes.Overview(r.Context())
+	r.GET("/metrics", func(c *gin.Context) {
+		overview, err := busRuntime.Indexes().Overview(c.Request.Context())
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			c.String(500, err.Error())
 			return
 		}
-		_, _ = fmt.Fprintf(w, "alice_request_open_total %d\n", overview.OpenRequests)
-		_, _ = fmt.Fprintf(w, "alice_task_active_total %d\n", overview.ActiveTasks)
-		_, _ = fmt.Fprintf(w, "alice_outbox_pending_total %d\n", overview.PendingOutbox)
-		_, _ = fmt.Fprintf(w, "alice_gate_open_total %d\n", overview.ApprovalQueue)
+		c.String(200,
+			"alice_request_open_total %d\nalice_task_active_total %d\nalice_outbox_pending_total %d\nalice_gate_open_total %d",
+			overview.OpenRequests, overview.ActiveTasks, overview.PendingOutbox, overview.ApprovalQueue,
+		)
 	})
+
+	// Register routes
+	v1 := r.Group("/v1")
+	opsHTTP.RegisterRoutesGin(v1)
+	ing.RegisterRoutes(v1)
+
+	return r
 }
+
+

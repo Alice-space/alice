@@ -19,7 +19,14 @@ import (
 	"alice/internal/policy"
 	"alice/internal/store"
 	"alice/internal/workflow"
+
+	"github.com/gin-gonic/gin"
 )
+
+func init() {
+	// Set gin to test mode to avoid debug output
+	gin.SetMode(gin.TestMode)
+}
 
 func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 	ctx := context.Background()
@@ -38,6 +45,7 @@ func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret")
 
@@ -52,6 +60,10 @@ func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 	}
 	token := signToken(t, "secret", claims)
 
+	// Create gin router and register routes
+	r := gin.New()
+	ing.RegisterRoutes(r.Group("/v1"))
+
 	body := NormalizedEvent{
 		EventType:    domain.EventTypeExternalEventIngested,
 		DecisionHash: "wrong-hash",
@@ -59,7 +71,7 @@ func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 	raw, _ := json.Marshal(body)
 	req := httptest.NewRequest(http.MethodPost, "/v1/human-actions/"+token, bytes.NewReader(raw))
 	w := httptest.NewRecorder()
-	ing.handleHumanAction(w, req)
+	r.ServeHTTP(w, req)
 	if w.Code != http.StatusUnauthorized {
 		t.Fatalf("expected unauthorized for decision hash mismatch, got %d", w.Code)
 	}
@@ -68,7 +80,7 @@ func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 	raw, _ = json.Marshal(body)
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/human-actions/"+token, bytes.NewReader(raw))
 	w2 := httptest.NewRecorder()
-	ing.handleHumanAction(w2, req2)
+	r.ServeHTTP(w2, req2)
 	if w2.Code == http.StatusUnauthorized {
 		t.Fatalf("expected token accepted, got %d", w2.Code)
 	}
@@ -107,6 +119,7 @@ func TestSchedulerFireEndpointDerivesServerPayload(t *testing.T) {
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", WebhookAuthConfig{
 		SchedulerSecret: "scheduler-secret",
@@ -142,13 +155,15 @@ func TestSchedulerFireEndpointDerivesServerPayload(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	mux := http.NewServeMux()
-	ing.RegisterRoutes(mux)
+	// Create gin router and register routes
+	r := gin.New()
+	ing.RegisterRoutes(r.Group("/v1"))
+
 	body := []byte(`{"scheduled_task_id":"sch_ingress_1","scheduled_for_window":"2026-03-10T09:00:00Z","event_type":"forged","idempotency_key":"forged"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/scheduler/fires", bytes.NewReader(body))
 	req.Header.Set("X-Scheduler-Token", "scheduler-secret")
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	r.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected accepted, got %d", w.Code)
 	}
@@ -185,16 +200,19 @@ func TestSchedulerFireEndpointRejectsUnauthorizedAndMissingOrDisabledSource(t *t
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", WebhookAuthConfig{
 		SchedulerSecret: "scheduler-secret",
 	})
-	mux := http.NewServeMux()
-	ing.RegisterRoutes(mux)
+
+	// Create gin router and register routes
+	r := gin.New()
+	ing.RegisterRoutes(r.Group("/v1"))
 
 	unauthReq := httptest.NewRequest(http.MethodPost, "/v1/scheduler/fires", bytes.NewReader([]byte(`{"scheduled_task_id":"sch_unauth","scheduled_for_window":"2026-03-10T09:00:00Z"}`)))
 	unauthW := httptest.NewRecorder()
-	mux.ServeHTTP(unauthW, unauthReq)
+	r.ServeHTTP(unauthW, unauthReq)
 	if unauthW.Code != http.StatusUnauthorized {
 		t.Fatalf("expected unauthorized for missing scheduler token, got %d", unauthW.Code)
 	}
@@ -202,7 +220,7 @@ func TestSchedulerFireEndpointRejectsUnauthorizedAndMissingOrDisabledSource(t *t
 	missingReq := httptest.NewRequest(http.MethodPost, "/v1/scheduler/fires", bytes.NewReader([]byte(`{"scheduled_task_id":"sch_missing","scheduled_for_window":"2026-03-10T09:00:00Z"}`)))
 	missingReq.Header.Set("X-Scheduler-Token", "scheduler-secret")
 	missingW := httptest.NewRecorder()
-	mux.ServeHTTP(missingW, missingReq)
+	r.ServeHTTP(missingW, missingReq)
 	if missingW.Code != http.StatusBadRequest {
 		t.Fatalf("expected bad request for missing schedule source, got %d", missingW.Code)
 	}
@@ -240,7 +258,7 @@ func TestSchedulerFireEndpointRejectsUnauthorizedAndMissingOrDisabledSource(t *t
 	disabledReq := httptest.NewRequest(http.MethodPost, "/v1/scheduler/fires", bytes.NewReader([]byte(`{"scheduled_task_id":"sch_disabled","scheduled_for_window":"2026-03-10T09:00:00Z"}`)))
 	disabledReq.Header.Set("X-Scheduler-Token", "scheduler-secret")
 	disabledW := httptest.NewRecorder()
-	mux.ServeHTTP(disabledW, disabledReq)
+	r.ServeHTTP(disabledW, disabledReq)
 	if disabledW.Code != http.StatusBadRequest {
 		t.Fatalf("expected bad request for disabled schedule source, got %d", disabledW.Code)
 	}
@@ -276,20 +294,23 @@ func TestGitHubWebhookVerificationAndRouteSanitization(t *testing.T) {
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", WebhookAuthConfig{
 		GitHubSecret: "gh-secret",
 	})
 
-	mux := http.NewServeMux()
-	ing.RegisterRoutes(mux)
+	// Create gin router and register routes
+	r := gin.New()
+	ing.RegisterRoutes(r.Group("/v1"))
+
 	payload := []byte(`{"event_type":"ExternalEventIngested","request_id":"req_forged","task_id":"task_forged","conversation_id":"c","thread_id":"t"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/webhooks/github", bytes.NewReader(payload))
 	req.Header.Set("X-GitHub-Event", "issue_comment")
 	req.Header.Set("X-GitHub-Delivery", "delivery-1")
 	req.Header.Set("X-Hub-Signature-256", githubSignature("gh-secret", payload))
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	r.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected accepted, got %d", w.Code)
 	}
@@ -323,7 +344,7 @@ func TestGitHubWebhookVerificationAndRouteSanitization(t *testing.T) {
 	badReq.Header.Set("X-GitHub-Delivery", "delivery-2")
 	badReq.Header.Set("X-Hub-Signature-256", "sha256=deadbeef")
 	wBad := httptest.NewRecorder()
-	mux.ServeHTTP(wBad, badReq)
+	r.ServeHTTP(wBad, badReq)
 	if wBad.Code != http.StatusUnauthorized {
 		t.Fatalf("expected invalid signature to be rejected, got %d", wBad.Code)
 	}
@@ -346,15 +367,18 @@ func TestWebIngressSanitizesUntrustedObjectFields(t *testing.T) {
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret")
-	mux := http.NewServeMux()
-	ing.RegisterRoutes(mux)
+
+	// Create gin router and register routes
+	r := gin.New()
+	ing.RegisterRoutes(r.Group("/v1"))
 
 	body := []byte(`{"event_type":"ScheduleTriggered","request_id":"req_forged","task_id":"task_forged","verified":true,"conversation_id":"conv","thread_id":"thr"}`)
 	req := httptest.NewRequest(http.MethodPost, "/v1/ingress/web/messages", bytes.NewReader(body))
 	w := httptest.NewRecorder()
-	mux.ServeHTTP(w, req)
+	r.ServeHTTP(w, req)
 	if w.Code != http.StatusAccepted {
 		t.Fatalf("expected accepted, got %d", w.Code)
 	}

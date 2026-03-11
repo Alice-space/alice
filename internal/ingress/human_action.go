@@ -1,0 +1,139 @@
+package ingress
+
+import (
+	"context"
+	"net/http"
+	"strings"
+	"time"
+
+	"alice/internal/domain"
+
+	"github.com/gin-gonic/gin"
+	"github.com/golang-jwt/jwt/v5"
+)
+
+func (h *HTTPIngress) handleHumanAction(c *gin.Context) {
+	token := strings.TrimPrefix(c.Param("token"), "/")
+	claims, err := h.verifyHumanActionToken(token)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
+		return
+	}
+
+	var in NormalizedEvent
+	if err := c.ShouldBindJSON(&in); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if in.DecisionHash == "" {
+		in.DecisionHash = claims.DecisionHash
+	}
+	if in.ActionKind == "" {
+		in.ActionKind = claims.ActionKind
+	}
+
+	if domain.NormalizeHumanActionKind(in.ActionKind) != domain.NormalizeHumanActionKind(claims.ActionKind) {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "action kind mismatch"})
+		return
+	}
+	if in.DecisionHash == "" || in.DecisionHash != claims.DecisionHash {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "decision hash mismatch"})
+		return
+	}
+
+	in.SourceKind = "human_action"
+	in.TransportKind = "human_action_token"
+	in.Verified = true
+
+	// Fill in fields from claims
+	if in.IdempotencyKey == "" {
+		in.IdempotencyKey = token + ":" + claims.DecisionHash
+	}
+	if in.RequestID == "" {
+		in.RequestID = claims.RequestID
+	}
+	if in.TaskID == "" {
+		in.TaskID = claims.TaskID
+	}
+	if in.ReplyToEventID == "" {
+		in.ReplyToEventID = claims.ReplyToEventID
+	}
+	if in.ScheduledTaskID == "" {
+		in.ScheduledTaskID = claims.ScheduledTaskID
+	}
+	if in.ControlObjectRef == "" {
+		in.ControlObjectRef = claims.ControlObjectRef
+	}
+	if in.WorkflowObjectRef == "" {
+		in.WorkflowObjectRef = claims.WorkflowObjectRef
+	}
+	if in.ApprovalRequestID == "" {
+		in.ApprovalRequestID = claims.ApprovalRequestID
+	}
+	if in.HumanWaitID == "" {
+		in.HumanWaitID = claims.HumanWaitID
+	}
+	if in.StepExecutionID == "" {
+		in.StepExecutionID = claims.StepExecutionID
+	}
+	if in.TargetStepID == "" {
+		in.TargetStepID = claims.TargetStepID
+	}
+	if in.WaitingReason == "" {
+		in.WaitingReason = claims.WaitingReason
+	}
+
+	evt := toExternalEvent(in)
+	ctx := context.WithValue(c.Request.Context(), "action_token", token)
+	result, err := h.runtime.IngestExternalEvent(ctx, evt, h.reception)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, writeAcceptedFromResult(result, ""))
+}
+
+// verifyHumanActionToken verifies a JWT token using golang-jwt/jwt/v5.
+func (h *HTTPIngress) verifyHumanActionToken(tokenString string) (*domain.HumanActionClaims, error) {
+	if len(h.humanActionSecret) == 0 {
+		return nil, domain.ErrUnauthorized
+	}
+
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
+		if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
+			return nil, domain.ErrInvalidToken
+		}
+		return h.humanActionSecret, nil
+	})
+	if err != nil {
+		return nil, domain.ErrInvalidToken
+	}
+
+	if !token.Valid {
+		return nil, domain.ErrInvalidToken
+	}
+
+	mapClaims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, domain.ErrInvalidToken
+	}
+
+	claims, err := domain.HumanActionClaimsFromMap(mapClaims)
+	if err != nil {
+		return nil, err
+	}
+
+	if claims.ExpiresAt.IsZero() || time.Now().UTC().After(claims.ExpiresAt) {
+		return nil, domain.ErrTokenExpired
+	}
+	if claims.DecisionHash == "" || claims.Nonce == "" {
+		return nil, domain.ErrInvalidToken
+	}
+	if err := domain.ValidateHumanActionClaims(claims); err != nil {
+		return nil, err
+	}
+
+	claims.ActionKind = string(domain.NormalizeHumanActionKind(claims.ActionKind))
+	return &claims, nil
+}

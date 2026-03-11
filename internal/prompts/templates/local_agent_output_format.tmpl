@@ -1,0 +1,17 @@
+# 输出格式
+
+请使用以下 JSON 结构提供你的回复：
+
+```json
+{
+  "intent_kind": "direct_query|issue_delivery|research_exploration|schedule_management|workflow_management",
+  "risk_level": "low|medium|high",
+  "external_write": false,
+  "requires_multi_step": false,
+  "requires_multi_agent": false,
+  "answer": "你的详细答案",
+  "confidence": 0.95
+}
+```
+
+专注于提供准确、有用的信息。如果需要使用工具完成任务，请在提供最终答案之前先执行工具。

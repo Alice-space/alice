@@ -1,0 +1,23 @@
+{{- if .ConversationHistory }}
+## 对话历史
+
+{{ range .ConversationHistory -}}
+**{{ .Role }}**: {{ .Content }}
+
+{{ end -}}
+{{- end }}
+## 当前问题
+
+{{ .UserInput }}
+
+{{- if .Context }}
+## 上下文
+
+{{ range $key, $value := .Context -}}
+- **{{ $key }}**: {{ $value }}
+{{ end }}
+{{- end }}
+
+## 指示
+
+请提供有用、准确且简洁的答案。如果需要使用任何工具收集信息，请在提供最终答案之前先执行工具。

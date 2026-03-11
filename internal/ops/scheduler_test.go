@@ -33,6 +33,7 @@ func TestSchedulerTickUsesStableFireWindowAndNoDuplicate(t *testing.T) {
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	nextFire := time.Date(2026, 3, 10, 9, 0, 0, 0, time.UTC)
 	payload := domain.ScheduledTaskRegisteredPayload{
@@ -124,6 +125,7 @@ func TestScheduleFireReconcilerBackfillsMissedWindows(t *testing.T) {
 		workflow.NewRuntime(reg),
 		domain.NewULIDGenerator(),
 		bus.Config{ShardCount: 4},
+		nil,
 	)
 	nextFire := time.Now().UTC().Add(-3 * time.Minute).Truncate(time.Minute)
 	payload := domain.ScheduledTaskRegisteredPayload{

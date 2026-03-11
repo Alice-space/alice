@@ -315,6 +315,13 @@ type ScheduledTaskRegisteredPayload struct {
 	RegisteredAt         time.Time `json:"registered_at"`
 }
 
+type ScheduleFirePayload struct {
+	FireID                 string    `json:"fire_id"`
+	ScheduledTaskID        string    `json:"scheduled_task_id"`
+	ScheduledForWindow     time.Time `json:"scheduled_for_window"`
+	SourceScheduleRevision string    `json:"source_schedule_revision"`
+}
+
 type ScheduleTriggeredPayload struct {
 	FireID                 string    `json:"fire_id"`
 	ScheduledTaskID        string    `json:"scheduled_task_id"`
