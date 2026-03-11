@@ -1,47 +1,59 @@
 # Alice
 
-Alice 是一个以 Go 为主语言的任务编排与协作系统仓库。
+Alice 是一个基于 Go 的任务编排与协作系统，当前仓库已经包含 v1 内核的可运行实现（运行时、入口、状态存储、运维读面、CLI 测试面），并继续按 `docs/tdr` 与 `docs/adr` 迭代。
 
-当前仓库处于“文档先行、代码后置”阶段：已经有顶层设计草案，但还没有落业务实现。本次初始化只建立仓库基础设施和 Go 项目骨架，不引入业务代码。
+## 当前状态
 
-## 当前目标
+已落地的核心能力（代码层）：
 
-- 统一仓库结构，避免后续实现阶段目录漂移
-- 用文档先固定边界、术语和协作方式
-- 预留单二进制核心运行时和独立 MCP 进程/服务的落点
+- `cmd/alice` 单二进制入口（`serve` + CLI client commands）
+- 统一入口事件接入（CLI / webhook / scheduler fire）
+- 事件日志、快照与读模型重建
+- `request/task/schedule/approval/human-wait/deadletter` 读接口
+- 管理面写接口（submit/resolve/cancel/reconcile/replay 等）
+
+仍在持续演进：
+
+- workflow 细节与策略收敛
+- 恢复与运维能力补齐
+- 文档与实现持续对齐
 
 ## 目录结构
 
 ```text
 .
-├── .github/                 # PR 模板等协作配置
-├── api/                     # 对外契约、协议定义、接口草案
-├── build/                   # 构建、打包、发布辅助资产
-├── cmd/                     # 可执行程序入口目录
-├── configs/                 # 本地开发与部署配置模板
-├── deployments/             # 部署清单与环境编排
-├── docs/                    # 设计文档、ADR、方案草稿
-├── internal/                # 仓库内私有实现包
-├── pkg/                     # 稳定后才对外暴露的公共包
+├── cmd/                     # 可执行程序入口（alice + mcp）
+├── internal/                # 业务实现（app/bus/store/ingress/ops/workflow/...）
+├── configs/                 # 本地配置与 workflow manifests
+├── docs/                    # TDR/CDR/ADR 与设计文档
+├── api/                     # 对外契约草案
 ├── scripts/                 # 开发与运维脚本
-└── test/                    # 集成测试资产、测试夹具与端到端用例
+└── test/                    # 集成测试资产
+```
+
+## 开发命令
+
+```bash
+go build ./...
+go test ./...
+```
+
+启动服务：
+
+```bash
+./bin/alice serve --config configs/alice.yaml
+```
+
+CLI 示例：
+
+```bash
+./bin/alice --server http://127.0.0.1:8080 submit message --text "hello" --wait
+./bin/alice --server http://127.0.0.1:8080 list requests
 ```
 
 ## 文档入口
 
 - 文档层级说明：[`docs/README.md`](./docs/README.md)
-- 顶层系统草案：[`docs/draft.md`](./docs/draft.md)
-- 架构决策记录：[`docs/adr/README.md`](./docs/adr/README.md)
-
-## 约定
-
-- 默认使用 Go `1.26`
-- 当前 `go.mod` 使用占位模块名 `alice`
-- 对外发布前，应将模块路径调整为真实仓库地址
-- 在没有实现代码前，优先补设计文档、接口草案和 ADR
-
-## 下一步建议
-
-1. 先把核心边界拆成 ADR，例如存储、状态机、MCP 协议、审核机制。
-2. 再补最小可运行骨架，例如配置加载、日志、HTTP server、健康检查。
-3. 最后按 `cmd/` 和 `internal/` 分层推进 BUS、Agent 和 MCP 实现。
+- TDR 总览：[`docs/tdr/README.md`](./docs/tdr/README.md)
+- CDR 总览：[`docs/cdr/README.md`](./docs/cdr/README.md)
+- ADR 总览：[`docs/adr/README.md`](./docs/adr/README.md)
