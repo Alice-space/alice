@@ -1,5 +1,13 @@
 // Package agent provides local LLM agent integration for Alice.
+//
 // It wraps the kimi CLI as a local agent that can execute commands and access files.
+// This package uses MCP (Model Context Protocol) via HTTP to enable structured
+// tool calling instead of parsing JSON from free-text responses.
+//
+// The agent connects to an embedded MCP HTTP server that provides tools like:
+// - submit_promotion_decision: For Reception to submit routing decisions
+// - submit_direct_answer: For direct query responses
+// - submit_tool_call: For requesting tool/MCP invocations
 package agent
 
 import (
@@ -15,6 +23,14 @@ import (
 
 	"alice/internal/prompts"
 )
+
+// MCPServer defines the interface for MCP server that agent needs.
+type MCPServer interface {
+	// URL returns the HTTP URL for connecting to this server.
+	URL() string
+	// ConfigJSON returns the MCP configuration JSON for kimi CLI.
+	ConfigJSON(serverName string) string
+}
 
 // Config holds the configuration for local agent.
 type Config struct {
@@ -32,6 +48,10 @@ type Config struct {
 
 	// SkillsDir is the path to skills directory.
 	SkillsDir string
+
+	// MCPServer provides the MCP HTTP server for tool calling.
+	// If nil, agent will not use MCP (fallback to legacy JSON parsing).
+	MCPServer MCPServer
 }
 
 // DefaultConfig returns default configuration.
@@ -96,7 +116,7 @@ type ExecuteResult struct {
 	// Output is the final text output from the agent.
 	Output string `json:"output"`
 
-	// StructuredOutput is the parsed JSON output if available.
+	// StructuredOutput is the parsed structured output from MCP tool calls.
 	StructuredOutput map[string]interface{} `json:"structured_output,omitempty"`
 
 	// Actions lists what actions the agent took.
@@ -116,7 +136,7 @@ type ExecuteResult struct {
 	} `json:"token_usage,omitempty"`
 }
 
-// Execute runs the kimi CLI with the given request.
+// Execute runs the kimi CLI with the given request using MCP tool calling.
 func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteResult, error) {
 	// Build the prompt with skill context
 	prompt, err := a.buildPrompt(req)
@@ -131,6 +151,12 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 		"--work-dir", a.config.WorkDir, // Working directory
 		"--max-steps-per-turn", fmt.Sprintf("%d", a.config.MaxSteps),
 		"--prompt", prompt,
+	}
+
+	// Add MCP configuration if available
+	if a.config.MCPServer != nil {
+		mcpConfig := a.config.MCPServer.ConfigJSON("alice-tools")
+		args = append(args, "--mcp-config", mcpConfig)
 	}
 
 	// Add skills directory if specified
@@ -171,10 +197,9 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 	output := stdout.String()
 	result.Output = output
 
-	// Try to extract JSON from output
-	if jsonStr := extractJSON(output); jsonStr != "" {
-		var structured map[string]interface{}
-		if err := json.Unmarshal([]byte(jsonStr), &structured); err == nil {
+	// Try to extract structured output from MCP tool calls
+	if a.config.MCPServer != nil {
+		if structured := extractMCPToolOutput(output); structured != nil {
 			result.StructuredOutput = structured
 		}
 	}
@@ -237,39 +262,44 @@ func (a *LocalAgent) loadSkill(skillName string) (string, error) {
 	return string(content), nil
 }
 
-// extractJSON tries to extract JSON from text output.
-func extractJSON(text string) string {
-	// Look for JSON code blocks
-	start := strings.Index(text, "```json")
-	if start == -1 {
-		// Try without language specifier
-		start = strings.Index(text, "```")
-	}
-	if start == -1 {
-		// Try to find JSON object directly
-		start = strings.Index(text, "{")
-		if start == -1 {
-			return ""
+// MCPToolOutput represents the wrapper format from MCP server
+type MCPToolOutput struct {
+	Type    string          `json:"type"`
+	Payload json.RawMessage `json:"payload"`
+}
+
+// extractMCPToolOutput extracts structured data from MCP tool call outputs.
+// The MCP server wraps tool outputs in a JSON format with "type" and "payload" fields.
+func extractMCPToolOutput(text string) map[string]interface{} {
+	// Look for MCP tool output markers
+	lines := strings.Split(text, "\n")
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
 		}
-		end := strings.LastIndex(text, "}")
-		if end == -1 || end <= start {
-			return ""
+
+		// Try to parse as MCP output wrapper
+		var wrapper MCPToolOutput
+		if err := json.Unmarshal([]byte(line), &wrapper); err != nil {
+			continue
 		}
-		return text[start : end+1]
+
+		// Validate known types
+		switch wrapper.Type {
+		case "promotion_decision", "direct_answer", "tool_call":
+			// Parse the payload into a generic map
+			var result map[string]interface{}
+			if err := json.Unmarshal(wrapper.Payload, &result); err != nil {
+				continue
+			}
+			// Add the type to the result for context
+			result["_output_type"] = wrapper.Type
+			return result
+		}
 	}
 
-	// Find the end of code block
-	contentStart := start + 7 // Skip ```json
-	if text[start:start+7] != "```json" {
-		contentStart = start + 3 // Skip ```
-	}
-
-	end := strings.Index(text[contentStart:], "```")
-	if end == -1 {
-		return ""
-	}
-
-	return strings.TrimSpace(text[contentStart : contentStart+end])
+	return nil
 }
 
 // extractActions extracts action descriptions from kimi stderr logs.

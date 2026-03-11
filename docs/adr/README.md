@@ -10,6 +10,7 @@ ADR（Architecture Decision Record）用于记录关键架构决策。
 - [`0004-version-bound-audit-aggregation.md`](./0004-version-bound-audit-aggregation.md)：确定审核采用版本绑定、固定席位与租约聚合
 - [`0005-evaluation-budget-and-cancellation.md`](./0005-evaluation-budget-and-cancellation.md)：确定评测独立于代码审核，预算触发硬熔断并传播取消
 - [`0006-structured-logging-system.md`](./0006-structured-logging-system.md)：确定结构化日志系统架构，支持多层日志和组件级配置
+- [`0007-mcp-tool-calling-for-structured-output.md`](./0007-mcp-tool-calling-for-structured-output.md)：确定使用 MCP Tool Calling 强制结构化输出，替代 JSON 文本解析
 
 建议采用如下命名方式：
 

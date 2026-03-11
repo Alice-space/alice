@@ -2,9 +2,7 @@ package policy
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"strings"
 	"time"
 
 	"alice/internal/agent"
@@ -109,50 +107,33 @@ func (r *LLMReception) parseDecision(result *agent.ExecuteResult, in domain.Rece
 		ProducedAt: now,
 	}
 
-	// Try to extract JSON from output
-	output := result.Output
-	if result.StructuredOutput != nil {
-		// Agent already parsed JSON for us
-		if data, err := json.Marshal(result.StructuredOutput); err == nil {
-			output = string(data)
-		}
-	}
-
-	var parsed struct {
-		IntentKind          string   `json:"intent_kind"`
-		RiskLevel           string   `json:"risk_level"`
-		ExternalWrite       bool     `json:"external_write"`
-		CreatePersistentObj bool     `json:"create_persistent_object"`
-		Async               bool     `json:"async"`
-		MultiStep           bool     `json:"multi_step"`
-		MultiAgent          bool     `json:"multi_agent"`
-		ApprovalRequired    bool     `json:"approval_required"`
-		BudgetRequired      bool     `json:"budget_required"`
-		RecoveryRequired    bool     `json:"recovery_required"`
-		ProposedWorkflowIDs []string `json:"proposed_workflow_ids"`
-		ReasonCodes         []string `json:"reason_codes"`
-		Confidence          float64  `json:"confidence"`
-	}
-
-	if err := json.Unmarshal([]byte(extractJSON(output)), &parsed); err != nil {
-		r.logger.Warn("failed_to_parse_llm_decision", "request_id", in.RequestID, "output", output, "error", err.Error())
-		// Fall back to simple decision
+	// Use structured output from MCP tool calls
+	if result.StructuredOutput == nil {
+		r.logger.Warn("no_structured_output_from_mcp", "request_id", in.RequestID, "output", result.Output)
 		return r.simpleDecision(in, decision)
 	}
 
-	decision.IntentKind = parsed.IntentKind
-	decision.RiskLevel = parsed.RiskLevel
-	decision.ExternalWrite = parsed.ExternalWrite
-	decision.CreatePersistentObject = parsed.CreatePersistentObj
-	decision.Async = parsed.Async
-	decision.MultiStep = parsed.MultiStep
-	decision.MultiAgent = parsed.MultiAgent
-	decision.ApprovalRequired = parsed.ApprovalRequired
-	decision.BudgetRequired = parsed.BudgetRequired
-	decision.RecoveryRequired = parsed.RecoveryRequired
-	decision.ProposedWorkflowIDs = parsed.ProposedWorkflowIDs
-	decision.ReasonCodes = parsed.ReasonCodes
-	decision.Confidence = parsed.Confidence
+	// Extract fields from MCP tool output
+	// The agent extracts these from the MCP submit_promotion_decision tool call
+	decision.IntentKind = getString(result.StructuredOutput, "intent_kind")
+	decision.RiskLevel = getString(result.StructuredOutput, "risk_level")
+	decision.ExternalWrite = getBool(result.StructuredOutput, "external_write")
+	decision.CreatePersistentObject = getBool(result.StructuredOutput, "create_persistent_object")
+	decision.Async = getBool(result.StructuredOutput, "async")
+	decision.MultiStep = getBool(result.StructuredOutput, "multi_step")
+	decision.MultiAgent = getBool(result.StructuredOutput, "multi_agent")
+	decision.ApprovalRequired = getBool(result.StructuredOutput, "approval_required")
+	decision.BudgetRequired = getBool(result.StructuredOutput, "budget_required")
+	decision.RecoveryRequired = getBool(result.StructuredOutput, "recovery_required")
+	decision.ProposedWorkflowIDs = getStringSlice(result.StructuredOutput, "proposed_workflow_ids")
+	decision.ReasonCodes = getStringSlice(result.StructuredOutput, "reason_codes")
+	decision.Confidence = getFloat64(result.StructuredOutput, "confidence")
+
+	// Validate required fields
+	if decision.IntentKind == "" {
+		r.logger.Warn("missing_intent_kind_in_mcp_output", "request_id", in.RequestID, "output", result.StructuredOutput)
+		return r.simpleDecision(in, decision)
+	}
 
 	// Determine result based on parsed fields
 	if decision.ExternalWrite || decision.MultiStep || decision.ApprovalRequired ||
@@ -198,14 +179,48 @@ func (r *LLMReception) fallbackDecision(in domain.ReceptionInput) *domain.Promot
 	})
 }
 
-func extractJSON(s string) string {
-	start := strings.Index(s, "{")
-	if start == -1 {
-		return "{}"
+// Helper functions for extracting values from MCP structured output
+
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
 	}
-	end := strings.LastIndex(s, "}")
-	if end == -1 || end <= start {
-		return "{}"
+	return ""
+}
+
+func getBool(m map[string]interface{}, key string) bool {
+	switch v := m[key].(type) {
+	case bool:
+		return v
+	case string:
+		return v == "true"
+	case float64:
+		return v != 0
 	}
-	return s[start : end+1]
+	return false
+}
+
+func getFloat64(m map[string]interface{}, key string) float64 {
+	switch v := m[key].(type) {
+	case float64:
+		return v
+	case string:
+		var f float64
+		fmt.Sscanf(v, "%f", &f)
+		return f
+	}
+	return 0
+}
+
+func getStringSlice(m map[string]interface{}, key string) []string {
+	if arr, ok := m[key].([]interface{}); ok {
+		result := make([]string, 0, len(arr))
+		for _, v := range arr {
+			if s, ok := v.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	return nil
 }

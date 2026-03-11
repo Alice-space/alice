@@ -1,17 +1,46 @@
 # 输出格式
 
-请使用以下 JSON 结构提供你的回复：
+你必须使用提供的工具函数来提交结果，禁止在回复中直接输出 JSON 代码块。
 
-```json
-{
-  "intent_kind": "direct_query|issue_delivery|research_exploration|schedule_management|workflow_management",
-  "risk_level": "low|medium|high",
-  "external_write": false,
-  "requires_multi_step": false,
-  "requires_multi_agent": false,
-  "answer": "你的详细答案",
-  "confidence": 0.95
-}
-```
+## 可用工具
 
-专注于提供准确、有用的信息。如果需要使用工具完成任务，请在提供最终答案之前先执行工具。
+### 1. `submit_promotion_decision` - 提交升级决策
+
+当需要决定请求的处理方式时调用此工具。
+
+参数:
+- `intent_kind`: 意图类型 (direct_query|issue_delivery|research_exploration|schedule_management|workflow_management)
+- `risk_level`: 风险级别 (low|medium|high)
+- `external_write`: 是否需要外部写入 (boolean)
+- `create_persistent_object`: 是否创建持久对象 (boolean)
+- `async`: 是否异步执行 (boolean)
+- `multi_step`: 是否需要多步骤 (boolean)
+- `multi_agent`: 是否需要多代理协作 (boolean)
+- `approval_required`: 是否需要审批 (boolean)
+- `budget_required`: 是否需要预算 (boolean)
+- `recovery_required`: 是否需要恢复能力 (boolean)
+- `proposed_workflow_ids`: 建议的工作流ID列表 (string[])
+- `reason_codes`: 决策原因代码 (string[])
+- `confidence`: 置信度 (0.0-1.0)
+
+### 2. `submit_direct_answer` - 提交直接回答
+
+当请求被判定为 direct_query 且需要直接回答时调用此工具。
+
+参数:
+- `answer`: 回答内容 (string)
+- `citations`: 引用来源 (string[], optional)
+
+### 3. `submit_tool_call` - 提交工具调用请求
+
+当需要使用工具完成请求时调用此工具。
+
+参数:
+- `tool_name`: 工具名称 (string)
+- `parameters`: 工具参数 (object)
+
+## 使用规则
+
+1. **强制使用工具**: 必须调用上述工具之一提交结果，不能直接返回 JSON
+2. **单次调用**: 每次回复只能调用一个工具（除非有特殊说明）
+3. **准确参数**: 确保所有必填参数都有值，且类型正确
