@@ -2,6 +2,7 @@ package ops
 
 import (
 	"encoding/json"
+	"slices"
 	"strings"
 
 	"alice/internal/domain"
@@ -140,7 +141,9 @@ func (m *readModel) handleContextPackRecorded(evt domain.EventEnvelope) {
 		return
 	}
 	req := m.ensureRequest(p.OwnerID)
-	req.ContextPacks = appendUnique(req.ContextPacks, p.ContextPackID)
+	if !slices.Contains(req.ContextPacks, p.ContextPackID) {
+		req.ContextPacks = append(req.ContextPacks, p.ContextPackID)
+	}
 	req.UpdatedHLC = evt.GlobalHLC
 }
 
@@ -150,7 +153,9 @@ func (m *readModel) handleAgentDispatchRecorded(evt domain.EventEnvelope) {
 		return
 	}
 	req := m.ensureRequest(p.OwnerID)
-	req.AgentDispatches = appendUnique(req.AgentDispatches, p.DispatchID)
+	if !slices.Contains(req.AgentDispatches, p.DispatchID) {
+		req.AgentDispatches = append(req.AgentDispatches, p.DispatchID)
+	}
 	req.UpdatedHLC = evt.GlobalHLC
 }
 
@@ -160,7 +165,9 @@ func (m *readModel) handleToolCallRecorded(evt domain.EventEnvelope) {
 		return
 	}
 	req := m.ensureRequest(p.OwnerID)
-	req.ToolCalls = appendUnique(req.ToolCalls, p.CallID)
+	if !slices.Contains(req.ToolCalls, p.CallID) {
+		req.ToolCalls = append(req.ToolCalls, p.CallID)
+	}
 	req.UpdatedHLC = evt.GlobalHLC
 }
 
@@ -240,7 +247,9 @@ func (m *readModel) handleStepExecutionStarted(evt domain.EventEnvelope) {
 		return
 	}
 	task := m.ensureTask(p.TaskID)
-	task.Steps = appendUnique(task.Steps, p.ExecutionID)
+	if !slices.Contains(task.Steps, p.ExecutionID) {
+		task.Steps = append(task.Steps, p.ExecutionID)
+	}
 	task.CurrentExecution = p.ExecutionID
 	task.Status = string(domain.TaskStatusActive)
 	task.UpdatedHLC = evt.GlobalHLC
@@ -330,7 +339,9 @@ func (m *readModel) handleUsageLedgerRecorded(evt domain.EventEnvelope) {
 		return
 	}
 	task := m.ensureTask(p.TaskID)
-	task.Usage = appendUnique(task.Usage, p.EntryID)
+	if !slices.Contains(task.Usage, p.EntryID) {
+		task.Usage = append(task.Usage, p.EntryID)
+	}
 	task.UpdatedHLC = evt.GlobalHLC
 }
 
@@ -349,7 +360,9 @@ func (m *readModel) handleApprovalRequestOpened(evt domain.EventEnvelope) {
 	approval.UpdatedHLC = evt.GlobalHLC
 
 	task := m.ensureTask(p.TaskID)
-	task.OpenApprovalIDs = appendUnique(task.OpenApprovalIDs, p.ApprovalRequestID)
+	if !slices.Contains(task.OpenApprovalIDs, p.ApprovalRequestID) {
+		task.OpenApprovalIDs = append(task.OpenApprovalIDs, p.ApprovalRequestID)
+	}
 	task.UpdatedHLC = evt.GlobalHLC
 }
 
@@ -379,7 +392,7 @@ func (m *readModel) handleHumanWaitRecorded(evt domain.EventEnvelope) {
 	wait.WaitingReason = p.WaitingReason
 	wait.Status = "open"
 	wait.AllowedDecisions = normalizeResumeOptions(p.ResumeOptions)
-	if containsValue(wait.AllowedDecisions, "rewind") {
+	if slices.Contains(wait.AllowedDecisions, "rewind") {
 		wait.RewindTargets = []string{"*"}
 	}
 	wait.ExpiresAt = p.DeadlineAt
@@ -387,7 +400,9 @@ func (m *readModel) handleHumanWaitRecorded(evt domain.EventEnvelope) {
 	wait.UpdatedHLC = evt.GlobalHLC
 
 	task := m.ensureTask(p.TaskID)
-	task.OpenHumanWaitIDs = appendUnique(task.OpenHumanWaitIDs, p.HumanWaitID)
+	if !slices.Contains(task.OpenHumanWaitIDs, p.HumanWaitID) {
+		task.OpenHumanWaitIDs = append(task.OpenHumanWaitIDs, p.HumanWaitID)
+	}
 	task.WaitingReason = p.WaitingReason
 	task.UpdatedHLC = evt.GlobalHLC
 }

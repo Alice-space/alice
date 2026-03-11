@@ -1,6 +1,7 @@
 package ops
 
 import (
+	"slices"
 	"strings"
 
 	"alice/internal/domain"
@@ -28,37 +29,13 @@ func normalizeResumeOptions(options []string) []string {
 		if normalized == "" {
 			continue
 		}
-		out = appendUnique(out, normalized)
-	}
-	return out
-}
-
-func appendUnique(in []string, value string) []string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return in
-	}
-	if containsValue(in, value) {
-		return in
-	}
-	return append(in, value)
-}
-
-func containsValue(in []string, value string) bool {
-	for _, item := range in {
-		if item == value {
-			return true
+		if !slices.Contains(out, normalized) {
+			out = append(out, normalized)
 		}
 	}
-	return false
+	return out
 }
 
 func removeValue(in []string, value string) []string {
-	out := in[:0]
-	for _, item := range in {
-		if item != value {
-			out = append(out, item)
-		}
-	}
-	return out
+	return slices.DeleteFunc(in, func(s string) bool { return s == value })
 }

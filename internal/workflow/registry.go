@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 
@@ -79,7 +80,7 @@ func (r *Registry) ResolveCandidate(_ context.Context, decision *domain.Promotio
 		if decision.IntentKind != "schedule_trigger" && !matchesControlPlanePriority(m.manifest.WorkflowID, evt) {
 			continue
 		}
-		if len(decision.ProposedWorkflowIDs) > 0 && !contains(decision.ProposedWorkflowIDs, m.manifest.WorkflowID) {
+		if len(decision.ProposedWorkflowIDs) > 0 && !slices.Contains(decision.ProposedWorkflowIDs, m.manifest.WorkflowID) {
 			continue
 		}
 		if decision.IntentKind != "schedule_trigger" {
@@ -266,15 +267,6 @@ func makeManifestKey(workflowID string, rev string) string {
 	return strings.TrimSpace(workflowID) + "@" + strings.TrimSpace(rev)
 }
 
-func contains(list []string, target string) bool {
-	for _, v := range list {
-		if v == target {
-			return true
-		}
-	}
-	return false
-}
-
 func matchesControlPlanePriority(workflowID string, evt *domain.ExternalEvent) bool {
 	switch {
 	case evt.ScheduledTaskID != "" || evt.ControlObjectRef != "":
@@ -342,7 +334,7 @@ func entryMCPAllowed(entry EntrySpec, required []string) bool {
 		return false
 	}
 	for _, req := range required {
-		if !contains(entry.AllowedMCP, req) {
+		if !slices.Contains(entry.AllowedMCP, req) {
 			return false
 		}
 	}
@@ -357,7 +349,7 @@ func entryToolsAllowed(entry EntrySpec, required []string) bool {
 		return false
 	}
 	for _, req := range required {
-		if !contains(entry.AllowedTools, req) {
+		if !slices.Contains(entry.AllowedTools, req) {
 			return false
 		}
 	}
