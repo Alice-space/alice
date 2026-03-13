@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"alice/internal/domain"
+	"alice/internal/notifier"
 	"alice/internal/platform"
 	storepkg "alice/internal/store"
 )
@@ -67,11 +68,11 @@ func TestReplyWorkerStoresTargetAndDeliversReplyIdempotently(t *testing.T) {
 		}),
 	)
 
-	worker := NewReplyWorker(st, svc, platform.NewNoopLogger())
-	if err := worker.syncOnce(context.Background()); err != nil {
+	worker := notifier.NewWorker(st, time.Millisecond, platform.NewNoopLogger(), NewReplyChannel(svc, platform.NewNoopLogger()))
+	if err := worker.Recover(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	if err := worker.syncOnce(context.Background()); err != nil {
+	if err := worker.Recover(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) != 1 {
@@ -150,8 +151,8 @@ func TestOutboundWorkerDeliversApprovalCardWithHumanActionToken(t *testing.T) {
 		}),
 	)
 
-	worker := NewOutboundWorker(st, svc, secret, platform.NewNoopLogger())
-	if err := worker.syncOnce(context.Background()); err != nil {
+	worker := notifier.NewWorker(st, time.Millisecond, platform.NewNoopLogger(), NewOutboundChannel(svc, secret, platform.NewNoopLogger()))
+	if err := worker.Recover(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) != 1 {
@@ -244,8 +245,8 @@ func TestOutboundWorkerDeliversHumanWaitCard(t *testing.T) {
 		}),
 	)
 
-	worker := NewOutboundWorker(st, svc, secret, platform.NewNoopLogger())
-	if err := worker.syncOnce(context.Background()); err != nil {
+	worker := notifier.NewWorker(st, time.Millisecond, platform.NewNoopLogger(), NewOutboundChannel(svc, secret, platform.NewNoopLogger()))
+	if err := worker.Recover(context.Background()); err != nil {
 		t.Fatal(err)
 	}
 	if len(calls) != 1 {

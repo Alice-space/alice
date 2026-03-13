@@ -19,7 +19,7 @@
 - `internal/app/app.go`
 - `internal/app/bootstrap.go`
 - `internal/app/runtime.go`
-- `internal/app/workers.go`
+- `internal/notifier/worker.go`
 
 ## 2. App 结构
 
@@ -178,8 +178,7 @@ v1 建议固定以下 worker：
 - `schedule-fire-reconciler`
 - `outbox-reconciler`
 - `projection-rebuilder`
-- `feishu-outbound-worker`（启用 Feishu 时）
-- `notifier`（Feishu 未启用时的占位出口）
+- `notifier`
 
 其中：
 
@@ -187,6 +186,12 @@ v1 建议固定以下 worker：
 - `projection-rebuilder` 只负责 lagging view 或灾后重建，不承担路由正确性
 
 这些 worker 都是平台内核的一部分，不是业务 workflow step。
+
+当前实现中，`notifier` 是统一 event-log replay worker：
+
+- worker 自身只负责按 channel cursor 重放事件日志
+- `internal/feishu` 以 channel 形式接入，不再自带独立 replay worker
+- 未启用任何 channel 时，`notifier` 保持空转但结构不分叉
 
 ### 6.2 Worker 接口
 

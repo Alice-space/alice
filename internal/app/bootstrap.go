@@ -12,6 +12,7 @@ import (
 	"alice/internal/feishu"
 	"alice/internal/ingress"
 	"alice/internal/mcp"
+	"alice/internal/notifier"
 	"alice/internal/ops"
 	"alice/internal/platform"
 	"alice/internal/store"
@@ -144,15 +145,16 @@ func provideWorkers(
 			return st.RebuildIndexes(ctx)
 		}),
 	}
-	if feishuService != nil && feishuService.Enabled() {
-		humanActionSecret := cfg.Auth.HumanActionSecret
-		if humanActionSecret == "" {
-			humanActionSecret = cfg.Auth.AdminToken
-		}
-		workers = append(workers, feishu.NewOutboundWorker(st, feishuService, []byte(humanActionSecret), logger))
-	} else {
-		workers = append(workers, ops.NewTickWorker("notifier", 15*time.Second, func(context.Context) error { return nil }))
+	humanActionSecret := cfg.Auth.HumanActionSecret
+	if humanActionSecret == "" {
+		humanActionSecret = cfg.Auth.AdminToken
 	}
+	workers = append(workers, notifier.NewWorker(
+		st,
+		5*time.Second,
+		logger,
+		feishu.NewOutboundChannel(feishuService, []byte(humanActionSecret), logger),
+	))
 	return workers
 }
 

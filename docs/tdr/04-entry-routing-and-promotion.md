@@ -389,9 +389,9 @@ Feishu 卡片点击不应绕开 `human_actions` 语义。实现约束如下：
 
 ### 9.1b Feishu 出站卡片约定
 
-Feishu 审批卡片和 human-wait 卡片由独立出站 worker 发送，不由 BUS 直接依赖 SDK：
+Feishu 审批卡片和 human-wait 卡片由统一 `notifier` worker 驱动的 Feishu channel 发送，不由 BUS 直接依赖 SDK：
 
-- `feishu-outbound-worker` 重放事件日志，消费 `ExternalEventIngested`、`RequestPromoted`、`ReplyRecorded`、`ApprovalRequestOpened`、`HumanWaitRecorded`
+- `notifier` 重放事件日志，按 channel cursor 分发 `ExternalEventIngested`、`RequestPromoted`、`ReplyRecorded`、`ApprovalRequestOpened`、`HumanWaitRecorded`
 - `ExternalEventIngested(im_feishu)` 只负责记录 reply target，不把 Feishu 元数据塞进领域对象
 - `RequestPromoted` 负责把 request 级 reply target 迁移成 task 级 target
 - `ApprovalRequestOpened` 生成审批卡片，按钮只承载 `human_action_token` 和最小必要元数据

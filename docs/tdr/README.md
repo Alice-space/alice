@@ -140,11 +140,12 @@ v1 不同时冻结 `HTTP/JSON` 和 `gRPC/protobuf` 两套传输栈。先把 HTTP
 | `internal/store/` | 事件日志、快照、bbolt 物化索引、重放 |
 | `internal/ingress/` | HTTP ingress、标准化、鉴权和 BUS 提交 |
 | `internal/feishu/` | Feishu SDK 收发、卡片模板、卡片回调和回复/投递状态 |
+| `internal/notifier/` | 通用通知 worker、channel 编排和 event-log replay |
 | `internal/policy/` | promotion、workflow 归属、gate、风险/预算策略 |
 | `internal/workflow/` | manifest 加载、binding、step runtime、gate runtime |
 | `internal/agent/` | `Reception`、leader、reviewer、worker、evaluator 适配层 |
 | `internal/mcp/` | MCP HTTP 客户端、域适配器、重试、断路器 |
-| `internal/ops/` | 投影、告警、通知、scheduler、reconciler、admin API |
+| `internal/ops/` | 投影、告警、scheduler、reconciler、admin API |
 | `internal/platform/` | `slog`、clock、ID、auth、HTTP middleware、文件布局 |
 | `api/` | workflow schema、MCP schema、HTTP payload schema 草案 |
 | `internal/cli/` | CLI client mode 的命令树、渲染、HTTP 客户端与输出格式 |

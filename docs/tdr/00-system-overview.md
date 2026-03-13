@@ -91,11 +91,12 @@ flowchart LR
 | `internal/store` | JSONL 日志、快照、bbolt 物化层、重放 | 不做策略判断 |
 | `internal/ingress` | HTTP ingress、标准化、鉴权和 BUS 提交 | 不跳过 BUS 直接改状态 |
 | `internal/feishu` | Feishu SDK 收发、卡片模板、卡片回调、回复/投递状态持久化 | 不把 Feishu 协议细节泄漏进 BUS/domain |
+| `internal/notifier` | 通用通知 worker、channel 编排、event-log replay | 不感知某个具体 IM/邮件协议细节 |
 | `internal/policy` | promotion、workflow 归属、gate、预算、重试策略 | 不自己持久化对象 |
 | `internal/workflow` | manifest 加载、binding、step runtime、gate runtime | 不绕过 `outbox` 直接写外部系统 |
 | `internal/agent` | `Reception` 和 step 执行适配 | 不原地修改聚合根 |
 | `internal/mcp` | MCP 客户端、域适配器、断路器、限流 | 不决定业务是否放行 |
-| `internal/ops` | 只读投影、通知、巡检、admin API | 不成为真源 |
+| `internal/ops` | 只读投影、巡检、admin API | 不成为真源 |
 | `internal/platform` | `slog`、clock、ID、auth、HTTP 基础设施 | 不写业务规则 |
 
 ### 4.2 依赖方向
@@ -105,13 +106,14 @@ flowchart LR
 ```text
 cmd -> app
 cmd -> cli
-app -> platform + store + bus + ingress + feishu + workflow + policy + mcp + ops
+app -> platform + store + bus + ingress + feishu + notifier + workflow + policy + mcp + ops
 cli -> platform
 cli -> api client
 bus -> domain + store + policy + workflow
 workflow -> domain + policy + agent
 ingress -> domain + bus + feishu + platform
 feishu -> domain + store + platform
+notifier -> domain + store + platform
 mcp -> domain + platform
 ops -> store + bus + platform
 domain -> no internal dependency
