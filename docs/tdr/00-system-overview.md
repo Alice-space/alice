@@ -89,7 +89,8 @@ flowchart LR
 | `internal/domain` | 核心对象、命令、事件、不变式 | 不依赖 IO |
 | `internal/bus` | 分片执行、路由、命令处理、状态推进 | 不直接访问外部系统 |
 | `internal/store` | JSONL 日志、快照、bbolt 物化层、重放 | 不做策略判断 |
-| `internal/ingress` | Feishu/Web/GitHub/GitLab/Scheduler 输入适配 | 不跳过 BUS 直接改状态 |
+| `internal/ingress` | HTTP ingress、标准化、鉴权和 BUS 提交 | 不跳过 BUS 直接改状态 |
+| `internal/feishu` | Feishu SDK 收发、卡片回调、回复状态持久化 | 不把 Feishu 协议细节泄漏进 BUS/domain |
 | `internal/policy` | promotion、workflow 归属、gate、预算、重试策略 | 不自己持久化对象 |
 | `internal/workflow` | manifest 加载、binding、step runtime、gate runtime | 不绕过 `outbox` 直接写外部系统 |
 | `internal/agent` | `Reception` 和 step 执行适配 | 不原地修改聚合根 |
@@ -104,12 +105,13 @@ flowchart LR
 ```text
 cmd -> app
 cmd -> cli
-app -> platform + store + bus + ingress + workflow + policy + mcp + ops
+app -> platform + store + bus + ingress + feishu + workflow + policy + mcp + ops
 cli -> platform
 cli -> api client
 bus -> domain + store + policy + workflow
 workflow -> domain + policy + agent
-ingress -> domain + bus + platform
+ingress -> domain + bus + feishu + platform
+feishu -> domain + store + platform
 mcp -> domain + platform
 ops -> store + bus + platform
 domain -> no internal dependency
@@ -245,7 +247,7 @@ CLI 在这里的定位也保持一致：
 
 1. `internal/platform`、`internal/store`、`internal/app`
 2. `internal/domain`、`internal/bus`
-3. `internal/ingress`、`internal/policy`
+3. `internal/ingress`、`internal/feishu`、`internal/policy`
 4. `internal/workflow`
 5. `internal/mcp`
 6. `internal/ops`

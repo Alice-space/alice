@@ -18,6 +18,7 @@ import (
 	larkcore "github.com/larksuite/oapi-sdk-go/v3/core"
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	larkdispatcher "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher"
+	larkcallback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
@@ -29,12 +30,11 @@ type replyAPI interface {
 
 // Service owns the Feishu SDK integration and its local state.
 type Service struct {
-	cfg        Config
-	logger     platform.Logger
-	state      *StateStore
-	dispatcher *larkdispatcher.EventDispatcher
-	replyAPI   replyAPI
-	replyFunc  func(context.Context, ReplyTarget, string, string) (string, error)
+	cfg       Config
+	logger    platform.Logger
+	state     *StateStore
+	replyAPI  replyAPI
+	replyFunc func(context.Context, ReplyTarget, string, string) (string, error)
 }
 
 func NewService(cfg Config, storageRoot string, logger platform.Logger) (*Service, error) {
@@ -60,7 +60,6 @@ func NewService(cfg Config, storageRoot string, logger platform.Logger) (*Servic
 		lark.WithLogLevel(larkcore.LogLevelError),
 	)
 	service.replyAPI = client.Im.V1.Message
-	service.dispatcher = larkdispatcher.NewEventDispatcher(cfg.VerificationToken, cfg.EncryptKey)
 	return service, nil
 }
 
@@ -75,18 +74,14 @@ func (s *Service) Close() error {
 	return s.state.Close()
 }
 
-func (s *Service) RegisterWebhookRoutes(rg *gin.RouterGroup, ingest func(context.Context, InboundMessage) error) {
-	rg.POST("/ingress/im/feishu", s.WebhookHandler(ingest))
-}
-
-func (s *Service) WebhookHandler(ingest func(context.Context, InboundMessage) error) gin.HandlerFunc {
+func (s *Service) EventWebhookHandler(ingest func(context.Context, InboundMessage) error) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if !s.Enabled() || s.dispatcher == nil {
+		if !s.Enabled() {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feishu is not configured"})
 			return
 		}
 
-		dispatcher := larkdispatcher.NewEventDispatcher(s.cfg.VerificationToken, s.cfg.EncryptKey)
+		dispatcher := s.newDispatcher()
 		dispatcher.OnP2MessageReceiveV1(func(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 			if ingest == nil {
 				return nil
@@ -98,23 +93,53 @@ func (s *Service) WebhookHandler(ingest func(context.Context, InboundMessage) er
 			}
 			return ingest(ctx, msg)
 		})
+		s.writeDispatcherResponse(c, dispatcher)
+	}
+}
 
-		resp := dispatcher.Handle(c.Request.Context(), &larkevent.EventReq{
-			Header:     c.Request.Header,
-			Body:       mustReadBody(c),
-			RequestURI: c.Request.URL.RequestURI(),
-		})
-		if resp == nil {
-			c.Status(http.StatusOK)
+func (s *Service) CardActionWebhookHandler(handle func(context.Context, CardAction) (*CardActionResult, error)) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !s.Enabled() {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feishu is not configured"})
 			return
 		}
-		for key, values := range resp.Header {
-			for _, value := range values {
-				c.Writer.Header().Add(key, value)
+
+		dispatcher := s.newDispatcher()
+		dispatcher.OnP2CardActionTrigger(func(ctx context.Context, event *larkcallback.CardActionTriggerEvent) (*larkcallback.CardActionTriggerResponse, error) {
+			action := cardActionFromEvent(event)
+			if handle == nil {
+				return successToast("ok"), nil
 			}
-		}
-		c.Data(resp.StatusCode, detectContentType(resp.Header), resp.Body)
+			result, err := handle(ctx, action)
+			if err != nil {
+				return errorToast(err.Error()), nil
+			}
+			return toCardActionResponse(result), nil
+		})
+		s.writeDispatcherResponse(c, dispatcher)
 	}
+}
+
+func (s *Service) newDispatcher() *larkdispatcher.EventDispatcher {
+	return larkdispatcher.NewEventDispatcher(s.cfg.VerificationToken, s.cfg.EncryptKey)
+}
+
+func (s *Service) writeDispatcherResponse(c *gin.Context, dispatcher *larkdispatcher.EventDispatcher) {
+	resp := dispatcher.Handle(c.Request.Context(), &larkevent.EventReq{
+		Header:     c.Request.Header,
+		Body:       mustReadBody(c),
+		RequestURI: c.Request.URL.RequestURI(),
+	})
+	if resp == nil {
+		c.Status(http.StatusOK)
+		return
+	}
+	for key, values := range resp.Header {
+		for _, value := range values {
+			c.Writer.Header().Add(key, value)
+		}
+	}
+	c.Data(resp.StatusCode, detectContentType(resp.Header), resp.Body)
 }
 
 func mustReadBody(c *gin.Context) []byte {
@@ -173,6 +198,67 @@ func inboundFromEvent(event *larkim.P2MessageReceiveV1) InboundMessage {
 	msg.Metadata = meta
 	msg.Text = extractUserText(meta.MessageType, meta.RawContent)
 	return msg
+}
+
+func cardActionFromEvent(event *larkcallback.CardActionTriggerEvent) CardAction {
+	action := CardAction{}
+	if event == nil || event.Event == nil {
+		return action
+	}
+	if event.EventV2Base != nil && event.EventV2Base.Header != nil {
+		action.EventID = strings.TrimSpace(event.EventV2Base.Header.EventID)
+		action.TenantKey = strings.TrimSpace(event.EventV2Base.Header.TenantKey)
+	}
+	if event.Event.Context != nil {
+		action.OpenMessageID = strings.TrimSpace(event.Event.Context.OpenMessageID)
+		action.OpenChatID = strings.TrimSpace(event.Event.Context.OpenChatID)
+	}
+	if event.Event.Operator != nil {
+		action.OperatorOpenID = strings.TrimSpace(event.Event.Operator.OpenID)
+		if event.Event.Operator.UserID != nil {
+			action.OperatorUserID = strings.TrimSpace(*event.Event.Operator.UserID)
+		}
+		if action.TenantKey == "" && event.Event.Operator.TenantKey != nil {
+			action.TenantKey = strings.TrimSpace(*event.Event.Operator.TenantKey)
+		}
+	}
+	if event.Event.Action != nil {
+		action.ActionTag = strings.TrimSpace(event.Event.Action.Tag)
+		action.ActionName = strings.TrimSpace(event.Event.Action.Name)
+		action.Option = strings.TrimSpace(event.Event.Action.Option)
+		action.InputValue = strings.TrimSpace(event.Event.Action.InputValue)
+		action.Value = event.Event.Action.Value
+		action.FormValue = event.Event.Action.FormValue
+	}
+	return action
+}
+
+func toCardActionResponse(result *CardActionResult) *larkcallback.CardActionTriggerResponse {
+	if result == nil {
+		return successToast("ok")
+	}
+	toastType := strings.TrimSpace(result.ToastType)
+	if toastType == "" {
+		toastType = "success"
+	}
+	content := strings.TrimSpace(result.ToastContent)
+	if content == "" {
+		content = "ok"
+	}
+	return &larkcallback.CardActionTriggerResponse{
+		Toast: &larkcallback.Toast{
+			Type:    toastType,
+			Content: content,
+		},
+	}
+}
+
+func successToast(content string) *larkcallback.CardActionTriggerResponse {
+	return toCardActionResponse(&CardActionResult{ToastType: "success", ToastContent: content})
+}
+
+func errorToast(content string) *larkcallback.CardActionTriggerResponse {
+	return toCardActionResponse(&CardActionResult{ToastType: "error", ToastContent: content})
 }
 
 func extractUserText(messageType, rawContent string) string {

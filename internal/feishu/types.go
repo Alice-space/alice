@@ -6,9 +6,13 @@ import (
 )
 
 const (
-	TransportKind         = "im_feishu"
-	ConversationNamespace = "feishu"
-	MessageInputSchemaID  = "feishu.im.message.v1"
+	TransportKind           = "im_feishu"
+	CardActionTransportKind = "im_feishu_card"
+	ConversationNamespace   = "feishu"
+	MessageInputSchemaID    = "feishu.im.message.v1"
+	CardActionInputSchemaID = "feishu.card.action.v1"
+
+	ActionTokenValueKey = "human_action_token"
 )
 
 // Config captures the Feishu-specific application settings.
@@ -116,6 +120,77 @@ type InboundMessage struct {
 	Text     string
 }
 
+// CardAction describes a card callback normalized from the Feishu SDK.
+type CardAction struct {
+	EventID        string                 `json:"event_id,omitempty"`
+	TenantKey      string                 `json:"tenant_key,omitempty"`
+	OpenMessageID  string                 `json:"open_message_id,omitempty"`
+	OpenChatID     string                 `json:"open_chat_id,omitempty"`
+	OperatorOpenID string                 `json:"operator_open_id,omitempty"`
+	OperatorUserID string                 `json:"operator_user_id,omitempty"`
+	ActionTag      string                 `json:"action_tag,omitempty"`
+	ActionName     string                 `json:"action_name,omitempty"`
+	Option         string                 `json:"option,omitempty"`
+	InputValue     string                 `json:"input_value,omitempty"`
+	Value          map[string]interface{} `json:"value,omitempty"`
+	FormValue      map[string]interface{} `json:"form_value,omitempty"`
+}
+
+func (a CardAction) HumanActionToken() string {
+	return stringFromAny(a.Value[ActionTokenValueKey])
+}
+
+func (a CardAction) ActorRef() string {
+	switch {
+	case strings.TrimSpace(a.OperatorOpenID) != "":
+		return "feishu:open_id:" + strings.TrimSpace(a.OperatorOpenID)
+	case strings.TrimSpace(a.OperatorUserID) != "":
+		return "feishu:user_id:" + strings.TrimSpace(a.OperatorUserID)
+	default:
+		return ""
+	}
+}
+
+func (a CardAction) SourceRef() string {
+	if v := strings.TrimSpace(a.InputValue); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(stringFromAny(a.Value["source_ref"])); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(a.ActionName); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(a.ActionTag); v != "" {
+		return v
+	}
+	return "feishu card action"
+}
+
+func (a CardAction) InputPatch() json.RawMessage {
+	patch := map[string]interface{}{}
+	for k, v := range a.FormValue {
+		patch[k] = v
+	}
+	if strings.TrimSpace(a.InputValue) != "" {
+		patch["input_value"] = strings.TrimSpace(a.InputValue)
+	}
+	if len(patch) == 0 {
+		return nil
+	}
+	data, err := json.Marshal(patch)
+	if err != nil {
+		return nil
+	}
+	return data
+}
+
+// CardActionResult is the transport-level response returned to Feishu after a card click.
+type CardActionResult struct {
+	ToastType    string
+	ToastContent string
+}
+
 // ReplyTarget identifies where a reply should be sent back in Feishu.
 type ReplyTarget struct {
 	MessageID      string `json:"message_id,omitempty"`
@@ -127,4 +202,23 @@ type ReplyTarget struct {
 
 func (t ReplyTarget) Valid() bool {
 	return strings.TrimSpace(t.MessageID) != ""
+}
+
+func stringFromAny(v interface{}) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case json.Number:
+		return x.String()
+	case float64:
+		raw, _ := json.Marshal(x)
+		return string(raw)
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
 }

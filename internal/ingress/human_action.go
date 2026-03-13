@@ -6,10 +6,12 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"alice/internal/bus"
 	"alice/internal/domain"
 
 	"github.com/gin-gonic/gin"
@@ -18,39 +20,63 @@ import (
 
 func (h *HTTPIngress) handleHumanAction(c *gin.Context) {
 	token := strings.TrimPrefix(c.Param("token"), "/")
-	claims, err := h.verifyHumanActionToken(token)
-	if err != nil {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
-		return
-	}
-
 	var in NormalizedEvent
 	if err := c.ShouldBindJSON(&in); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	result, err := h.ingestHumanAction(c.Request.Context(), token, in, "human_action_token")
+	if err != nil {
+		status := http.StatusBadRequest
+		if isHumanActionAuthError(err) {
+			status = http.StatusUnauthorized
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	c.JSON(http.StatusAccepted, writeAcceptedFromResult(result, ""))
+}
 
+func (h *HTTPIngress) ingestHumanAction(ctx context.Context, token string, in NormalizedEvent, transportKind string) (*bus.ProcessResult, error) {
+	claims, err := h.verifyHumanActionToken(token)
+	if err != nil {
+		return nil, err
+	}
+	normalized, err := h.normalizeHumanActionWithClaims(token, claims, in, transportKind)
+	if err != nil {
+		return nil, err
+	}
+	evt := toExternalEvent(normalized)
+	ctx = context.WithValue(ctx, "action_token", token)
+	result, err := h.runtime.IngestExternalEvent(ctx, evt, h.reception)
+	if err != nil {
+		return nil, err
+	}
+	return result, nil
+}
+
+func (h *HTTPIngress) normalizeHumanActionWithClaims(token string, claims *domain.HumanActionClaims, in NormalizedEvent, transportKind string) (NormalizedEvent, error) {
+	if claims == nil {
+		return NormalizedEvent{}, domain.ErrInvalidToken
+	}
 	if in.DecisionHash == "" {
 		in.DecisionHash = claims.DecisionHash
 	}
 	if in.ActionKind == "" {
 		in.ActionKind = claims.ActionKind
 	}
-
 	if domain.NormalizeHumanActionKind(in.ActionKind) != domain.NormalizeHumanActionKind(claims.ActionKind) {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "action kind mismatch"})
-		return
+		return NormalizedEvent{}, fmt.Errorf("action kind mismatch")
 	}
 	if in.DecisionHash == "" || in.DecisionHash != claims.DecisionHash {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "decision hash mismatch"})
-		return
+		return NormalizedEvent{}, fmt.Errorf("decision hash mismatch")
 	}
 
+	in.EventType = domain.EventTypeExternalEventIngested
 	in.SourceKind = "human_action"
-	in.TransportKind = "human_action_token"
+	in.TransportKind = transportKind
 	in.Verified = true
 
-	// Fill in fields from claims
 	if in.IdempotencyKey == "" {
 		in.IdempotencyKey = token + ":" + claims.DecisionHash
 	}
@@ -87,15 +113,18 @@ func (h *HTTPIngress) handleHumanAction(c *gin.Context) {
 	if in.WaitingReason == "" {
 		in.WaitingReason = claims.WaitingReason
 	}
+	return in, nil
+}
 
-	evt := toExternalEvent(in)
-	ctx := context.WithValue(c.Request.Context(), "action_token", token)
-	result, err := h.runtime.IngestExternalEvent(ctx, evt, h.reception)
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
+func isHumanActionAuthError(err error) bool {
+	if err == nil {
+		return false
 	}
-	c.JSON(http.StatusAccepted, writeAcceptedFromResult(result, ""))
+	if err == domain.ErrUnauthorized || err == domain.ErrInvalidToken || err == domain.ErrTokenExpired {
+		return true
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Error()))
+	return strings.Contains(msg, "mismatch")
 }
 
 // verifyHumanActionToken verifies a JWT token using golang-jwt/jwt/v5.

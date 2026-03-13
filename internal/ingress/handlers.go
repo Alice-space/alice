@@ -2,6 +2,7 @@ package ingress
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"strings"
 	"time"
@@ -18,8 +19,12 @@ func (h *HTTPIngress) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/ingress/cli/messages", h.handleCLIMessage)
 	if h.feishu != nil && h.feishu.Enabled() {
 		rg.POST("/ingress/im/feishu", h.handleFeishuMessage())
+		rg.POST("/ingress/im/feishu/cards", h.handleFeishuCardAction())
 	} else {
 		rg.POST("/ingress/im/feishu", func(c *gin.Context) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feishu is not configured"})
+		})
+		rg.POST("/ingress/im/feishu/cards", func(c *gin.Context) {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feishu is not configured"})
 		})
 	}
@@ -31,10 +36,23 @@ func (h *HTTPIngress) RegisterRoutes(rg *gin.RouterGroup) {
 }
 
 func (h *HTTPIngress) handleFeishuMessage() gin.HandlerFunc {
-	return h.feishu.WebhookHandler(func(ctx context.Context, in feishu.InboundMessage) error {
-		evt := toExternalEvent(h.normalizeFeishuMessage(in))
-		_, err := h.runtime.IngestExternalEvent(ctx, evt, h.reception)
+	return h.feishu.EventWebhookHandler(func(ctx context.Context, in feishu.InboundMessage) error {
+		_, err := h.ingestNormalizedEvent(ctx, h.normalizeFeishuMessage(in))
 		return err
+	})
+}
+
+func (h *HTTPIngress) handleFeishuCardAction() gin.HandlerFunc {
+	return h.feishu.CardActionWebhookHandler(func(ctx context.Context, action feishu.CardAction) (*feishu.CardActionResult, error) {
+		token := strings.TrimSpace(action.HumanActionToken())
+		if token == "" {
+			return &feishu.CardActionResult{ToastType: "error", ToastContent: "missing human action token"}, nil
+		}
+		_, err := h.ingestHumanAction(ctx, token, h.normalizeFeishuCardAction(action), feishu.CardActionTransportKind)
+		if err != nil {
+			return &feishu.CardActionResult{ToastType: "error", ToastContent: err.Error()}, nil
+		}
+		return &feishu.CardActionResult{ToastType: "success", ToastContent: "submitted"}, nil
 	})
 }
 
@@ -46,8 +64,7 @@ func (h *HTTPIngress) handleIngress(sourceKind, transportKind string) gin.Handle
 			return
 		}
 		in = h.sanitizeIngressInput(sourceKind, transportKind, in)
-		evt := toExternalEvent(in)
-		result, err := h.runtime.IngestExternalEvent(c.Request.Context(), evt, h.reception)
+		result, err := h.ingestNormalizedEvent(c.Request.Context(), in)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
@@ -76,7 +93,7 @@ func (h *HTTPIngress) handleCLIMessage(c *gin.Context) {
 		sourceRef = strings.TrimSpace(in.Text)
 	}
 
-	evt := domain.ExternalEvent{
+	result, err := h.ingestNormalizedEvent(c.Request.Context(), NormalizedEvent{
 		EventType:      domain.EventTypeExternalEventIngested,
 		SourceKind:     "direct_input",
 		TransportKind:  "cli",
@@ -90,9 +107,7 @@ func (h *HTTPIngress) handleCLIMessage(c *gin.Context) {
 		TraceID:        strings.TrimSpace(in.TraceID),
 		PayloadRef:     "cli-message:text",
 		Verified:       true,
-		ReceivedAt:     time.Now().UTC(),
-	}
-	result, err := h.runtime.IngestExternalEvent(c.Request.Context(), evt, h.reception)
+	})
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -196,6 +211,62 @@ func (h *HTTPIngress) normalizeFeishuMessage(in feishu.InboundMessage) Normalize
 		InputSchemaID:  feishu.MessageInputSchemaID,
 		InputPatch:     feishu.EncodeMetadataPatch(in.Metadata),
 	}
+}
+
+func (h *HTTPIngress) normalizeFeishuCardAction(action feishu.CardAction) NormalizedEvent {
+	return NormalizedEvent{
+		EventType:      domain.EventTypeExternalEventIngested,
+		SourceKind:     "human_action",
+		TransportKind:  feishu.CardActionTransportKind,
+		SourceRef:      action.SourceRef(),
+		ActorRef:       action.ActorRef(),
+		ReplyToEventID: stringFromMap(action.Value, "reply_to_event_id"),
+		DecisionHash:   stringFromMap(action.Value, "decision_hash"),
+		ActionKind:     stringFromMap(action.Value, "action_kind"),
+		TraceID:        stringFromMap(action.Value, "trace_id"),
+		InputSchemaID:  chooseNonEmpty(stringFromMap(action.Value, "input_schema_id"), feishu.CardActionInputSchemaID),
+		InputPatch:     action.InputPatch(),
+	}
+}
+
+func (h *HTTPIngress) ingestNormalizedEvent(ctx context.Context, in NormalizedEvent) (*bus.ProcessResult, error) {
+	evt := toExternalEvent(in)
+	return h.runtime.IngestExternalEvent(ctx, evt, h.reception)
+}
+
+func stringFromMap(m map[string]interface{}, key string) string {
+	if len(m) == 0 {
+		return ""
+	}
+	return strings.TrimSpace(feishuString(m[key]))
+}
+
+func feishuString(v interface{}) string {
+	switch x := v.(type) {
+	case string:
+		return x
+	case json.Number:
+		return x.String()
+	case float64:
+		raw, _ := json.Marshal(x)
+		return string(raw)
+	case bool:
+		if x {
+			return "true"
+		}
+		return "false"
+	default:
+		return ""
+	}
+}
+
+func chooseNonEmpty(values ...string) string {
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			return strings.TrimSpace(value)
+		}
+	}
+	return ""
 }
 
 func toExternalEvent(in NormalizedEvent) domain.ExternalEvent {

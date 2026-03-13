@@ -49,13 +49,15 @@ func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 		bus.Config{ShardCount: 4},
 		nil,
 	)
-	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", nil)
+	reception := policy.NewStaticReception(domain.NewULIDGenerator())
+	approval := openApprovalActionFixture(t, ctx, st, runtime, reception, "101")
+	ing := NewHTTPIngress(runtime, reception, "secret", nil)
 
 	claims := domain.HumanActionTokenClaims{
 		ActionKind:        "approve",
-		TaskID:            "task_1",
-		ApprovalRequestID: "apr_1",
-		StepExecutionID:   "exec_1",
+		TaskID:            approval.TaskID,
+		ApprovalRequestID: approval.ApprovalRequestID,
+		StepExecutionID:   approval.StepExecutionID,
 		DecisionHash:      "hash-1",
 		Nonce:             "nonce",
 		ExpiresAt:         time.Now().UTC().Add(5 * time.Minute),
@@ -83,8 +85,34 @@ func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 	req2 := httptest.NewRequest(http.MethodPost, "/v1/human-actions/"+token, bytes.NewReader(raw))
 	w2 := httptest.NewRecorder()
 	r.ServeHTTP(w2, req2)
-	if w2.Code == http.StatusUnauthorized {
-		t.Fatalf("expected token accepted, got %d", w2.Code)
+	if w2.Code != http.StatusAccepted {
+		t.Fatalf("expected token accepted, got %d body=%s", w2.Code, w2.Body.String())
+	}
+
+	var resolved domain.ApprovalRequestResolvedPayload
+	var resolvedFound bool
+	if err := st.Replay(ctx, "", func(evt domain.EventEnvelope) error {
+		if evt.EventType != domain.EventTypeApprovalRequestResolved {
+			return nil
+		}
+		var payload domain.ApprovalRequestResolvedPayload
+		if err := json.Unmarshal(evt.Payload, &payload); err != nil {
+			return err
+		}
+		if payload.ApprovalRequestID != approval.ApprovalRequestID {
+			return nil
+		}
+		resolved = payload
+		resolvedFound = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !resolvedFound {
+		t.Fatalf("expected approval %s to be resolved", approval.ApprovalRequestID)
+	}
+	if resolved.Resolution != "approve" {
+		t.Fatalf("expected approval resolution approve, got %s", resolved.Resolution)
 	}
 }
 
@@ -517,6 +545,180 @@ func TestFeishuIngressUsesSDKCallbackAndNormalizesMessage(t *testing.T) {
 	}
 }
 
+func TestFeishuCardActionIngressUsesHumanActionClaims(t *testing.T) {
+	ctx := context.Background()
+	rootDir := t.TempDir()
+	st, err := store.Open(store.Config{RootDir: rootDir, SnapshotInterval: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	reg := workflow.NewRegistry(nil)
+	if err := reg.LoadRoots(ctx, []string{filepath.Join("..", "..", "configs", "workflows")}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := bus.NewRuntime(
+		st,
+		policy.NewEngine(policy.Config{MinConfidence: 0.6, DirectAllowlist: []string{"direct_query"}}),
+		workflow.NewRuntime(reg),
+		domain.NewULIDGenerator(),
+		bus.Config{ShardCount: 4},
+		nil,
+	)
+	reception := policy.NewStaticReception(domain.NewULIDGenerator())
+	approval := openApprovalActionFixture(t, ctx, st, runtime, reception, "201")
+	feishuService, err := feishu.NewService(feishu.Config{
+		Enabled:           true,
+		AppID:             "cli_test_app",
+		AppSecret:         "cli_test_secret",
+		VerificationToken: "verify-token",
+	}, rootDir, platform.NewNoopLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer feishuService.Close()
+
+	ing := NewHTTPIngress(runtime, reception, "secret", feishuService)
+	r := gin.New()
+	ing.RegisterRoutes(r.Group("/v1"))
+
+	token := signToken(t, "secret", domain.HumanActionTokenClaims{
+		ActionKind:        "approve",
+		TaskID:            approval.TaskID,
+		ApprovalRequestID: approval.ApprovalRequestID,
+		StepExecutionID:   approval.StepExecutionID,
+		DecisionHash:      "hash-card",
+		Nonce:             "nonce-card",
+		ExpiresAt:         time.Now().UTC().Add(5 * time.Minute),
+	})
+
+	body := []byte(`{
+		"schema":"2.0",
+		"header":{
+			"event_id":"evt_card_1",
+			"event_type":"card.action.trigger",
+			"app_id":"cli_test_app",
+			"tenant_key":"tenant_1",
+			"create_time":"1710000000000",
+			"token":"verify-token"
+		},
+		"event":{
+			"operator":{
+				"tenant_key":"tenant_1",
+				"open_id":"ou_operator_1",
+				"user_id":"u_operator_1"
+			},
+			"action":{
+				"tag":"button",
+				"name":"approve",
+				"value":{
+					"human_action_token":"` + token + `",
+					"action_kind":"approve",
+					"decision_hash":"hash-card"
+				},
+				"form_value":{
+					"note":"ship it"
+				}
+			},
+			"context":{
+				"open_message_id":"om_card_1",
+				"open_chat_id":"oc_chat_1"
+			}
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/ingress/im/feishu/cards", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected feishu card callback 200, got %d body=%s", w.Code, w.Body.String())
+	}
+	var callbackResp struct {
+		Toast struct {
+			Type    string `json:"type"`
+			Content string `json:"content"`
+		} `json:"toast"`
+	}
+	if err := json.Unmarshal(w.Body.Bytes(), &callbackResp); err != nil {
+		t.Fatal(err)
+	}
+	if callbackResp.Toast.Type != "success" || callbackResp.Toast.Content != "submitted" {
+		t.Fatalf("unexpected feishu card callback payload: %s", w.Body.String())
+	}
+
+	var external domain.ExternalEventIngestedPayload
+	var externalFound bool
+	var resolved domain.ApprovalRequestResolvedPayload
+	var resolvedFound bool
+	if err := st.Replay(ctx, "", func(evt domain.EventEnvelope) error {
+		switch evt.EventType {
+		case domain.EventTypeExternalEventIngested:
+			var payload domain.ExternalEventIngestedPayload
+			if err := json.Unmarshal(evt.Payload, &payload); err != nil {
+				return err
+			}
+			if payload.Event.TransportKind != feishu.CardActionTransportKind || payload.Event.ApprovalRequestID != approval.ApprovalRequestID {
+				return nil
+			}
+			external = payload
+			externalFound = true
+		case domain.EventTypeApprovalRequestResolved:
+			var payload domain.ApprovalRequestResolvedPayload
+			if err := json.Unmarshal(evt.Payload, &payload); err != nil {
+				return err
+			}
+			if payload.ApprovalRequestID != approval.ApprovalRequestID {
+				return nil
+			}
+			resolved = payload
+			resolvedFound = true
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if !externalFound {
+		t.Fatalf("expected feishu card action external event for approval %s", approval.ApprovalRequestID)
+	}
+	if external.Event.SourceKind != "human_action" {
+		t.Fatalf("source_kind should be human_action, got %s", external.Event.SourceKind)
+	}
+	if external.Event.TransportKind != feishu.CardActionTransportKind {
+		t.Fatalf("transport_kind should be %s, got %s", feishu.CardActionTransportKind, external.Event.TransportKind)
+	}
+	if external.Event.ActionKind != "approve" {
+		t.Fatalf("action_kind should be approve, got %s", external.Event.ActionKind)
+	}
+	if external.Event.TaskID != approval.TaskID || external.Event.ApprovalRequestID != approval.ApprovalRequestID || external.Event.StepExecutionID != approval.StepExecutionID {
+		t.Fatalf("claims should hydrate task/approval/step ids, got task=%s approval=%s step=%s", external.Event.TaskID, external.Event.ApprovalRequestID, external.Event.StepExecutionID)
+	}
+	if external.Event.DecisionHash != "hash-card" {
+		t.Fatalf("decision hash should be preserved, got %s", external.Event.DecisionHash)
+	}
+	if external.Event.ActorRef != "feishu:open_id:ou_operator_1" {
+		t.Fatalf("actor_ref should come from card operator, got %s", external.Event.ActorRef)
+	}
+	if external.Event.InputSchemaID != feishu.CardActionInputSchemaID {
+		t.Fatalf("input_schema_id should be %s, got %s", feishu.CardActionInputSchemaID, external.Event.InputSchemaID)
+	}
+	var patch map[string]any
+	if err := json.Unmarshal(external.Event.InputPatch, &patch); err != nil {
+		t.Fatal(err)
+	}
+	if patch["note"] != "ship it" {
+		t.Fatalf("input patch should carry card form values, got %#v", patch)
+	}
+	if !resolvedFound {
+		t.Fatalf("expected approval %s to be resolved by card action", approval.ApprovalRequestID)
+	}
+	if resolved.Resolution != "approve" {
+		t.Fatalf("expected approval resolution approve, got %s", resolved.Resolution)
+	}
+	if resolved.ResolvedByActor != "feishu:open_id:ou_operator_1" {
+		t.Fatalf("approval actor should come from feishu operator, got %s", resolved.ResolvedByActor)
+	}
+}
+
 func githubSignature(secret string, payload []byte) string {
 	mac := hmac.New(sha256.New, []byte(secret))
 	_, _ = mac.Write(payload)
@@ -534,4 +736,65 @@ func signToken(t *testing.T, secret string, claims domain.HumanActionTokenClaims
 	_, _ = mac.Write([]byte(payload))
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	return "v1." + payload + "." + sig
+}
+
+type approvalActionFixture struct {
+	TaskID            string
+	ApprovalRequestID string
+	StepExecutionID   string
+}
+
+func openApprovalActionFixture(t *testing.T, ctx context.Context, st *store.Store, runtime *bus.Runtime, reception bus.Reception, issueRef string) approvalActionFixture {
+	t.Helper()
+
+	first, err := runtime.IngestExternalEvent(ctx, domain.ExternalEvent{
+		EventType:  domain.EventTypeExternalEventIngested,
+		SourceKind: "github",
+		RepoRef:    "github:alice/repo",
+		IssueRef:   issueRef,
+		ReceivedAt: time.Now().UTC(),
+	}, reception)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !first.Promoted || first.TaskID == "" {
+		t.Fatalf("expected promoted task for approval fixture, got %+v", first)
+	}
+
+	fixture := approvalActionFixture{
+		TaskID:            first.TaskID,
+		ApprovalRequestID: "apr_" + issueRef,
+		StepExecutionID:   "exec_" + issueRef,
+	}
+	payload, err := json.Marshal(domain.ApprovalRequestOpenedPayload{
+		ApprovalRequestID: fixture.ApprovalRequestID,
+		TaskID:            fixture.TaskID,
+		StepExecutionID:   fixture.StepExecutionID,
+		GateType:          "approval",
+		RequiredSlots:     []string{"owner"},
+		DeadlineAt:        time.Now().UTC().Add(time.Hour),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, ok := domain.EventSchemaFor(domain.EventTypeApprovalRequestOpened)
+	if !ok {
+		t.Fatal("approval request opened schema must exist")
+	}
+	if err := st.AppendBatch(ctx, []domain.EventEnvelope{{
+		EventID:         "evt_approval_open_" + issueRef,
+		AggregateKind:   schema.AggregateKind,
+		AggregateID:     fixture.TaskID,
+		EventType:       domain.EventTypeApprovalRequestOpened,
+		Sequence:        100,
+		GlobalHLC:       time.Now().UTC().Format(time.RFC3339Nano) + "#9001",
+		ProducedAt:      time.Now().UTC(),
+		Producer:        "test",
+		PayloadSchemaID: schema.PayloadSchemaID,
+		PayloadVersion:  schema.PayloadVersion,
+		Payload:         payload,
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	return fixture
 }
