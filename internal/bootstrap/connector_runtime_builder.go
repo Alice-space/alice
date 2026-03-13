@@ -5,9 +5,11 @@ import (
 	"errors"
 	"log"
 	"path/filepath"
+	"strings"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
+	"github.com/oklog/ulid/v2"
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/codearmy"
@@ -15,6 +17,7 @@ import (
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/memory"
+	"github.com/Alice-space/alice/internal/runtimeapi"
 )
 
 type connectorRuntimePaths struct {
@@ -30,12 +33,14 @@ type connectorRuntimeBuilder struct {
 	cfg       config.Config
 	backend   llm.Backend
 	paths     connectorRuntimePaths
-	sender    connector.Sender
+	sender    *connector.LarkSender
 	processor *connector.Processor
 	app       *connector.App
 
 	memoryManager   *memory.Manager
 	automationStore *automation.Store
+	apiServer       *runtimeapi.Server
+	apiToken        string
 }
 
 func newConnectorRuntimeBuilder(cfg config.Config, provider llm.Provider) (*connectorRuntimeBuilder, error) {
@@ -84,9 +89,13 @@ func (b *connectorRuntimeBuilder) Build() (*ConnectorRuntime, error) {
 	if err := b.buildAutomationEngine(); err != nil {
 		return nil, err
 	}
+	b.buildRuntimeAPI()
 
 	return &ConnectorRuntime{
 		App:                 b.app,
+		RuntimeAPI:          b.apiServer,
+		RuntimeAPIBaseURL:   runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
+		RuntimeAPIToken:     b.apiToken,
 		MemoryDir:           b.paths.memoryDir,
 		AutomationStatePath: b.paths.automationStatePath,
 	}, nil
@@ -128,6 +137,7 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 	)
 	processor.SetCodeArmyCommandDependencies(codearmy.NewInspector(b.paths.codeArmyStateDir), b.automationStore)
 	processor.SetImmediateFeedback(b.cfg.ImmediateFeedbackMode, b.cfg.ImmediateFeedbackReaction)
+	processor.SetRuntimeAPI(runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr), b.resolveRuntimeAPIToken())
 	loadOptionalState("session state", b.paths.sessionStatePath, processor.LoadSessionState)
 	b.processor = processor
 	return nil
@@ -167,6 +177,29 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 
 	b.app.SetAutomationRunner(automationEngine)
 	return nil
+}
+
+func (b *connectorRuntimeBuilder) buildRuntimeAPI() {
+	b.apiServer = runtimeapi.NewServer(
+		b.cfg.RuntimeHTTPAddr,
+		b.resolveRuntimeAPIToken(),
+		b.sender,
+		b.memoryManager,
+		b.automationStore,
+		codearmy.NewInspector(b.paths.codeArmyStateDir),
+	)
+}
+
+func (b *connectorRuntimeBuilder) resolveRuntimeAPIToken() string {
+	if strings.TrimSpace(b.apiToken) != "" {
+		return b.apiToken
+	}
+	if token := strings.TrimSpace(b.cfg.RuntimeHTTPToken); token != "" {
+		b.apiToken = token
+		return token
+	}
+	b.apiToken = strings.ToLower(ulid.Make().String())
+	return b.apiToken
 }
 
 func loadOptionalState(label, path string, load func(string) error) {

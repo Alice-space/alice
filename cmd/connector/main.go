@@ -73,7 +73,10 @@ func main() {
 	log.Printf("feishu-codex connector started (long connection mode)")
 	log.Printf("memory module enabled dir=%s", runtime.MemoryDir)
 	log.Printf("automation engine enabled state_file=%s", runtime.AutomationStatePath)
-	if err := runtime.App.Run(ctx); err != nil {
+	if runtime.RuntimeAPI != nil {
+		log.Printf("runtime http api enabled addr=%s", runtime.RuntimeAPIBaseURL)
+	}
+	if err := runtime.Run(ctx); err != nil {
 		log.Fatalf("connector stopped with error: %v", err)
 	}
 
