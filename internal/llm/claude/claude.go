@@ -273,10 +273,11 @@ func (r Runner) RunWithThreadAndProgress(
 }
 
 func (r Runner) renderPrompt(threadID string, userText string) (string, error) {
-	if r.Prompts == nil {
-		return buildPrompt(threadID, r.PromptPrefix, userText), nil
+	loader := r.Prompts
+	if loader == nil {
+		loader = prompting.DefaultLoader()
 	}
-	return r.Prompts.RenderFile("llm/initial_prompt.md.tmpl", map[string]any{
+	return loader.RenderFile("llm/initial_prompt.md.tmpl", map[string]any{
 		"Resume":       strings.TrimSpace(threadID) != "",
 		"ThreadID":     strings.TrimSpace(threadID),
 		"PromptPrefix": strings.TrimSpace(r.PromptPrefix),

@@ -1,0 +1,35 @@
+{{- if .UserMappings -}}
+{{- range .UserMappings }}
+用户{{ .Name }}的id是{{ .ID }}
+{{- end }}
+
+@提及规则：若需要在回复中艾特某人，请直接写 @姓名 或 @用户id（如 @ou_xxx），系统会自动转换为飞书 mention。
+
+{{- end -}}
+{{- if .HasIdentityContext -}}
+{{ .SenderName }}说：{{ .SpeechText }}
+{{- else -}}
+{{ .BaseText }}
+{{- end -}}
+{{- if .Attachments }}
+
+附加资源信息：
+{{- range .Attachments }}
+{{ .Index }}. 类型：{{ .Kind }}
+{{- if .FileName }}
+   文件名：{{ .FileName }}
+{{- end }}
+{{- if .ImageKey }}
+   image_key：{{ .ImageKey }}
+{{- end }}
+{{- if .FileKey }}
+   file_key：{{ .FileKey }}
+{{- end }}
+{{- if .LocalPath }}
+   本地路径：{{ .LocalPath }}
+{{- end }}
+{{- if .DownloadError }}
+   下载状态：失败（{{ .DownloadError }}）
+{{- end }}
+{{- end }}
+{{- end -}}

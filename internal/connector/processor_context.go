@@ -67,7 +67,7 @@ func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID
 		)
 		return userText
 	}
-	userText = appendRuntimeSkillHint(userText, job)
+	userText = p.appendRuntimeSkillHint(userText, job)
 
 	logging.Debugf("prompt assemble start event_id=%s memory_enabled=%t user_text=%q", job.EventID, p.memory != nil, userText)
 	if p.memory == nil {
@@ -85,13 +85,19 @@ func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID
 	return prompt
 }
 
-func appendRuntimeSkillHint(userText string, job Job) string {
+func (p *Processor) appendRuntimeSkillHint(userText string, job Job) string {
 	if strings.TrimSpace(job.SourceMessageID) == "" {
 		return userText
 	}
 
-	hint := "当前会话操作说明：发文本/图片/文件请使用 alice-message skill；memory 和定时任务请使用 alice-memory / alice-scheduler / alice-code-army skills。所有这些能力都通过 Alice 本地 HTTP API 自动路由，无需手动传 receive_id 或 source_message_id。\n\n"
-	return hint + strings.TrimSpace(userText)
+	rendered, err := p.renderPromptFile(connectorPromptRuntimeSkillHint, map[string]any{
+		"UserText": strings.TrimSpace(userText),
+	})
+	if err != nil {
+		logging.Warnf("render runtime skill hint failed event_id=%s: %v", job.EventID, err)
+		return strings.TrimSpace(userText)
+	}
+	return rendered
 }
 
 func (p *Processor) buildUserTextWithReplyContext(ctx context.Context, job Job, threadID string) string {
@@ -136,9 +142,14 @@ func (p *Processor) buildUserTextWithReplyContext(ctx context.Context, job Job, 
 		return currentText
 	}
 
-	combined := "你正在回复下面这条消息，请基于其上下文回答。\n" +
-		"被回复消息：\n" + clipText(parentText, 2000) + "\n\n" +
-		"用户当前回复：\n" + currentText
+	combined, err := p.renderPromptFile(connectorPromptReplyContext, map[string]any{
+		"ParentText": clipText(parentText, 2000),
+		"UserText":   currentText,
+	})
+	if err != nil {
+		logging.Warnf("render reply context failed event_id=%s parent_message_id=%s: %v", job.EventID, parentMessageID, err)
+		return currentText
+	}
 	logging.Debugf(
 		"reply context attached event_id=%s parent_message_id=%s parent_text=%q combined_user_text=%q",
 		job.EventID,
@@ -239,90 +250,54 @@ func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {
 
 func (p *Processor) buildCurrentUserInput(job Job) string {
 	baseText := strings.TrimSpace(job.Text)
-	var builder strings.Builder
 
 	botOpenID := strings.TrimSpace(job.BotOpenID)
 	botUserID := strings.TrimSpace(job.BotUserID)
 	senderName := normalizeUserDisplayName(strings.TrimSpace(job.SenderName), "用户")
-	senderID := preferredID(job.SenderOpenID, job.SenderUserID, job.SenderUnionID)
 	mentionedNames := buildMentionDisplayNames(job.MentionedUsers, botOpenID, botUserID)
-	mappingLines := buildUserIDMappingLines(job, senderName, senderID, botOpenID, botUserID)
 	speakerKnown := strings.TrimSpace(job.SenderName) != ""
-	identityContextEnabled := speakerKnown || len(mentionedNames) > 0 || len(mappingLines) > 0
-	if identityContextEnabled {
-		for _, mapping := range mappingLines {
-			builder.WriteString(mapping)
-			builder.WriteString("\n")
-		}
-		if len(mappingLines) > 0 {
-			builder.WriteString("@提及规则：若需要在回复中艾特某人，请直接写 @姓名 或 @用户id（如 @ou_xxx），系统会自动转换为飞书 mention。\n\n")
-		} else if builder.Len() > 0 {
-			builder.WriteString("\n")
-		}
-		builder.WriteString(senderName)
-		builder.WriteString("说：")
-		if len(mentionedNames) > 0 {
-			builder.WriteString("@")
-			builder.WriteString(strings.Join(mentionedNames, " @"))
-			builder.WriteString(" ")
-		}
-		builder.WriteString(baseText)
-	} else if baseText != "" {
-		builder.WriteString(baseText)
-	}
+	mappings := buildUserIDMappings(job, senderName, botOpenID, botUserID)
+	identityContextEnabled := speakerKnown || len(mentionedNames) > 0 || len(mappings) > 0
 
-	if len(job.Attachments) > 0 {
-		if builder.Len() > 0 {
-			builder.WriteString("\n\n")
-		}
-		builder.WriteString("附加资源信息：\n")
-		for idx, attachment := range job.Attachments {
-			builder.WriteString(fmt.Sprintf("%d. 类型：%s\n", idx+1, strings.TrimSpace(attachment.Kind)))
-			if name := strings.TrimSpace(attachment.FileName); name != "" {
-				builder.WriteString("   文件名：")
-				builder.WriteString(name)
-				builder.WriteString("\n")
-			}
-			if key := strings.TrimSpace(attachment.ImageKey); key != "" {
-				builder.WriteString("   image_key：")
-				builder.WriteString(key)
-				builder.WriteString("\n")
-			}
-			if key := strings.TrimSpace(attachment.FileKey); key != "" {
-				builder.WriteString("   file_key：")
-				builder.WriteString(key)
-				builder.WriteString("\n")
-			}
-			if localPath := strings.TrimSpace(attachment.LocalPath); localPath != "" {
-				builder.WriteString("   本地路径：")
-				builder.WriteString(localPath)
-				builder.WriteString("\n")
-			}
-			if errText := strings.TrimSpace(attachment.DownloadError); errText != "" {
-				builder.WriteString("   下载状态：失败（")
-				builder.WriteString(errText)
-				builder.WriteString("）\n")
-			}
+	speechText := baseText
+	if len(mentionedNames) > 0 {
+		mentionedText := "@" + strings.Join(mentionedNames, " @")
+		if speechText == "" {
+			speechText = mentionedText
+		} else {
+			speechText = mentionedText + " " + speechText
 		}
 	}
 
-	return strings.TrimSpace(builder.String())
+	rendered, err := p.renderPromptFile(connectorPromptCurrentUserInput, currentUserInputPromptData{
+		HasIdentityContext: identityContextEnabled,
+		SenderName:         senderName,
+		SpeechText:         speechText,
+		BaseText:           baseText,
+		UserMappings:       mappings,
+		Attachments:        buildAttachmentPromptData(job.Attachments),
+	})
+	if err != nil {
+		logging.Warnf("render current user input failed event_id=%s: %v", job.EventID, err)
+		return baseText
+	}
+	return rendered
 }
 
-func buildUserIDMappingLines(
+func buildUserIDMappings(
 	job Job,
 	senderName string,
-	senderID string,
 	botOpenID string,
 	botUserID string,
-) []string {
-	lines := make([]string, 0, len(job.MentionedUsers)+1)
+) []userMappingPromptData {
+	senderID := preferredID(job.SenderOpenID, job.SenderUserID, job.SenderUnionID)
+	mappings := make([]userMappingPromptData, 0, len(job.MentionedUsers)+1)
 	seen := make(map[string]struct{}, len(job.MentionedUsers)+1)
 
 	if senderID != "" && !isBotIdentity(job.SenderOpenID, job.SenderUserID, senderID, botOpenID, botUserID) {
-		line := fmt.Sprintf("用户%s的id是%s", senderName, senderID)
-		lines = append(lines, line)
-		seen[line] = struct{}{}
+		key := senderName + "\x00" + senderID
+		mappings = append(mappings, userMappingPromptData{Name: senderName, ID: senderID})
+		seen[key] = struct{}{}
 	}
 
 	for _, mentioned := range job.MentionedUsers {
@@ -335,14 +310,33 @@ func buildUserIDMappingLines(
 		if id == "" || isBotIdentity(mentioned.OpenID, mentioned.UserID, id, botOpenID, botUserID) {
 			continue
 		}
-		line := fmt.Sprintf("用户%s的id是%s", name, id)
-		if _, ok := seen[line]; ok {
+		key := name + "\x00" + id
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[line] = struct{}{}
-		lines = append(lines, line)
+		seen[key] = struct{}{}
+		mappings = append(mappings, userMappingPromptData{Name: name, ID: id})
 	}
-	return lines
+	return mappings
+}
+
+func buildAttachmentPromptData(attachments []Attachment) []attachmentPromptData {
+	if len(attachments) == 0 {
+		return nil
+	}
+	data := make([]attachmentPromptData, 0, len(attachments))
+	for idx, attachment := range attachments {
+		data = append(data, attachmentPromptData{
+			Index:         idx + 1,
+			Kind:          strings.TrimSpace(attachment.Kind),
+			FileName:      strings.TrimSpace(attachment.FileName),
+			ImageKey:      strings.TrimSpace(attachment.ImageKey),
+			FileKey:       strings.TrimSpace(attachment.FileKey),
+			LocalPath:     strings.TrimSpace(attachment.LocalPath),
+			DownloadError: strings.TrimSpace(attachment.DownloadError),
+		})
+	}
+	return data
 }
 
 func buildMentionDisplayNames(mentionedUsers []MentionedUser, botOpenID, botUserID string) []string {

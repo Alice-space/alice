@@ -14,6 +14,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type App struct {
@@ -26,6 +27,7 @@ type App struct {
 	now              func() time.Time
 	automationMu     sync.Mutex
 	automationRunner AutomationRunner
+	prompts          *prompting.Loader
 }
 
 const (
@@ -42,7 +44,15 @@ func NewApp(cfg config.Config, processor *Processor) *App {
 		processor: processor,
 		state:     newRuntimeStore(),
 		now:       time.Now,
+		prompts:   prompting.DefaultLoader(),
 	}
+}
+
+func (a *App) SetPromptLoader(loader *prompting.Loader) {
+	if a == nil || loader == nil {
+		return
+	}
+	a.prompts = loader
 }
 
 func (a *App) Run(ctx context.Context) error {

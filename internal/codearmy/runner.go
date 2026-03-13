@@ -70,6 +70,9 @@ type workflowRecord struct {
 }
 
 func NewRunner(stateDir string, backend llm.Backend, prompts *prompting.Loader) *Runner {
+	if prompts == nil {
+		prompts = prompting.DefaultLoader()
+	}
 	return &Runner{
 		stateDir: strings.TrimSpace(stateDir),
 		backend:  backend,
@@ -389,49 +392,12 @@ func (r *Runner) runLLM(
 	return reply, nextThreadID, nil
 }
 
-func buildManagerPrompt(state workflowState) string {
-	return "你是代码军队的 manager。\n" +
-		"目标：\n" + state.Objective + "\n\n" +
-		fmt.Sprintf("当前迭代：第 %d 轮。\n", state.Iteration) +
-		"请输出：\n" +
-		"1) 本轮目标\n" +
-		"2) 最多3条可执行开发任务\n" +
-		"3) 验收标准\n" +
-		"要求：简洁、可执行、避免空话。"
-}
-
-func buildWorkerPrompt(state workflowState) string {
-	base := "你是代码军队的 worker。\n" +
-		"总体目标：\n" + state.Objective + "\n\n" +
-		"manager 规划如下：\n" + defaultIfEmpty(state.ManagerPlan, "（无）") + "\n\n"
-	if strings.TrimSpace(state.LastDecision) == decisionFail {
-		base += "上轮 gate 未通过，请优先修复 reviewer 指出的问题：\n" +
-			defaultIfEmpty(state.ReviewerReport, "（无）") + "\n\n"
-	}
-	base += "请输出：\n" +
-		"1) 具体实现步骤\n" +
-		"2) 关键改动点\n" +
-		"3) 自测检查项"
-	return base
-}
-
-func buildReviewerPrompt(state workflowState) string {
-	return "你是代码军队的 reviewer。\n" +
-		"请基于以下内容做严格评审：\n\n" +
-		"目标：\n" + state.Objective + "\n\n" +
-		"manager 规划：\n" + defaultIfEmpty(state.ManagerPlan, "（无）") + "\n\n" +
-		"worker 产出：\n" + defaultIfEmpty(state.WorkerOutput, "（无）") + "\n\n" +
-		"请输出：\n" +
-		"- 主要风险\n" +
-		"- 改进建议\n" +
-		"- 最后一行必须是 `DECISION: PASS` 或 `DECISION: FAIL`"
-}
-
 func (r *Runner) buildManagerPrompt(state workflowState) (string, error) {
-	if r.prompts == nil {
-		return buildManagerPrompt(state), nil
+	loader := r.prompts
+	if loader == nil {
+		loader = prompting.DefaultLoader()
 	}
-	return r.prompts.RenderFile("code_army/manager.md.tmpl", map[string]any{
+	return loader.RenderFile("code_army/manager.md.tmpl", map[string]any{
 		"Objective":    defaultIfEmpty(state.Objective, "（无）"),
 		"Iteration":    state.Iteration,
 		"LastDecision": defaultIfEmpty(state.LastDecision, "none"),
@@ -439,10 +405,11 @@ func (r *Runner) buildManagerPrompt(state workflowState) (string, error) {
 }
 
 func (r *Runner) buildWorkerPrompt(state workflowState) (string, error) {
-	if r.prompts == nil {
-		return buildWorkerPrompt(state), nil
+	loader := r.prompts
+	if loader == nil {
+		loader = prompting.DefaultLoader()
 	}
-	return r.prompts.RenderFile("code_army/worker.md.tmpl", map[string]any{
+	return loader.RenderFile("code_army/worker.md.tmpl", map[string]any{
 		"Objective":      defaultIfEmpty(state.Objective, "（无）"),
 		"Iteration":      state.Iteration,
 		"ManagerPlan":    defaultIfEmpty(state.ManagerPlan, "（无）"),
@@ -452,10 +419,11 @@ func (r *Runner) buildWorkerPrompt(state workflowState) (string, error) {
 }
 
 func (r *Runner) buildReviewerPrompt(state workflowState) (string, error) {
-	if r.prompts == nil {
-		return buildReviewerPrompt(state), nil
+	loader := r.prompts
+	if loader == nil {
+		loader = prompting.DefaultLoader()
 	}
-	return r.prompts.RenderFile("code_army/reviewer.md.tmpl", map[string]any{
+	return loader.RenderFile("code_army/reviewer.md.tmpl", map[string]any{
 		"Objective":    defaultIfEmpty(state.Objective, "（无）"),
 		"Iteration":    state.Iteration,
 		"ManagerPlan":  defaultIfEmpty(state.ManagerPlan, "（无）"),

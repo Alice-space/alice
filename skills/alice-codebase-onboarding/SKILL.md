@@ -1,61 +1,70 @@
 ---
 name: alice-codebase-onboarding
-description: Understand and operate an Alice Feishu-to-Codex connector repository. Use when asked to analyze architecture, trace runtime flow, perform self-update/deployment checks, verify user-level systemd health, or troubleshoot startup and operational issues.
+description: Understand, diagnose, and self-update an Alice Feishu-to-Codex connector repository. Use when asked to trace runtime flow, verify prompt or bundled-skill wiring, inspect user-level systemd health, or run the canonical self-update path for the deployed connector.
 ---
 
 # Alice Codebase Onboarding
 
-Use this skill to work safely on an Alice repository with reproducible runtime/deployment evidence.
+Use this skill when the task is about the Alice repository or deployed runtime itself, not about normal chat operations inside Alice.
 
 ## Defaults
 
 - `ALICE_REPO`: target repo path. If unset, default to `$HOME/alice`.
 - `CODEX_HOME`: Codex home. If unset, default to `$HOME/.codex`.
+- `ALICE_SERVICE_NAME`: user service name. If unset, default to `alice-codex-connector.service`.
 
 ## Workflow
 
 1. Identify task mode first.
-- `code_change`: implement in repo, then test, then commit/push.
-- `self_update`: commit/push first, then run unified updater.
-- `runtime_triage`: collect facts before proposing fixes.
+- `flow_reading`: explain architecture, prompt flow, runtime CLI, or skill wiring.
+- `runtime_triage`: collect deployment/runtime evidence before proposing fixes.
+- `self_update`: verify repo state, then run the canonical updater and inspect the sync snapshot.
 
-2. For code changes, inspect focused files only.
-- Start at:
-  - `cmd/connector/main.go`
-  - `internal/bootstrap/connector_runtime.go`
-  - `internal/config/config.go`
+2. For flow reading, start narrow.
+- Read `docs/feishu-message-flow.zh-CN.md` and `docs/architecture.zh-CN.md` first when the question is architectural.
+- Then load `references/codebase-map.md`.
+- Open code entry points only as needed:
+  - `cmd/connector/root.go`
+  - `cmd/connector/runtime_root.go`
+  - `internal/bootstrap/connector_runtime_builder.go`
   - `internal/connector/app.go`
   - `internal/connector/processor.go`
-  - `internal/llm/codex/codex.go`
-  - `internal/memory/memory.go`
-- Expand to tests only when needed.
+  - `internal/prompting/*.go`
+  - `internal/runtimeapi/*.go`
 
-3. For self-update, always use the unified updater.
-- Canonical command (repo version):
+3. For runtime triage, collect evidence first.
+- Run:
+  - `scripts/check_alice_runtime.sh`
+  - Optional: `scripts/check_alice_runtime.sh --journal 200`
+- Then inspect logs:
+  - `journalctl --user-unit ${ALICE_SERVICE_NAME:-alice-codex-connector.service} -n 200 --no-pager`
+  - `journalctl --user-unit ${ALICE_SERVICE_NAME:-alice-codex-connector.service} --since "30 min ago" --no-pager`
+  - Fallback: `journalctl --user -u ${ALICE_SERVICE_NAME:-alice-codex-connector.service} ...`
+
+4. For self-update, use exactly one updater path.
+- Canonical repo command:
   - `$ALICE_REPO/scripts/update-self-and-sync-skill.sh`
 - Skill wrapper command:
   - `$CODEX_HOME/skills/alice-codebase-onboarding/scripts/update-self-and-sync-skill.sh`
-- Do not replace this with ad-hoc `git pull` + manual restart.
+- The wrapper must dispatch to the repo script; do not replace this with ad-hoc `git pull` + manual build + manual restart unless the user explicitly asks.
+- Before updating, make sure intended repo changes are already committed and pushed.
+- After updating, inspect `${CODEX_HOME:-$HOME/.codex}/state/alice/sync-state.md`.
 
-4. For runtime/deploy diagnosis, collect evidence first.
-- Run:
-  - `$CODEX_HOME/skills/alice-codebase-onboarding/scripts/check_alice_runtime.sh`
-  - Optional: `--journal 200`
-- Then inspect logs:
-  - `journalctl --user-unit alice-codex-connector.service -n 200 --no-pager`
-  - `journalctl --user-unit alice-codex-connector.service --since "30 min ago" --no-pager`
-  - Fallback: `journalctl --user -u alice-codex-connector.service ...`
+5. Remember the environment split.
+- Runtime skills (`alice-message`, `alice-memory`, `alice-scheduler`) resolve the connector binary via `ALICE_RUNTIME_BIN`, then `<repo>/bin/alice-connector`, then `PATH`.
+- Normal runtime-skill execution does not require Go.
+- The canonical self-update path does require `git` and `go` on the target host because it rebuilds `bin/alice-connector`.
 
-5. Load references on demand.
+6. Load references on demand.
 - Architecture/runtime chain: `references/codebase-map.md`
 - Build/deploy/self-update runbook: `references/deploy-runbook.md`
-- Latest sync snapshot path policy: `references/sync-state.md`
+- Sync snapshot layout and fields: `references/sync-state.md`
 
-6. Output in this order.
+7. Output in this order.
 - Current state: running/missing/broken evidence.
-- Runtime flow: Feishu event -> queue -> processor -> Codex -> reply/memory.
-- Action plan: exact commands.
-- Risks: config mismatch, auth state, service restart gaps, skill/repo drift.
+- Relevant flow or update path: what code path or deployment path actually applies.
+- Exact commands: what you ran or what should be run next.
+- Risks/blockers: config mismatch, auth state, missing Go toolchain, service restart gaps, skill/repo drift.
 
 ## Guardrails
 
@@ -64,4 +73,4 @@ Use this skill to work safely on an Alice repository with reproducible runtime/d
 - If Codex auth state is unknown, verify:
   - `HOME=$HOME CODEX_HOME=${CODEX_HOME:-$HOME/.codex} codex login status`
 - Keep conclusions tied to command output and file contents.
-- Keep code files under 500 lines; split by responsibility when needed.
+- If the host lacks `go`, state clearly that self-update cannot complete there; do not pretend the updater succeeded.

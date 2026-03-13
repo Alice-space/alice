@@ -38,12 +38,24 @@ prompt 不再以内联大字符串散落在代码里。
 - Prompt 根目录：`prompts/`
 - LLM 首轮 prompt 模板：`prompts/llm/initial_prompt.md.tmpl`
 - Memory prompt 模板：`prompts/memory/prompt.md.tmpl`
+- Connector 上下文模板：
+  - `prompts/connector/current_user_input.md.tmpl`
+  - `prompts/connector/reply_context.md.tmpl`
+  - `prompts/connector/runtime_skill_hint.md.tmpl`
+  - `prompts/connector/idle_summary.md.tmpl`
+  - `prompts/connector/synthetic_mention.md.tmpl`
 - Code Army phase 模板：
   - `prompts/code_army/manager.md.tmpl`
   - `prompts/code_army/worker.md.tmpl`
   - `prompts/code_army/reviewer.md.tmpl`
 
-`internal/prompting` 从磁盘读取模板，使用 `xxhash` 做编译缓存，并暴露 `sprig` 函数，避免把 prompt 逻辑重新手搓一遍。
+`internal/prompting` 从磁盘读取模板，使用 `xxhash` 做编译缓存，并暴露 `sprig` 函数。
+
+当前约束是：
+
+- `App`、`Processor`、各个 LLM runner、`code_army.Runner` 都优先接收显式注入的 prompt loader。
+- 如果调用链上没有显式注入，会回退到 `internal/prompting.DefaultLoader()`，自动向上查找仓库 `prompts/` 目录。
+- 非测试代码里的业务 prompt 已经统一收进模板，不再保留字符串版 fallback。
 
 ## 后端抽象
 
@@ -100,6 +112,12 @@ memory 和定时任务能力现在以外置 skill 的形式暴露，而不是只
 - `ALICE_RUNTIME_BIN`
 - 既有会话环境变量，如 `ALICE_MCP_RECEIVE_ID`、`ALICE_MCP_SESSION_KEY`、actor 元数据等
 
+仓库自带 skill 脚本解析运行时二进制的顺序是：
+
+1. `ALICE_RUNTIME_BIN`
+2. `<repo>/bin/alice-connector`
+3. `PATH` 里的 `alice-connector`
+
 ## MCP 策略
 
 Alice 不再通过 MCP 暴露业务能力。
@@ -110,7 +128,7 @@ Alice 不再通过 MCP 暴露业务能力。
 - 仓库自带 skill 统一调用同一个 `alice-connector` 二进制的 `runtime ...` 子命令。
 - 现在残留的 `mcp` 命名只限于会话上下文环境变量，例如 `ALICE_MCP_RECEIVE_ID`，它们继续作为稳定的运行时上下文字段存在。
 
-这样做的结果是：Codex 里的 MCP、外置 skill、Alice 核心运行时共享同一份会话鉴权和消息 API，而不是各自复制一套逻辑。
+这样做的结果是：外置 skill、Alice 核心运行时和会话上下文注入链路共享同一份会话鉴权和消息 API，而不是各自复制一套逻辑。
 
 ## Debug Trace
 

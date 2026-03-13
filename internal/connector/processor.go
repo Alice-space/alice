@@ -14,6 +14,7 @@ import (
 	"github.com/Alice-space/alice/internal/codearmy"
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type Processor struct {
@@ -36,6 +37,7 @@ type Processor struct {
 	runtimeAPIBin   string
 	codeArmyStatus  *codearmy.Inspector
 	automationStore *automation.Store
+	prompts         *prompting.Loader
 }
 
 const interruptedReplyMessage = "已收到你的新消息，当前回复已中断并切换到最新输入。"
@@ -45,11 +47,6 @@ const immediateFeedbackReplyText = "收到！"
 const immediateFeedbackModeReply = "reply"
 const immediateFeedbackModeReaction = "reaction"
 const defaultImmediateFeedbackEmoji = "SMILE"
-const idleSummaryPrompt = "请基于当前会话上下文，提炼后续仍有价值的信息摘要。\n" +
-	"要求：\n" +
-	"1. 只提炼：事实、约束、决策、待办、偏好变化。\n" +
-	"2. 不包含：寒暄、一次性执行细节、敏感信息。\n" +
-	"3. 输出 5-12 条短要点；若无重要信息仅输出“无重要新增信息”。"
 
 var selfUpdateIntentPatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)self[\s_-]*update`),
@@ -88,7 +85,15 @@ func NewProcessorWithMemory(
 		feedbackEmoji:   defaultImmediateFeedbackEmoji,
 		sessions:        make(map[string]sessionState),
 		now:             time.Now,
+		prompts:         prompting.DefaultLoader(),
 	}
+}
+
+func (p *Processor) SetPromptLoader(loader *prompting.Loader) {
+	if p == nil || loader == nil {
+		return
+	}
+	p.prompts = loader
 }
 
 func (p *Processor) SetImmediateFeedback(mode, emojiType string) {

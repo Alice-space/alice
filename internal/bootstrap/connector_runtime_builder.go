@@ -140,6 +140,7 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 		b.cfg.ThinkingMessage,
 		b.memoryManager,
 	)
+	processor.SetPromptLoader(b.promptLoader)
 	processor.SetCodeArmyCommandDependencies(codearmy.NewInspector(b.paths.codeArmyStateDir), b.automationStore)
 	processor.SetImmediateFeedback(b.cfg.ImmediateFeedbackMode, b.cfg.ImmediateFeedbackReaction)
 	processor.SetRuntimeAPI(
@@ -154,6 +155,7 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 
 func (b *connectorRuntimeBuilder) buildApp() error {
 	app := connector.NewApp(b.cfg, b.processor)
+	app.SetPromptLoader(b.promptLoader)
 	loadOptionalState("runtime state", b.paths.runtimeStatePath, app.LoadRuntimeState)
 	b.app = app
 	return nil

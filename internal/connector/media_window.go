@@ -254,6 +254,12 @@ func (a *App) buildSyntheticMentionJob(event *larkim.P2MessageReceiveV1) (*Job, 
 		return nil, false
 	}
 
+	promptText, err := a.renderPromptFile(connectorPromptSyntheticMention, nil)
+	if err != nil {
+		logging.Warnf("render synthetic mention prompt failed event_id=%s: %v", eventID(event), err)
+		return nil, false
+	}
+
 	return &Job{
 		ReceiveID:            receiveID,
 		ReceiveIDType:        receiveIDType,
@@ -268,7 +274,7 @@ func (a *App) buildSyntheticMentionJob(event *larkim.P2MessageReceiveV1) (*Job, 
 		ThreadID:             strings.TrimSpace(deref(message.ThreadId)),
 		RootID:               strings.TrimSpace(deref(message.RootId)),
 		MessageType:          "text",
-		Text:                 "用户@了你，请结合其最近发送的消息继续处理。",
+		Text:                 promptText,
 		RawContent:           strings.TrimSpace(deref(message.Content)),
 		EventID:              eventID(event),
 		ReceivedAt:           a.now(),

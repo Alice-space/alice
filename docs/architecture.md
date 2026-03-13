@@ -38,12 +38,24 @@ Prompts are no longer embedded as large string literals in code paths.
 - Prompt root: `prompts/`
 - LLM initial prompt template: `prompts/llm/initial_prompt.md.tmpl`
 - Memory prompt template: `prompts/memory/prompt.md.tmpl`
+- Connector context templates:
+  - `prompts/connector/current_user_input.md.tmpl`
+  - `prompts/connector/reply_context.md.tmpl`
+  - `prompts/connector/runtime_skill_hint.md.tmpl`
+  - `prompts/connector/idle_summary.md.tmpl`
+  - `prompts/connector/synthetic_mention.md.tmpl`
 - Code Army phase templates:
   - `prompts/code_army/manager.md.tmpl`
   - `prompts/code_army/worker.md.tmpl`
   - `prompts/code_army/reviewer.md.tmpl`
 
-`internal/prompting` loads templates from disk, caches compiled templates with `xxhash`, and exposes `sprig` helpers for richer prompt logic.
+`internal/prompting` loads templates from disk, caches compiled templates with `xxhash`, and exposes `sprig` helpers.
+
+Current behavior:
+
+- `App`, `Processor`, LLM runners, and `code_army.Runner` accept an injected loader when bootstrap provides one.
+- If no loader is injected, they fall back to `internal/prompting.DefaultLoader()`, which searches upward for the repo `prompts/` directory.
+- Non-test business prompts now live in template files only; string-literal fallbacks have been removed.
 
 ## Backend abstraction
 
@@ -100,6 +112,12 @@ These skills rely on:
 - `ALICE_RUNTIME_BIN`
 - existing session env such as `ALICE_MCP_RECEIVE_ID`, `ALICE_MCP_SESSION_KEY`, and related actor metadata
 
+Bundled runtime skill scripts resolve the runtime binary in this order:
+
+1. `ALICE_RUNTIME_BIN`
+2. `<repo>/bin/alice-connector`
+3. `alice-connector` from `PATH`
+
 ## MCP strategy
 
 Alice no longer exposes business operations through MCP.
@@ -110,7 +128,7 @@ Current posture:
 - Bundled skills call the same `alice-connector` binary with `runtime ...` arguments.
 - The remaining `mcp` naming is limited to session-context env keys such as `ALICE_MCP_RECEIVE_ID`, which are still used as stable runtime context variables.
 
-This keeps legacy Codex MCP behavior alive while reducing duplication between skills and MCP handlers.
+This preserves stable session env keys while avoiding duplicated business handlers across skills and core runtime code.
 
 ## Debug traces
 

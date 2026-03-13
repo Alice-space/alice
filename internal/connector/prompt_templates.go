@@ -1,0 +1,57 @@
+package connector
+
+import (
+	"fmt"
+
+	"github.com/Alice-space/alice/internal/prompting"
+)
+
+const (
+	connectorPromptCurrentUserInput = "connector/current_user_input.md.tmpl"
+	connectorPromptReplyContext     = "connector/reply_context.md.tmpl"
+	connectorPromptRuntimeSkillHint = "connector/runtime_skill_hint.md.tmpl"
+	connectorPromptIdleSummary      = "connector/idle_summary.md.tmpl"
+	connectorPromptSyntheticMention = "connector/synthetic_mention.md.tmpl"
+)
+
+type currentUserInputPromptData struct {
+	HasIdentityContext bool
+	SenderName         string
+	SpeechText         string
+	BaseText           string
+	UserMappings       []userMappingPromptData
+	Attachments        []attachmentPromptData
+}
+
+type userMappingPromptData struct {
+	Name string
+	ID   string
+}
+
+type attachmentPromptData struct {
+	Index         int
+	Kind          string
+	FileName      string
+	ImageKey      string
+	FileKey       string
+	LocalPath     string
+	DownloadError string
+}
+
+func renderPromptFile(loader *prompting.Loader, name string, data any) (string, error) {
+	if loader == nil {
+		loader = prompting.DefaultLoader()
+	}
+	if loader == nil {
+		return "", fmt.Errorf("prompt loader is nil for template %q", name)
+	}
+	return loader.RenderFile(name, data)
+}
+
+func (p *Processor) renderPromptFile(name string, data any) (string, error) {
+	return renderPromptFile(p.prompts, name, data)
+}
+
+func (a *App) renderPromptFile(name string, data any) (string, error) {
+	return renderPromptFile(a.prompts, name, data)
+}

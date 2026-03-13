@@ -8,6 +8,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 func TestParseFinalMessage(t *testing.T) {
@@ -99,14 +101,28 @@ func TestBuildExecArgs_ResumeThreadWithModel(t *testing.T) {
 }
 
 func TestBuildPrompt_NewThreadIncludesPrefix(t *testing.T) {
-	prompt := buildPrompt("", "你是助手Alice。", "你好")
+	runner := Runner{
+		Prompts:      prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
+		PromptPrefix: "你是助手Alice。",
+	}
+	prompt, err := runner.renderPrompt("", "你好")
+	if err != nil {
+		t.Fatalf("render prompt failed: %v", err)
+	}
 	if prompt != "你是助手Alice。\n\n你好" {
 		t.Fatalf("unexpected prompt: %q", prompt)
 	}
 }
 
 func TestBuildPrompt_ResumeThreadSkipsPrefix(t *testing.T) {
-	prompt := buildPrompt("session_123", "你是助手Alice。", "你好")
+	runner := Runner{
+		Prompts:      prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
+		PromptPrefix: "你是助手Alice。",
+	}
+	prompt, err := runner.renderPrompt("session_123", "你好")
+	if err != nil {
+		t.Fatalf("render prompt failed: %v", err)
+	}
 	if prompt != "你好" {
 		t.Fatalf("unexpected prompt: %q", prompt)
 	}
