@@ -51,9 +51,10 @@ We will use the **Model Context Protocol (MCP)** with forced tool calling for al
    - Parses tool call outputs from MCP server
    - Returns structured data in `ExecuteResult.StructuredOutput`
 
-3. **Prompt Templates**
-   - Updated to instruct LLM to use tools instead of outputting JSON
-   - Emphasizes "MUST use tools" constraint
+3. **Runtime Skills**
+   - Runtime instructions live under `skills/`
+   - `mcp-tool-output` defines the shared MCP submission contract
+   - `reception-assessment` and `direct-answer` consume structured execution payloads
 
 ### Tool Schemas
 
@@ -113,4 +114,6 @@ We will use the **Model Context Protocol (MCP)** with forced tool calling for al
 - [Go SDK](https://github.com/modelcontextprotocol/go-sdk)
 - `internal/mcp/server.go` (Embedded MCP HTTP server)
 - `internal/agent/local.go` (MCP client integration)
-- `internal/prompts/templates/local_agent_output_format.tmpl`
+- `skills/mcp-tool-output/SKILL.md`
+- `skills/reception-assessment/SKILL.md`
+- `skills/direct-answer/SKILL.md`

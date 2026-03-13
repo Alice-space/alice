@@ -7,7 +7,6 @@ import (
 
 	"alice/internal/agent"
 	"alice/internal/domain"
-	"alice/internal/prompts"
 )
 
 // LLMReception uses local LLM agent to assess promotion decisions.
@@ -39,17 +38,14 @@ func (r *LLMReception) Assess(ctx context.Context, in domain.ReceptionInput) (*d
 	start := time.Now().UTC()
 	r.logger.Info("reception_started", "request_id", in.RequestID, "event_id", in.Event.EventID, "source_ref", in.Event.SourceRef)
 
-	// Build the assessment prompt
-	prompt := r.buildAssessmentPrompt(in)
-
 	// Execute with local agent
 	result, err := r.agent.Execute(ctx, agent.ExecuteRequest{
-		RequestID:    in.RequestID,
-		EventID:      in.Event.EventID,
-		Stage:        "reception",
-		Task:         prompt,
-		Skill:        "reception-assessment",
-		SystemPrompt: r.assessmentSystemPrompt(),
+		RequestID: in.RequestID,
+		EventID:   in.Event.EventID,
+		Stage:     "reception",
+		Operation: "reception_assessment",
+		Skills:    []string{"mcp-tool-output", "reception-assessment"},
+		Input:     r.buildAssessmentInput(in),
 		Constraints: agent.ExecuteConstraints{
 			ReadOnly: true,
 		},
@@ -69,35 +65,33 @@ func (r *LLMReception) Assess(ctx context.Context, in domain.ReceptionInput) (*d
 	return decision, nil
 }
 
-func (r *LLMReception) buildAssessmentPrompt(in domain.ReceptionInput) string {
-	data := struct {
-		UserInput       string
-		RepoRef         string
-		IssueRef        string
-		PRRef           string
-		ScheduledTaskID string
-		MatchedBy       string
-		RouteKeys       []string
-	}{
-		UserInput:       in.Event.SourceRef,
-		RepoRef:         in.Event.RepoRef,
-		IssueRef:        in.Event.IssueRef,
-		PRRef:           in.Event.PRRef,
-		ScheduledTaskID: in.Event.ScheduledTaskID,
-		MatchedBy:       in.RouteSnapshot.MatchedBy,
-		RouteKeys:       in.RouteSnapshot.RouteKeys,
+func (r *LLMReception) buildAssessmentInput(in domain.ReceptionInput) map[string]any {
+	return map[string]any{
+		"request_id":     in.RequestID,
+		"required_refs":  in.RequiredRefs,
+		"route_target":   map[string]any{"kind": in.RouteTarget.Kind, "id": in.RouteTarget.ID},
+		"route_snapshot": map[string]any{"matched_by": in.RouteSnapshot.MatchedBy, "route_keys": in.RouteSnapshot.RouteKeys},
+		"event": map[string]any{
+			"event_id":            in.Event.EventID,
+			"event_type":          in.Event.EventType,
+			"source_kind":         in.Event.SourceKind,
+			"transport_kind":      in.Event.TransportKind,
+			"source_ref":          in.Event.SourceRef,
+			"actor_ref":           in.Event.ActorRef,
+			"action_kind":         in.Event.ActionKind,
+			"reply_to_event_id":   in.Event.ReplyToEventID,
+			"conversation_id":     in.Event.ConversationID,
+			"thread_id":           in.Event.ThreadID,
+			"repo_ref":            in.Event.RepoRef,
+			"issue_ref":           in.Event.IssueRef,
+			"pr_ref":              in.Event.PRRef,
+			"comment_ref":         in.Event.CommentRef,
+			"scheduled_task_id":   in.Event.ScheduledTaskID,
+			"control_object_ref":  in.Event.ControlObjectRef,
+			"workflow_object_ref": in.Event.WorkflowObjectRef,
+			"trace_id":            in.Event.TraceID,
+		},
 	}
-
-	result, err := prompts.Render(prompts.ReceptionAssessmentTask, data)
-	if err != nil {
-		// Fallback to simple prompt on error
-		return fmt.Sprintf("Analyze the user request: %s", in.Event.SourceRef)
-	}
-	return result
-}
-
-func (r *LLMReception) assessmentSystemPrompt() string {
-	return prompts.Get(prompts.ReceptionAssessmentSystem)
 }
 
 func (r *LLMReception) parseDecision(result *agent.ExecuteResult, in domain.ReceptionInput) *domain.PromotionDecision {

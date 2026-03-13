@@ -1,0 +1,4 @@
+interface:
+  display_name: "Reception Assessment"
+  short_description: "Classify inbound Alice requests"
+  default_prompt: "Use $reception-assessment to classify an inbound Alice request and submit a PromotionDecision."

@@ -109,6 +109,7 @@ func renderTranscriptMarkdown(req ExecuteRequest, result *ExecuteResult, mcpEnab
 	b.WriteString("## Metadata\n\n")
 	writeMarkdownBullet(&b, "Stage", markdownValue(req.Stage))
 	writeMarkdownBullet(&b, "Skill", markdownValue(req.Skill))
+	writeMarkdownBullet(&b, "Operation", markdownValue(req.Operation))
 	writeMarkdownBullet(&b, "Request ID", markdownValue(req.RequestID))
 	writeMarkdownBullet(&b, "Event ID", markdownValue(req.EventID))
 	writeMarkdownBullet(&b, "Success", boolString(result.Success))
@@ -120,10 +121,9 @@ func renderTranscriptMarkdown(req ExecuteRequest, result *ExecuteResult, mcpEnab
 	b.WriteString("\n")
 
 	b.WriteString("## Input\n\n")
-	writeMarkdownSection(&b, "System Prompt", req.SystemPrompt, "text")
 	writeMarkdownSection(&b, "Task", req.Task, "text")
-	if len(req.Context) > 0 {
-		writeMarkdownSection(&b, "Context", mustMarshalPretty(req.Context), "json")
+	if len(req.Input) > 0 {
+		writeMarkdownSection(&b, "Structured Input", mustMarshalPretty(req.Input), "json")
 	}
 	writeMarkdownSection(&b, "Constraints", mustMarshalPretty(req.Constraints), "json")
 	writeMarkdownSection(&b, "Rendered Prompt", result.Transcript.Prompt, "text")

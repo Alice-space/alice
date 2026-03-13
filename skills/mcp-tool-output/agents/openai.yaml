@@ -1,0 +1,4 @@
+interface:
+  display_name: "MCP Tool Output"
+  short_description: "Shared MCP submission contract"
+  default_prompt: "Use $mcp-tool-output to submit Alice agent results through the embedded MCP tools."

@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"alice/internal/platform"
-	"alice/internal/prompts"
 )
 
 // DirectAnswerExecutor handles direct answer path execution using local agent.
@@ -61,24 +60,17 @@ func (e *DirectAnswerExecutor) Execute(ctx context.Context, req DirectAnswerRequ
 		"user_input", truncate(req.UserInput, 100),
 	)
 
-	// Build prompt based on intent
-	prompt := e.buildPrompt(req)
-
 	// Execute with local agent
 	agentReq := ExecuteRequest{
-		RequestID:    req.RequestID,
-		EventID:      req.EventID,
-		Stage:        "direct_answer",
-		Task:         prompt,
-		SystemPrompt: e.systemPromptForIntent(req.IntentKind),
+		RequestID: req.RequestID,
+		EventID:   req.EventID,
+		Stage:     "direct_answer",
+		Operation: "direct_answer",
+		Skills:    directAnswerSkills(req.Skill),
+		Input:     e.buildAgentInput(req),
 		Constraints: ExecuteConstraints{
 			ReadOnly: true,
 		},
-	}
-
-	// Use specific skill if available
-	if req.Skill != "" {
-		agentReq.Skill = req.Skill
 	}
 
 	agentResult, err := e.agent.Execute(ctx, agentReq)
@@ -133,26 +125,37 @@ func (e *DirectAnswerExecutor) Execute(ctx context.Context, req DirectAnswerRequ
 	return result, nil
 }
 
-func (e *DirectAnswerExecutor) buildPrompt(req DirectAnswerRequest) string {
-	data := struct {
-		IntentKind string
-		UserInput  string
-	}{
-		IntentKind: req.IntentKind,
-		UserInput:  req.UserInput,
+func (e *DirectAnswerExecutor) buildAgentInput(req DirectAnswerRequest) map[string]any {
+	input := map[string]any{
+		"request_id":  req.RequestID,
+		"event_id":    req.EventID,
+		"trace_id":    req.TraceID,
+		"intent_kind": req.IntentKind,
+		"user_input":  req.UserInput,
 	}
-
-	result, err := prompts.Render(prompts.DirectAnswerTask, data)
-	if err != nil {
-		// Fallback to simple prompt on error
-		return fmt.Sprintf("请回答用户的直接问题。\n\n用户问题：%s\n\n请提供清晰、准确的回答。", req.UserInput)
+	if len(req.Context) > 0 {
+		input["context"] = stringMapToAny(req.Context)
 	}
-	return result
+	return input
 }
 
-func (e *DirectAnswerExecutor) systemPromptForIntent(intentKind string) string {
-	// 所有直接查询使用相同的系统提示词
-	return prompts.Get(prompts.DirectAnswerDefault)
+func directAnswerSkills(extraSkill string) []string {
+	skills := []string{"mcp-tool-output", "direct-answer"}
+	if extraSkill != "" {
+		skills = append(skills, extraSkill)
+	}
+	return skills
+}
+
+func stringMapToAny(values map[string]string) map[string]any {
+	if len(values) == 0 {
+		return nil
+	}
+	result := make(map[string]any, len(values))
+	for key, value := range values {
+		result[key] = value
+	}
+	return result
 }
 
 func truncate(s string, maxLen int) string {

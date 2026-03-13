@@ -7,7 +7,7 @@ import (
 )
 
 func TestParseTranscriptExtractsFinalTextAndToolCalls(t *testing.T) {
-	prompt := "# Task\n\n查询上海明天天气"
+	prompt := "<alice-execution-request>\n{\"operation\":\"direct_answer\",\"input\":{\"user_input\":\"查询上海明天天气\"}}\n</alice-execution-request>"
 	output := `noise before
 TurnBegin(
     user_input='hello'
@@ -148,8 +148,9 @@ func TestSelectStructuredOutputPrefersPromotionDecisionForReception(t *testing.T
 	}
 
 	selected := selectStructuredOutput(ExecuteRequest{
-		Stage: "reception",
-		Skill: "reception-assessment",
+		Stage:     "reception",
+		Skill:     "reception-assessment",
+		Operation: "reception_assessment",
 	}, outputs)
 	if selected == nil {
 		t.Fatal("expected selected structured output")
@@ -177,7 +178,8 @@ func TestSelectStructuredOutputPrefersDirectAnswerForDirectAnswerStage(t *testin
 	}
 
 	selected := selectStructuredOutput(ExecuteRequest{
-		Stage: "direct_answer",
+		Stage:     "direct_answer",
+		Operation: "direct_answer",
 	}, extractMCPToolOutputs(transcript, ""))
 	if selected == nil {
 		t.Fatal("expected selected structured output")
@@ -192,12 +194,15 @@ func TestSelectStructuredOutputPrefersDirectAnswerForDirectAnswerStage(t *testin
 
 func TestRenderTranscriptMarkdownIncludesToolResults(t *testing.T) {
 	req := ExecuteRequest{
-		RequestID:    "req_123",
-		EventID:      "evt_123",
-		Stage:        "reception",
-		Skill:        "reception-assessment",
-		SystemPrompt: "system prompt",
-		Task:         "task body",
+		RequestID: "req_123",
+		EventID:   "evt_123",
+		Stage:     "reception",
+		Skill:     "reception-assessment",
+		Operation: "reception_assessment",
+		Task:      "task body",
+		Input: map[string]any{
+			"source_ref": "查询上海明天天气",
+		},
 		Constraints: ExecuteConstraints{
 			ReadOnly: true,
 		},
@@ -226,6 +231,7 @@ func TestRenderTranscriptMarkdownIncludesToolResults(t *testing.T) {
 	for _, want := range []string{
 		"# Agent Execution Context",
 		"- Request ID: req_123",
+		"- Operation: reception_assessment",
 		"### 1. SearchWeb",
 		`{"query":"上海天气"}`,
 		`{"type":"search","payload":"晴"}`,

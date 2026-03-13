@@ -24,7 +24,6 @@ import (
 	"time"
 
 	"alice/internal/platform"
-	"alice/internal/prompts"
 )
 
 // MCPServer defines the interface for MCP server that agent needs.
@@ -110,17 +109,20 @@ type ExecuteRequest struct {
 	// Stage identifies which caller is executing the agent (for artifacts/logs).
 	Stage string `json:"stage,omitempty"`
 
-	// Task is the user task description.
-	Task string `json:"task"`
+	// Operation identifies the execution contract the selected skills should follow.
+	Operation string `json:"operation,omitempty"`
 
-	// SystemPrompt is the system-level instruction.
-	SystemPrompt string `json:"system_prompt,omitempty"`
+	// Task is optional free-form user input when the caller does not provide structured input.
+	Task string `json:"task,omitempty"`
 
 	// Skill is the skill name to load (e.g., "public-info-query").
 	Skill string `json:"skill,omitempty"`
 
-	// Context provides additional context (file paths, previous results, etc.).
-	Context map[string]string `json:"context,omitempty"`
+	// Skills loads additional skills in order.
+	Skills []string `json:"skills,omitempty"`
+
+	// Input provides structured request data for the loaded skills.
+	Input map[string]any `json:"input,omitempty"`
 
 	// Constraints limit what the agent can do.
 	Constraints ExecuteConstraints `json:"constraints,omitempty"`
@@ -205,12 +207,13 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 		"event_id", req.EventID,
 		"stage", req.Stage,
 		"skill", req.Skill,
+		"skills", requestedSkills(req),
+		"operation", req.Operation,
 		"work_dir", a.config.WorkDir,
 		"max_steps", a.config.MaxSteps,
 		"timeout_sec", int64(a.config.Timeout.Seconds()),
-		"system_prompt", req.SystemPrompt,
 		"task", req.Task,
-		"context", req.Context,
+		"input", req.Input,
 		"constraints", req.Constraints,
 		"rendered_prompt", prompt,
 		"command", a.config.KimiExecutable,
@@ -347,40 +350,34 @@ func (a *LocalAgent) writeDebugTranscriptArtifact(start time.Time, req ExecuteRe
 func (a *LocalAgent) buildPrompt(req ExecuteRequest) (string, error) {
 	var parts []string
 
-	// Add skill instruction if specified
-	if req.Skill != "" {
-		skillContent, err := a.loadSkill(req.Skill)
+	for _, skillName := range requestedSkills(req) {
+		if skillName == "mcp-tool-output" && a.config.MCPServer == nil {
+			continue
+		}
+		skillContent, err := a.loadSkill(skillName)
 		if err != nil {
 			// Continue without skill when skill file is unavailable.
-			a.logger.Warn("agent_skill_load_failed", "skill", req.Skill, "error", err.Error())
-		} else {
-			parts = append(parts, skillContent)
+			a.logger.Warn("agent_skill_load_failed", "skill", skillName, "error", err.Error())
+			continue
 		}
+		parts = append(parts, fmt.Sprintf("<skill name=%q>\n%s\n</skill>", skillName, skillContent))
 	}
 
-	// Add system prompt
-	if req.SystemPrompt != "" {
-		parts = append(parts, "# System Instructions\n\n"+req.SystemPrompt)
+	payload := map[string]any{
+		"operation":   strings.TrimSpace(req.Operation),
+		"task":        strings.TrimSpace(req.Task),
+		"input":       req.Input,
+		"constraints": req.Constraints,
 	}
 
-	// Add constraints
-	if req.Constraints.ReadOnly {
-		parts = append(parts, "# Constraints\n\nYou are in READ-ONLY mode. Do not modify any files or execute write operations.")
+	raw, err := json.MarshalIndent(payload, "", "  ")
+	if err != nil {
+		return "", fmt.Errorf("marshal execution payload: %w", err)
 	}
 
-	// Add context
-	if len(req.Context) > 0 {
-		parts = append(parts, "# Context\n")
-		for key, value := range req.Context {
-			parts = append(parts, fmt.Sprintf("- **%s**: %s", key, value))
-		}
-	}
-
-	// Add the main task
-	parts = append(parts, "# Task\n\n"+req.Task)
-
-	// Add output format instruction from embedded template
-	parts = append(parts, prompts.Get(prompts.LocalAgentOutputFormat))
+	parts = append(parts, "<alice-execution-request>")
+	parts = append(parts, string(raw))
+	parts = append(parts, "</alice-execution-request>")
 
 	return strings.Join(parts, "\n\n"), nil
 }
@@ -392,7 +389,42 @@ func (a *LocalAgent) loadSkill(skillName string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("read skill file %s: %w", skillPath, err)
 	}
-	return string(content), nil
+	return stripFrontMatter(string(content)), nil
+}
+
+func requestedSkills(req ExecuteRequest) []string {
+	var ordered []string
+	seen := make(map[string]struct{})
+	appendSkill := func(name string) {
+		name = strings.TrimSpace(name)
+		if name == "" {
+			return
+		}
+		if _, ok := seen[name]; ok {
+			return
+		}
+		seen[name] = struct{}{}
+		ordered = append(ordered, name)
+	}
+
+	appendSkill(req.Skill)
+	for _, skill := range req.Skills {
+		appendSkill(skill)
+	}
+	return ordered
+}
+
+func stripFrontMatter(content string) string {
+	trimmed := strings.TrimSpace(content)
+	if !strings.HasPrefix(trimmed, "---\n") {
+		return trimmed
+	}
+	rest := strings.TrimPrefix(trimmed, "---\n")
+	idx := strings.Index(rest, "\n---\n")
+	if idx < 0 {
+		return trimmed
+	}
+	return strings.TrimSpace(rest[idx+5:])
 }
 
 // MCPToolOutput represents the wrapper format from MCP server
@@ -441,9 +473,9 @@ func selectStructuredOutput(req ExecuteRequest, outputs []map[string]interface{}
 
 func expectedOutputType(req ExecuteRequest) string {
 	switch {
-	case req.Stage == "reception", req.Skill == "reception-assessment":
+	case req.Stage == "reception", req.Skill == "reception-assessment", req.Operation == "reception_assessment":
 		return "promotion_decision"
-	case req.Stage == "direct_answer":
+	case req.Stage == "direct_answer", req.Operation == "direct_answer":
 		return "direct_answer"
 	default:
 		return ""

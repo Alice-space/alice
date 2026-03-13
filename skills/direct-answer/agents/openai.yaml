@@ -1,0 +1,4 @@
+interface:
+  display_name: "Direct Answer"
+  short_description: "Answer low-risk queries directly"
+  default_prompt: "Use $direct-answer to answer a low-risk Alice request and submit the final response."

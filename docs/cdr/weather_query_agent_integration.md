@@ -71,7 +71,8 @@ ALICE_WEATHER_PORT=18092 ./scripts/run_weather_case.sh
 
 Markdown 中已经包含：
 - metadata
-- `system prompt`
+- `operation`
+- `structured input`
 - `task`
 - `rendered prompt`
 - `final text`
@@ -109,7 +110,20 @@ Direct Answer：
 
 `call_raw` 和 Markdown 中都能看到对应的 `ToolCall(...)` / `ToolResult(...)` 全过程。
 
-### 2.5 最终回复写入的是最终答案，不再是原始 transcript
+### 2.5 当前代码中的 skill 挂接方式
+当前实现里，Agent 不再从 Go 代码内拼接 `system prompt` / `task prompt` 模板，而是组合：
+- Reception：`skills = [mcp-tool-output, reception-assessment]`
+- Direct Answer：`skills = [mcp-tool-output, direct-answer]`
+- 特定只读 intent 可继续叠加 `public-info-query` 或 `cluster-query`
+
+`LocalAgent` 会把 `operation + input + constraints` 序列化到 `<alice-execution-request>`，并把所选 skills 正文一并传给 kimi CLI：
+- `--prompt <skills 内容 + alice-execution-request JSON>`
+- `--skills-dir skills`
+- 若启用嵌入式 MCP，则附带 `--mcp-config ...`
+
+这意味着本次样本中看到的 prompt/transcript 调试能力仍然保留，但 prompt 内容已经从代码模板迁到 skills。
+
+### 2.6 最终回复写入的是最终答案，不再是原始 transcript
 `ReplyRecorded.payload_ref` 本次确认为最终答复文本，开头为：
 
 ```text
@@ -140,14 +154,19 @@ reply://已为您查询到上海明天（3月14日）的天气预报：
 
 ## 4. 仍然可见但不影响闭环的问题
 
-### 4.1 Reception skill 文件仍然缺失
-本次运行仍有：
+### 4.1 旧样本里 Reception skill 文件曾缺失
+在这次样本运行时仍有：
 
 ```text
 agent_skill_load_failed: read skill file skills/reception-assessment/SKILL.md: open skills/reception-assessment/SKILL.md: no such file or directory
 ```
 
-但这次已经确认：
+但当前代码已经补齐：
+- `skills/reception-assessment/SKILL.md`
+- `skills/mcp-tool-output/SKILL.md`
+- `skills/direct-answer/SKILL.md`
+
+因此下一次复跑时，这个告警应该消失。就本次样本而言，即使缺少 skill 文件，也已经确认：
 - 不影响 MCP 接线
 - 不影响结构化输出解析
 - 不影响最终 direct answer 路径完成
