@@ -46,12 +46,16 @@ func Bootstrap(cfg *platform.Config) (*App, error) {
 			provideBusRuntime,
 			// MCP Registry
 			provideMCPRegistry,
+			// Embedded MCP Server for agent tool calling
+			provideEmbeddedMCPServer,
 			// Feishu
 			provideFeishuService,
 			// HTTP Manager
 			provideHTTPManager,
 			// Local Agent
 			provideLocalAgent,
+			// Direct Answer Executor
+			provideDirectAnswerExecutor,
 			// Reception
 			provideReception,
 			// Ingress
@@ -65,9 +69,12 @@ func Bootstrap(cfg *platform.Config) (*App, error) {
 			// App
 			NewApp,
 		),
-		fx.Invoke(func(a *App, w []ops.Worker) {
+		fx.Invoke(func(a *App, w []ops.Worker, directExecutor *agent.DirectAnswerExecutor) {
 			app = a
 			app.Workers = w
+			if directExecutor != nil && a.Config.Agent.EnableDirectAnswer {
+				a.Bus.SetDirectAnswerExecutor(directExecutor)
+			}
 		}),
 	).Start(context.Background())
 
@@ -86,24 +93,6 @@ func Bootstrap(cfg *platform.Config) (*App, error) {
 		app.ready = false
 		app.Logger.Error("critical index failure; fail-fast", "error", err.Error())
 	})
-
-	// Setup direct answer executor if enabled
-	if cfg.Agent.EnableDirectAnswer {
-		timeout, _ := time.ParseDuration(cfg.Agent.Timeout)
-		if timeout <= 0 {
-			timeout = 120 * time.Second
-		}
-		localAgent := agent.NewLocalAgent(agent.Config{
-			KimiExecutable: cfg.Agent.KimiExecutable,
-			WorkDir:        cfg.Agent.WorkDir,
-			Timeout:        timeout,
-			MaxSteps:       cfg.Agent.MaxSteps,
-			SkillsDir:      cfg.Agent.SkillsDir,
-			Logger:         app.Logger,
-		})
-		directExecutor := agent.NewDirectAnswerExecutor(localAgent, app.Logger)
-		app.Bus.SetDirectAnswerExecutor(directExecutor)
-	}
 
 	return app, nil
 }

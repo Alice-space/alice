@@ -18,6 +18,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -129,8 +130,14 @@ type ExecuteResult struct {
 	// Output is the final text output from the agent.
 	Output string `json:"output"`
 
+	// FinalText is the last user-visible text part extracted from the raw transcript.
+	FinalText string `json:"final_text,omitempty"`
+
 	// StructuredOutput is the parsed structured output from MCP tool calls.
 	StructuredOutput map[string]interface{} `json:"structured_output,omitempty"`
+
+	// Transcript captures the raw prompt/output exchange for debug logging and auditing.
+	Transcript Transcript `json:"transcript,omitempty"`
 
 	// Actions lists what actions the agent took.
 	Actions []string `json:"actions,omitempty"`
@@ -227,6 +234,8 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 	// Parse output
 	output := stdout.String()
 	result.Output = output
+	result.Transcript = parseTranscript(prompt, output)
+	result.FinalText = result.Transcript.FinalText
 
 	// Try to extract structured output from MCP tool calls
 	if a.config.MCPServer != nil {
@@ -247,6 +256,13 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 		"stderr", stderr.String(),
 		"structured_output", result.StructuredOutput,
 		"actions", result.Actions,
+	)
+	a.logger.Debug("agent_execution_transcript",
+		"skill", req.Skill,
+		"call_prompt", result.Transcript.Prompt,
+		"call_raw", result.Transcript.RawConversation,
+		"call_final_text", result.Transcript.FinalText,
+		"call_tool_calls", result.Transcript.ToolCalls,
 	)
 
 	return result, nil
@@ -313,35 +329,30 @@ type MCPToolOutput struct {
 // extractMCPToolOutput extracts structured data from MCP tool call outputs.
 // The MCP server wraps tool outputs in a JSON format with "type" and "payload" fields.
 func extractMCPToolOutput(text string) map[string]interface{} {
-	// Look for MCP tool output markers
+	var last map[string]interface{}
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
+		for _, candidate := range jsonLineCandidates(line) {
+			for _, normalized := range normalizeJSONCandidates(candidate) {
+				var wrapper MCPToolOutput
+				if err := json.Unmarshal([]byte(normalized), &wrapper); err != nil {
+					continue
+				}
 
-		// Try to parse as MCP output wrapper
-		var wrapper MCPToolOutput
-		if err := json.Unmarshal([]byte(line), &wrapper); err != nil {
-			continue
-		}
-
-		// Validate known types
-		switch wrapper.Type {
-		case "promotion_decision", "direct_answer", "tool_call":
-			// Parse the payload into a generic map
-			var result map[string]interface{}
-			if err := json.Unmarshal(wrapper.Payload, &result); err != nil {
-				continue
+				switch wrapper.Type {
+				case "promotion_decision", "direct_answer", "tool_call":
+					var result map[string]interface{}
+					if err := json.Unmarshal(wrapper.Payload, &result); err != nil {
+						continue
+					}
+					result["_output_type"] = wrapper.Type
+					last = result
+				}
 			}
-			// Add the type to the result for context
-			result["_output_type"] = wrapper.Type
-			return result
 		}
 	}
 
-	return nil
+	return last
 }
 
 // extractActions extracts action descriptions from kimi stderr logs.
@@ -355,6 +366,34 @@ func extractActions(stderr string) []string {
 		}
 	}
 	return actions
+}
+
+func jsonLineCandidates(line string) []string {
+	trimmed := strings.TrimSpace(line)
+	if trimmed == "" {
+		return nil
+	}
+
+	candidates := []string{trimmed}
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start >= 0 && end > start {
+		snippet := strings.TrimSpace(trimmed[start : end+1])
+		if snippet != trimmed {
+			candidates = append(candidates, snippet)
+		}
+	}
+	return candidates
+}
+
+func normalizeJSONCandidates(candidate string) []string {
+	normalized := []string{candidate}
+	if strings.Contains(candidate, `\"`) {
+		if unquoted, err := strconv.Unquote(`"` + candidate + `"`); err == nil {
+			normalized = append(normalized, unquoted)
+		}
+	}
+	return normalized
 }
 
 // Health checks if the local agent is available.

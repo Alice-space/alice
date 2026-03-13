@@ -136,6 +136,39 @@ func TestAdminRoutesRejectedWhenTokenNotConfigured(t *testing.T) {
 	}
 }
 
+func TestBootstrapStartsEmbeddedAgentMCPServer(t *testing.T) {
+	cfg := &platform.Config{}
+	cfg.Storage.RootDir = t.TempDir()
+	cfg.Storage.SnapshotInterval = 100
+	cfg.Workflow.ManifestRoots = []string{filepath.Join("..", "..", "configs", "workflows")}
+	cfg.Auth.AdminToken = "admin-token"
+	cfg.Auth.HumanActionSecret = "human-secret"
+	cfg.HTTP.ListenAddr = "127.0.0.1:0"
+	cfg.Scheduler.PollInterval = "1h"
+	cfg.Agent.EnableDirectAnswer = true
+
+	app, err := Bootstrap(cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := app.Start(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	defer func() {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = app.Shutdown(shutdownCtx)
+	}()
+
+	if app.AgentMCPServer == nil {
+		t.Fatal("expected embedded agent MCP server")
+	}
+	if got := strings.TrimSpace(app.AgentMCPServer.URL()); got == "" || got == "http://" {
+		t.Fatalf("expected started MCP server URL, got %q", got)
+	}
+}
+
 func withAdminAuth(req *http.Request, token string) *http.Request {
 	req.Header.Set("Authorization", "Bearer "+token)
 	return req
