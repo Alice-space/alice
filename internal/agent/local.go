@@ -14,6 +14,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -58,6 +59,9 @@ type Config struct {
 	// Logger writes agent execution logs.
 	// If nil, a noop logger is used.
 	Logger platform.Logger
+
+	// DebugTranscriptDir writes Markdown execution artifacts when non-empty.
+	DebugTranscriptDir string
 }
 
 // DefaultConfig returns default configuration.
@@ -97,6 +101,15 @@ func NewLocalAgent(cfg Config) *LocalAgent {
 
 // ExecuteRequest represents a request to execute with the local agent.
 type ExecuteRequest struct {
+	// RequestID is the parent Alice request identifier.
+	RequestID string `json:"request_id,omitempty"`
+
+	// EventID is the triggering event identifier.
+	EventID string `json:"event_id,omitempty"`
+
+	// Stage identifies which caller is executing the agent (for artifacts/logs).
+	Stage string `json:"stage,omitempty"`
+
 	// Task is the user task description.
 	Task string `json:"task"`
 
@@ -188,6 +201,9 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 	}
 
 	a.logger.Debug("agent_execution_started",
+		"request_id", req.RequestID,
+		"event_id", req.EventID,
+		"stage", req.Stage,
 		"skill", req.Skill,
 		"work_dir", a.config.WorkDir,
 		"max_steps", a.config.MaxSteps,
@@ -236,10 +252,16 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 	result.Output = output
 	result.Transcript = parseTranscript(prompt, output)
 	result.FinalText = result.Transcript.FinalText
+	if internalErr := extractExecutionError(result.Transcript.RawConversation); internalErr != "" {
+		result.Success = false
+		if result.Error == "" {
+			result.Error = internalErr
+		}
+	}
 
 	// Try to extract structured output from MCP tool calls
 	if a.config.MCPServer != nil {
-		if structured := extractMCPToolOutput(output); structured != nil {
+		if structured := selectStructuredOutput(req, extractMCPToolOutputs(result.Transcript, output)); structured != nil {
 			result.StructuredOutput = structured
 		}
 	}
@@ -248,6 +270,9 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 	result.Actions = extractActions(stderr.String())
 
 	a.logger.Debug("agent_execution_finished",
+		"request_id", req.RequestID,
+		"event_id", req.EventID,
+		"stage", req.Stage,
 		"skill", req.Skill,
 		"success", result.Success,
 		"duration_ms", time.Since(start).Milliseconds(),
@@ -258,14 +283,64 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 		"actions", result.Actions,
 	)
 	a.logger.Debug("agent_execution_transcript",
+		"request_id", req.RequestID,
+		"event_id", req.EventID,
+		"stage", req.Stage,
 		"skill", req.Skill,
 		"call_prompt", result.Transcript.Prompt,
 		"call_raw", result.Transcript.RawConversation,
 		"call_final_text", result.Transcript.FinalText,
 		"call_tool_calls", result.Transcript.ToolCalls,
 	)
+	a.writeDebugTranscriptArtifact(start, req, result)
+
+	if result.Error != "" {
+		return result, errors.New(result.Error)
+	}
 
 	return result, nil
+}
+
+func (a *LocalAgent) writeDebugTranscriptArtifact(start time.Time, req ExecuteRequest, result *ExecuteResult) {
+	dir := strings.TrimSpace(a.config.DebugTranscriptDir)
+	if dir == "" {
+		return
+	}
+
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		a.logger.Warn("agent_execution_markdown_failed",
+			"skill", req.Skill,
+			"request_id", req.RequestID,
+			"stage", req.Stage,
+			"error", err.Error(),
+		)
+		return
+	}
+
+	stage := sanitizeArtifactPart(req.Stage)
+	skill := sanitizeArtifactPart(req.Skill)
+	requestID := sanitizeArtifactPart(req.RequestID)
+	filename := fmt.Sprintf("%s_%s_%s_%s.md", start.Format("20060102T150405Z"), requestID, stage, skill)
+	path := filepath.Join(dir, filename)
+	content := renderTranscriptMarkdown(req, result, a.config.MCPServer != nil, time.Since(start))
+
+	if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+		a.logger.Warn("agent_execution_markdown_failed",
+			"skill", req.Skill,
+			"request_id", req.RequestID,
+			"stage", req.Stage,
+			"path", path,
+			"error", err.Error(),
+		)
+		return
+	}
+
+	a.logger.Debug("agent_execution_markdown_written",
+		"skill", req.Skill,
+		"request_id", req.RequestID,
+		"stage", req.Stage,
+		"path", path,
+	)
 }
 
 // buildPrompt constructs the full prompt with skill and constraints.
@@ -328,26 +403,90 @@ type MCPToolOutput struct {
 
 // extractMCPToolOutput extracts structured data from MCP tool call outputs.
 // The MCP server wraps tool outputs in a JSON format with "type" and "payload" fields.
+func extractMCPToolOutputs(transcript Transcript, text string) []map[string]interface{} {
+	var outputs []map[string]interface{}
+
+	for _, call := range transcript.ToolCalls {
+		if structured := parseMCPToolOutput(call.ResultText); structured != nil {
+			structured["_tool_name"] = call.Name
+			outputs = append(outputs, structured)
+		}
+	}
+	if len(outputs) > 0 {
+		return outputs
+	}
+
+	if structured := parseMCPToolOutput(text); structured != nil {
+		outputs = append(outputs, structured)
+	}
+
+	return outputs
+}
+
+func selectStructuredOutput(req ExecuteRequest, outputs []map[string]interface{}) map[string]interface{} {
+	if len(outputs) == 0 {
+		return nil
+	}
+
+	if expectedType := expectedOutputType(req); expectedType != "" {
+		for _, output := range outputs {
+			if outputType(output) == expectedType {
+				return output
+			}
+		}
+	}
+
+	return outputs[len(outputs)-1]
+}
+
+func expectedOutputType(req ExecuteRequest) string {
+	switch {
+	case req.Stage == "reception", req.Skill == "reception-assessment":
+		return "promotion_decision"
+	case req.Stage == "direct_answer":
+		return "direct_answer"
+	default:
+		return ""
+	}
+}
+
+func outputType(m map[string]interface{}) string {
+	if v, ok := m["_output_type"].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func parseMCPToolOutput(text string) map[string]interface{} {
+	var last map[string]interface{}
+	for _, candidate := range jsonTextCandidates(text) {
+		for _, normalized := range normalizeJSONCandidates(candidate) {
+			var wrapper MCPToolOutput
+			if err := json.Unmarshal([]byte(normalized), &wrapper); err != nil {
+				continue
+			}
+
+			switch wrapper.Type {
+			case "promotion_decision", "direct_answer", "tool_call":
+				var result map[string]interface{}
+				if err := json.Unmarshal(wrapper.Payload, &result); err != nil {
+					continue
+				}
+				result["_output_type"] = wrapper.Type
+				last = result
+			}
+		}
+	}
+	return last
+}
+
 func extractMCPToolOutput(text string) map[string]interface{} {
 	var last map[string]interface{}
 	lines := strings.Split(text, "\n")
 	for _, line := range lines {
 		for _, candidate := range jsonLineCandidates(line) {
-			for _, normalized := range normalizeJSONCandidates(candidate) {
-				var wrapper MCPToolOutput
-				if err := json.Unmarshal([]byte(normalized), &wrapper); err != nil {
-					continue
-				}
-
-				switch wrapper.Type {
-				case "promotion_decision", "direct_answer", "tool_call":
-					var result map[string]interface{}
-					if err := json.Unmarshal(wrapper.Payload, &result); err != nil {
-						continue
-					}
-					result["_output_type"] = wrapper.Type
-					last = result
-				}
+			if parsed := parseMCPToolOutput(candidate); parsed != nil {
+				last = parsed
 			}
 		}
 	}
@@ -366,6 +505,18 @@ func extractActions(stderr string) []string {
 		}
 	}
 	return actions
+}
+
+func extractExecutionError(output string) string {
+	idx := strings.Index(output, "Error code:")
+	if idx < 0 {
+		return ""
+	}
+	line := output[idx:]
+	if newline := strings.Index(line, "\n"); newline >= 0 {
+		line = line[:newline]
+	}
+	return strings.TrimSpace(line)
 }
 
 func jsonLineCandidates(line string) []string {
@@ -393,7 +544,34 @@ func normalizeJSONCandidates(candidate string) []string {
 			normalized = append(normalized, unquoted)
 		}
 	}
+	compacted := strings.NewReplacer("\r", "", "\n", "", "\t", "").Replace(candidate)
+	if compacted != candidate {
+		normalized = append(normalized, compacted)
+		if strings.Contains(compacted, `\"`) {
+			if unquoted, err := strconv.Unquote(`"` + compacted + `"`); err == nil {
+				normalized = append(normalized, unquoted)
+			}
+		}
+	}
 	return normalized
+}
+
+func jsonTextCandidates(text string) []string {
+	trimmed := strings.TrimSpace(text)
+	if trimmed == "" {
+		return nil
+	}
+
+	candidates := []string{trimmed}
+	start := strings.Index(trimmed, "{")
+	end := strings.LastIndex(trimmed, "}")
+	if start >= 0 && end > start {
+		snippet := strings.TrimSpace(trimmed[start : end+1])
+		if snippet != trimmed {
+			candidates = append(candidates, snippet)
+		}
+	}
+	return candidates
 }
 
 // Health checks if the local agent is available.

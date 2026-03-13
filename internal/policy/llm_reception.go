@@ -44,6 +44,9 @@ func (r *LLMReception) Assess(ctx context.Context, in domain.ReceptionInput) (*d
 
 	// Execute with local agent
 	result, err := r.agent.Execute(ctx, agent.ExecuteRequest{
+		RequestID:    in.RequestID,
+		EventID:      in.Event.EventID,
+		Stage:        "reception",
 		Task:         prompt,
 		Skill:        "reception-assessment",
 		SystemPrompt: r.assessmentSystemPrompt(),

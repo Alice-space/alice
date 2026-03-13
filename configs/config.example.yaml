@@ -59,3 +59,10 @@ logging:
     bus: "info"
     reception: "debug"
     agent: "info"
+
+# Agent debugging artifacts
+agent:
+  # Optional override for Markdown transcript artifacts.
+  # When empty, debug mode writes to the log directory's `agent_context/`
+  # or falls back to `<storage.root_dir>/debug/agent_context/`.
+  debug_transcript_dir: ""

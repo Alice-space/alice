@@ -78,6 +78,7 @@ type AgentConfig struct {
 	Timeout            string `mapstructure:"timeout"`
 	MaxSteps           int    `mapstructure:"max_steps"`
 	SkillsDir          string `mapstructure:"skills_dir"`
+	DebugTranscriptDir string `mapstructure:"debug_transcript_dir"`
 	EnableDirectAnswer bool   `mapstructure:"enable_direct_answer"`
 }
 
@@ -148,6 +149,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("agent.timeout", "120s")
 	v.SetDefault("agent.max_steps", 10)
 	v.SetDefault("agent.skills_dir", "skills")
+	v.SetDefault("agent.debug_transcript_dir", "")
 	v.SetDefault("feishu.reply_in_thread", true)
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
@@ -183,6 +185,7 @@ func bindEnvVars(v *viper.Viper) {
 		"agent.timeout":                          "AGENT_TIMEOUT",
 		"agent.max_steps":                        "AGENT_MAX_STEPS",
 		"agent.skills_dir":                       "AGENT_SKILLS_DIR",
+		"agent.debug_transcript_dir":             "AGENT_DEBUG_TRANSCRIPT_DIR",
 		"agent.enable_direct_answer":             "AGENT_ENABLE_DIRECT_ANSWER",
 		"feishu.enabled":                         "FEISHU_ENABLED",
 		"feishu.app_id":                          "FEISHU_APP_ID",

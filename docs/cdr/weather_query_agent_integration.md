@@ -1,154 +1,183 @@
-# 天气查询任务 Agent 接入说明（以 Agent 为中心）
+# 天气查询任务 Agent 接入日志（更新于 2026-03-13）
 
-## 1. 目的与范围
-本文描述 Alice 在“查询天气”场景下的 Agent 接入情况，重点覆盖：
-- Agent 输入上下文（从 BUS/路由进入 Agent 的字段）
-- Agent 返回响应（结构化决策与自然语言回复）
-- ToolCall 与 MCP 挂接状态
-- 与事件日志的一一对应关系
+## 1. 本次样本
+- 运行 worktree：`/home/lizhihao/alice`
+- 运行时间：2026-03-13 15:53:30 +08:00 启动，2026-03-13 15:54:58 +08:00 完成
+- 样本目录：`data/weather_case/20260313T075330Z`
+- 用户输入：`查询上海明天天气`
+- 对应日期：`明天 = 2026-03-14`
+- `request_id = req_01KKK2ZCEPCHF24XC6Z9A4SNCB`
+- `conversation_id = conv_weather_case_20260313T075330Z`
 
-基线样本使用最近一次完整运行：`data/weather_case/20260311T145708Z`。
+本次文档只以这次样本为准，主要证据文件：
+- `data/weather_case/20260313T075330Z/logs/alice.app.jsonl`
+- `data/weather_case/20260313T075330Z/logs/agent_context/20260313T075331Z_req_01kkk2zcepchf24xc6z9a4sncb_reception_reception_assessment.md`
+- `data/weather_case/20260313T075330Z/logs/agent_context/20260313T075419Z_req_01kkk2zcepchf24xc6z9a4sncb_direct_answer_unknown.md`
+- `data/weather_case/20260313T075330Z/artifacts/request.snapshot.json`
+- `data/weather_case/20260313T075330Z/artifacts/eventlog.full.jsonl`
+- `data/weather_case/20260313T075330Z/artifacts/events.snapshot.json`
 
-## 2. 运行基线
-本次样本配置（`data/weather_case/20260311T145708Z/config.yaml`）中的 Agent 关键项：
-- `agent.kimi_executable = kimi`
-- `agent.enable_direct_answer = true`
-- `agent.skills_dir = skills`
-- `agent.timeout = 90s`
-- `agent.max_steps = 8`
-- `mcp.domains = {}`（空）
+复跑命令：
 
-对应启动日志可见 LocalAgent 与 LLMReception 已注入（见 `server.stdout.log`）。
+```bash
+ALICE_WEATHER_PORT=18092 ./scripts/run_weather_case.sh
+```
 
-## 3. Agent 拓扑（天气查询）
-天气查询路径中，涉及两个 Agent 层组件：
+前提：
+- `kimi` CLI 已完成 OAuth 登录
+- 使用默认 `~/.kimi/config.toml`
 
-1. Reception Agent（策略评估）
-- 代码入口：`internal/policy/llm_reception.go`
-- 作用：把外部输入评估为 `PromotionDecision`
-- 产出：`PromotionAssessed` 事件
+## 2. 本次确认已成立的结论
 
-2. Direct Answer Agent（直接回答执行）
-- 代码入口：`internal/agent/direct_answer.go` + `internal/agent/local.go`
-- 作用：在 direct-answer 路径中生成最终回复
-- 产出：`AgentDispatchRecorded` / `ToolCallRecorded` / `ReplyRecorded` 等事件
+### 2.1 嵌入式 MCP 已真正接入 Agent
+`alice.app.jsonl` 里 Reception 和 Direct Answer 两次 agent 调用都带有：
+- `mcp_enabled=true`
+- `--mcp-config {"mcpServers":{"alice-tools":{"transport":"http","url":"http://127.0.0.1:<port>"}}}`
 
-## 4. Reception Agent 视角
-### 4.1 输入上下文
-Reception 的输入来自 `domain.ReceptionInput`，本案例关键字段：
-- `event.source_kind = direct_input`
-- `event.transport_kind = cli`
-- `event.source_ref = 查询上海明天天气`
-- `event.conversation_id = conv_weather_case_20260311T145708Z`
-- `event.thread_id = root`
-- `route_snapshot.matched_by = new_request`
-- `route_snapshot.route_keys = [conversation:direct_input:conv_weather_case_20260311T145708Z:root]`
+因此，本次样本确认 Agent 实际挂上了可用的嵌入式 MCP server。
 
-日志对应：
-- `reception_started`
-- `reception_completed`
+### 2.2 Reception 的结构化输出解析已经闭环
+这次 Reception 阶段实际调用了：
+- `submit_promotion_decision`
+- `SearchWeb`
+- `submit_direct_answer`
 
-### 4.2 提示词与技能挂接
-Reception 执行时使用：
-- `Skill = reception-assessment`
-- `SystemPrompt = reception_assessment_system`
-- `TaskPrompt = reception_assessment_task`
-- 约束：`ReadOnly=true`
+关键变化是：`submit_promotion_decision` 返回的
 
-本次运行存在告警：
-- `failed to load skill reception-assessment`（`skills/reception-assessment/SKILL.md` 不存在）
+```json
+{"type":"promotion_decision","payload":{"intent_kind":"direct_query","risk_level":"low","external_write":false,"create_persistent_object":false,"async":false,"multi_step":false,"multi_agent":false,"approval_required":false,"budget_required":false,"recovery_required":false,"proposed_workflow_ids":null,"reason_codes":["weather_query","simple_lookup"],"confidence":0.95}}
+```
 
-### 4.3 返回与回退
-本次运行中，Reception 未拿到 MCP 结构化输出，触发：
-- `no_structured_output_from_mcp`
-- 回退到 `simpleDecision`，得到：
+已经被服务端正确解析并消费，而不是再落到 fallback。
+
+直接证据：
+- `reception_completed`：
   - `intent_kind = direct_query`
+  - `risk_level = low`
   - `result = direct_answer`
-  - `reason_codes = [general_query, direct_allowlist]`
-  - `confidence = 0.8`
+  - `confidence = 0.95`
+- `PromotionAssessed` 事件：
+  - `result = direct_answer`
+  - `reason_codes = ["weather_query","simple_lookup","direct_allowlist"]`
+  - `confidence = 0.95`
+- 本次运行中没有再出现 `no_structured_output_from_mcp`
 
-事件对应：
-- `PromotionAssessed`（HLC `#0003`）
+这说明此前 “MCP 工具接上了，但 Reception 解析没闭环” 的问题，在当前代码和本次样本上已经解决。
 
-## 5. Direct Answer Agent 视角
-### 5.1 输入上下文
-BUS 在 `appendDirectAnswerEvents` 里构造并下发：
-- `request_id = req_01KKEPDMES034Y903QGPAWNGK3`
-- `event_id = evt_01KKEPDMES034Y903QGMSGK2D9`
-- `user_input = 查询上海明天天气`
-- `intent_kind = direct_query`
-- `skill = ""`（`directAnswerSkillForIntent` 对 `direct_query` 返回空）
+### 2.3 Debug 模式下会自动产出每个 Agent 的 Markdown 上下文
+本次样本自动生成了两份 Markdown artifact：
+- `data/weather_case/20260313T075330Z/logs/agent_context/20260313T075331Z_req_01kkk2zcepchf24xc6z9a4sncb_reception_reception_assessment.md`
+- `data/weather_case/20260313T075330Z/logs/agent_context/20260313T075419Z_req_01kkk2zcepchf24xc6z9a4sncb_direct_answer_unknown.md`
 
-并先落盘：
-- `AgentDispatchRecorded`，其中
-  - `requested_role = helper`
-  - `goal = direct_answer:direct_query`
-  - `allowed_tools = [local_agent]`
-  - `write_scope_ref = read_only`
+Markdown 中已经包含：
+- metadata
+- `system prompt`
+- `task`
+- `rendered prompt`
+- `final text`
+- 每次 `ToolCall` 的参数
+- 每次 `ToolResult` 的返回文本
+- `raw conversation`
 
-### 5.2 LocalAgent 执行参数
-LocalAgent 调 kimi CLI 的参数核心为：
-- `--print`
-- `--yolo`
-- `--work-dir .`
-- `--max-steps-per-turn 8`
-- `--prompt <构造后的任务提示>`
-- `--skills-dir skills`
+因此，现在已经不需要再手工从 JSONL 抄 agent 上下文和工具调用过程。
 
-说明：本次未注入 `MCPServer`，因此不会带 `--mcp-config`。
+### 2.4 两个 Agent 的完整输入输出上下文都能直接看到
+本次两次 agent 调用都同时产出：
+- `agent_execution_started`
+- `agent_execution_finished`
+- `agent_execution_transcript`
+- `agent_execution_markdown_written`
 
-### 5.3 返回响应
-Direct Answer 执行结束后：
-- 日志：`direct_answer_started` -> `direct_answer_completed`
-- `ToolCallRecorded`：
-  - `tool_or_mcp = direct_answer`
-  - `request_ref = tool://direct_answer`
-  - `response_ref = result://direct_answer`
-  - `status = success`
-- `ReplyRecorded`：`reply_channel = direct_input`
-- `TerminalResultRecorded`：`final_status = Answered`
+并且可见字段包括：
+- `rendered_prompt`
+- `call_raw`
+- `call_final_text`
+- `call_tool_calls[].name`
+- `call_tool_calls[].arguments`
+- `call_tool_calls[].result_text`
 
-## 6. MCP 与 ToolCall 挂接结论
-### 6.1 MCP 挂接状态（本次样本）
-- 配置层：`mcp.domains = {}`
-- Agent 层：`LocalAgent.MCPServer = nil`
-- 结果：本次没有真实 MCP server tool-call 往返，仅有 BUS 侧的抽象 `ToolCallRecorded`。
+实际工具调用如下：
 
-### 6.2 ToolCall 记录状态（本次样本）
-- `ToolCallRecorded` 已完整落盘（HLC `#0005`）
-- Tool 语义是 direct-answer 执行，不是外部 MCP domain 调用
+Reception：
+- `submit_promotion_decision`
+- `SearchWeb`
+- `submit_direct_answer`
 
-## 7. 事件时间线（按 HLC）
-来自 `artifacts/event_sequence.tsv`：
-1. `ExternalEventIngested` (`#0001`)
-2. `EphemeralRequestOpened` (`#0002`)
-3. `PromotionAssessed` (`#0003`)
-4. `AgentDispatchRecorded` (`#0004`)
-5. `ToolCallRecorded` (`#0005`)
-6. `AgentDispatchCompleted` (`#0006`)
-7. `ReplyRecorded` (`#0007`)
-8. `TerminalResultRecorded` (`#0008`)
-9. `RequestAnswered` (`#0009`)
+Direct Answer：
+- `SearchWeb`
+- `submit_direct_answer`
 
-## 8. 对外响应（CLI）
-`cli.submit.json` 返回：
-- `accepted = true`
-- `event_id = evt_01KKEPDMES034Y903QGMSGK2D9`
-- `request_id = req_01KKEPDMES034Y903QGPAWNGK3`
-- `route_target_kind = request`
-- `commit_hlc = 2026-03-11T14:58:00.378553308Z#0009`
+`call_raw` 和 Markdown 中都能看到对应的 `ToolCall(...)` / `ToolResult(...)` 全过程。
 
-## 9. 关键观察
-1. Agent 链路完整：Reception 与 Direct Answer 都实际执行并可审计。
-2. 本样本中 Reception 走了“无结构化输出回退”路径，但最终业务路径仍符合天气直答预期。
-3. 当前天气案例是“Agent + 内建 direct-answer ToolCall 抽象”路径，不是“真实 MCP domain 查询”路径。
-4. 若要验证完整 MCP 工具闭环，需要在 `mcp.domains` 和 `LocalAgent.MCPServer` 层补齐配置。
+### 2.5 最终回复写入的是最终答案，不再是原始 transcript
+`ReplyRecorded.payload_ref` 本次确认为最终答复文本，开头为：
 
-## 10. 附件索引
-- `data/weather_case/20260311T145708Z/config.yaml`
-- `data/weather_case/20260311T145708Z/artifacts/cli.submit.json`
-- `data/weather_case/20260311T145708Z/artifacts/eventlog.full.jsonl`
-- `data/weather_case/20260311T145708Z/artifacts/event_types.summary.txt`
-- `data/weather_case/20260311T145708Z/artifacts/event_sequence.tsv`
-- `data/weather_case/20260311T145708Z/logs/alice.app.jsonl`
-- `data/weather_case/20260311T145708Z/logs/server.stdout.log`
+```text
+reply://已为您查询到上海明天（3月14日）的天气预报：
+```
+
+没有再出现把整段 prompt / transcript 泄漏进最终 reply 的问题。
+
+## 3. 端到端事件链路
+本次请求事件序列如下：
+
+1. `ExternalEventIngested`
+2. `EphemeralRequestOpened`
+3. `PromotionAssessed`
+4. `AgentDispatchRecorded`
+5. `ToolCallRecorded`
+6. `AgentDispatchCompleted`
+7. `ReplyRecorded`
+8. `TerminalResultRecorded`
+9. `RequestAnswered`
+
+`request.snapshot.json` 对应状态：
+- `status = Answered`
+- `terminal_status = Answered`
+- `promotion_decision = dec_01KKK30VYRXH7T22CWPFJ604GQ`
+- `reply = rpl_01KKK321V6AKSRSQYPJH1EB3EF`
+- `terminal_result = res_01KKK321V6AKSRSQYPJQ2D96V8`
+
+## 4. 仍然可见但不影响闭环的问题
+
+### 4.1 Reception skill 文件仍然缺失
+本次运行仍有：
+
+```text
+agent_skill_load_failed: read skill file skills/reception-assessment/SKILL.md: open skills/reception-assessment/SKILL.md: no such file or directory
+```
+
+但这次已经确认：
+- 不影响 MCP 接线
+- 不影响结构化输出解析
+- 不影响最终 direct answer 路径完成
+
+### 4.2 BUS 事件层仍未细拆内部工具调用
+事件流里仍只有一条抽象的：
+- `ToolCallRecorded`
+
+模型内部真实发生的：
+- `SearchWeb`
+- `submit_promotion_decision`
+- `submit_direct_answer`
+
+目前仍主要通过 `alice.app.jsonl` 和 Markdown artifact 审计，而不是通过更细粒度的 BUS 业务事件审计。
+
+### 4.3 Direct Answer 结果的 `confidence` 仍走默认值
+本次 `direct_answer_completed` 里：
+- `confidence = 0.85`
+
+这是因为 `DirectAnswerExecutor` 仍在没有显式 `confidence` 字段时使用默认值，而不是从 `submit_direct_answer` payload 中提取模型置信度。这个问题不影响主链路闭环，但会影响最终答复的置信度精度。
+
+## 5. 结论
+截至本次样本 `data/weather_case/20260313T075330Z`，当前真实状态是：
+
+- 嵌入式 MCP 接线正常。
+- 模型已经真实调用 Alice 工具。
+- Reception 的 `promotion_decision` 结构化输出解析已经闭环，不再 fallback。
+- Direct Answer 路径正常完成。
+- Debug 模式下会自动生成每个 agent 的 Markdown 上下文文件。
+- 每个 agent 的完整输入输出上下文和工具调用输出过程都能直接查看。
+- `ReplyRecorded.payload_ref` 现在写入的是最终答案文本。
+
+当前剩余问题主要是审计粒度和辅助手段问题，不再是主链路闭环问题。

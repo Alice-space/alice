@@ -66,6 +66,9 @@ func (e *DirectAnswerExecutor) Execute(ctx context.Context, req DirectAnswerRequ
 
 	// Execute with local agent
 	agentReq := ExecuteRequest{
+		RequestID:    req.RequestID,
+		EventID:      req.EventID,
+		Stage:        "direct_answer",
 		Task:         prompt,
 		SystemPrompt: e.systemPromptForIntent(req.IntentKind),
 		Constraints: ExecuteConstraints{

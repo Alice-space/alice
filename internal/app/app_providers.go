@@ -4,6 +4,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"path/filepath"
+	"strings"
 	"time"
 
 	"alice/internal/agent"
@@ -123,15 +125,37 @@ func provideLocalAgent(cfg *platform.Config, logger platform.Logger, mcpServer *
 	if timeout <= 0 {
 		timeout = 120 * time.Second
 	}
+	debugTranscriptDir := strings.TrimSpace(cfg.Agent.DebugTranscriptDir)
+	if debugTranscriptDir == "" && debugTranscriptLoggingEnabled(cfg.Logging) {
+		switch {
+		case cfg.Logging.File != nil && strings.TrimSpace(cfg.Logging.File.Path) != "":
+			debugTranscriptDir = filepath.Join(filepath.Dir(cfg.Logging.File.Path), "agent_context")
+		case strings.TrimSpace(cfg.Storage.RootDir) != "":
+			debugTranscriptDir = filepath.Join(cfg.Storage.RootDir, "debug", "agent_context")
+		}
+	}
 	return agent.NewLocalAgent(agent.Config{
-		KimiExecutable: cfg.Agent.KimiExecutable,
-		WorkDir:        cfg.Agent.WorkDir,
-		Timeout:        timeout,
-		MaxSteps:       cfg.Agent.MaxSteps,
-		SkillsDir:      cfg.Agent.SkillsDir,
-		MCPServer:      mcpServer,
-		Logger:         logger,
+		KimiExecutable:     cfg.Agent.KimiExecutable,
+		WorkDir:            cfg.Agent.WorkDir,
+		Timeout:            timeout,
+		MaxSteps:           cfg.Agent.MaxSteps,
+		SkillsDir:          cfg.Agent.SkillsDir,
+		MCPServer:          mcpServer,
+		Logger:             logger,
+		DebugTranscriptDir: debugTranscriptDir,
 	})
+}
+
+func debugTranscriptLoggingEnabled(cfg platform.LoggingConfig) bool {
+	if strings.EqualFold(strings.TrimSpace(cfg.Level), "debug") {
+		return true
+	}
+	for _, component := range []string{"agent", "reception", "direct_answer"} {
+		if strings.EqualFold(strings.TrimSpace(cfg.Components[component]), "debug") {
+			return true
+		}
+	}
+	return false
 }
 
 func provideDirectAnswerExecutor(localAgent *agent.LocalAgent, logger platform.Logger) *agent.DirectAnswerExecutor {
