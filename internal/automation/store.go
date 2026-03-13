@@ -2,7 +2,6 @@ package automation
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -12,6 +11,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/oklog/ulid/v2"
 )
 
 const (
@@ -455,9 +456,9 @@ func newTaskID(now time.Time) string {
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	raw := make([]byte, 6)
-	if _, err := rand.Read(raw); err != nil {
+	id, err := ulid.New(ulid.Timestamp(now), ulid.Monotonic(rand.Reader, 0))
+	if err != nil {
 		return fmt.Sprintf("task_%d", now.UnixNano())
 	}
-	return fmt.Sprintf("task_%s_%s", now.Format("20060102T150405"), hex.EncodeToString(raw))
+	return "task_" + strings.ToLower(id.String())
 }

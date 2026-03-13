@@ -42,6 +42,18 @@ type Manager struct {
 }
 
 func NewManager(dir string, prompts *prompting.Loader) *Manager {
+type ScopeSnapshot struct {
+	ScopeKey          string    `json:"scope_key"`
+	GlobalLongPath    string    `json:"global_long_path"`
+	GlobalLongText    string    `json:"global_long_text"`
+	ScopeLongPath     string    `json:"scope_long_path"`
+	ScopeLongText     string    `json:"scope_long_text"`
+	ScopeShortTermDir string    `json:"scope_short_term_dir"`
+	ShortTermName     string    `json:"short_term_name"`
+	GeneratedAt       time.Time `json:"generated_at"`
+}
+
+func NewManager(dir string, prompts *prompting.Loader) *Manager {
 	return &Manager{
 		Dir:               strings.TrimSpace(dir),
 		MaxLongTermRunes:  defaultMaxLongTermRunes,
@@ -143,6 +155,84 @@ func (m *Manager) BuildPrompt(memoryScopeKey, userText string) (string, error) {
 	)
 
 	return prompt, nil
+}
+
+func (m *Manager) Snapshot(memoryScopeKey string, at time.Time) (ScopeSnapshot, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if strings.TrimSpace(m.Dir) == "" {
+		return ScopeSnapshot{}, errors.New("memory dir is empty")
+	}
+	if err := ensureLayoutDirs(m.Dir); err != nil {
+		return ScopeSnapshot{}, fmt.Errorf("prepare scoped memory layout failed: %w", err)
+	}
+
+	scope, err := resolveScopePaths(m.Dir, memoryScopeKey)
+	if err != nil {
+		return ScopeSnapshot{}, fmt.Errorf("resolve memory scope failed: %w", err)
+	}
+	if err := ensureScopeDirs(scope); err != nil {
+		return ScopeSnapshot{}, fmt.Errorf("prepare scoped memory dir failed: %w", err)
+	}
+	if at.IsZero() {
+		at = m.now()
+	}
+
+	globalLongPath := globalLongTermPath(m.Dir)
+	globalLongText, err := readOptionalFile(globalLongPath)
+	if err != nil {
+		return ScopeSnapshot{}, fmt.Errorf("read global long-term memory failed: %w", err)
+	}
+	scopeLongText, err := readOptionalFile(scope.LongTermPath)
+	if err != nil {
+		return ScopeSnapshot{}, fmt.Errorf("read scoped long-term memory failed: %w", err)
+	}
+	return ScopeSnapshot{
+		ScopeKey:          scope.Key,
+		GlobalLongPath:    absOrSame(globalLongPath),
+		GlobalLongText:    normalizeMemoryText(globalLongText, m.maxLongTermRunes()),
+		ScopeLongPath:     absOrSame(scope.LongTermPath),
+		ScopeLongText:     normalizeMemoryText(scopeLongText, m.maxLongTermRunes()),
+		ScopeShortTermDir: absOrSame(scope.DailyDir),
+		ShortTermName:     shortTermFileName(at),
+		GeneratedAt:       at,
+	}, nil
+}
+
+func (m *Manager) WriteLongTerm(memoryScopeKey, scopeType, content string) (string, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if strings.TrimSpace(m.Dir) == "" {
+		return "", errors.New("memory dir is empty")
+	}
+	if err := ensureLayoutDirs(m.Dir); err != nil {
+		return "", fmt.Errorf("prepare scoped memory layout failed: %w", err)
+	}
+
+	targetScope := strings.ToLower(strings.TrimSpace(scopeType))
+	content = normalizeMemoryText(content, m.maxLongTermRunes())
+	var path string
+	switch targetScope {
+	case "", "session", "scoped":
+		scope, err := resolveScopePaths(m.Dir, memoryScopeKey)
+		if err != nil {
+			return "", fmt.Errorf("resolve memory scope failed: %w", err)
+		}
+		if err := ensureScopeDirs(scope); err != nil {
+			return "", fmt.Errorf("prepare scoped memory dir failed: %w", err)
+		}
+		path = scope.LongTermPath
+	case "global":
+		path = globalLongTermPath(m.Dir)
+	default:
+		return "", fmt.Errorf("invalid memory scope_type %q", scopeType)
+	}
+	if err := os.WriteFile(path, []byte(content+"\n"), 0o644); err != nil {
+		return "", fmt.Errorf("write long-term memory failed: %w", err)
+	}
+	return absOrSame(path), nil
 }
 
 func (m *Manager) SaveInteraction(memoryScopeKey, userText, assistantText string, failed bool) (bool, error) {

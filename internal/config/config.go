@@ -51,6 +51,8 @@ type Config struct {
 	KimiTimeout            time.Duration     `mapstructure:"-"`
 	KimiTimeoutSecs        int               `mapstructure:"kimi_timeout_secs"`
 	KimiPromptPrefix       string            `mapstructure:"kimi_prompt_prefix"`
+	RuntimeHTTPAddr        string            `mapstructure:"runtime_http_addr"`
+	RuntimeHTTPToken       string            `mapstructure:"runtime_http_token"`
 	FailureMessage         string            `mapstructure:"failure_message"`
 	ThinkingMessage        string            `mapstructure:"thinking_message"`
 	WorkspaceDir           string            `mapstructure:"workspace_dir"`
@@ -89,6 +91,8 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("claude_timeout_secs", 120)
 	v.SetDefault("kimi_command", "kimi")
 	v.SetDefault("kimi_timeout_secs", 120)
+	v.SetDefault("runtime_http_addr", "127.0.0.1:7331")
+	v.SetDefault("runtime_http_token", "")
 	v.SetDefault("failure_message", "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault("thinking_message", "正在思考中...")
 	v.SetDefault("workspace_dir", ".")
@@ -132,6 +136,8 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
 	cfg.KimiCommand = strings.TrimSpace(cfg.KimiCommand)
 	cfg.KimiPromptPrefix = strings.TrimSpace(cfg.KimiPromptPrefix)
+	cfg.RuntimeHTTPAddr = strings.TrimSpace(cfg.RuntimeHTTPAddr)
+	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
 	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)
 	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
@@ -171,6 +177,9 @@ func LoadFromFile(path string) (Config, error) {
 	}
 	if cfg.CodexMCPServerName == "" {
 		cfg.CodexMCPServerName = "alice-feishu"
+	}
+	if cfg.RuntimeHTTPAddr == "" {
+		cfg.RuntimeHTTPAddr = "127.0.0.1:7331"
 	}
 	if cfg.WorkspaceDir == "" {
 		cfg.WorkspaceDir = "."

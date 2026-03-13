@@ -32,6 +32,8 @@ type Processor struct {
 	stateVersion    uint64
 	flushedVersion  uint64
 	now             func() time.Time
+	runtimeAPIBase  string
+	runtimeAPIToken string
 	codeArmyStatus  *codearmy.Inspector
 	automationStore *automation.Store
 }
@@ -95,6 +97,14 @@ func (p *Processor) SetImmediateFeedback(mode, emojiType string) {
 	}
 	p.feedbackMode = normalizeImmediateFeedbackMode(mode)
 	p.feedbackEmoji = normalizeImmediateFeedbackEmoji(emojiType)
+}
+
+func (p *Processor) SetRuntimeAPI(baseURL, token string) {
+	if p == nil {
+		return
+	}
+	p.runtimeAPIBase = strings.TrimSpace(baseURL)
+	p.runtimeAPIToken = strings.TrimSpace(token)
 }
 
 func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {

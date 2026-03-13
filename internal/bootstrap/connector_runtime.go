@@ -4,14 +4,20 @@ import (
 	"context"
 	"errors"
 
+	"github.com/oklog/run"
+
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/prompting"
+	"github.com/Alice-space/alice/internal/runtimeapi"
 )
 
 type ConnectorRuntime struct {
 	App                 *connector.App
+	RuntimeAPI          *runtimeapi.Server
+	RuntimeAPIBaseURL   string
+	RuntimeAPIToken     string
 	MemoryDir           string
 	AutomationStatePath string
 }
@@ -71,4 +77,27 @@ func BuildConnectorRuntime(cfg config.Config, provider llm.Provider) (*Connector
 		return nil, err
 	}
 	return builder.Build()
+}
+
+func (r *ConnectorRuntime) Run(ctx context.Context) error {
+	if r == nil || r.App == nil {
+		return errors.New("connector runtime is nil")
+	}
+
+	var group run.Group
+	appCtx, cancelApp := context.WithCancel(ctx)
+	group.Add(func() error {
+		return r.App.Run(appCtx)
+	}, func(error) {
+		cancelApp()
+	})
+	if r.RuntimeAPI != nil {
+		apiCtx, cancelAPI := context.WithCancel(ctx)
+		group.Add(func() error {
+			return r.RuntimeAPI.Run(apiCtx)
+		}, func(error) {
+			cancelAPI()
+		})
+	}
+	return group.Run()
 }

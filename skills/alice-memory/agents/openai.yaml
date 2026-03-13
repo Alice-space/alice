@@ -1,0 +1,4 @@
+interface:
+  display_name: "Alice Memory"
+  short_description: "查看和更新当前会话的 Alice memory"
+  default_prompt: "Use $alice-memory to inspect or update Alice memory for the current chat."
