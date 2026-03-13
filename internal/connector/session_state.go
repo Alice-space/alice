@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -273,7 +272,7 @@ func (p *Processor) runIdleSummaryTask(ctx context.Context, candidate idleSummar
 
 	reply, nextThreadID, err := p.runLLM(ctx, candidate.ThreadID, idleSummaryPrompt, nil, nil)
 	if err != nil {
-		log.Printf("idle summary llm failed session=%s thread_id=%s: %v", candidate.SessionKey, candidate.ThreadID, err)
+		logging.Errorf("idle summary llm failed session=%s thread_id=%s: %v", candidate.SessionKey, candidate.ThreadID, err)
 		return
 	}
 	if strings.TrimSpace(nextThreadID) != "" {
@@ -293,7 +292,7 @@ func (p *Processor) runIdleSummaryTask(ctx context.Context, candidate idleSummar
 		return
 	}
 	if err := p.memory.AppendDailySummary(candidate.MemoryScopeKey, candidate.SessionKey, summary, p.now()); err != nil {
-		log.Printf("append daily summary failed session=%s: %v", candidate.SessionKey, err)
+		logging.Errorf("append daily summary failed session=%s: %v", candidate.SessionKey, err)
 		return
 	}
 

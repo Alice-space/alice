@@ -12,6 +12,7 @@ import (
 	"github.com/Alice-space/alice/internal/bootstrap"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
+	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/mcpserver"
 )
 
@@ -24,6 +25,16 @@ func main() {
 	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
 		log.Fatalf("load config failed: %v", err)
+	}
+	if err := logging.Configure(logging.Options{
+		Level:      cfg.LogLevel,
+		FilePath:   cfg.LogFile,
+		MaxSizeMB:  cfg.LogMaxSizeMB,
+		MaxBackups: cfg.LogMaxBackups,
+		MaxAgeDays: cfg.LogMaxAgeDays,
+		Compress:   cfg.LogCompress,
+	}); err != nil {
+		log.Fatalf("configure logging failed: %v", err)
 	}
 
 	botClient := lark.NewClient(
@@ -39,10 +50,10 @@ func main() {
 	sender := connector.NewLarkSender(botClient, resourceDir)
 	mcpSrv, err := mcpserver.New(sender, nil, automation.NewStore(automationStatePath), codeArmyStateDir)
 	if err != nil {
-		log.Fatalf("init mcp server failed: %v", err)
+		logging.Fatalf("init mcp server failed: %v", err)
 	}
 
 	if err := server.ServeStdio(mcpSrv); err != nil {
-		log.Fatalf("mcp server stopped with error: %v", err)
+		logging.Fatalf("mcp server stopped with error: %v", err)
 	}
 }

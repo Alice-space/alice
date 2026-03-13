@@ -5,13 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/Alice-space/alice/internal/llm"
+	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 	"github.com/Alice-space/alice/internal/prompting"
 )
@@ -168,7 +168,7 @@ func (e *Engine) runSystemTasks(ctx context.Context, now time.Time) {
 			defer e.finishSystemTask(task.name)
 			defer func() {
 				if recovered := recover(); recovered != nil {
-					log.Printf("automation system task panic name=%s err=%v", task.name, recovered)
+					logging.Errorf("automation system task panic name=%s err=%v", task.name, recovered)
 				}
 			}()
 			task.run(ctx)
@@ -196,7 +196,7 @@ func (e *Engine) runUserTasks(ctx context.Context, now time.Time) {
 	}
 	claimed, err := e.store.ClaimDueTasks(now, e.maxClaim)
 	if err != nil {
-		log.Printf("claim automation tasks failed: %v", err)
+		logging.Errorf("claim automation tasks failed: %v", err)
 		return
 	}
 	for _, task := range claimed {
@@ -211,11 +211,11 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 
 	err := e.executeUserTask(runCtx, task)
 	if err != nil {
-		log.Printf("run automation task failed id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, err)
+		logging.Errorf("run automation task failed id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, err)
 	}
 	if e.store != nil {
 		if recordErr := e.store.RecordTaskResult(task.ID, e.nowTime(), err); recordErr != nil {
-			log.Printf("record automation result failed id=%s err=%v", task.ID, recordErr)
+			logging.Errorf("record automation result failed id=%s err=%v", task.ID, recordErr)
 		}
 	}
 }

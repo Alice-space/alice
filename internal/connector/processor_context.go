@@ -3,7 +3,6 @@ package connector
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -78,7 +77,7 @@ func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID
 
 	prompt, err := p.memory.BuildPrompt(memoryScopeKeyForJob(job), userText)
 	if err != nil {
-		log.Printf("build memory prompt failed event_id=%s: %v", job.EventID, err)
+		logging.Warnf("build memory prompt failed event_id=%s: %v", job.EventID, err)
 		logging.Debugf("prompt assemble fallback event_id=%s strategy=direct reason=%v final_prompt=%q", job.EventID, err, userText)
 		return userText
 	}
@@ -176,7 +175,7 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 		sessionContext.ResourceRoot = strings.TrimSpace(provider.ResourceRootForScope(scopeKey))
 		if sessionContext.ResourceRoot != "" {
 			if err := os.MkdirAll(sessionContext.ResourceRoot, 0o755); err != nil {
-				log.Printf("prepare scoped resource root failed event_id=%s scope=%s err=%v", job.EventID, scopeKey, err)
+				logging.Warnf("prepare scoped resource root failed event_id=%s scope=%s err=%v", job.EventID, scopeKey, err)
 			}
 		}
 	}
@@ -220,7 +219,7 @@ func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {
 		}
 		if err := downloader.DownloadAttachment(ctx, scopeKey, downloadSourceMessageID, attachment); err != nil {
 			attachment.DownloadError = err.Error()
-			log.Printf(
+			logging.Warnf(
 				"download attachment failed event_id=%s scope=%s message_type=%s kind=%s source_message_id=%s file_key=%s image_key=%s err=%v",
 				job.EventID,
 				scopeKey,
@@ -410,7 +409,7 @@ func (p *Processor) recordInteraction(job Job, userText, reply string, failed bo
 	}
 	changed, err := p.memory.SaveInteraction(memoryScopeKeyForJob(job), strings.TrimSpace(userText), reply, failed)
 	if err != nil {
-		log.Printf("save memory failed event_id=%s: %v", job.EventID, err)
+		logging.Warnf("save memory failed event_id=%s: %v", job.EventID, err)
 		logging.Debugf("memory update result event_id=%s changed=unknown error=%v", job.EventID, err)
 		return
 	}

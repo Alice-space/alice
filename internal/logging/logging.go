@@ -1,9 +1,18 @@
 package logging
 
 import (
-	"log"
+	"fmt"
+	"io"
+	stdlog "log"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
+
+	"github.com/rs/zerolog"
+	"gopkg.in/natefinch/lumberjack.v2"
 )
 
 const (
@@ -13,23 +22,73 @@ const (
 	levelError
 )
 
+const (
+	defaultLogMaxSizeMB  = 20
+	defaultLogMaxBackups = 5
+	defaultLogMaxAgeDays = 7
+)
+
+type Options struct {
+	Level      string
+	FilePath   string
+	MaxSizeMB  int
+	MaxBackups int
+	MaxAgeDays int
+	Compress   bool
+}
+
 var currentLevel atomic.Int32
+
+var (
+	loggerMu sync.RWMutex
+	logger   zerolog.Logger
+)
 
 func init() {
 	currentLevel.Store(levelInfo)
+	zerolog.TimeFieldFormat = time.RFC3339
+	logger = zerolog.New(os.Stderr).With().Timestamp().Logger()
+	zerolog.SetGlobalLevel(zerolog.InfoLevel)
+	stdlog.SetFlags(0)
+	stdlog.SetOutput(stdLogWriter{})
+}
+
+func Configure(opts Options) error {
+	writers := make([]io.Writer, 0, 2)
+	console := zerolog.ConsoleWriter{
+		Out:        os.Stderr,
+		TimeFormat: time.RFC3339,
+	}
+	writers = append(writers, console)
+
+	filePath := strings.TrimSpace(opts.FilePath)
+	if filePath != "" {
+		if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+			return fmt.Errorf("create log dir failed: %w", err)
+		}
+		rotator := &lumberjack.Logger{
+			Filename:   filePath,
+			MaxSize:    positiveOrDefault(opts.MaxSizeMB, defaultLogMaxSizeMB),
+			MaxBackups: positiveOrDefault(opts.MaxBackups, defaultLogMaxBackups),
+			MaxAge:     positiveOrDefault(opts.MaxAgeDays, defaultLogMaxAgeDays),
+			Compress:   opts.Compress,
+		}
+		writers = append(writers, zerolog.ConsoleWriter{
+			Out:        rotator,
+			NoColor:    true,
+			TimeFormat: time.RFC3339,
+		})
+	}
+
+	configured := zerolog.New(io.MultiWriter(writers...)).With().Timestamp().Logger()
+	setLogger(configured)
+	SetLevel(opts.Level)
+	return nil
 }
 
 func SetLevel(level string) {
-	switch strings.ToLower(strings.TrimSpace(level)) {
-	case "debug":
-		currentLevel.Store(levelDebug)
-	case "warn", "warning":
-		currentLevel.Store(levelWarn)
-	case "error":
-		currentLevel.Store(levelError)
-	default:
-		currentLevel.Store(levelInfo)
-	}
+	currentLevel.Store(levelValue(level))
+	zerolog.SetGlobalLevel(zerologLevel(level))
 }
 
 func IsDebugEnabled() bool {
@@ -37,10 +96,24 @@ func IsDebugEnabled() bool {
 }
 
 func Debugf(format string, args ...any) {
-	if !IsDebugEnabled() {
-		return
-	}
-	log.Printf("[DEBUG] "+format, args...)
+	logf(zerolog.DebugLevel, format, args...)
+}
+
+func Infof(format string, args ...any) {
+	logf(zerolog.InfoLevel, format, args...)
+}
+
+func Warnf(format string, args ...any) {
+	logf(zerolog.WarnLevel, format, args...)
+}
+
+func Errorf(format string, args ...any) {
+	logf(zerolog.ErrorLevel, format, args...)
+}
+
+func Fatalf(format string, args ...any) {
+	current := getLogger()
+	current.Fatal().Msgf(format, args...)
 }
 
 type AgentTrace struct {
@@ -97,7 +170,62 @@ func DebugAgentTrace(trace AgentTrace) {
 		"## Output",
 		codeBlock(trace.Output),
 	)
-	log.Printf("[DEBUG][agent-trace]\n%s", strings.Join(sections, "\n"))
+	current := getLogger()
+	current.Debug().Str("kind", "agent-trace").Msg(strings.Join(sections, "\n"))
+}
+
+func logf(level zerolog.Level, format string, args ...any) {
+	current := getLogger()
+	switch level {
+	case zerolog.DebugLevel:
+		current.Debug().Msgf(format, args...)
+	case zerolog.InfoLevel:
+		current.Info().Msgf(format, args...)
+	case zerolog.WarnLevel:
+		current.Warn().Msgf(format, args...)
+	case zerolog.ErrorLevel:
+		current.Error().Msgf(format, args...)
+	default:
+		current.WithLevel(level).Msgf(format, args...)
+	}
+}
+
+func getLogger() zerolog.Logger {
+	loggerMu.RLock()
+	defer loggerMu.RUnlock()
+	return logger
+}
+
+func setLogger(next zerolog.Logger) {
+	loggerMu.Lock()
+	defer loggerMu.Unlock()
+	logger = next
+}
+
+func zerologLevel(level string) zerolog.Level {
+	switch levelValue(level) {
+	case levelDebug:
+		return zerolog.DebugLevel
+	case levelWarn:
+		return zerolog.WarnLevel
+	case levelError:
+		return zerolog.ErrorLevel
+	default:
+		return zerolog.InfoLevel
+	}
+}
+
+func levelValue(level string) int32 {
+	switch strings.ToLower(strings.TrimSpace(level)) {
+	case "debug":
+		return levelDebug
+	case "warn", "warning":
+		return levelWarn
+	case "error":
+		return levelError
+	default:
+		return levelInfo
+	}
 }
 
 func codeBlock(text string) string {
@@ -114,4 +242,21 @@ func defaultString(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func positiveOrDefault(value, fallback int) int {
+	if value <= 0 {
+		return fallback
+	}
+	return value
+}
+
+type stdLogWriter struct{}
+
+func (stdLogWriter) Write(p []byte) (int, error) {
+	message := strings.TrimSpace(string(p))
+	if message != "" {
+		Infof("%s", message)
+	}
+	return len(p), nil
 }

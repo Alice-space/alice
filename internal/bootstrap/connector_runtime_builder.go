@@ -3,7 +3,6 @@ package bootstrap
 import (
 	"context"
 	"errors"
-	"log"
 	"path/filepath"
 	"strings"
 	"time"
@@ -16,6 +15,7 @@ import (
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/llm"
+	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/memory"
 	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/Alice-space/alice/internal/runtimeapi"
@@ -171,10 +171,10 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 	}
 	if err := automationEngine.RegisterSystemTask("system.state_flush", 1*time.Second, func(context.Context) {
 		if err := b.processor.FlushSessionStateIfDirty(); err != nil {
-			log.Printf("flush session state failed: %v", err)
+			logging.Warnf("flush session state failed: %v", err)
 		}
 		if err := b.app.FlushRuntimeStateIfDirty(); err != nil {
-			log.Printf("flush runtime state failed: %v", err)
+			logging.Warnf("flush runtime state failed: %v", err)
 		}
 	}); err != nil {
 		return err
@@ -212,8 +212,8 @@ func loadOptionalState(label, path string, load func(string) error) {
 		return
 	}
 	if err := load(path); err != nil {
-		log.Printf("load %s failed file=%s err=%v", label, path, err)
+		logging.Warnf("load %s failed file=%s err=%v", label, path, err)
 		return
 	}
-	log.Printf("%s enabled file=%s", label, path)
+	logging.Infof("%s enabled file=%s", label, path)
 }

@@ -4,13 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/codearmy"
+	"github.com/Alice-space/alice/internal/logging"
 )
 
 const (
@@ -78,7 +78,7 @@ func (p *Processor) processCodeArmyStatusCommand(ctx context.Context, job Job, s
 
 	sendErr := p.replies.respond(ctx, job, reply)
 	if sendErr != nil {
-		log.Printf("send code_army status reply failed event_id=%s: %v", job.EventID, sendErr)
+		logging.Errorf("send code_army status reply failed event_id=%s: %v", job.EventID, sendErr)
 	}
 	return JobProcessCompleted
 }

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"regexp"
 	"strings"
@@ -155,7 +154,7 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 	p.setThreadID(sessionKey, nextThreadID)
 	if errors.Is(err, context.Canceled) {
 		if wasInterruptedByNewMessage(ctx) {
-			log.Printf("llm interrupted by newer message event_id=%s", job.EventID)
+			logging.Infof("llm interrupted by newer message event_id=%s", job.EventID)
 			logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
 			return JobProcessRetryAfterRestart
 		}
@@ -167,19 +166,19 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 			)
 			return JobProcessPostRestartFinalize
 		}
-		log.Printf("llm canceled event_id=%s", job.EventID)
+		logging.Infof("llm canceled event_id=%s", job.EventID)
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=llm_canceled", job.EventID)
 		return JobProcessRetryAfterRestart
 	}
 	failed := err != nil
 	if err != nil {
-		log.Printf("llm failed event_id=%s: %v", job.EventID, err)
+		logging.Errorf("llm failed event_id=%s: %v", job.EventID, err)
 		reply = p.failureMessage
 	}
 	p.recordInteraction(job, p.buildCurrentUserInput(job), reply, failed)
 
 	if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
-		log.Printf("send message failed event_id=%s: %v", job.EventID, sendErr)
+		logging.Errorf("send message failed event_id=%s: %v", job.EventID, sendErr)
 	}
 	return JobProcessCompleted
 }
@@ -212,13 +211,13 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 			}
 			if !delivered {
 				if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
-					log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
+					logging.Errorf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
 					return
 				}
 			}
 		} else {
 			if _, sendErr := p.replies.reply(ctx, job, job.SourceMessageID, normalized); sendErr != nil {
-				log.Printf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
+				logging.Errorf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
 				return
 			}
 		}
@@ -241,10 +240,10 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 			notifyCtx := context.WithoutCancel(ctx)
 			if ackDelivered {
 				if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
-					log.Printf("send interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
+					logging.Warnf("send interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 				}
 			} else if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
-				log.Printf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
+				logging.Warnf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 			}
 			logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
 			return JobProcessRetryAfterRestart
@@ -269,24 +268,24 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		notifyCtx := context.WithoutCancel(ctx)
 		if ackDelivered {
 			if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
-				log.Printf("send interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
+				logging.Warnf("send interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 			}
 		} else if _, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage); replyErr != nil {
-			log.Printf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
+			logging.Warnf("fallback interrupted reply failed event_id=%s: %v", job.EventID, replyErr)
 		}
 		logging.Debugf("memory update skipped event_id=%s changed=false reason=job_interrupted", job.EventID)
 		return JobProcessRetryAfterRestart
 	}
 	failed := runErr != nil
 	if failed {
-		log.Printf("llm failed event_id=%s: %v", job.EventID, runErr)
+		logging.Errorf("llm failed event_id=%s: %v", job.EventID, runErr)
 		finalReply = p.failureMessage
 	}
 	p.recordInteraction(job, p.buildCurrentUserInput(job), finalReply, failed)
 	if strings.TrimSpace(finalReply) != "" &&
 		strings.TrimSpace(finalReply) != lastSentAgentMessage {
 		if _, replyErr := p.replies.reply(ctx, job, job.SourceMessageID, finalReply); replyErr != nil {
-			log.Printf("send final reply failed event_id=%s: %v", job.EventID, replyErr)
+			logging.Errorf("send final reply failed event_id=%s: %v", job.EventID, replyErr)
 		}
 	}
 	return JobProcessCompleted
@@ -300,12 +299,12 @@ func (p *Processor) sendImmediateFeedback(ctx context.Context, job Job) bool {
 		if err := p.sender.AddReaction(ctx, job.SourceMessageID, p.feedbackEmoji); err == nil {
 			return true
 		} else {
-			log.Printf("send ack reaction failed event_id=%s message_id=%s emoji=%s: %v", job.EventID, job.SourceMessageID, p.feedbackEmoji, err)
+			logging.Warnf("send ack reaction failed event_id=%s message_id=%s emoji=%s: %v", job.EventID, job.SourceMessageID, p.feedbackEmoji, err)
 		}
 	}
 
 	if _, err := p.replies.reply(ctx, job, job.SourceMessageID, immediateFeedbackReplyText); err != nil {
-		log.Printf("send ack reply failed event_id=%s: %v", job.EventID, err)
+		logging.Warnf("send ack reply failed event_id=%s: %v", job.EventID, err)
 		return false
 	}
 	return true
@@ -374,7 +373,7 @@ func isRestartIntentJob(job Job) bool {
 func (p *Processor) processRestartNotification(ctx context.Context, job Job) JobProcessState {
 	sendErr := p.replies.respond(ctx, job, restartNotificationMessage)
 	if sendErr != nil {
-		log.Printf("send restart notification failed event_id=%s: %v", job.EventID, sendErr)
+		logging.Warnf("send restart notification failed event_id=%s: %v", job.EventID, sendErr)
 		logging.Debugf(
 			"job state decided event_id=%s state=%s reason=restart_notification_send_failed",
 			job.EventID,
@@ -408,7 +407,7 @@ func (p *Processor) processPostRestartFinalize(ctx context.Context, job Job) Job
 
 	sendErr := p.replies.respond(ctx, job, summary)
 	if sendErr != nil {
-		log.Printf("send post-restart finalize reply failed event_id=%s: %v", job.EventID, sendErr)
+		logging.Warnf("send post-restart finalize reply failed event_id=%s: %v", job.EventID, sendErr)
 		logging.Debugf(
 			"job state decided event_id=%s state=%s reason=post_restart_finalize_send_failed",
 			job.EventID,

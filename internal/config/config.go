@@ -69,7 +69,12 @@ type Config struct {
 	GroupContextWindowMinutes int           `mapstructure:"group_context_window_minutes"`
 	GroupContextWindowTTL     time.Duration `mapstructure:"-"`
 
-	LogLevel string `mapstructure:"log_level"`
+	LogLevel      string `mapstructure:"log_level"`
+	LogFile       string `mapstructure:"log_file"`
+	LogMaxSizeMB  int    `mapstructure:"log_max_size_mb"`
+	LogMaxBackups int    `mapstructure:"log_max_backups"`
+	LogMaxAgeDays int    `mapstructure:"log_max_age_days"`
+	LogCompress   bool   `mapstructure:"log_compress"`
 }
 
 func LoadFromFile(path string) (Config, error) {
@@ -104,6 +109,11 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("idle_summary_hours", 8)
 	v.SetDefault("group_context_window_minutes", 5)
 	v.SetDefault("log_level", "info")
+	v.SetDefault("log_file", "")
+	v.SetDefault("log_max_size_mb", 20)
+	v.SetDefault("log_max_backups", 5)
+	v.SetDefault("log_max_age_days", 7)
+	v.SetDefault("log_compress", false)
 
 	if err := v.ReadInConfig(); err != nil {
 		return Config{}, fmt.Errorf("read config file %q failed: %w", path, err)
@@ -144,6 +154,7 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.MemoryDir = strings.TrimSpace(cfg.MemoryDir)
 	cfg.PromptDir = strings.TrimSpace(cfg.PromptDir)
 	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
+	cfg.LogFile = strings.TrimSpace(cfg.LogFile)
 
 	if cfg.FeishuAppID == "" {
 		return Config{}, errors.New("feishu_app_id is required")
@@ -258,6 +269,15 @@ func LoadFromFile(path string) (Config, error) {
 	}
 	if cfg.GroupContextWindowMinutes <= 0 {
 		return Config{}, errors.New("group_context_window_minutes must be > 0")
+	}
+	if cfg.LogMaxSizeMB <= 0 {
+		cfg.LogMaxSizeMB = 20
+	}
+	if cfg.LogMaxBackups <= 0 {
+		cfg.LogMaxBackups = 5
+	}
+	if cfg.LogMaxAgeDays <= 0 {
+		cfg.LogMaxAgeDays = 7
 	}
 	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
 	cfg.ClaudeTimeout = time.Duration(cfg.ClaudeTimeoutSecs) * time.Second

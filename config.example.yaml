@@ -63,3 +63,9 @@ group_context_window_minutes: 5
 
 # debug | info | warn | error
 log_level: "info"
+# Optional rotating log file. Empty means stderr only.
+log_file: ""
+log_max_size_mb: 20
+log_max_backups: 5
+log_max_age_days: 7
+log_compress: false

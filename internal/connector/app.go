@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 	"sync"
 	"time"
@@ -127,15 +126,15 @@ func (a *App) sessionStateFlushLoop(ctx context.Context) {
 		case <-ticker.C:
 			if a.processor == nil {
 				if err := a.FlushRuntimeStateIfDirty(); err != nil {
-					log.Printf("flush runtime state failed: %v", err)
+					logging.Warnf("flush runtime state failed: %v", err)
 				}
 				continue
 			}
 			if err := a.processor.FlushSessionStateIfDirty(); err != nil {
-				log.Printf("flush session state failed: %v", err)
+				logging.Warnf("flush session state failed: %v", err)
 			}
 			if err := a.FlushRuntimeStateIfDirty(); err != nil {
-				log.Printf("flush runtime state failed: %v", err)
+				logging.Warnf("flush runtime state failed: %v", err)
 			}
 		}
 	}
@@ -146,25 +145,25 @@ func (a *App) flushSessionState() {
 		return
 	}
 	if err := a.processor.FlushSessionStateIfDirty(); err != nil {
-		log.Printf("flush session state on exit failed: %v", err)
+		logging.Warnf("flush session state on exit failed: %v", err)
 	}
 }
 
 func (a *App) flushRuntimeState() {
 	if err := a.FlushRuntimeStateIfDirty(); err != nil {
-		log.Printf("flush runtime state on exit failed: %v", err)
+		logging.Warnf("flush runtime state on exit failed: %v", err)
 	}
 }
 
 func (a *App) workerLoop(ctx context.Context, idx int) {
-	log.Printf("worker started id=%d", idx)
+	logging.Infof("worker started id=%d", idx)
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case job := <-a.queue:
 			if ctx.Err() != nil {
-				log.Printf(
+				logging.Infof(
 					"worker stopping with queued job preserved event_id=%s session=%s version=%d",
 					job.EventID,
 					job.SessionKey,
@@ -174,12 +173,12 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 			}
 			sessionKey := normalizeJobSessionKey(job)
 			if sessionKey == "" {
-				log.Printf("drop invalid job event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
+				logging.Warnf("drop invalid job event_id=%s session=%s version=%d", job.EventID, job.SessionKey, job.SessionVersion)
 				a.completePendingJob(job)
 				continue
 			}
 			if a.isSupersededJob(sessionKey, job.SessionVersion) {
-				log.Printf(
+				logging.Infof(
 					"drop superseded job event_id=%s session=%s version=%d",
 					job.EventID,
 					job.SessionKey,
@@ -193,7 +192,7 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 			sessionMu.Lock()
 			if a.isSupersededJob(sessionKey, job.SessionVersion) {
 				sessionMu.Unlock()
-				log.Printf(
+				logging.Infof(
 					"drop superseded job after lock event_id=%s session=%s version=%d",
 					job.EventID,
 					job.SessionKey,
@@ -216,7 +215,7 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 			case JobProcessPostRestartFinalize, JobProcessRetryAfterRestart:
 				if ctx.Err() != nil {
 					a.updatePendingJobWorkflowPhase(job, jobWorkflowPhaseRestartNotification)
-					log.Printf(
+					logging.Infof(
 						"job interrupted, keep pending for restart notification event_id=%s session=%s version=%d state=%s",
 						job.EventID,
 						job.SessionKey,
@@ -225,7 +224,7 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 					)
 					continue
 				}
-				log.Printf(
+				logging.Warnf(
 					"job interrupted, drop in-progress event_id=%s session=%s version=%d state=%s",
 					job.EventID,
 					job.SessionKey,
@@ -234,7 +233,7 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 				)
 				a.completePendingJob(job)
 			default:
-				log.Printf(
+				logging.Warnf(
 					"job state unknown, keep pending event_id=%s session=%s version=%d state=%s",
 					job.EventID,
 					job.SessionKey,
@@ -280,7 +279,7 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 			logging.Debugf("incoming message ignored source=feishu_im event_id=%s", eventID(event))
 			return nil
 		}
-		log.Printf("build job failed: %v", err)
+		logging.Warnf("build job failed: %v", err)
 		logging.Debugf("incoming message rejected source=feishu_im event_id=%s err=%v", eventID(event), err)
 		return nil
 	}
@@ -294,12 +293,12 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 
 	queued, cancelActive, canceledEventID := a.enqueueJob(job)
 	if !queued {
-		log.Printf("queue full, drop event_id=%s", job.EventID)
+		logging.Warnf("queue full, drop event_id=%s", job.EventID)
 		return nil
 	}
 	if cancelActive != nil {
 		cancelActive()
-		log.Printf(
+		logging.Infof(
 			"interrupt active job session=%s canceled_event_id=%s new_event_id=%s new_version=%d",
 			job.SessionKey,
 			canceledEventID,
@@ -307,7 +306,7 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 			job.SessionVersion,
 		)
 	}
-	log.Printf(
+	logging.Infof(
 		"job queued event_id=%s receive_id_type=%s session=%s version=%d",
 		job.EventID,
 		job.ReceiveIDType,

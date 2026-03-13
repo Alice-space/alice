@@ -96,6 +96,24 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if len(cfg.CodexEnv) != 0 {
 		t.Fatalf("unexpected codex_env: %#v", cfg.CodexEnv)
 	}
+	if cfg.LogLevel != "info" {
+		t.Fatalf("unexpected log_level: %q", cfg.LogLevel)
+	}
+	if cfg.LogFile != "" {
+		t.Fatalf("unexpected log_file: %q", cfg.LogFile)
+	}
+	if cfg.LogMaxSizeMB != 20 {
+		t.Fatalf("unexpected log_max_size_mb: %d", cfg.LogMaxSizeMB)
+	}
+	if cfg.LogMaxBackups != 5 {
+		t.Fatalf("unexpected log_max_backups: %d", cfg.LogMaxBackups)
+	}
+	if cfg.LogMaxAgeDays != 7 {
+		t.Fatalf("unexpected log_max_age_days: %d", cfg.LogMaxAgeDays)
+	}
+	if cfg.LogCompress {
+		t.Fatal("log_compress should default to false")
+	}
 }
 
 func TestLoadFromFile_RequiredKeys(t *testing.T) {
@@ -160,6 +178,47 @@ env:
 	}
 	if !strings.Contains(err.Error(), "must not contain '='") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_LogConfigTrimmed(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+log_level: "  DEBUG  "
+log_file: "  logs/alice.log  "
+log_max_size_mb: 0
+log_max_backups: -1
+log_max_age_days: 0
+log_compress: true
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	cfg, err := LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("load config failed: %v", err)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Fatalf("unexpected log_level: %q", cfg.LogLevel)
+	}
+	if cfg.LogFile != "logs/alice.log" {
+		t.Fatalf("unexpected log_file: %q", cfg.LogFile)
+	}
+	if cfg.LogMaxSizeMB != 20 {
+		t.Fatalf("unexpected log_max_size_mb fallback: %d", cfg.LogMaxSizeMB)
+	}
+	if cfg.LogMaxBackups != 5 {
+		t.Fatalf("unexpected log_max_backups fallback: %d", cfg.LogMaxBackups)
+	}
+	if cfg.LogMaxAgeDays != 7 {
+		t.Fatalf("unexpected log_max_age_days fallback: %d", cfg.LogMaxAgeDays)
+	}
+	if !cfg.LogCompress {
+		t.Fatal("expected log_compress to be true")
 	}
 }
 
