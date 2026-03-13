@@ -252,7 +252,7 @@ type ListResponse[T any] struct {
 
 ## 7. notifier
 
-`Notifier` 只消费结构化事件，不直接读业务表拼消息。
+`Notifier` / Feishu 出站 worker 只消费结构化事件，不直接读业务表拼消息。
 
 通知类型建议固定为：
 
@@ -262,6 +262,14 @@ type ListResponse[T any] struct {
 - `schedule_missed_window`
 - `workflow_publish_required`
 - `system_health_alert`
+
+当前实现里，Feishu 已经先承接：
+
+- `reply_recorded` 对应的线程回复
+- `approval_request_opened` 对应的审批卡片
+- `human_wait_recorded` 对应的恢复/补充输入卡片
+
+后续如果补统一 notifier channel，应继续保持“消费结构化事件 -> 选择 channel -> 渲染模板 -> 幂等投递”的分层，而不是让业务代码直接拼接 Feishu 协议。
 
 ## 8. reconciler
 

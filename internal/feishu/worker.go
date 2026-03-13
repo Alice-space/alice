@@ -10,35 +10,51 @@ import (
 	"alice/internal/domain"
 	"alice/internal/platform"
 	storepkg "alice/internal/store"
+
+	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-// ReplyWorker tails the event log and delivers replies back to Feishu.
-type ReplyWorker struct {
-	store    *storepkg.Store
-	service  *Service
-	logger   platform.Logger
-	interval time.Duration
+const (
+	deliveryScopeApproval = "approval"
+	deliveryScopeWait     = "wait"
+)
+
+// OutboundWorker tails the event log and delivers Feishu replies and cards.
+type OutboundWorker struct {
+	store             *storepkg.Store
+	service           *Service
+	logger            platform.Logger
+	interval          time.Duration
+	humanActionSecret []byte
 }
 
-func NewReplyWorker(store *storepkg.Store, service *Service, logger platform.Logger) *ReplyWorker {
+// ReplyWorker is kept as an alias for backward compatibility.
+type ReplyWorker = OutboundWorker
+
+func NewOutboundWorker(store *storepkg.Store, service *Service, humanActionSecret []byte, logger platform.Logger) *OutboundWorker {
 	if logger == nil {
 		logger = platform.NewNoopLogger()
 	}
-	return &ReplyWorker{
-		store:    store,
-		service:  service,
-		logger:   logger.WithComponent("feishu-reply-worker"),
-		interval: 5 * time.Second,
+	return &OutboundWorker{
+		store:             store,
+		service:           service,
+		logger:            logger.WithComponent("feishu-outbound-worker"),
+		interval:          5 * time.Second,
+		humanActionSecret: append([]byte(nil), humanActionSecret...),
 	}
 }
 
-func (w *ReplyWorker) Name() string { return "feishu-reply-worker" }
+func NewReplyWorker(store *storepkg.Store, service *Service, logger platform.Logger) *OutboundWorker {
+	return NewOutboundWorker(store, service, nil, logger)
+}
 
-func (w *ReplyWorker) Recover(ctx context.Context) error {
+func (w *OutboundWorker) Name() string { return "feishu-outbound-worker" }
+
+func (w *OutboundWorker) Recover(ctx context.Context) error {
 	return w.syncOnce(ctx)
 }
 
-func (w *ReplyWorker) Start(ctx context.Context) error {
+func (w *OutboundWorker) Start(ctx context.Context) error {
 	ticker := time.NewTicker(w.interval)
 	defer ticker.Stop()
 	for {
@@ -53,7 +69,7 @@ func (w *ReplyWorker) Start(ctx context.Context) error {
 	}
 }
 
-func (w *ReplyWorker) syncOnce(ctx context.Context) error {
+func (w *OutboundWorker) syncOnce(ctx context.Context) error {
 	if w == nil || w.store == nil || w.service == nil || !w.service.Enabled() {
 		return nil
 	}
@@ -69,18 +85,24 @@ func (w *ReplyWorker) syncOnce(ctx context.Context) error {
 	})
 }
 
-func (w *ReplyWorker) processEvent(ctx context.Context, evt domain.EventEnvelope) error {
+func (w *OutboundWorker) processEvent(ctx context.Context, evt domain.EventEnvelope) error {
 	switch evt.EventType {
 	case domain.EventTypeExternalEventIngested:
 		return w.recordTarget(evt)
+	case domain.EventTypeRequestPromoted:
+		return w.recordTaskTarget(evt)
 	case domain.EventTypeReplyRecorded:
 		return w.deliverReply(ctx, evt)
+	case domain.EventTypeApprovalRequestOpened:
+		return w.deliverApprovalCard(ctx, evt)
+	case domain.EventTypeHumanWaitRecorded:
+		return w.deliverHumanWaitCard(ctx, evt)
 	default:
 		return nil
 	}
 }
 
-func (w *ReplyWorker) recordTarget(evt domain.EventEnvelope) error {
+func (w *OutboundWorker) recordTarget(evt domain.EventEnvelope) error {
 	var payload domain.ExternalEventIngestedPayload
 	if err := json.Unmarshal(evt.Payload, &payload); err != nil {
 		return err
@@ -96,10 +118,32 @@ func (w *ReplyWorker) recordTarget(evt domain.EventEnvelope) error {
 	if !target.Valid() {
 		return nil
 	}
-	return w.service.state.SaveTarget(strings.TrimSpace(payload.Event.EventID), target)
+	eventID := strings.TrimSpace(payload.Event.EventID)
+	if err := w.service.state.SaveTarget(eventID, target); err != nil {
+		return err
+	}
+	if evt.AggregateKind == domain.AggregateKindRequest && strings.HasPrefix(strings.TrimSpace(evt.AggregateID), domain.IDPrefixRequest) {
+		return w.service.state.SaveRequestTarget(strings.TrimSpace(evt.AggregateID), target)
+	}
+	return nil
 }
 
-func (w *ReplyWorker) deliverReply(ctx context.Context, evt domain.EventEnvelope) error {
+func (w *OutboundWorker) recordTaskTarget(evt domain.EventEnvelope) error {
+	var payload domain.RequestPromotedPayload
+	if err := json.Unmarshal(evt.Payload, &payload); err != nil {
+		return err
+	}
+	target, ok, err := w.service.state.RequestTarget(payload.RequestID)
+	if err != nil {
+		return err
+	}
+	if !ok || !target.Valid() {
+		return nil
+	}
+	return w.service.state.SaveTaskTarget(payload.TaskID, target)
+}
+
+func (w *OutboundWorker) deliverReply(ctx context.Context, evt domain.EventEnvelope) error {
 	var payload domain.ReplyRecordedPayload
 	if err := json.Unmarshal(evt.Payload, &payload); err != nil {
 		return err
@@ -129,6 +173,84 @@ func (w *ReplyWorker) deliverReply(ctx context.Context, evt domain.EventEnvelope
 		return err
 	}
 	return w.service.state.MarkDelivered(replyID, remoteID, time.Now().UTC())
+}
+
+func (w *OutboundWorker) deliverApprovalCard(ctx context.Context, evt domain.EventEnvelope) error {
+	if len(w.humanActionSecret) == 0 {
+		return nil
+	}
+	var payload domain.ApprovalRequestOpenedPayload
+	if err := json.Unmarshal(evt.Payload, &payload); err != nil {
+		return err
+	}
+	deliveryID := deliveryKey(deliveryScopeApproval, payload.ApprovalRequestID)
+	return w.deliverTaskScopedMessage(ctx, strings.TrimSpace(payload.TaskID), deliveryID, evt, func() (OutboundMessage, error) {
+		return buildApprovalCardMessage(w.humanActionSecret, payload, evt.ProducedAt)
+	})
+}
+
+func (w *OutboundWorker) deliverHumanWaitCard(ctx context.Context, evt domain.EventEnvelope) error {
+	if len(w.humanActionSecret) == 0 {
+		return nil
+	}
+	var payload domain.HumanWaitRecordedPayload
+	if err := json.Unmarshal(evt.Payload, &payload); err != nil {
+		return err
+	}
+	deliveryID := deliveryKey(deliveryScopeWait, payload.HumanWaitID)
+	return w.deliverTaskScopedMessage(ctx, strings.TrimSpace(payload.TaskID), deliveryID, evt, func() (OutboundMessage, error) {
+		return buildHumanWaitMessage(w.humanActionSecret, payload, evt.ProducedAt)
+	})
+}
+
+func (w *OutboundWorker) deliverTaskScopedMessage(ctx context.Context, taskID, deliveryID string, evt domain.EventEnvelope, build func() (OutboundMessage, error)) error {
+	if taskID == "" || deliveryID == "" {
+		return nil
+	}
+	delivered, err := w.service.state.Delivered(deliveryID)
+	if err != nil {
+		return err
+	}
+	if delivered {
+		return nil
+	}
+	target, ok, err := w.service.state.TaskTarget(taskID)
+	if err != nil {
+		return err
+	}
+	if !ok || !target.Valid() {
+		return nil
+	}
+	msg, err := build()
+	if err != nil {
+		return err
+	}
+	remoteID, err := w.sendOutboundMessage(ctx, target, msg, deliveryID)
+	if err != nil {
+		w.logger.Error("feishu_delivery_failed", "delivery_id", deliveryID, "task_id", taskID, "event_type", evt.EventType, "error", err.Error())
+		return err
+	}
+	return w.service.state.MarkDelivered(deliveryID, remoteID, time.Now().UTC())
+}
+
+func (w *OutboundWorker) sendOutboundMessage(ctx context.Context, target ReplyTarget, msg OutboundMessage, deliveryID string) (string, error) {
+	switch strings.TrimSpace(msg.MsgType) {
+	case larkim.MsgTypeInteractive:
+		return w.service.ReplyCard(ctx, target, msg.Content, deliveryID)
+	case "", larkim.MsgTypeText:
+		return w.service.ReplyText(ctx, target, renderReplyText(msg.Content), deliveryID)
+	default:
+		return w.service.replyMessage(ctx, target, msg.MsgType, msg.Content, deliveryID)
+	}
+}
+
+func deliveryKey(scope, id string) string {
+	scope = strings.TrimSpace(scope)
+	id = strings.TrimSpace(id)
+	if scope == "" || id == "" {
+		return ""
+	}
+	return scope + ":" + id
 }
 
 func renderReplyText(payloadRef string) string {

@@ -145,7 +145,11 @@ func provideWorkers(
 		}),
 	}
 	if feishuService != nil && feishuService.Enabled() {
-		workers = append(workers, feishu.NewReplyWorker(st, feishuService, logger))
+		humanActionSecret := cfg.Auth.HumanActionSecret
+		if humanActionSecret == "" {
+			humanActionSecret = cfg.Auth.AdminToken
+		}
+		workers = append(workers, feishu.NewOutboundWorker(st, feishuService, []byte(humanActionSecret), logger))
 	} else {
 		workers = append(workers, ops.NewTickWorker("notifier", 15*time.Second, func(context.Context) error { return nil }))
 	}

@@ -90,7 +90,7 @@ flowchart LR
 | `internal/bus` | 分片执行、路由、命令处理、状态推进 | 不直接访问外部系统 |
 | `internal/store` | JSONL 日志、快照、bbolt 物化层、重放 | 不做策略判断 |
 | `internal/ingress` | HTTP ingress、标准化、鉴权和 BUS 提交 | 不跳过 BUS 直接改状态 |
-| `internal/feishu` | Feishu SDK 收发、卡片回调、回复状态持久化 | 不把 Feishu 协议细节泄漏进 BUS/domain |
+| `internal/feishu` | Feishu SDK 收发、卡片模板、卡片回调、回复/投递状态持久化 | 不把 Feishu 协议细节泄漏进 BUS/domain |
 | `internal/policy` | promotion、workflow 归属、gate、预算、重试策略 | 不自己持久化对象 |
 | `internal/workflow` | manifest 加载、binding、step runtime、gate runtime | 不绕过 `outbox` 直接写外部系统 |
 | `internal/agent` | `Reception` 和 step 执行适配 | 不原地修改聚合根 |
@@ -210,6 +210,7 @@ v1 明确使用：
 
 - 核心 HTTP API：`net/http` + JSON
 - MCP 调用：HTTP/JSON
+- Feishu ingress / card callback：Webhook HTTP；出站发送：官方 Go SDK over HTTPS
 - workflow manifest：YAML
 - schema：JSON Schema
 

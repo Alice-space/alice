@@ -5,7 +5,6 @@ import (
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
-	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
@@ -727,15 +726,11 @@ func githubSignature(secret string, payload []byte) string {
 
 func signToken(t *testing.T, secret string, claims domain.HumanActionTokenClaims) string {
 	t.Helper()
-	raw, err := json.Marshal(claims)
+	token, err := domain.SignHumanActionTokenV1([]byte(secret), claims)
 	if err != nil {
 		t.Fatal(err)
 	}
-	payload := base64.RawURLEncoding.EncodeToString(raw)
-	mac := hmac.New(sha256.New, []byte(secret))
-	_, _ = mac.Write([]byte(payload))
-	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
-	return "v1." + payload + "." + sig
+	return token
 }
 
 type approvalActionFixture struct {

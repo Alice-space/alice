@@ -139,7 +139,7 @@ v1 不同时冻结 `HTTP/JSON` 和 `gRPC/protobuf` 两套传输栈。先把 HTTP
 | `internal/bus/` | 命令执行、路由、状态推进、内部事件调度 |
 | `internal/store/` | 事件日志、快照、bbolt 物化索引、重放 |
 | `internal/ingress/` | HTTP ingress、标准化、鉴权和 BUS 提交 |
-| `internal/feishu/` | Feishu SDK 收发、卡片回调和回复状态 |
+| `internal/feishu/` | Feishu SDK 收发、卡片模板、卡片回调和回复/投递状态 |
 | `internal/policy/` | promotion、workflow 归属、gate、风险/预算策略 |
 | `internal/workflow/` | manifest 加载、binding、step runtime、gate runtime |
 | `internal/agent/` | `Reception`、leader、reviewer、worker、evaluator 适配层 |

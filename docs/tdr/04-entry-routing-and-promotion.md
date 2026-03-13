@@ -387,6 +387,17 @@ Feishu 卡片点击不应绕开 `human_actions` 语义。实现约束如下：
 
 卡片表单输入必须进入 `ExternalEvent.InputPatch`，供审计和后续 `provide_input` / `resume_*` 场景复用。
 
+### 9.1b Feishu 出站卡片约定
+
+Feishu 审批卡片和 human-wait 卡片由独立出站 worker 发送，不由 BUS 直接依赖 SDK：
+
+- `feishu-outbound-worker` 重放事件日志，消费 `ExternalEventIngested`、`RequestPromoted`、`ReplyRecorded`、`ApprovalRequestOpened`、`HumanWaitRecorded`
+- `ExternalEventIngested(im_feishu)` 只负责记录 reply target，不把 Feishu 元数据塞进领域对象
+- `RequestPromoted` 负责把 request 级 reply target 迁移成 task 级 target
+- `ApprovalRequestOpened` 生成审批卡片，按钮只承载 `human_action_token` 和最小必要元数据
+- `HumanWaitRecorded` 生成恢复/补充输入卡片；表单提交仍经 `POST /v1/ingress/im/feishu/cards` 回流成新的 `ExternalEvent`
+- 出站投递幂等键固定为 `approval:<approval_request_id>` / `wait:<human_wait_id>`，状态单独保存在 `internal/feishu` 的本地状态库
+
 ### 9.2 回流校验顺序
 
 1. 验签

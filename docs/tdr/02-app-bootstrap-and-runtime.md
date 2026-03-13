@@ -178,7 +178,8 @@ v1 建议固定以下 worker：
 - `schedule-fire-reconciler`
 - `outbox-reconciler`
 - `projection-rebuilder`
-- `notifier`
+- `feishu-outbound-worker`（启用 Feishu 时）
+- `notifier`（Feishu 未启用时的占位出口）
 
 其中：
 

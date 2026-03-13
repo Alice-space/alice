@@ -28,13 +28,15 @@ type replyAPI interface {
 	Reply(ctx context.Context, req *larkim.ReplyMessageReq, options ...larkcore.RequestOptionFunc) (*larkim.ReplyMessageResp, error)
 }
 
+type sendFunc func(context.Context, ReplyTarget, string, string, string) (string, error)
+
 // Service owns the Feishu SDK integration and its local state.
 type Service struct {
-	cfg       Config
-	logger    platform.Logger
-	state     *StateStore
-	replyAPI  replyAPI
-	replyFunc func(context.Context, ReplyTarget, string, string) (string, error)
+	cfg      Config
+	logger   platform.Logger
+	state    *StateStore
+	replyAPI replyAPI
+	sendFunc sendFunc
 }
 
 func NewService(cfg Config, storageRoot string, logger platform.Logger) (*Service, error) {
@@ -294,19 +296,35 @@ func safeString(v *string) string {
 }
 
 func (s *Service) ReplyText(ctx context.Context, target ReplyTarget, text, uuid string) (string, error) {
+	content := larkim.NewTextMsgBuilder().Text(text).Build()
+	return s.replyMessage(ctx, target, larkim.MsgTypeText, content, uuid)
+}
+
+func (s *Service) ReplyCard(ctx context.Context, target ReplyTarget, cardContent, uuid string) (string, error) {
+	return s.replyMessage(ctx, target, larkim.MsgTypeInteractive, strings.TrimSpace(cardContent), uuid)
+}
+
+func (s *Service) replyMessage(ctx context.Context, target ReplyTarget, msgType, content, uuid string) (string, error) {
 	if !s.Enabled() || s.replyAPI == nil {
 		return "", ErrDisabled
 	}
 	if !target.Valid() {
 		return "", fmt.Errorf("invalid feishu reply target")
 	}
-	if s.replyFunc != nil {
-		return s.replyFunc(ctx, target, text, uuid)
+	msgType = strings.TrimSpace(msgType)
+	if msgType == "" {
+		return "", fmt.Errorf("feishu reply message type is required")
 	}
-	content := larkim.NewTextMsgBuilder().Text(text).Build()
+	content = strings.TrimSpace(content)
+	if content == "" {
+		return "", fmt.Errorf("feishu reply content is required")
+	}
+	if s.sendFunc != nil {
+		return s.sendFunc(ctx, target, msgType, content, uuid)
+	}
 	body := larkim.NewReplyMessageReqBodyBuilder().
 		Content(content).
-		MsgType(larkim.MsgTypeText).
+		MsgType(msgType).
 		ReplyInThread(target.ReplyInThread)
 	if strings.TrimSpace(uuid) != "" {
 		body = body.Uuid(strings.TrimSpace(uuid))

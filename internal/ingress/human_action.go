@@ -2,10 +2,6 @@ package ingress
 
 import (
 	"context"
-	"crypto/hmac"
-	"crypto/sha256"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"net/http"
 	"strings"
@@ -127,7 +123,7 @@ func isHumanActionAuthError(err error) bool {
 	return strings.Contains(msg, "mismatch")
 }
 
-// verifyHumanActionToken verifies a JWT token using golang-jwt/jwt/v5.
+// verifyHumanActionToken accepts the v1 HMAC token format and the legacy JWT fallback.
 func (h *HTTPIngress) verifyHumanActionToken(tokenString string) (*domain.HumanActionClaims, error) {
 	if len(h.humanActionSecret) == 0 {
 		return nil, domain.ErrUnauthorized
@@ -176,41 +172,9 @@ func (h *HTTPIngress) verifyHumanActionToken(tokenString string) (*domain.HumanA
 }
 
 func (h *HTTPIngress) verifyHumanActionTokenV1(tokenString string) (*domain.HumanActionClaims, error) {
-	parts := strings.Split(tokenString, ".")
-	if len(parts) != 3 || parts[0] != "v1" {
-		return nil, domain.ErrInvalidToken
-	}
-	payloadPart := parts[1]
-	sigPart := parts[2]
-
-	gotSig, err := base64.RawURLEncoding.DecodeString(sigPart)
+	claims, err := domain.VerifyHumanActionTokenV1(h.humanActionSecret, tokenString, time.Now().UTC())
 	if err != nil {
-		return nil, domain.ErrInvalidToken
-	}
-	mac := hmac.New(sha256.New, h.humanActionSecret)
-	_, _ = mac.Write([]byte(payloadPart))
-	expectedSig := mac.Sum(nil)
-	if !hmac.Equal(gotSig, expectedSig) {
-		return nil, domain.ErrInvalidToken
-	}
-
-	payloadBytes, err := base64.RawURLEncoding.DecodeString(payloadPart)
-	if err != nil {
-		return nil, domain.ErrInvalidToken
-	}
-	var claims domain.HumanActionClaims
-	if err := json.Unmarshal(payloadBytes, &claims); err != nil {
-		return nil, domain.ErrInvalidToken
-	}
-	if claims.ExpiresAt.IsZero() || time.Now().UTC().After(claims.ExpiresAt) {
-		return nil, domain.ErrTokenExpired
-	}
-	if claims.DecisionHash == "" || claims.Nonce == "" {
-		return nil, domain.ErrInvalidToken
-	}
-	if err := domain.ValidateHumanActionClaims(claims); err != nil {
 		return nil, err
 	}
-	claims.ActionKind = string(domain.NormalizeHumanActionKind(claims.ActionKind))
 	return &claims, nil
 }
