@@ -31,6 +31,7 @@ type App struct {
 	Policy          *policy.Engine
 	WorkflowRuntime *workflow.Runtime
 	MCPRegistry     *mcp.Registry
+	AgentMCPServer  *mcp.Server
 	OpsHTTP         *ops.HTTPManager
 	Workers         []ops.Worker
 	Feishu          *feishu.Service
@@ -52,6 +53,7 @@ func NewApp(
 	policyEngine *policy.Engine,
 	workflowRuntime *workflow.Runtime,
 	mcpRegistry *mcp.Registry,
+	agentMCPServer *mcp.Server,
 	opsHTTP *ops.HTTPManager,
 	feishuService *feishu.Service,
 	httpServer *http.Server,
@@ -67,6 +69,7 @@ func NewApp(
 		Policy:          policyEngine,
 		WorkflowRuntime: workflowRuntime,
 		MCPRegistry:     mcpRegistry,
+		AgentMCPServer:  agentMCPServer,
 		OpsHTTP:         opsHTTP,
 		Feishu:          feishuService,
 		HTTPServer:      httpServer,
@@ -76,15 +79,28 @@ func NewApp(
 }
 
 // Start starts the application and all its components.
-func (a *App) Start(ctx context.Context) error {
+func (a *App) Start(ctx context.Context) (err error) {
 	a.ready = false
 	a.runGroup = &run.Group{}
 	a.runDone = make(chan error, 1)
 	a.runStop = nil
+	mcpStarted := false
+	defer func() {
+		if err != nil && mcpStarted && a.AgentMCPServer != nil {
+			_ = a.AgentMCPServer.Stop(context.Background())
+		}
+	}()
 
 	// Initialize store
 	if err := a.Store.RebuildIndexes(ctx); err != nil {
 		return fmt.Errorf("startup rebuild indexes: %w", err)
+	}
+
+	if a.AgentMCPServer != nil {
+		if err := a.AgentMCPServer.Start(); err != nil {
+			return fmt.Errorf("startup start agent mcp server: %w", err)
+		}
+		mcpStarted = true
 	}
 
 	// Restore bus state
@@ -175,6 +191,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	}
 
 	// Close store
+	if a.AgentMCPServer != nil {
+		if err := a.AgentMCPServer.Stop(ctx); err != nil {
+			return err
+		}
+	}
 	if err := a.Store.Close(); err != nil {
 		return err
 	}

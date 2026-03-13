@@ -1,6 +1,8 @@
 package app
 
 import (
+	"io"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -85,6 +87,14 @@ func provideMCPRegistry(cfg *platform.Config) *mcp.Registry {
 	return registry
 }
 
+func provideEmbeddedMCPServer() (*mcp.Server, error) {
+	return mcp.NewServer(mcp.Config{
+		Logger: slog.New(slog.NewTextHandler(io.Discard, nil)),
+		Host:   "127.0.0.1",
+		Port:   0,
+	})
+}
+
 func provideFeishuService(cfg *platform.Config, logger platform.Logger) (*feishu.Service, error) {
 	return feishu.NewService(feishu.Config{
 		Enabled:           cfg.Feishu.Enabled,
@@ -108,7 +118,7 @@ func provideHTTPManager(
 	})
 }
 
-func provideLocalAgent(cfg *platform.Config, logger platform.Logger) *agent.LocalAgent {
+func provideLocalAgent(cfg *platform.Config, logger platform.Logger, mcpServer *mcp.Server) *agent.LocalAgent {
 	timeout, _ := time.ParseDuration(cfg.Agent.Timeout)
 	if timeout <= 0 {
 		timeout = 120 * time.Second
@@ -119,8 +129,13 @@ func provideLocalAgent(cfg *platform.Config, logger platform.Logger) *agent.Loca
 		Timeout:        timeout,
 		MaxSteps:       cfg.Agent.MaxSteps,
 		SkillsDir:      cfg.Agent.SkillsDir,
+		MCPServer:      mcpServer,
 		Logger:         logger,
 	})
+}
+
+func provideDirectAnswerExecutor(localAgent *agent.LocalAgent, logger platform.Logger) *agent.DirectAnswerExecutor {
+	return agent.NewDirectAnswerExecutor(localAgent, logger)
 }
 
 func provideReception(

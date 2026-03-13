@@ -90,22 +90,29 @@ func (e *DirectAnswerExecutor) Execute(ctx context.Context, req DirectAnswerRequ
 
 	duration := time.Since(start)
 	result := &DirectAnswerResult{
-		Answer:     agentResult.Output,
 		DurationMS: duration.Milliseconds(),
 	}
 
-	// Extract confidence if available in structured output
 	if agentResult.StructuredOutput != nil {
+		if answer := getString(agentResult.StructuredOutput, "answer"); answer != "" {
+			result.Answer = answer
+		}
 		if conf, ok := agentResult.StructuredOutput["confidence"].(float64); ok {
 			result.Confidence = conf
 		}
-		if sources, ok := agentResult.StructuredOutput["sources"].([]interface{}); ok {
-			for _, s := range sources {
-				if str, ok := s.(string); ok {
-					result.Sources = append(result.Sources, str)
-				}
-			}
+		if citations := getStringSlice(agentResult.StructuredOutput, "citations"); len(citations) > 0 {
+			result.Sources = append(result.Sources, citations...)
 		}
+		if sources := getStringSlice(agentResult.StructuredOutput, "sources"); len(sources) > 0 {
+			result.Sources = append(result.Sources, sources...)
+		}
+	}
+
+	if result.Answer == "" && agentResult.FinalText != "" {
+		result.Answer = agentResult.FinalText
+	}
+	if result.Answer == "" {
+		result.Answer = agentResult.Output
 	}
 
 	// Default confidence if not extracted
@@ -150,4 +157,24 @@ func truncate(s string, maxLen int) string {
 		return s
 	}
 	return s[:maxLen] + "..."
+}
+
+func getString(m map[string]interface{}, key string) string {
+	if v, ok := m[key].(string); ok {
+		return v
+	}
+	return ""
+}
+
+func getStringSlice(m map[string]interface{}, key string) []string {
+	if arr, ok := m[key].([]interface{}); ok {
+		result := make([]string, 0, len(arr))
+		for _, v := range arr {
+			if s, ok := v.(string); ok {
+				result = append(result, s)
+			}
+		}
+		return result
+	}
+	return nil
 }

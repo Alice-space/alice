@@ -23,6 +23,9 @@ type Server struct {
 	handler  http.Handler
 	listener net.Listener
 	addr     string
+	host     string
+	port     int
+	started  bool
 	mu       sync.RWMutex
 }
 
@@ -66,18 +69,11 @@ func NewServer(cfg Config) (*Server, error) {
 		},
 	)
 
-	// Create listener
-	addr := fmt.Sprintf("%s:%d", cfg.Host, cfg.Port)
-	listener, err := net.Listen("tcp", addr)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create listener: %w", err)
-	}
-
 	s := &Server{
-		logger:   logger,
-		handler:  handler,
-		listener: listener,
-		addr:     listener.Addr().String(),
+		logger:  logger,
+		handler: handler,
+		host:    cfg.Host,
+		port:    cfg.Port,
 	}
 
 	return s, nil
@@ -85,6 +81,23 @@ func NewServer(cfg Config) (*Server, error) {
 
 // Start starts the MCP HTTP server in a background goroutine.
 func (s *Server) Start() error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.started {
+		return nil
+	}
+
+	addr := fmt.Sprintf("%s:%d", s.host, s.port)
+	listener, err := net.Listen("tcp", addr)
+	if err != nil {
+		return fmt.Errorf("failed to create listener: %w", err)
+	}
+
+	s.listener = listener
+	s.addr = listener.Addr().String()
+	s.started = true
+
 	go func() {
 		s.logger.Info("mcp server started", "addr", s.addr)
 		if err := http.Serve(s.listener, s.handler); err != nil && err != http.ErrServerClosed {
@@ -96,11 +109,24 @@ func (s *Server) Start() error {
 
 // Stop stops the MCP HTTP server.
 func (s *Server) Stop(ctx context.Context) error {
-	return s.listener.Close()
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !s.started || s.listener == nil {
+		return nil
+	}
+
+	err := s.listener.Close()
+	s.listener = nil
+	s.addr = ""
+	s.started = false
+	return err
 }
 
 // Addr returns the server address (host:port).
 func (s *Server) Addr() string {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.addr
 }
 
