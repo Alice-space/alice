@@ -22,6 +22,14 @@ mcp:
 scheduler:
   poll_interval: "30s"
 
+feishu:
+  enabled: false
+  app_id: ""
+  app_secret: ""
+  verification_token: ""
+  encrypt_key: ""
+  reply_in_thread: true
+
 ops:
   metrics_enabled: true
   admin_event_injection_enabled: true

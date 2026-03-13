@@ -20,6 +20,7 @@ type Config struct {
 	Ops       OpsConfig       `mapstructure:"ops"`
 	Auth      AuthConfig      `mapstructure:"auth"`
 	Agent     AgentConfig     `mapstructure:"agent"`
+	Feishu    FeishuConfig    `mapstructure:"feishu"`
 	Logging   LoggingConfig   `mapstructure:"logging"`
 }
 
@@ -80,6 +81,15 @@ type AgentConfig struct {
 	EnableDirectAnswer bool   `mapstructure:"enable_direct_answer"`
 }
 
+type FeishuConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`
+	AppID             string `mapstructure:"app_id"`
+	AppSecret         string `mapstructure:"app_secret"`
+	VerificationToken string `mapstructure:"verification_token"`
+	EncryptKey        string `mapstructure:"encrypt_key"`
+	ReplyInThread     bool   `mapstructure:"reply_in_thread"`
+}
+
 type FileLogConfig struct {
 	Path       string `mapstructure:"path"`
 	MaxSizeMB  int    `mapstructure:"max_size_mb"`
@@ -138,6 +148,7 @@ func setDefaults(v *viper.Viper) {
 	v.SetDefault("agent.timeout", "120s")
 	v.SetDefault("agent.max_steps", 10)
 	v.SetDefault("agent.skills_dir", "skills")
+	v.SetDefault("feishu.reply_in_thread", true)
 	v.SetDefault("logging.level", "info")
 	v.SetDefault("logging.format", "json")
 	v.SetDefault("logging.console", true)
@@ -173,6 +184,12 @@ func bindEnvVars(v *viper.Viper) {
 		"agent.max_steps":                        "AGENT_MAX_STEPS",
 		"agent.skills_dir":                       "AGENT_SKILLS_DIR",
 		"agent.enable_direct_answer":             "AGENT_ENABLE_DIRECT_ANSWER",
+		"feishu.enabled":                         "FEISHU_ENABLED",
+		"feishu.app_id":                          "FEISHU_APP_ID",
+		"feishu.app_secret":                      "FEISHU_APP_SECRET",
+		"feishu.verification_token":              "FEISHU_VERIFICATION_TOKEN",
+		"feishu.encrypt_key":                     "FEISHU_ENCRYPT_KEY",
+		"feishu.reply_in_thread":                 "FEISHU_REPLY_IN_THREAD",
 		"logging.level":                          "LOGGING_LEVEL",
 		"logging.format":                         "LOGGING_FORMAT",
 		"logging.console":                        "LOGGING_CONSOLE",
@@ -223,6 +240,17 @@ func validateConfig(cfg *Config) error {
 	if cfg.Agent.Timeout != "" {
 		if _, err := time.ParseDuration(cfg.Agent.Timeout); err != nil {
 			return fmt.Errorf("invalid agent.timeout: %w", err)
+		}
+	}
+	if cfg.Feishu.Enabled {
+		if strings.TrimSpace(cfg.Feishu.AppID) == "" {
+			return fmt.Errorf("feishu.app_id is required")
+		}
+		if strings.TrimSpace(cfg.Feishu.AppSecret) == "" {
+			return fmt.Errorf("feishu.app_secret is required")
+		}
+		if strings.TrimSpace(cfg.Feishu.VerificationToken) == "" {
+			return fmt.Errorf("feishu.verification_token is required")
 		}
 	}
 	return nil

@@ -16,6 +16,8 @@ import (
 
 	"alice/internal/bus"
 	"alice/internal/domain"
+	"alice/internal/feishu"
+	"alice/internal/platform"
 	"alice/internal/policy"
 	"alice/internal/store"
 	"alice/internal/workflow"
@@ -47,7 +49,7 @@ func TestHumanActionTokenVerifyAndDecisionHash(t *testing.T) {
 		bus.Config{ShardCount: 4},
 		nil,
 	)
-	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret")
+	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", nil)
 
 	claims := domain.HumanActionTokenClaims{
 		ActionKind:        "approve",
@@ -121,7 +123,7 @@ func TestSchedulerFireEndpointDerivesServerPayload(t *testing.T) {
 		bus.Config{ShardCount: 4},
 		nil,
 	)
-	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", WebhookAuthConfig{
+	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", nil, WebhookAuthConfig{
 		SchedulerSecret: "scheduler-secret",
 	})
 	// Register authoritative schedule source.
@@ -202,7 +204,7 @@ func TestSchedulerFireEndpointRejectsUnauthorizedAndMissingOrDisabledSource(t *t
 		bus.Config{ShardCount: 4},
 		nil,
 	)
-	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", WebhookAuthConfig{
+	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", nil, WebhookAuthConfig{
 		SchedulerSecret: "scheduler-secret",
 	})
 
@@ -296,7 +298,7 @@ func TestGitHubWebhookVerificationAndRouteSanitization(t *testing.T) {
 		bus.Config{ShardCount: 4},
 		nil,
 	)
-	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", WebhookAuthConfig{
+	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", nil, WebhookAuthConfig{
 		GitHubSecret: "gh-secret",
 	})
 
@@ -369,7 +371,7 @@ func TestWebIngressSanitizesUntrustedObjectFields(t *testing.T) {
 		bus.Config{ShardCount: 4},
 		nil,
 	)
-	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret")
+	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", nil)
 
 	// Create gin router and register routes
 	r := gin.New()
@@ -406,6 +408,112 @@ func TestWebIngressSanitizesUntrustedObjectFields(t *testing.T) {
 	}
 	if external.Event.EventType != domain.EventTypeExternalEventIngested {
 		t.Fatalf("web ingress must force event type to ExternalEventIngested, got %s", external.Event.EventType)
+	}
+}
+
+func TestFeishuIngressUsesSDKCallbackAndNormalizesMessage(t *testing.T) {
+	ctx := context.Background()
+	rootDir := t.TempDir()
+	st, err := store.Open(store.Config{RootDir: rootDir, SnapshotInterval: 100})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	reg := workflow.NewRegistry(nil)
+	if err := reg.LoadRoots(ctx, []string{filepath.Join("..", "..", "configs", "workflows")}); err != nil {
+		t.Fatal(err)
+	}
+	runtime := bus.NewRuntime(
+		st,
+		policy.NewEngine(policy.Config{MinConfidence: 0.6, DirectAllowlist: []string{"direct_query"}}),
+		workflow.NewRuntime(reg),
+		domain.NewULIDGenerator(),
+		bus.Config{ShardCount: 4},
+		nil,
+	)
+	feishuService, err := feishu.NewService(feishu.Config{
+		Enabled:           true,
+		AppID:             "cli_test_app",
+		AppSecret:         "cli_test_secret",
+		VerificationToken: "verify-token",
+	}, rootDir, platform.NewNoopLogger())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer feishuService.Close()
+
+	ing := NewHTTPIngress(runtime, policy.NewStaticReception(domain.NewULIDGenerator()), "secret", feishuService)
+	r := gin.New()
+	ing.RegisterRoutes(r.Group("/v1"))
+
+	body := []byte(`{
+		"schema":"2.0",
+		"header":{
+			"event_id":"evt_feishu_1",
+			"event_type":"im.message.receive_v1",
+			"app_id":"cli_test_app",
+			"tenant_key":"tenant_1",
+			"create_time":"1710000000000",
+			"token":"verify-token"
+		},
+		"event":{
+			"sender":{
+				"sender_id":{"open_id":"ou_sender_1"},
+				"sender_type":"user",
+				"tenant_key":"tenant_1"
+			},
+			"message":{
+				"message_id":"om_message_1",
+				"chat_id":"oc_chat_1",
+				"thread_id":"omt_thread_1",
+				"chat_type":"group",
+				"message_type":"text",
+				"content":"{\"text\":\"hello alice\"}"
+			}
+		}
+	}`)
+	req := httptest.NewRequest(http.MethodPost, "/v1/ingress/im/feishu", bytes.NewReader(body))
+	w := httptest.NewRecorder()
+	r.ServeHTTP(w, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("expected feishu callback 200, got %d", w.Code)
+	}
+
+	var external domain.ExternalEventIngestedPayload
+	if err := st.Replay(ctx, "", func(evt domain.EventEnvelope) error {
+		if evt.EventType == domain.EventTypeExternalEventIngested {
+			return json.Unmarshal(evt.Payload, &external)
+		}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if external.Event.TransportKind != feishu.TransportKind {
+		t.Fatalf("transport_kind should be %s, got %s", feishu.TransportKind, external.Event.TransportKind)
+	}
+	if external.Event.SourceRef != "hello alice" {
+		t.Fatalf("source_ref should be text message, got %s", external.Event.SourceRef)
+	}
+	if external.Event.ConversationID != "feishu:oc_chat_1" {
+		t.Fatalf("conversation_id should be namespaced chat id, got %s", external.Event.ConversationID)
+	}
+	if external.Event.ThreadID != "omt_thread_1" {
+		t.Fatalf("thread_id should come from feishu thread, got %s", external.Event.ThreadID)
+	}
+	if external.Event.ActorRef != "feishu:open_id:ou_sender_1" {
+		t.Fatalf("actor_ref should be namespaced sender id, got %s", external.Event.ActorRef)
+	}
+	if external.Event.InputSchemaID != feishu.MessageInputSchemaID {
+		t.Fatalf("input_schema_id should be %s, got %s", feishu.MessageInputSchemaID, external.Event.InputSchemaID)
+	}
+
+	meta, err := feishu.DecodeMetadataPatch(external.Event.InputPatch)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if meta.MessageID != "om_message_1" || meta.ChatID != "oc_chat_1" {
+		t.Fatalf("feishu metadata should preserve reply target, got message=%s chat=%s", meta.MessageID, meta.ChatID)
 	}
 }
 

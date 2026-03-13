@@ -1,12 +1,14 @@
 package ingress
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
 
 	"alice/internal/bus"
 	"alice/internal/domain"
+	"alice/internal/feishu"
 
 	"github.com/gin-gonic/gin"
 )
@@ -14,12 +16,26 @@ import (
 // RegisterRoutes registers routes on a gin RouterGroup.
 func (h *HTTPIngress) RegisterRoutes(rg *gin.RouterGroup) {
 	rg.POST("/ingress/cli/messages", h.handleCLIMessage)
-	rg.POST("/ingress/im/feishu", h.handleIngress("direct_input", "im_feishu"))
+	if h.feishu != nil && h.feishu.Enabled() {
+		rg.POST("/ingress/im/feishu", h.handleFeishuMessage())
+	} else {
+		rg.POST("/ingress/im/feishu", func(c *gin.Context) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "feishu is not configured"})
+		})
+	}
 	rg.POST("/ingress/web/messages", h.handleIngress("direct_input", "web"))
 	rg.POST("/webhooks/github", h.handleWebhook("repo_comment", "github"))
 	rg.POST("/webhooks/gitlab", h.handleWebhook("repo_comment", "gitlab"))
 	rg.POST("/human-actions/*token", h.handleHumanAction)
 	rg.POST("/scheduler/fires", h.handleSchedulerFire)
+}
+
+func (h *HTTPIngress) handleFeishuMessage() gin.HandlerFunc {
+	return h.feishu.WebhookHandler(func(ctx context.Context, in feishu.InboundMessage) error {
+		evt := toExternalEvent(h.normalizeFeishuMessage(in))
+		_, err := h.runtime.IngestExternalEvent(ctx, evt, h.reception)
+		return err
+	})
 }
 
 func (h *HTTPIngress) handleIngress(sourceKind, transportKind string) gin.HandlerFunc {
@@ -159,6 +175,27 @@ func (h *HTTPIngress) sanitizeIngressInput(sourceKind, transportKind string, in 
 		in.Verified = false
 	}
 	return in
+}
+
+func (h *HTTPIngress) normalizeFeishuMessage(in feishu.InboundMessage) NormalizedEvent {
+	sourceRef := strings.TrimSpace(in.Text)
+	if sourceRef == "" {
+		sourceRef = strings.TrimSpace(in.Metadata.RawContent)
+	}
+	return NormalizedEvent{
+		EventType:      domain.EventTypeExternalEventIngested,
+		SourceKind:     "direct_input",
+		TransportKind:  feishu.TransportKind,
+		SourceRef:      sourceRef,
+		ActorRef:       in.Metadata.ActorRef(),
+		ConversationID: in.Metadata.ConversationID(),
+		ThreadID:       in.Metadata.ThreadKey(),
+		PayloadRef:     "feishu-message:" + strings.TrimSpace(in.Metadata.MessageType),
+		Verified:       true,
+		IdempotencyKey: in.Metadata.IdempotencyKey(),
+		InputSchemaID:  feishu.MessageInputSchemaID,
+		InputPatch:     feishu.EncodeMetadataPatch(in.Metadata),
+	}
 }
 
 func toExternalEvent(in NormalizedEvent) domain.ExternalEvent {

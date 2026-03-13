@@ -8,6 +8,7 @@ import (
 
 	"alice/internal/bus"
 	"alice/internal/domain"
+	"alice/internal/feishu"
 	"alice/internal/mcp"
 	"alice/internal/ops"
 	"alice/internal/platform"
@@ -32,6 +33,7 @@ type App struct {
 	MCPRegistry     *mcp.Registry
 	OpsHTTP         *ops.HTTPManager
 	Workers         []ops.Worker
+	Feishu          *feishu.Service
 
 	ready    bool
 	runGroup *run.Group
@@ -51,6 +53,7 @@ func NewApp(
 	workflowRuntime *workflow.Runtime,
 	mcpRegistry *mcp.Registry,
 	opsHTTP *ops.HTTPManager,
+	feishuService *feishu.Service,
 	httpServer *http.Server,
 	workers []ops.Worker,
 ) *App {
@@ -65,6 +68,7 @@ func NewApp(
 		WorkflowRuntime: workflowRuntime,
 		MCPRegistry:     mcpRegistry,
 		OpsHTTP:         opsHTTP,
+		Feishu:          feishuService,
 		HTTPServer:      httpServer,
 		Workers:         workers,
 		runGroup:        &run.Group{},
@@ -173,6 +177,11 @@ func (a *App) Shutdown(ctx context.Context) error {
 	// Close store
 	if err := a.Store.Close(); err != nil {
 		return err
+	}
+	if a.Feishu != nil {
+		if err := a.Feishu.Close(); err != nil {
+			return err
+		}
 	}
 
 	a.Logger.Info("app_shutdown_complete")

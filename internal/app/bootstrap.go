@@ -9,6 +9,7 @@ import (
 
 	"alice/internal/agent"
 	"alice/internal/bus"
+	"alice/internal/feishu"
 	"alice/internal/ingress"
 	"alice/internal/mcp"
 	"alice/internal/ops"
@@ -45,6 +46,8 @@ func Bootstrap(cfg *platform.Config) (*App, error) {
 			provideBusRuntime,
 			// MCP Registry
 			provideMCPRegistry,
+			// Feishu
+			provideFeishuService,
 			// HTTP Manager
 			provideHTTPManager,
 			// Local Agent
@@ -109,6 +112,7 @@ func provideIngress(
 	busRuntime *bus.Runtime,
 	reception bus.Reception,
 	cfg *platform.Config,
+	feishuService *feishu.Service,
 ) *ingress.HTTPIngress {
 	humanActionSecret := cfg.Auth.HumanActionSecret
 	if humanActionSecret == "" {
@@ -119,7 +123,7 @@ func provideIngress(
 		schedulerIngressSecret = cfg.Auth.AdminToken
 	}
 
-	return ingress.NewHTTPIngress(busRuntime, reception, humanActionSecret, ingress.WebhookAuthConfig{
+	return ingress.NewHTTPIngress(busRuntime, reception, humanActionSecret, feishuService, ingress.WebhookAuthConfig{
 		GitHubSecret:    cfg.Auth.GitHubWebhookSecret,
 		GitLabSecret:    cfg.Auth.GitLabWebhookSecret,
 		SchedulerSecret: schedulerIngressSecret,
@@ -131,14 +135,15 @@ func provideWorkers(
 	busRuntime *bus.Runtime,
 	st *store.Store,
 	mcpRegistry *mcp.Registry,
+	feishuService *feishu.Service,
+	logger platform.Logger,
 ) []ops.Worker {
 	schedulerPoll, _ := time.ParseDuration(cfg.Scheduler.PollInterval)
 	schedulerWorker := ops.NewScheduler(busRuntime, st.Indexes, schedulerPoll)
 	outboxReconciler := mcp.NewOutboxReconciler(st.Indexes, mcpRegistry, busRuntime)
 	outboxDispatcher := mcp.NewOutboxDispatcher(st.Indexes, mcpRegistry, busRuntime)
 	scheduleReconciler := ops.NewScheduleFireReconciler(schedulerWorker, st.Indexes, time.Minute, 5)
-
-	return []ops.Worker{
+	workers := []ops.Worker{
 		ops.NewTickWorker("request-expirer", time.Minute, func(context.Context) error { return nil }),
 		ops.NewTickWorker("step-ready-dispatcher", 5*time.Second, func(context.Context) error { return nil }),
 		outboxReconciler,
@@ -149,8 +154,13 @@ func provideWorkers(
 		ops.NewTickWorker("projection-rebuilder", 10*time.Minute, func(ctx context.Context) error {
 			return st.RebuildIndexes(ctx)
 		}),
-		ops.NewTickWorker("notifier", 15*time.Second, func(context.Context) error { return nil }),
 	}
+	if feishuService != nil && feishuService.Enabled() {
+		workers = append(workers, feishu.NewReplyWorker(st, feishuService, logger))
+	} else {
+		workers = append(workers, ops.NewTickWorker("notifier", 15*time.Second, func(context.Context) error { return nil }))
+	}
+	return workers
 }
 
 func provideGinEngineWithIngress(

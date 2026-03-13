@@ -7,6 +7,7 @@ import (
 	"alice/internal/agent"
 	"alice/internal/bus"
 	"alice/internal/domain"
+	"alice/internal/feishu"
 	"alice/internal/mcp"
 	"alice/internal/ops"
 	"alice/internal/platform"
@@ -82,6 +83,17 @@ func provideMCPRegistry(cfg *platform.Config) *mcp.Registry {
 		registry.Register(domainName, mcp.NewHTTPClient(domainCfg.BaseURL))
 	}
 	return registry
+}
+
+func provideFeishuService(cfg *platform.Config, logger platform.Logger) (*feishu.Service, error) {
+	return feishu.NewService(feishu.Config{
+		Enabled:           cfg.Feishu.Enabled,
+		AppID:             cfg.Feishu.AppID,
+		AppSecret:         cfg.Feishu.AppSecret,
+		VerificationToken: cfg.Feishu.VerificationToken,
+		EncryptKey:        cfg.Feishu.EncryptKey,
+		ReplyInThread:     cfg.Feishu.ReplyInThread,
+	}, cfg.Storage.RootDir, logger)
 }
 
 func provideHTTPManager(

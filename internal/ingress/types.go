@@ -6,6 +6,7 @@ import (
 
 	"alice/internal/bus"
 	"alice/internal/domain"
+	"alice/internal/feishu"
 )
 
 // NormalizedEvent represents a normalized event from any source.
@@ -60,6 +61,7 @@ type WebhookAuthConfig struct {
 type HTTPIngress struct {
 	runtime           *bus.Runtime
 	reception         bus.Reception
+	feishu            *feishu.Service
 	humanActionSecret []byte
 	gitHubSecret      []byte
 	gitLabSecret      string
@@ -67,10 +69,11 @@ type HTTPIngress struct {
 }
 
 // NewHTTPIngress creates a new HTTPIngress.
-func NewHTTPIngress(runtime *bus.Runtime, reception bus.Reception, humanActionSecret string, webhookAuth ...WebhookAuthConfig) *HTTPIngress {
+func NewHTTPIngress(runtime *bus.Runtime, reception bus.Reception, humanActionSecret string, feishuService *feishu.Service, webhookAuth ...WebhookAuthConfig) *HTTPIngress {
 	ing := &HTTPIngress{
 		runtime:           runtime,
 		reception:         reception,
+		feishu:            feishuService,
 		humanActionSecret: []byte(humanActionSecret),
 	}
 	if len(webhookAuth) > 0 {
