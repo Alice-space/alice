@@ -2,6 +2,7 @@ package bus
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"alice/internal/domain"
@@ -9,52 +10,96 @@ import (
 
 // resolveRoute determines the routing target for an external event.
 func (r *Runtime) resolveRoute(ctx context.Context, evt domain.ExternalEvent) (domain.RouteTarget, string, error) {
-	// Check explicit route target fields first
-	candidates := []struct {
-		id   string
-		tag  string
-		kind domain.RouteTargetKind
-	}{
-		{evt.TaskID, "task_id", domain.RouteTargetTask},
-		{evt.RequestID, "request_id", domain.RouteTargetRequest},
-		{evt.ApprovalRequestID, "approval_request_id", domain.RouteTargetTask},
-		{evt.HumanWaitID, "human_wait_id", domain.RouteTargetTask},
-		{evt.StepExecutionID, "step_execution_id", domain.RouteTargetTask},
-	}
-
-	for _, c := range candidates {
-		if strings.TrimSpace(c.id) != "" {
-			target := domain.RouteTarget{Kind: c.kind, ID: strings.TrimSpace(c.id)}
-			if c.tag == "approval_request_id" || c.tag == "human_wait_id" || c.tag == "step_execution_id" {
-				taskID, err := r.lookupTaskIDForChild(ctx, c.tag, c.id)
-				if err != nil {
-					return domain.RouteTarget{}, "", err
-				}
-				if taskID == "" {
-					continue
-				}
-				target = domain.RouteTarget{Kind: domain.RouteTargetTask, ID: taskID}
-			}
-			return target, c.tag, nil
-		}
-	}
-
-	// Derive route keys from event fields and lookup
-	keys := r.deriveTaskRouteKeys(evt)
-	for _, key := range keys {
-		target, err := r.store.Indexes.GetRouteTarget(ctx, key)
+	if isScheduleTriggerEvent(evt) && evt.ScheduledTaskID != "" {
+		source, ok, err := r.store.Indexes.GetScheduleSource(ctx, evt.ScheduledTaskID)
 		if err != nil {
 			return domain.RouteTarget{}, "", err
 		}
-		if target.Found() {
-			return target, key, nil
+		if !ok || !source.Enabled {
+			return domain.RouteTarget{}, "scheduled_source_missing", nil
 		}
+		return domain.RouteTarget{}, "scheduled_source", nil
 	}
 
-	// Check governance routes for conflicts
+	// 1) Explicit task/request route target.
+	if strings.TrimSpace(evt.TaskID) != "" {
+		active, err := r.store.Indexes.IsTaskActive(ctx, evt.TaskID)
+		if err != nil {
+			return domain.RouteTarget{}, "", err
+		}
+		if !active {
+			return domain.RouteTarget{}, "", fmt.Errorf("%w: task_id=%s", domain.ErrTerminalObjectNotRoutable, evt.TaskID)
+		}
+		return domain.RouteTarget{Kind: domain.RouteTargetTask, ID: strings.TrimSpace(evt.TaskID)}, "task_id", nil
+	}
+	if strings.TrimSpace(evt.RequestID) != "" {
+		open, err := r.store.Indexes.IsRequestOpen(ctx, evt.RequestID)
+		if err != nil {
+			return domain.RouteTarget{}, "", err
+		}
+		if !open {
+			return domain.RouteTarget{}, "", fmt.Errorf("%w: request_id=%s", domain.ErrTerminalObjectNotRoutable, evt.RequestID)
+		}
+		return domain.RouteTarget{Kind: domain.RouteTargetRequest, ID: strings.TrimSpace(evt.RequestID)}, "request_id", nil
+	}
+
+	type candidate struct {
+		key string
+		tag string
+	}
+	candidates := make([]candidate, 0, 8)
+	if evt.ReplyToEventID != "" {
+		candidates = append(candidates, candidate{key: r.routeKeys.ReplyTo(evt.ReplyToEventID), tag: "reply_to_event_id"})
+	}
+	if evt.RepoRef != "" && evt.IssueRef != "" {
+		candidates = append(candidates, candidate{key: r.routeKeys.RepoIssue(evt.RepoRef, evt.IssueRef), tag: "repo_ref+issue_ref"})
+	}
+	if evt.RepoRef != "" && evt.PRRef != "" {
+		candidates = append(candidates, candidate{key: r.routeKeys.RepoPR(evt.RepoRef, evt.PRRef), tag: "repo_ref+pr_ref"})
+	}
+	if evt.ScheduledTaskID != "" {
+		candidates = append(candidates, candidate{key: r.routeKeys.ScheduledTask(evt.ScheduledTaskID), tag: "scheduled_task_id"})
+	}
+	if evt.ControlObjectRef != "" {
+		candidates = append(candidates, candidate{key: r.routeKeys.ControlObject(evt.ControlObjectRef), tag: "control_object_ref"})
+	}
+	if evt.WorkflowObjectRef != "" {
+		candidates = append(candidates, candidate{key: r.routeKeys.WorkflowObject(evt.WorkflowObjectRef), tag: "workflow_object_ref"})
+	}
+	if evt.ConversationID != "" {
+		candidates = append(candidates, candidate{key: r.routeKeys.Conversation(evt.SourceKind, evt.ConversationID, evt.ThreadID), tag: "conversation_id+thread_id"})
+	}
+	if evt.CoalescingKey != "" {
+		candidates = append(candidates, candidate{key: evt.CoalescingKey, tag: "coalescing_key"})
+	}
+
 	for _, c := range candidates {
-		if c.id != "" && c.tag == "reply_to_event_id" {
-			target := domain.RouteTarget{Kind: c.kind, ID: c.id}
+		target, err := r.store.Indexes.GetRouteTarget(ctx, c.key)
+		if err != nil {
+			return domain.RouteTarget{}, "", err
+		}
+		if !target.Found() {
+			continue
+		}
+		if target.Kind == domain.RouteTargetTask {
+			active, err := r.store.Indexes.IsTaskActive(ctx, target.ID)
+			if err != nil {
+				return domain.RouteTarget{}, "", err
+			}
+			if !active {
+				continue
+			}
+		}
+		if target.Kind == domain.RouteTargetRequest {
+			open, err := r.store.Indexes.IsRequestOpen(ctx, target.ID)
+			if err != nil {
+				return domain.RouteTarget{}, "", err
+			}
+			if !open {
+				continue
+			}
+		}
+		if c.tag == "reply_to_event_id" && target.Kind == domain.RouteTargetTask {
 			conflict, err := r.hasGovernanceRouteConflict(ctx, evt, target)
 			if err != nil {
 				return domain.RouteTarget{}, "", err
@@ -62,8 +107,8 @@ func (r *Runtime) resolveRoute(ctx context.Context, evt domain.ExternalEvent) (d
 			if conflict {
 				continue
 			}
-			return target, c.tag, nil
 		}
+		return target, c.tag, nil
 	}
 
 	return domain.RouteTarget{}, "new_request", nil
@@ -160,13 +205,21 @@ func (r *Runtime) ingestAggregateID(evt domain.ExternalEvent, taskID string) str
 	if evt.RequestID != "" {
 		return evt.RequestID
 	}
-	return "ingest_" + taskID
+	if taskID != "" {
+		return "req_for_task:" + taskID
+	}
+	return "req_ingress:" + evt.EventID
 }
 
 func isScheduleTriggerEvent(evt domain.ExternalEvent) bool {
 	return evt.EventType == domain.EventTypeScheduleTriggered && evt.SourceKind == "scheduler"
 }
 
-func isHumanActionSource(sourceKind string) bool {
-	return sourceKind == "human_action"
+func isHumanActionSource(source string) bool {
+	switch strings.TrimSpace(source) {
+	case "human_action", "human-action":
+		return true
+	default:
+		return false
+	}
 }

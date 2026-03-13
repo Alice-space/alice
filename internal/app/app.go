@@ -35,6 +35,8 @@ type App struct {
 
 	ready    bool
 	runGroup *run.Group
+	runDone  chan error
+	runStop  context.CancelFunc
 }
 
 // NewApp creates a new App with all dependencies injected.
@@ -72,6 +74,9 @@ func NewApp(
 // Start starts the application and all its components.
 func (a *App) Start(ctx context.Context) error {
 	a.ready = false
+	a.runGroup = &run.Group{}
+	a.runDone = make(chan error, 1)
+	a.runStop = nil
 
 	// Initialize store
 	if err := a.Store.RebuildIndexes(ctx); err != nil {
@@ -129,6 +134,18 @@ func (a *App) Start(ctx context.Context) error {
 		workerCancel()
 	})
 
+	// Stop actor: external shutdown triggers this context cancellation.
+	runCtx, runCancel := context.WithCancel(context.Background())
+	a.runStop = runCancel
+	a.runGroup.Add(func() error {
+		<-runCtx.Done()
+		return nil
+	}, func(err error) {})
+
+	go func() {
+		a.runDone <- a.runGroup.Run()
+	}()
+
 	a.ready = true
 	a.Logger.Info("app_started")
 
@@ -139,22 +156,18 @@ func (a *App) Start(ctx context.Context) error {
 func (a *App) Shutdown(ctx context.Context) error {
 	a.ready = false
 
-	// Use run.Group to gracefully stop all actors
-	// Note: run.Group.Run() blocks until all actors exit
-	// We need to trigger the interrupt functions and wait
-	errChan := make(chan error, 1)
-	go func() {
-		errChan <- a.runGroup.Run()
-	}()
+	if a.runStop != nil {
+		a.runStop()
+	}
 
-	// Trigger context cancellation for quick shutdown
+	var runErr error
 	select {
 	case <-ctx.Done():
 		return ctx.Err()
-	case err := <-errChan:
-		if err != nil {
-			a.Logger.Error("shutdown_error", "error", err)
-		}
+	case runErr = <-a.runDone:
+	}
+	if runErr != nil {
+		a.Logger.Error("shutdown_error", "error", runErr)
 	}
 
 	// Close store

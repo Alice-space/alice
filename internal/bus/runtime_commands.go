@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"time"
 
 	"alice/internal/domain"
 )
@@ -23,56 +25,67 @@ func (r *Runtime) RequireEnabledScheduleSource(ctx context.Context, scheduledTas
 	return source, nil
 }
 
-// RecordScheduleFire records a schedule fire event.
+// RecordScheduleFire records a schedule fire by ingesting a scheduler-trigger event.
 func (r *Runtime) RecordScheduleFire(ctx context.Context, cmd domain.RecordScheduleFireCommand) (domain.ScheduleFireView, error) {
-	source, ok, err := r.store.Indexes.GetScheduleSource(ctx, cmd.ScheduledTaskID)
+	window := cmd.ScheduledForWindowUTC.UTC()
+	if window.IsZero() {
+		window = r.clock.Now().UTC().Truncate(time.Minute)
+	}
+	source, err := r.RequireEnabledScheduleSource(ctx, cmd.ScheduledTaskID)
 	if err != nil {
 		return domain.ScheduleFireView{}, err
 	}
-	if !ok {
-		return domain.ScheduleFireView{}, fmt.Errorf("schedule source not found: %s", cmd.ScheduledTaskID)
-	}
-	fireID := domain.ComputeFireID(cmd.ScheduledTaskID, cmd.ScheduledForWindowUTC)
+	fireID := domain.ComputeFireID(cmd.ScheduledTaskID, window)
 	seen, err := r.store.Indexes.DedupeSeen(ctx, fireID)
 	if err != nil {
 		return domain.ScheduleFireView{}, err
 	}
 	if seen {
-		return domain.ScheduleFireView{}, fmt.Errorf("schedule fire already recorded: %s", fireID)
+		return domain.ScheduleFireView{FireID: fireID, ScheduledTaskID: cmd.ScheduledTaskID, ScheduledForWindow: window}, nil
 	}
 
-	batch := make([]domain.EventEnvelope, 0, 1)
-	payload := domain.ScheduleFirePayload{
-		FireID:                 fireID,
-		ScheduledTaskID:        cmd.ScheduledTaskID,
-		ScheduledForWindow:     cmd.ScheduledForWindowUTC,
-		SourceScheduleRevision: source.ScheduleRevision,
+	evt := domain.ExternalEvent{
+		EventType:       domain.EventTypeScheduleTriggered,
+		SourceKind:      "scheduler",
+		TransportKind:   "scheduler",
+		SourceRef:       window.Format(time.RFC3339),
+		ScheduledTaskID: cmd.ScheduledTaskID,
+		IdempotencyKey:  fireID,
+		Verified:        true,
+		ReceivedAt:      r.clock.Now(),
 	}
-	batch, err = r.appendEvent(batch, domain.AggregateKindSchedule, cmd.ScheduledTaskID, domain.EventTypeScheduleFire, payload)
-	if err != nil {
-		return domain.ScheduleFireView{}, err
-	}
-	if err := r.commitBatch(ctx, batch); err != nil {
+	if _, err := r.IngestExternalEvent(ctx, evt, nil); err != nil {
 		return domain.ScheduleFireView{}, err
 	}
 
+	_ = source // retained for validation side-effect and future provenance extension.
 	return domain.ScheduleFireView{
 		FireID:             fireID,
 		ScheduledTaskID:    cmd.ScheduledTaskID,
-		ScheduledForWindow: cmd.ScheduledForWindowUTC,
+		ScheduledForWindow: window,
 	}, nil
 }
 
 // RecordAdminAudit records an admin audit event.
 func (r *Runtime) RecordAdminAudit(ctx context.Context, payload domain.AdminAuditRecordedPayload) error {
+	payload.AdminActionID = strings.TrimSpace(payload.AdminActionID)
 	if payload.AdminActionID == "" {
-		return fmt.Errorf("admin action id is required")
+		return fmt.Errorf("admin_action_id is required")
 	}
-	evt, err := r.newEnvelope(domain.AggregateKindAdmin, payload.AdminActionID, domain.EventTypeAdminAuditRecorded, payload)
+	payload.Operation = strings.TrimSpace(payload.Operation)
+	if payload.Operation == "" {
+		return fmt.Errorf("operation is required")
+	}
+	if payload.RecordedAt.IsZero() {
+		payload.RecordedAt = r.clock.Now().UTC()
+	}
+	evt, err := r.newEnvelope(domain.AggregateKindOther, "admin:"+payload.AdminActionID, domain.EventTypeAdminAuditRecorded, payload)
 	if err != nil {
 		return err
 	}
-	return r.commitBatch(ctx, []domain.EventEnvelope{evt})
+	batch := []domain.EventEnvelope{evt}
+	applyBatchCausation(batch, payload.AdminActionID)
+	return r.commitBatch(ctx, batch)
 }
 
 // RecordOutboxReceipt records an outbox receipt.
@@ -139,43 +152,12 @@ func (r *Runtime) RestoreStateFromLog(ctx context.Context) error {
 	})
 }
 
-// PromoteAndBindWorkflow promotes a request and binds it to a workflow.
+// PromoteAndBindWorkflow promotes a request and binds it to a workflow atomically.
 func (r *Runtime) PromoteAndBindWorkflow(ctx context.Context, cmd domain.PromoteAndBindWorkflowCommand) error {
-	if err := domain.ValidatePromoteAndBindCommand(cmd); err != nil {
-		return err
-	}
-
-	batch := make([]domain.EventEnvelope, 0, 2)
-
-	// Request promoted event
-	reqPayload := domain.RequestPromotedPayload{
-		RequestID:        cmd.RequestID,
-		TaskID:           cmd.TaskID,
-		RouteSnapshotRef: cmd.RouteSnapshotRef,
-		PromotedAt:       cmd.At,
-	}
-	batch, err := r.appendEvent(batch, domain.AggregateKindRequest, cmd.RequestID, domain.EventTypeRequestPromoted, reqPayload)
+	batch, err := r.buildPromoteAndBindBatch(cmd)
 	if err != nil {
 		return err
 	}
-
-	// Task promoted and bound event
-	taskPayload := domain.TaskPromotedAndBoundPayload{
-		RequestID:      cmd.RequestID,
-		TaskID:         cmd.TaskID,
-		BindingID:      cmd.BindingID,
-		WorkflowID:     cmd.WorkflowID,
-		WorkflowSource: cmd.WorkflowSource,
-		WorkflowRev:    cmd.WorkflowRev,
-		ManifestDigest: cmd.ManifestDigest,
-		EntryStepID:    cmd.EntryStepID,
-		PromotedAt:     cmd.At,
-	}
-	batch, err = r.appendEvent(batch, domain.AggregateKindTask, cmd.TaskID, domain.EventTypeTaskPromotedAndBound, taskPayload)
-	if err != nil {
-		return err
-	}
-
 	return r.commitBatch(ctx, batch)
 }
 

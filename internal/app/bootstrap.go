@@ -3,6 +3,8 @@ package app
 import (
 	"context"
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"alice/internal/agent"
@@ -94,6 +96,7 @@ func Bootstrap(cfg *platform.Config) (*App, error) {
 			Timeout:        timeout,
 			MaxSteps:       cfg.Agent.MaxSteps,
 			SkillsDir:      cfg.Agent.SkillsDir,
+			Logger:         app.Logger,
 		})
 		directExecutor := agent.NewDirectAnswerExecutor(localAgent, app.Logger)
 		app.Bus.SetDirectAnswerExecutor(directExecutor)
@@ -159,6 +162,7 @@ func provideGinEngineWithIngress(
 	gin.SetMode(gin.ReleaseMode)
 	r := gin.New()
 	r.Use(gin.Recovery())
+	r.Use(adminTokenMiddleware(cfg.Auth.AdminToken))
 
 	// Health routes
 	r.GET("/healthz", func(c *gin.Context) {
@@ -180,9 +184,36 @@ func provideGinEngineWithIngress(
 	})
 
 	// Register routes
+	opsHTTP.RegisterRoutesGin(r)
 	v1 := r.Group("/v1")
-	opsHTTP.RegisterRoutesGin(v1)
 	ing.RegisterRoutes(v1)
 
 	return r
+}
+
+func adminTokenMiddleware(token string) gin.HandlerFunc {
+	expected := strings.TrimSpace(token)
+	return func(c *gin.Context) {
+		if !strings.HasPrefix(c.Request.URL.Path, "/v1/admin/") {
+			c.Next()
+			return
+		}
+		if expected == "" {
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "admin token is not configured"})
+			return
+		}
+
+		got := strings.TrimSpace(c.GetHeader("X-Admin-Token"))
+		if got == "" {
+			auth := strings.TrimSpace(c.GetHeader("Authorization"))
+			if strings.HasPrefix(strings.ToLower(auth), "bearer ") {
+				got = strings.TrimSpace(auth[len("Bearer "):])
+			}
+		}
+		if got != expected {
+			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "unauthorized"})
+			return
+		}
+		c.Next()
+	}
 }

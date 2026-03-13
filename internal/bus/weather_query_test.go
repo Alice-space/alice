@@ -19,25 +19,30 @@ import (
 // 预期：留在 EphemeralRequest 内直接完成，不升级成 DurableTask
 //
 // 运行方式：
-//   go test ./internal/bus/... -run TestWeatherQueryDirectAnswer -v
+//
+//	go test ./internal/bus/... -run TestWeatherQueryDirectAnswer -v
 //
 // 查看日志：
-//   tail -f data/test_weather/eventlog/events.*.jsonl | jq .
+//
+//	tail -f data/test_weather/eventlog/events.*.jsonl | jq .
 func TestWeatherQueryDirectAnswer(t *testing.T) {
 	// 使用固定目录以便查看日志文件
 	dataDir := "./data/test_weather"
-	
-	// 清理旧数据（可选，如果想保留历史就不清理）
-	// os.RemoveAll(dataDir)
-	
+
+	// 默认清理旧数据，避免幂等键命中历史数据导致测试假失败。
+	// 如需保留日志用于人工排查，可设置 ALICE_KEEP_WEATHER_LOGS=1。
+	if os.Getenv("ALICE_KEEP_WEATHER_LOGS") != "1" {
+		_ = os.RemoveAll(dataDir)
+	}
+
 	// 创建目录
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		t.Fatalf("failed to create data dir: %v", err)
 	}
-	
+
 	t.Logf("📁 测试数据目录: %s", dataDir)
 	t.Logf("📁 事件日志: %s/eventlog/", dataDir)
-	
+
 	ctx := context.Background()
 	st, err := store.Open(store.Config{RootDir: dataDir, SnapshotInterval: 100})
 	if err != nil {
@@ -46,7 +51,7 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 	defer st.Close()
 
 	t.Log("✅ Store 初始化完成")
-	
+
 	runtime := newTestRuntime(t, st)
 	t.Log("✅ Runtime 初始化完成")
 
@@ -71,19 +76,19 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 	}}
 
 	t.Log("📝 Step 1: 发送天气查询请求...")
-	
+
 	// Step 1: 入口层接收消息，生成 ExternalEvent
 	result, err := runtime.IngestExternalEvent(ctx, domain.ExternalEvent{
-		EventType:         domain.EventTypeExternalEventIngested,
-		SourceKind:        "im",
-		TransportKind:     "webhook",
-		SourceRef:         "查询上海明天天气",
-		ActorRef:          "user://alice",
-		ConversationID:    "conv_weather_001",
-		ThreadID:          "root",
-		ReceivedAt:        time.Now().UTC(),
-		IdempotencyKey:    "msg_weather_001",
-		Verified:          true,
+		EventType:      domain.EventTypeExternalEventIngested,
+		SourceKind:     "im",
+		TransportKind:  "webhook",
+		SourceRef:      "查询上海明天天气",
+		ActorRef:       "user://alice",
+		ConversationID: "conv_weather_001",
+		ThreadID:       "root",
+		ReceivedAt:     time.Now().UTC(),
+		IdempotencyKey: "msg_weather_001",
+		Verified:       true,
 	}, reception)
 
 	if err != nil {
@@ -107,7 +112,7 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 
 	// Step 2-3: 验证事件
 	t.Log("🔍 Step 2: 检查已记录的事件...")
-	
+
 	var events []domain.EventEnvelope
 	if err := st.Replay(ctx, "", func(evt domain.EventEnvelope) error {
 		events = append(events, evt)
@@ -141,7 +146,7 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 
 	// Step 4-7: 模拟 agent 调用 tool
 	t.Log("📝 Step 3: 模拟天气查询 ToolCall...")
-	
+
 	toolCallPayload, _ := json.Marshal(domain.ToolCallRecordedPayload{
 		CallID:      "call_weather_001",
 		OwnerKind:   "request",
@@ -175,7 +180,7 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 
 	// Step 8-10: 生成回复并结束
 	t.Log("📝 Step 4: 生成回复并结束请求...")
-	
+
 	replyPayload, _ := json.Marshal(domain.ReplyRecordedPayload{
 		ReplyID:        "rpl_weather_001",
 		OwnerKind:      "request",
@@ -188,12 +193,12 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 	})
 
 	terminalPayload, _ := json.Marshal(domain.TerminalResultRecordedPayload{
-		ResultID:       "res_weather_001",
-		OwnerKind:      "request",
-		OwnerID:        requestID,
-		FinalStatus:    "answered",
-		FinalReplyID:   "rpl_weather_001",
-		ClosedAt:       time.Now().UTC(),
+		ResultID:     "res_weather_001",
+		OwnerKind:    "request",
+		OwnerID:      requestID,
+		FinalStatus:  "answered",
+		FinalReplyID: "rpl_weather_001",
+		ClosedAt:     time.Now().UTC(),
 	})
 
 	answeredPayload, _ := json.Marshal(domain.RequestAnsweredPayload{
@@ -250,7 +255,7 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 
 	// 最终验证
 	t.Log("🔍 Step 5: 最终验证...")
-	
+
 	events = nil
 	if err := st.Replay(ctx, "", func(evt domain.EventEnvelope) error {
 		events = append(events, evt)
@@ -336,11 +341,15 @@ func TestWeatherQueryDirectAnswer(t *testing.T) {
 // TestWeatherQueryMidRequestChange 测试中途修改请求
 func TestWeatherQueryMidRequestChange(t *testing.T) {
 	dataDir := "./data/test_weather_change"
-	
+
+	if os.Getenv("ALICE_KEEP_WEATHER_LOGS") != "1" {
+		_ = os.RemoveAll(dataDir)
+	}
+
 	if err := os.MkdirAll(dataDir, 0755); err != nil {
 		t.Fatalf("failed to create data dir: %v", err)
 	}
-	
+
 	t.Logf("📁 测试数据目录: %s", dataDir)
 
 	ctx := context.Background()
@@ -396,7 +405,7 @@ func TestWeatherQueryMidRequestChange(t *testing.T) {
 	} else {
 		t.Logf("✅ 第二个消息命中了同一个 Request")
 	}
-	
+
 	t.Logf("\n📁 查看日志: cat %s/eventlog/*.jsonl | jq .", dataDir)
 }
 

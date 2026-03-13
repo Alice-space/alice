@@ -72,7 +72,7 @@ func (s *BoltIndexStore) ApplyCritical(ctx context.Context, events []domain.Even
 
 // RebuildCritical rebuilds critical indexes from scratch
 func (s *BoltIndexStore) RebuildCritical(ctx context.Context, replay func(func(domain.EventEnvelope) error) error) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	if err := s.db.Update(func(tx *bolt.Tx) error {
 		// Clear critical buckets
 		for _, name := range criticalBuckets {
 			if err := tx.DeleteBucket([]byte(name)); err != nil && !errors.Is(err, bolt.ErrBucketNotFound) {
@@ -83,6 +83,13 @@ func (s *BoltIndexStore) RebuildCritical(ctx context.Context, replay func(func(d
 			}
 		}
 		return nil
+	}); err != nil {
+		return err
+	}
+	return replay(func(evt domain.EventEnvelope) error {
+		return s.db.Update(func(tx *bolt.Tx) error {
+			return s.applyEventCritical(tx, evt)
+		})
 	})
 }
 
@@ -100,7 +107,7 @@ func (s *BoltIndexStore) ApplyLagging(ctx context.Context, events []domain.Event
 
 // RebuildLagging rebuilds lagging projections from scratch
 func (s *BoltIndexStore) RebuildLagging(ctx context.Context, replay func(func(domain.EventEnvelope) error) error) error {
-	return s.db.Update(func(tx *bolt.Tx) error {
+	if err := s.db.Update(func(tx *bolt.Tx) error {
 		// Clear lagging buckets
 		for _, name := range laggingBuckets {
 			if err := tx.DeleteBucket([]byte(name)); err != nil && !errors.Is(err, bolt.ErrBucketNotFound) {
@@ -111,5 +118,12 @@ func (s *BoltIndexStore) RebuildLagging(ctx context.Context, replay func(func(do
 			}
 		}
 		return nil
+	}); err != nil {
+		return err
+	}
+	return replay(func(evt domain.EventEnvelope) error {
+		return s.db.Update(func(tx *bolt.Tx) error {
+			return s.applyEventLagging(tx, evt)
+		})
 	})
 }

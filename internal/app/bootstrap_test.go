@@ -12,6 +12,8 @@ import (
 
 	"alice/internal/domain"
 	"alice/internal/platform"
+
+	"github.com/gin-gonic/gin"
 )
 
 func TestAdminCancelTaskProducesAuditAndCancelEvent(t *testing.T) {
@@ -109,20 +111,26 @@ func TestAdminCancelTaskProducesAuditAndCancelEvent(t *testing.T) {
 }
 
 func TestAdminRoutesRejectedWhenTokenNotConfigured(t *testing.T) {
-	handler := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.WriteHeader(http.StatusOK)
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.Use(adminTokenMiddleware(""))
+	r.POST("/v1/admin/reconcile/outbox", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+	r.GET("/healthz", func(c *gin.Context) {
+		c.Status(http.StatusOK)
 	})
 
 	req := withAdminAuth(httptest.NewRequest(http.MethodPost, "/v1/admin/reconcile/outbox", nil), "")
 	w := httptest.NewRecorder()
-	handler.ServeHTTP(w, req)
+	r.ServeHTTP(w, req)
 	if w.Code != http.StatusServiceUnavailable {
 		t.Fatalf("expected admin route rejected when token missing, got %d", w.Code)
 	}
 
 	nonAdminReq := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	nonAdminW := httptest.NewRecorder()
-	handler.ServeHTTP(nonAdminW, nonAdminReq)
+	r.ServeHTTP(nonAdminW, nonAdminReq)
 	if nonAdminW.Code != http.StatusOK {
 		t.Fatalf("non-admin routes should pass through, got %d", nonAdminW.Code)
 	}

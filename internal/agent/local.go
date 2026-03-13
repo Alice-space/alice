@@ -21,6 +21,7 @@ import (
 	"strings"
 	"time"
 
+	"alice/internal/platform"
 	"alice/internal/prompts"
 )
 
@@ -52,6 +53,10 @@ type Config struct {
 	// MCPServer provides the MCP HTTP server for tool calling.
 	// If nil, agent will not use MCP (fallback to legacy JSON parsing).
 	MCPServer MCPServer
+
+	// Logger writes agent execution logs.
+	// If nil, a noop logger is used.
+	Logger platform.Logger
 }
 
 // DefaultConfig returns default configuration.
@@ -68,6 +73,7 @@ func DefaultConfig() Config {
 // LocalAgent wraps the kimi CLI as a local agent.
 type LocalAgent struct {
 	config Config
+	logger platform.Logger
 }
 
 // NewLocalAgent creates a new local agent.
@@ -78,7 +84,14 @@ func NewLocalAgent(cfg Config) *LocalAgent {
 	if cfg.Timeout == 0 {
 		cfg.Timeout = 120 * time.Second
 	}
-	return &LocalAgent{config: cfg}
+	logger := cfg.Logger
+	if logger == nil {
+		logger = platform.NewNoopLogger()
+	}
+	return &LocalAgent{
+		config: cfg,
+		logger: logger.WithComponent("agent"),
+	}
 }
 
 // ExecuteRequest represents a request to execute with the local agent.
@@ -138,9 +151,12 @@ type ExecuteResult struct {
 
 // Execute runs the kimi CLI with the given request using MCP tool calling.
 func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteResult, error) {
+	start := time.Now().UTC()
+
 	// Build the prompt with skill context
 	prompt, err := a.buildPrompt(req)
 	if err != nil {
+		a.logger.Error("agent_prompt_build_failed", "skill", req.Skill, "error", err.Error())
 		return nil, fmt.Errorf("build prompt: %w", err)
 	}
 
@@ -163,6 +179,21 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 	if a.config.SkillsDir != "" {
 		args = append(args, "--skills-dir", a.config.SkillsDir)
 	}
+
+	a.logger.Debug("agent_execution_started",
+		"skill", req.Skill,
+		"work_dir", a.config.WorkDir,
+		"max_steps", a.config.MaxSteps,
+		"timeout_sec", int64(a.config.Timeout.Seconds()),
+		"system_prompt", req.SystemPrompt,
+		"task", req.Task,
+		"context", req.Context,
+		"constraints", req.Constraints,
+		"rendered_prompt", prompt,
+		"command", a.config.KimiExecutable,
+		"args", args,
+		"mcp_enabled", a.config.MCPServer != nil,
+	)
 
 	// Create command with timeout context
 	ctx, cancel := context.WithTimeout(ctx, a.config.Timeout)
@@ -207,6 +238,17 @@ func (a *LocalAgent) Execute(ctx context.Context, req ExecuteRequest) (*ExecuteR
 	// Extract actions from stderr (kimi logs actions there)
 	result.Actions = extractActions(stderr.String())
 
+	a.logger.Debug("agent_execution_finished",
+		"skill", req.Skill,
+		"success", result.Success,
+		"duration_ms", time.Since(start).Milliseconds(),
+		"error", result.Error,
+		"stdout", output,
+		"stderr", stderr.String(),
+		"structured_output", result.StructuredOutput,
+		"actions", result.Actions,
+	)
+
 	return result, nil
 }
 
@@ -218,8 +260,8 @@ func (a *LocalAgent) buildPrompt(req ExecuteRequest) (string, error) {
 	if req.Skill != "" {
 		skillContent, err := a.loadSkill(req.Skill)
 		if err != nil {
-			// Log warning but continue without skill
-			fmt.Printf("Warning: failed to load skill %s: %v\n", req.Skill, err)
+			// Continue without skill when skill file is unavailable.
+			a.logger.Warn("agent_skill_load_failed", "skill", req.Skill, "error", err.Error())
 		} else {
 			parts = append(parts, skillContent)
 		}

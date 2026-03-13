@@ -96,7 +96,7 @@ func provideHTTPManager(
 	})
 }
 
-func provideLocalAgent(cfg *platform.Config) *agent.LocalAgent {
+func provideLocalAgent(cfg *platform.Config, logger platform.Logger) *agent.LocalAgent {
 	timeout, _ := time.ParseDuration(cfg.Agent.Timeout)
 	if timeout <= 0 {
 		timeout = 120 * time.Second
@@ -107,6 +107,7 @@ func provideLocalAgent(cfg *platform.Config) *agent.LocalAgent {
 		Timeout:        timeout,
 		MaxSteps:       cfg.Agent.MaxSteps,
 		SkillsDir:      cfg.Agent.SkillsDir,
+		Logger:         logger,
 	})
 }
 
