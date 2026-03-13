@@ -14,6 +14,7 @@ import (
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/codearmy"
 	"github.com/Alice-space/alice/internal/mcpbridge"
+	"github.com/Alice-space/alice/internal/runtimeapi"
 )
 
 const (
@@ -46,6 +47,7 @@ type service struct {
 	getenv          func(string) string
 	getppid         func() int
 	readFile        func(string) ([]byte, error)
+	runtimeClient   *runtimeapi.Client
 	automationStore *automation.Store
 	codeArmyStatus  *codearmy.Inspector
 }
@@ -61,6 +63,7 @@ func New(sender Sender, getenv func(string) string, automationStore *automation.
 	svc := &service{
 		sender:          sender,
 		getenv:          getenv,
+		runtimeClient:   runtimeapi.NewClient(getenv(runtimeapi.EnvBaseURL), getenv(runtimeapi.EnvToken)),
 		automationStore: automationStore,
 		codeArmyStatus:  codearmy.NewInspector(codeArmyStateDir),
 	}
@@ -106,6 +109,17 @@ func (s *service) handleSendImage(ctx context.Context, request mcp.CallToolReque
 	if imageKey == "" && path == "" {
 		return mcp.NewToolResultError("send_image requires image_key or path"), nil
 	}
+	if s.runtimeClient != nil && s.runtimeClient.IsEnabled() {
+		result, runtimeErr := s.runtimeClient.SendImage(ctx, sessionContext, runtimeapi.ImageRequest{
+			ImageKey: imageKey,
+			Path:     path,
+			Caption:  caption,
+		})
+		if runtimeErr != nil {
+			return mcp.NewToolResultError(runtimeErr.Error()), nil
+		}
+		return mcp.NewToolResultStructured(result, "image sent"), nil
+	}
 	if imageKey == "" {
 		if err := validatePathUnderRoot(path, sessionContext.ResourceRoot); err != nil {
 			return mcp.NewToolResultError(err.Error()), nil
@@ -146,6 +160,18 @@ func (s *service) handleSendFile(ctx context.Context, request mcp.CallToolReques
 	caption := strings.TrimSpace(request.GetString("caption", ""))
 	if fileKey == "" && path == "" {
 		return mcp.NewToolResultError("send_file requires file_key or path"), nil
+	}
+	if s.runtimeClient != nil && s.runtimeClient.IsEnabled() {
+		result, runtimeErr := s.runtimeClient.SendFile(ctx, sessionContext, runtimeapi.FileRequest{
+			FileKey:  fileKey,
+			Path:     path,
+			FileName: fileName,
+			Caption:  caption,
+		})
+		if runtimeErr != nil {
+			return mcp.NewToolResultError(runtimeErr.Error()), nil
+		}
+		return mcp.NewToolResultStructured(result, "file sent"), nil
 	}
 	if fileKey == "" {
 		if err := validatePathUnderRoot(path, sessionContext.ResourceRoot); err != nil {

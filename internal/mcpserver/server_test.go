@@ -3,12 +3,15 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/mark3labs/mcp-go/mcp"
 
 	"github.com/Alice-space/alice/internal/mcpbridge"
+	"github.com/Alice-space/alice/internal/runtimeapi"
 )
 
 type senderStub struct {
@@ -237,6 +240,56 @@ func TestHandleSendImage_LoadSessionContextFromParentProcessFallback(t *testing.
 	}
 	if sender.replyTextCalls != 1 || sender.lastReplyText != "done" || sender.lastReplyTextMsgID != "om_source" {
 		t.Fatalf("expected thread caption reply from fallback context, got %+v", sender)
+	}
+}
+
+func TestHandleSendImage_UsesRuntimeAPIWhenConfigured(t *testing.T) {
+	requestCount := 0
+	runtimeServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requestCount++
+		if got := r.Header.Get("Authorization"); got != "Bearer token-123" {
+			t.Fatalf("unexpected auth header: %q", got)
+		}
+		if got := r.Header.Get(runtimeapi.HeaderReceiveID); got != "oc_chat" {
+			t.Fatalf("unexpected receive id header: %q", got)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"ok","type":"image","image_key":"img_runtime"}`))
+	}))
+	defer runtimeServer.Close()
+
+	sender := &senderStub{}
+	svc := &service{
+		sender:        sender,
+		runtimeClient: runtimeapi.NewClient(runtimeServer.URL, "token-123"),
+		getenv: func(key string) string {
+			switch key {
+			case mcpbridge.EnvReceiveIDType:
+				return "chat_id"
+			case mcpbridge.EnvReceiveID:
+				return "oc_chat"
+			default:
+				return ""
+			}
+		},
+	}
+
+	result, err := svc.handleSendImage(context.Background(), mcp.CallToolRequest{
+		Params: mcp.CallToolParams{Arguments: map[string]any{
+			"image_key": "img_runtime",
+		}},
+	})
+	if err != nil {
+		t.Fatalf("unexpected handler error: %v", err)
+	}
+	if result == nil || result.IsError {
+		t.Fatalf("expected non-error result, got %#v", result)
+	}
+	if requestCount != 1 {
+		t.Fatalf("expected runtime api to be called once, got %d", requestCount)
+	}
+	if sender.sendImageCalls != 0 {
+		t.Fatalf("expected direct sender to be skipped, got %+v", sender)
 	}
 }
 
