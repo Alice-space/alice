@@ -10,6 +10,7 @@ import (
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/mcpbridge"
+	"github.com/Alice-space/alice/internal/runtimeapi"
 )
 
 func defaultIfEmpty(value string, fallback string) string {
@@ -181,7 +182,14 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 	if err := sessionContext.Validate(); err != nil {
 		return nil
 	}
-	return sessionContext.ToEnv()
+	env := sessionContext.ToEnv()
+	if strings.TrimSpace(p.runtimeAPIBase) != "" {
+		env[runtimeapi.EnvBaseURL] = strings.TrimSpace(p.runtimeAPIBase)
+	}
+	if strings.TrimSpace(p.runtimeAPIToken) != "" {
+		env[runtimeapi.EnvToken] = strings.TrimSpace(p.runtimeAPIToken)
+	}
+	return env
 }
 
 func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {

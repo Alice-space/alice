@@ -1,17 +1,17 @@
 ---
 name: alice-code-army
-description: Operate Alice's built-in `code_army` workflow through Alice Feishu automation tools. Use when the user asks to start, continue, inspect, pause, resume, delete, or test a `code army` / `code_army` workflow in the current Feishu conversation, especially for one-off coding iterations or recurring workflow runs.
+description: Operate Alice's built-in `code_army` workflow through Alice's local scheduler HTTP API. Use when the user asks to start, continue, inspect, pause, resume, delete, or test a `code army` / `code_army` workflow in the current Feishu conversation, especially for one-off coding iterations or recurring workflow runs.
 ---
 
 # Alice Code Army
 
-Run `code_army` via Alice automation tools instead of re-reading the repository. Keep actions scoped to the current conversation and rely on Alice to route replies automatically.
+Run `code_army` via `alice-scheduler` instead of re-reading the repository. Keep actions scoped to the current conversation and rely on Alice to route replies automatically.
 
 ## Defaults
 
-- Use `mcp__alice-feishu__automation_task_create` to start runs.
-- Use `mcp__alice-feishu__automation_task_list`, `mcp__alice-feishu__automation_task_get`, `mcp__alice-feishu__automation_task_update`, and `mcp__alice-feishu__automation_task_delete` to manage tasks.
-- Use `mcp__alice-feishu__code_army_status_get` to inspect workflow state in the current conversation.
+- Use `../alice-scheduler/scripts/alice-scheduler.sh create` to start runs.
+- Use `../alice-scheduler/scripts/alice-scheduler.sh list|get|patch|delete` to manage tasks.
+- Use `../alice-scheduler/scripts/alice-scheduler.sh code-army-status` to inspect workflow state in the current conversation.
 - Set `action_type` to `run_workflow` and `workflow` to `code_army`.
 - For a one-off test run, create an interval task with `every_seconds: 60` and `max_runs: 1`.
 - `code_army` does not have an immediate-run API. The first execution happens at `next_run_at`, so tell the user the exact scheduled time.
@@ -24,46 +24,52 @@ Run `code_army` via Alice automation tools instead of re-reading the repository.
 
 1. Turn the user request into a concrete workflow objective.
 2. Pick a short `state_key` if the run should be inspectable or resumable later.
-3. Create a one-off task with `schedule_type: "interval"`, `every_seconds: 60`, `action_type: "run_workflow"`, `workflow: "code_army"`, and `max_runs: 1`.
-4. After creation, report `task.id`, `next_run`, and the `state_key` you used.
+3. Create a one-off task with `schedule.type: "interval"`, `schedule.every_seconds: 60`, `action.type: "run_workflow"`, `action.workflow: "code_army"`, and `max_runs: 1`.
+4. After creation, report `task.id`, `next_run_at`, and the `state_key` you used.
 
 Example:
 
-```text
-mcp__alice-feishu__automation_task_create({
-  title: "code_army: rust calculator",
-  schedule_type: "interval",
-  every_seconds: 60,
-  action_type: "run_workflow",
-  workflow: "code_army",
-  state_key: "rust-cli-calculator",
-  prompt: "制作一个使用 Rust 编写的终端计算器，支持加减乘除即可。按 code_army 工作流推进一轮，并在回复中给出当前阶段进展。",
-  max_runs: 1
-})
+```sh
+../alice-scheduler/scripts/alice-scheduler.sh create <<'JSON'
+{
+  "title": "code_army: rust calculator",
+  "schedule": { "type": "interval", "every_seconds": 60 },
+  "action": {
+    "type": "run_workflow",
+    "workflow": "code_army",
+    "state_key": "rust-cli-calculator",
+    "prompt": "制作一个使用 Rust 编写的终端计算器，支持加减乘除即可。按 code_army 工作流推进一轮，并在回复中给出当前阶段进展。"
+  },
+  "max_runs": 1
+}
+JSON
 ```
 
 ## Continue Or Iterate
 
 Use the same `state_key` to continue an existing workflow state. The simplest pattern is to create another one-off task for the next round:
 
-```text
-mcp__alice-feishu__automation_task_create({
-  title: "code_army: continue rust calculator",
-  schedule_type: "interval",
-  every_seconds: 60,
-  action_type: "run_workflow",
-  workflow: "code_army",
-  state_key: "rust-cli-calculator",
-  prompt: "继续推进 rust-cli-calculator 这一条 code_army 工作流。",
-  max_runs: 1
-})
+```sh
+../alice-scheduler/scripts/alice-scheduler.sh create <<'JSON'
+{
+  "title": "code_army: continue rust calculator",
+  "schedule": { "type": "interval", "every_seconds": 60 },
+  "action": {
+    "type": "run_workflow",
+    "workflow": "code_army",
+    "state_key": "rust-cli-calculator",
+    "prompt": "继续推进 rust-cli-calculator 这一条 code_army 工作流。"
+  },
+  "max_runs": 1
+}
+JSON
 ```
 
 If the user wants an always-on loop instead of manual nudges, create or update a recurring task with either a larger interval or a cron schedule.
 
 ## Inspect State
 
-Call `mcp__alice-feishu__code_army_status_get` with or without `state_key`.
+Call `../alice-scheduler/scripts/alice-scheduler.sh code-army-status` with or without `state_key`.
 
 - Without `state_key`: list all `code_army` states in the current conversation.
 - With `state_key`: load the exact workflow snapshot.
@@ -85,9 +91,9 @@ Interpretation:
 ## Manage Tasks
 
 - List tasks in the current scope before editing or deleting when the task id is not already known.
-- Pause or resume with `mcp__alice-feishu__automation_task_update`.
-- Change cadence with `mcp__alice-feishu__automation_task_update`.
-- Remove obsolete tasks with `mcp__alice-feishu__automation_task_delete`.
+- Pause or resume with `../alice-scheduler/scripts/alice-scheduler.sh patch <task_id> '{"status":"paused"}'` or `{"status":"active"}`.
+- Change cadence with `patch`.
+- Remove obsolete tasks with `../alice-scheduler/scripts/alice-scheduler.sh delete <task_id>`.
 
 ## Cron Note
 

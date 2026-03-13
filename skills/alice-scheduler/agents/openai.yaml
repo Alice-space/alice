@@ -1,0 +1,4 @@
+interface:
+  display_name: "Alice Scheduler"
+  short_description: "管理当前会话的 Alice 定时任务和自动化任务"
+  default_prompt: "Use $alice-scheduler to create or manage automation tasks in the current Alice chat."

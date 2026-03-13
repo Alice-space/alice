@@ -46,6 +46,8 @@ type Config struct {
 	ClaudeTimeout          time.Duration     `mapstructure:"-"`
 	ClaudeTimeoutSecs      int               `mapstructure:"claude_timeout_secs"`
 	ClaudePromptPrefix     string            `mapstructure:"claude_prompt_prefix"`
+	RuntimeHTTPAddr        string            `mapstructure:"runtime_http_addr"`
+	RuntimeHTTPToken       string            `mapstructure:"runtime_http_token"`
 	FailureMessage         string            `mapstructure:"failure_message"`
 	ThinkingMessage        string            `mapstructure:"thinking_message"`
 	WorkspaceDir           string            `mapstructure:"workspace_dir"`
@@ -81,6 +83,8 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("codex_mcp_server_name", "alice-feishu")
 	v.SetDefault("claude_command", "claude")
 	v.SetDefault("claude_timeout_secs", 120)
+	v.SetDefault("runtime_http_addr", "127.0.0.1:7331")
+	v.SetDefault("runtime_http_token", "")
 	v.SetDefault("failure_message", "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault("thinking_message", "正在思考中...")
 	v.SetDefault("workspace_dir", ".")
@@ -121,6 +125,8 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.CodexMCPServerName = strings.TrimSpace(cfg.CodexMCPServerName)
 	cfg.ClaudeCommand = strings.TrimSpace(cfg.ClaudeCommand)
 	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
+	cfg.RuntimeHTTPAddr = strings.TrimSpace(cfg.RuntimeHTTPAddr)
+	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
 	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)
 	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
@@ -156,6 +162,9 @@ func LoadFromFile(path string) (Config, error) {
 	}
 	if cfg.CodexMCPServerName == "" {
 		cfg.CodexMCPServerName = "alice-feishu"
+	}
+	if cfg.RuntimeHTTPAddr == "" {
+		cfg.RuntimeHTTPAddr = "127.0.0.1:7331"
 	}
 	if cfg.WorkspaceDir == "" {
 		cfg.WorkspaceDir = "."
