@@ -70,7 +70,7 @@ func newConnectorRuntimePaths(cfg config.Config) connectorRuntimePaths {
 		promptDir:           ResolvePromptDir(cfg.WorkspaceDir, cfg.PromptDir),
 		resourceDir:         filepath.Join(memoryDir, "resources"),
 		codeArmyStateDir:    filepath.Join(memoryDir, "code_army"),
-		automationStatePath: filepath.Join(memoryDir, "automation_state.json"),
+		automationStatePath: filepath.Join(memoryDir, "automation.db"),
 		sessionStatePath:    filepath.Join(memoryDir, "session_state.json"),
 		runtimeStatePath:    filepath.Join(memoryDir, "runtime_state.json"),
 	}

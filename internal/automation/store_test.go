@@ -1,7 +1,9 @@
 package automation
 
 import (
+	"encoding/json"
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -268,5 +270,49 @@ func TestStore_ResetRunningTasks(t *testing.T) {
 	}
 	if task.Running {
 		t.Fatalf("expected running flag to be reset, task=%+v", task)
+	}
+}
+
+func TestStore_MigratesLegacyJSONSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	legacyPath := filepath.Join(dir, "automation_state.json")
+	dbPath := filepath.Join(dir, "automation.db")
+	createdAt := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	legacy := Snapshot{
+		Version: 1,
+		Tasks: []Task{
+			{
+				ID:        "task_legacy",
+				Title:     "legacy task",
+				Scope:     Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+				Route:     Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+				Creator:   Actor{UserID: "ou_actor"},
+				Schedule:  Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+				Action:    Action{Type: ActionTypeSendText, Text: "ping"},
+				Status:    TaskStatusActive,
+				CreatedAt: createdAt,
+				UpdatedAt: createdAt,
+				NextRunAt: createdAt.Add(time.Minute),
+			},
+		},
+	}
+	raw, err := json.MarshalIndent(legacy, "", "  ")
+	if err != nil {
+		t.Fatalf("marshal legacy snapshot failed: %v", err)
+	}
+	if err := os.WriteFile(legacyPath, raw, 0o600); err != nil {
+		t.Fatalf("write legacy snapshot failed: %v", err)
+	}
+
+	store := NewStore(dbPath)
+	task, err := store.GetTask("task_legacy")
+	if err != nil {
+		t.Fatalf("load migrated task failed: %v", err)
+	}
+	if task.Title != "legacy task" {
+		t.Fatalf("unexpected migrated task: %+v", task)
+	}
+	if _, err := os.Stat(dbPath); err != nil {
+		t.Fatalf("expected bbolt db to be created: %v", err)
 	}
 }

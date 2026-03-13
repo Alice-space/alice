@@ -34,7 +34,7 @@ func main() {
 
 	memoryDir := bootstrap.ResolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
 	resourceDir := filepath.Join(memoryDir, "resources")
-	automationStatePath := filepath.Join(memoryDir, "automation_state.json")
+	automationStatePath := filepath.Join(memoryDir, "automation.db")
 	codeArmyStateDir := filepath.Join(memoryDir, "code_army")
 	sender := connector.NewLarkSender(botClient, resourceDir)
 	mcpSrv, err := mcpserver.New(sender, nil, automation.NewStore(automationStatePath), codeArmyStateDir)

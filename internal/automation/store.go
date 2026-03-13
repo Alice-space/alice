@@ -8,11 +8,13 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
 	"strings"
-	"syscall"
+	"sync"
 	"time"
 
 	"github.com/oklog/ulid/v2"
+	bolt "go.etcd.io/bbolt"
 )
 
 const (
@@ -21,11 +23,21 @@ const (
 	maxListLimit           = 200
 )
 
-var ErrTaskNotFound = errors.New("automation task not found")
+var (
+	ErrTaskNotFound = errors.New("automation task not found")
+
+	automationMetaBucket  = []byte("meta")
+	automationTasksBucket = []byte("tasks")
+	snapshotVersionKey    = []byte("version")
+)
 
 type Store struct {
 	path string
 	now  func() time.Time
+
+	openOnce sync.Once
+	db       *bolt.DB
+	openErr  error
 }
 
 func NewStore(path string) *Store {
@@ -62,7 +74,7 @@ func (s *Store) ListTasks(scope Scope, statusFilter string, limit int) ([]Task, 
 	}
 
 	var tasks []Task
-	err = s.withLockedSnapshot(func(snapshot *Snapshot) (bool, error) {
+	err = s.viewSnapshot(func(snapshot Snapshot) error {
 		filtered := make([]Task, 0, len(snapshot.Tasks))
 		for _, raw := range snapshot.Tasks {
 			task := NormalizeTask(raw)
@@ -97,7 +109,7 @@ func (s *Store) ListTasks(scope Scope, statusFilter string, limit int) ([]Task, 
 			filtered = filtered[:limit]
 		}
 		tasks = filtered
-		return false, nil
+		return nil
 	})
 	if err != nil {
 		return nil, err
@@ -115,13 +127,13 @@ func (s *Store) GetTask(taskID string) (Task, error) {
 	}
 
 	var task Task
-	err := s.withLockedSnapshot(func(snapshot *Snapshot) (bool, error) {
+	err := s.viewSnapshot(func(snapshot Snapshot) error {
 		idx := findTaskIndex(snapshot.Tasks, taskID)
 		if idx < 0 {
-			return false, ErrTaskNotFound
+			return ErrTaskNotFound
 		}
 		task = NormalizeTask(snapshot.Tasks[idx])
-		return false, nil
+		return nil
 	})
 	if err != nil {
 		return Task{}, err
@@ -134,7 +146,7 @@ func (s *Store) ResetRunningTasks() error {
 		return errors.New("store is nil")
 	}
 	now := s.nowUTC()
-	return s.withLockedSnapshot(func(snapshot *Snapshot) (bool, error) {
+	return s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
 		changed := false
 		for idx := range snapshot.Tasks {
 			task := NormalizeTask(snapshot.Tasks[idx])
@@ -171,8 +183,8 @@ func (s *Store) CreateTask(task Task) (Task, error) {
 		return Task{}, err
 	}
 
-	created := Task{}
-	err := s.withLockedSnapshot(func(snapshot *Snapshot) (bool, error) {
+	var created Task
+	err := s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
 		if findTaskIndex(snapshot.Tasks, task.ID) >= 0 {
 			return false, fmt.Errorf("task id already exists: %s", task.ID)
 		}
@@ -198,8 +210,8 @@ func (s *Store) PatchTask(taskID string, mutate func(task *Task) error) (Task, e
 		return Task{}, errors.New("mutate callback is nil")
 	}
 
-	updated := Task{}
-	err := s.withLockedSnapshot(func(snapshot *Snapshot) (bool, error) {
+	var updated Task
+	err := s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
 		idx := findTaskIndex(snapshot.Tasks, taskID)
 		if idx < 0 {
 			return false, ErrTaskNotFound
@@ -240,7 +252,7 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 	at = at.UTC()
 
 	claimed := make([]Task, 0, limit)
-	err := s.withLockedSnapshot(func(snapshot *Snapshot) (bool, error) {
+	err := s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
 		changed := false
 		for idx := range snapshot.Tasks {
 			if len(claimed) >= limit {
@@ -326,10 +338,20 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 	return err
 }
 
-func (s *Store) withLockedSnapshot(fn func(snapshot *Snapshot) (changed bool, err error)) error {
-	if fn == nil {
-		return errors.New("snapshot callback is nil")
+func (s *Store) dbOrOpen() (*bolt.DB, error) {
+	if s == nil {
+		return nil, errors.New("store is nil")
 	}
+	s.openOnce.Do(func() {
+		s.openErr = s.openDB()
+	})
+	if s.openErr != nil {
+		return nil, s.openErr
+	}
+	return s.db, nil
+}
+
+func (s *Store) openDB() error {
 	if strings.TrimSpace(s.path) == "" {
 		return errors.New("store path is empty")
 	}
@@ -337,52 +359,62 @@ func (s *Store) withLockedSnapshot(fn func(snapshot *Snapshot) (changed bool, er
 		return fmt.Errorf("create automation dir failed: %w", err)
 	}
 
-	lockFile, err := os.OpenFile(s.path+".lock", os.O_CREATE|os.O_RDWR, 0o644)
+	db, err := bolt.Open(s.path, 0o600, &bolt.Options{Timeout: time.Second})
 	if err != nil {
-		return fmt.Errorf("open automation lock file failed: %w", err)
-	}
-	defer lockFile.Close()
-
-	if err := syscall.Flock(int(lockFile.Fd()), syscall.LOCK_EX); err != nil {
-		return fmt.Errorf("lock automation state failed: %w", err)
-	}
-	defer func() {
-		_ = syscall.Flock(int(lockFile.Fd()), syscall.LOCK_UN)
-	}()
-
-	snapshot, err := s.readSnapshotFile()
-	if err != nil {
-		return err
-	}
-	if snapshot.Version <= 0 {
-		snapshot.Version = defaultSnapshotVersion
+		return fmt.Errorf("open automation db failed: %w", err)
 	}
 
-	changed, err := fn(&snapshot)
-	if err != nil {
-		return err
-	}
-	if !changed {
+	if err := db.Update(func(tx *bolt.Tx) error {
+		if _, err := tx.CreateBucketIfNotExists(automationMetaBucket); err != nil {
+			return fmt.Errorf("create automation meta bucket failed: %w", err)
+		}
+		if _, err := tx.CreateBucketIfNotExists(automationTasksBucket); err != nil {
+			return fmt.Errorf("create automation tasks bucket failed: %w", err)
+		}
+		if err := writeSnapshotVersion(tx, defaultSnapshotVersion); err != nil {
+			return err
+		}
+		if err := s.importLegacySnapshotIfNeeded(tx); err != nil {
+			return err
+		}
 		return nil
+	}); err != nil {
+		_ = db.Close()
+		return err
 	}
-	return s.writeSnapshotFile(snapshot)
+
+	s.db = db
+	return nil
 }
 
-func (s *Store) readSnapshotFile() (Snapshot, error) {
-	data, err := os.ReadFile(s.path)
+func (s *Store) importLegacySnapshotIfNeeded(tx *bolt.Tx) error {
+	tasksBucket := tx.Bucket(automationTasksBucket)
+	if tasksBucket == nil {
+		return errors.New("automation tasks bucket is missing")
+	}
+	cursor := tasksBucket.Cursor()
+	if key, _ := cursor.First(); key != nil {
+		return nil
+	}
+
+	legacyPath := s.legacySnapshotPath()
+	if legacyPath == "" {
+		return nil
+	}
+	data, err := os.ReadFile(legacyPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return Snapshot{Version: defaultSnapshotVersion}, nil
+			return nil
 		}
-		return Snapshot{}, fmt.Errorf("read automation state failed: %w", err)
+		return fmt.Errorf("read legacy automation state failed: %w", err)
 	}
 	if len(data) == 0 {
-		return Snapshot{Version: defaultSnapshotVersion}, nil
+		return nil
 	}
 
 	var snapshot Snapshot
 	if err := json.Unmarshal(data, &snapshot); err != nil {
-		return Snapshot{}, fmt.Errorf("parse automation state failed: %w", err)
+		return fmt.Errorf("parse legacy automation state failed: %w", err)
 	}
 	normalized := make([]Task, 0, len(snapshot.Tasks))
 	for _, task := range snapshot.Tasks {
@@ -396,31 +428,159 @@ func (s *Store) readSnapshotFile() (Snapshot, error) {
 	if snapshot.Version <= 0 {
 		snapshot.Version = defaultSnapshotVersion
 	}
+	return writeSnapshotTx(tx, snapshot)
+}
+
+func (s *Store) legacySnapshotPath() string {
+	if s == nil {
+		return ""
+	}
+	if !strings.HasSuffix(strings.ToLower(strings.TrimSpace(s.path)), ".db") {
+		return ""
+	}
+	return filepath.Join(filepath.Dir(s.path), "automation_state.json")
+}
+
+func (s *Store) viewSnapshot(fn func(snapshot Snapshot) error) error {
+	if fn == nil {
+		return errors.New("snapshot callback is nil")
+	}
+	db, err := s.dbOrOpen()
+	if err != nil {
+		return err
+	}
+	return db.View(func(tx *bolt.Tx) error {
+		snapshot, err := readSnapshotTx(tx)
+		if err != nil {
+			return err
+		}
+		return fn(snapshot)
+	})
+}
+
+func (s *Store) updateSnapshot(fn func(snapshot *Snapshot) (changed bool, err error)) error {
+	if fn == nil {
+		return errors.New("snapshot callback is nil")
+	}
+	db, err := s.dbOrOpen()
+	if err != nil {
+		return err
+	}
+	return db.Update(func(tx *bolt.Tx) error {
+		snapshot, err := readSnapshotTx(tx)
+		if err != nil {
+			return err
+		}
+		changed, err := fn(&snapshot)
+		if err != nil {
+			return err
+		}
+		if !changed {
+			return nil
+		}
+		return writeSnapshotTx(tx, snapshot)
+	})
+}
+
+func readSnapshotTx(tx *bolt.Tx) (Snapshot, error) {
+	if tx == nil {
+		return Snapshot{}, errors.New("automation transaction is nil")
+	}
+	snapshot := Snapshot{Version: defaultSnapshotVersion}
+	if version, err := readSnapshotVersion(tx); err != nil {
+		return Snapshot{}, err
+	} else if version > 0 {
+		snapshot.Version = version
+	}
+
+	tasksBucket := tx.Bucket(automationTasksBucket)
+	if tasksBucket == nil {
+		return snapshot, nil
+	}
+
+	tasks := make([]Task, 0)
+	err := tasksBucket.ForEach(func(_, value []byte) error {
+		var task Task
+		if err := json.Unmarshal(value, &task); err != nil {
+			return fmt.Errorf("parse automation task failed: %w", err)
+		}
+		task = NormalizeTask(task)
+		if task.ID == "" {
+			return nil
+		}
+		tasks = append(tasks, task)
+		return nil
+	})
+	if err != nil {
+		return Snapshot{}, err
+	}
+	snapshot.Tasks = tasks
 	return snapshot, nil
 }
 
-func (s *Store) writeSnapshotFile(snapshot Snapshot) error {
-	raw, err := json.MarshalIndent(snapshot, "", "  ")
+func writeSnapshotTx(tx *bolt.Tx, snapshot Snapshot) error {
+	if tx == nil {
+		return errors.New("automation transaction is nil")
+	}
+	if snapshot.Version <= 0 {
+		snapshot.Version = defaultSnapshotVersion
+	}
+	if err := writeSnapshotVersion(tx, snapshot.Version); err != nil {
+		return err
+	}
+
+	if err := tx.DeleteBucket(automationTasksBucket); err != nil && !errors.Is(err, bolt.ErrBucketNotFound) {
+		return fmt.Errorf("reset automation tasks bucket failed: %w", err)
+	}
+	tasksBucket, err := tx.CreateBucketIfNotExists(automationTasksBucket)
 	if err != nil {
-		return fmt.Errorf("marshal automation state failed: %w", err)
+		return fmt.Errorf("create automation tasks bucket failed: %w", err)
 	}
-	tmpFile, err := os.CreateTemp(filepath.Dir(s.path), ".automation_state.*.tmp")
+	for _, task := range snapshot.Tasks {
+		task = NormalizeTask(task)
+		if task.ID == "" {
+			continue
+		}
+		raw, err := json.Marshal(task)
+		if err != nil {
+			return fmt.Errorf("marshal automation task failed: %w", err)
+		}
+		if err := tasksBucket.Put([]byte(task.ID), raw); err != nil {
+			return fmt.Errorf("write automation task failed: %w", err)
+		}
+	}
+	return nil
+}
+
+func readSnapshotVersion(tx *bolt.Tx) (int, error) {
+	metaBucket := tx.Bucket(automationMetaBucket)
+	if metaBucket == nil {
+		return defaultSnapshotVersion, nil
+	}
+	raw := strings.TrimSpace(string(metaBucket.Get(snapshotVersionKey)))
+	if raw == "" {
+		return defaultSnapshotVersion, nil
+	}
+	version, err := strconv.Atoi(raw)
 	if err != nil {
-		return fmt.Errorf("create temp automation state failed: %w", err)
+		return 0, fmt.Errorf("parse automation snapshot version failed: %w", err)
 	}
-	tmpPath := tmpFile.Name()
-	if _, err := tmpFile.Write(raw); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("write temp automation state failed: %w", err)
+	if version <= 0 {
+		return defaultSnapshotVersion, nil
 	}
-	if err := tmpFile.Close(); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("close temp automation state failed: %w", err)
+	return version, nil
+}
+
+func writeSnapshotVersion(tx *bolt.Tx, version int) error {
+	if version <= 0 {
+		version = defaultSnapshotVersion
 	}
-	if err := os.Rename(tmpPath, s.path); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("replace automation state failed: %w", err)
+	metaBucket := tx.Bucket(automationMetaBucket)
+	if metaBucket == nil {
+		return errors.New("automation meta bucket is missing")
+	}
+	if err := metaBucket.Put(snapshotVersionKey, []byte(strconv.Itoa(version))); err != nil {
+		return fmt.Errorf("write automation snapshot version failed: %w", err)
 	}
 	return nil
 }
