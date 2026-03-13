@@ -74,6 +74,48 @@ func parseEventLine(line string) (reasoning string, agentMessage string, fileCha
 	}
 }
 
+func parseToolCallLine(line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return ""
+	}
+
+	var event map[string]any
+	if err := json.Unmarshal([]byte(line), &event); err != nil {
+		return ""
+	}
+	eventType, _ := event["type"].(string)
+	if eventType != "item.completed" && eventType != "item.started" {
+		return ""
+	}
+	item, ok := event["item"].(map[string]any)
+	if !ok {
+		return ""
+	}
+	itemType, _ := item["type"].(string)
+	if itemType != "command_execution" {
+		return ""
+	}
+
+	command := extractString(item, "command")
+	status := extractString(item, "status")
+	exitCode := extractInt(item, "exit_code")
+	parts := make([]string, 0, 3)
+	if command != "" {
+		parts = append(parts, "command=`"+command+"`")
+	}
+	if status != "" {
+		parts = append(parts, "status=`"+status+"`")
+	}
+	if eventType == "item.completed" {
+		parts = append(parts, "exit_code=`"+strconv.Itoa(exitCode)+"`")
+	}
+	if len(parts) == 0 {
+		return ""
+	}
+	return strings.Join(parts, " ")
+}
+
 func parseFileChangeMessage(item map[string]any) string {
 	if item == nil {
 		return ""

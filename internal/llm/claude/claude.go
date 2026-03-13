@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type Runner struct {
@@ -21,10 +22,11 @@ type Runner struct {
 	Env          map[string]string
 	PromptPrefix string
 	WorkspaceDir string
+	Prompts      *prompting.Loader
 }
 
 func (r Runner) Run(ctx context.Context, userText string) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", userText, "", "", nil, nil)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", nil, nil)
 	return reply, err
 }
 
@@ -33,7 +35,7 @@ func (r Runner) RunWithProgress(
 	userText string,
 	onThinking func(step string),
 ) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", userText, "", "", nil, onThinking)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", nil, onThinking)
 	return reply, err
 }
 
@@ -42,12 +44,13 @@ func (r Runner) RunWithThread(
 	threadID string,
 	userText string,
 ) (string, string, error) {
-	return r.RunWithThreadAndProgress(ctx, threadID, userText, "", "", nil, nil)
+	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", nil, nil)
 }
 
 func (r Runner) RunWithThreadAndProgress(
 	ctx context.Context,
 	threadID string,
+	agentName string,
 	userText string,
 	model string,
 	profile string,
@@ -56,7 +59,8 @@ func (r Runner) RunWithThreadAndProgress(
 ) (string, string, error) {
 	model = strings.TrimSpace(model)
 	profile = strings.TrimSpace(profile)
-	prompt := buildPrompt(threadID, r.PromptPrefix, userText)
+	agentName = strings.TrimSpace(agentName)
+	prompt, err := r.renderPrompt(threadID, userText)
 	logging.Debugf(
 		"claude prompt assemble thread_id=%s model=%q profile=%q prefix=%q user_prompt=%q final_prompt=%q",
 		threadID,
@@ -66,6 +70,9 @@ func (r Runner) RunWithThreadAndProgress(
 		userText,
 		prompt,
 	)
+	if err != nil {
+		return "", "", err
+	}
 	if strings.TrimSpace(prompt) == "" {
 		return "", "", errors.New("empty prompt")
 	}
@@ -122,9 +129,23 @@ func (r Runner) RunWithThreadAndProgress(
 	var stdout bytes.Buffer
 	finalMessage := ""
 	activeThreadID := strings.TrimSpace(threadID)
+	toolCalls := make([]string, 0, 2)
 	resultMessage := ""
 	resultErrors := []string{}
 	resultIsError := false
+	emitTrace := func(runErr error) {
+		logging.DebugAgentTrace(logging.AgentTrace{
+			Provider:  "claude",
+			Agent:     agentName,
+			ThreadID:  activeThreadID,
+			Model:     model,
+			Profile:   profile,
+			Input:     prompt,
+			Output:    finalMessage,
+			ToolCalls: toolCalls,
+			Error:     errorString(runErr),
+		})
+	}
 
 	scanner := bufio.NewScanner(stdoutPipe)
 	scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
@@ -147,6 +168,10 @@ func (r Runner) RunWithThreadAndProgress(
 			}
 			logging.Debugf("claude assistant_message=%q", finalMessage)
 		}
+		if toolCall := event.ToolCall; strings.TrimSpace(toolCall) != "" {
+			toolCalls = append(toolCalls, toolCall)
+			logging.Debugf("claude tool_call=%q", toolCall)
+		}
 		if event.HasResultEvent {
 			if strings.TrimSpace(event.ResultText) != "" {
 				resultMessage = strings.TrimSpace(event.ResultText)
@@ -164,14 +189,19 @@ func (r Runner) RunWithThreadAndProgress(
 		<-stderrDone
 		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
 			logging.Debugf("claude run timeout while scanning elapsed=%s", time.Since(startedAt))
-			return "", activeThreadID, errors.New("claude timeout")
+			timeoutErr := errors.New("claude timeout")
+			emitTrace(timeoutErr)
+			return "", activeThreadID, timeoutErr
 		}
 		if errors.Is(tctx.Err(), context.Canceled) {
 			logging.Debugf("claude run canceled while scanning elapsed=%s", time.Since(startedAt))
+			emitTrace(context.Canceled)
 			return "", activeThreadID, context.Canceled
 		}
 		logging.Debugf("claude scan failed elapsed=%s err=%v", time.Since(startedAt), scanErr)
-		return "", activeThreadID, fmt.Errorf("read claude output failed: %w", scanErr)
+		runErr := fmt.Errorf("read claude output failed: %w", scanErr)
+		emitTrace(runErr)
+		return "", activeThreadID, runErr
 	}
 
 	err = cmd.Wait()
@@ -182,10 +212,13 @@ func (r Runner) RunWithThreadAndProgress(
 	}
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
 		logging.Debugf("claude run timeout elapsed=%s", time.Since(startedAt))
-		return "", activeThreadID, errors.New("claude timeout")
+		timeoutErr := errors.New("claude timeout")
+		emitTrace(timeoutErr)
+		return "", activeThreadID, timeoutErr
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		logging.Debugf("claude run canceled elapsed=%s", time.Since(startedAt))
+		emitTrace(context.Canceled)
 		return "", activeThreadID, context.Canceled
 	}
 	if err != nil {
@@ -197,7 +230,9 @@ func (r Runner) RunWithThreadAndProgress(
 			detail = detail[:400]
 		}
 		logging.Debugf("claude run failed elapsed=%s err=%v detail=%s", time.Since(startedAt), err, detail)
-		return "", activeThreadID, fmt.Errorf("claude exec failed: %w (%s)", err, detail)
+		runErr := fmt.Errorf("claude exec failed: %w (%s)", err, detail)
+		emitTrace(runErr)
+		return "", activeThreadID, runErr
 	}
 
 	if resultIsError {
@@ -209,7 +244,9 @@ func (r Runner) RunWithThreadAndProgress(
 			detail = "unknown claude error"
 		}
 		logging.Debugf("claude result error elapsed=%s detail=%q", time.Since(startedAt), detail)
-		return "", activeThreadID, fmt.Errorf("claude exec failed: %s", detail)
+		runErr := fmt.Errorf("claude exec failed: %s", detail)
+		emitTrace(runErr)
+		return "", activeThreadID, runErr
 	}
 
 	if strings.TrimSpace(finalMessage) == "" && strings.TrimSpace(resultMessage) != "" {
@@ -219,6 +256,7 @@ func (r Runner) RunWithThreadAndProgress(
 		message, parseErr := ParseFinalMessage(stdout.String())
 		if parseErr != nil {
 			logging.Debugf("claude final message parse failed elapsed=%s err=%v", time.Since(startedAt), parseErr)
+			emitTrace(parseErr)
 			return "", activeThreadID, parseErr
 		}
 		finalMessage = strings.TrimSpace(message)
@@ -230,5 +268,25 @@ func (r Runner) RunWithThreadAndProgress(
 		activeThreadID,
 		finalMessage,
 	)
+	emitTrace(nil)
 	return finalMessage, activeThreadID, nil
+}
+
+func (r Runner) renderPrompt(threadID string, userText string) (string, error) {
+	if r.Prompts == nil {
+		return buildPrompt(threadID, r.PromptPrefix, userText), nil
+	}
+	return r.Prompts.RenderFile("llm/initial_prompt.md.tmpl", map[string]any{
+		"Resume":       strings.TrimSpace(threadID) != "",
+		"ThreadID":     strings.TrimSpace(threadID),
+		"PromptPrefix": strings.TrimSpace(r.PromptPrefix),
+		"UserText":     strings.TrimSpace(userText),
+	})
+}
+
+func errorString(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }

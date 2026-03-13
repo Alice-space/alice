@@ -7,10 +7,16 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
+func newTestManager(dir string) *Manager {
+	return NewManager(dir, prompting.NewLoader(filepath.Join("..", "..", "prompts")))
+}
+
 func TestManagerInit_RequiresMemoryDir(t *testing.T) {
-	mgr := NewManager("   ")
+	mgr := newTestManager("   ")
 	err := mgr.Init()
 	if err == nil || !strings.Contains(err.Error(), "memory dir is empty") {
 		t.Fatalf("expected memory dir validation error, got: %v", err)
@@ -21,7 +27,7 @@ func TestManagerInit_CreatesMemoryDirStructure(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "memory")
 
-	mgr := NewManager(dir)
+	mgr := newTestManager(dir)
 	if err := mgr.Init(); err != nil {
 		t.Fatalf("init memory failed: %v", err)
 	}
@@ -49,7 +55,7 @@ func TestManagerBuildPrompt_ContainsLongTermAndPaths(t *testing.T) {
 		t.Fatalf("create dir failed: %v", err)
 	}
 
-	mgr := NewManager(dir)
+	mgr := newTestManager(dir)
 	mgr.now = func() time.Time { return now }
 
 	if err := mgr.Init(); err != nil {
@@ -109,7 +115,7 @@ func TestManagerBuildPrompt_ContainsLongTermAndPaths(t *testing.T) {
 
 func TestManagerBuildPrompt_LongTermMissingIsEmpty(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "memory")
-	mgr := NewManager(dir)
+	mgr := newTestManager(dir)
 
 	prompt, err := mgr.BuildPrompt("chat_id:oc_chat", "hello")
 	if err != nil {
@@ -134,7 +140,7 @@ func TestManagerBuildPrompt_DoesNotIncludeProjectGuideFiles(t *testing.T) {
 		t.Fatalf("write GEMINI.md failed: %v", err)
 	}
 
-	mgr := NewManager(memoryDir)
+	mgr := newTestManager(memoryDir)
 
 	prompt, err := mgr.BuildPrompt("chat_id:oc_chat", "hello")
 	if err != nil {
@@ -157,7 +163,7 @@ func TestManagerBuildPrompt_DoesNotIncludeProjectGuideFiles(t *testing.T) {
 func TestManagerSaveInteraction_DelegatedToLLMNoSystemWrite(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "memory")
-	mgr := NewManager(dir)
+	mgr := newTestManager(dir)
 
 	changed, err := mgr.SaveInteraction("chat_id:oc_chat", "请记住：偏好中文", "好的", false)
 	if err != nil {
@@ -174,7 +180,7 @@ func TestManagerSaveInteraction_DelegatedToLLMNoSystemWrite(t *testing.T) {
 func TestManagerAppendDailySummary_CreatesAndAppendsDailyFile(t *testing.T) {
 	root := t.TempDir()
 	dir := filepath.Join(root, "memory")
-	mgr := NewManager(dir)
+	mgr := newTestManager(dir)
 
 	at := time.Date(2026, 2, 20, 10, 30, 0, 0, time.Local)
 	if err := mgr.AppendDailySummary("chat_id:oc_chat", "chat_id:oc_chat|thread:omt_1", "- 要点1\n- 要点2", at); err != nil {

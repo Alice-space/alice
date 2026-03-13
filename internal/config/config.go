@@ -8,12 +8,13 @@ import (
 	"time"
 
 	"github.com/spf13/viper"
-	"go.yaml.in/yaml/v3"
+	"gopkg.in/yaml.v3"
 )
 
 const DefaultConfigPath = "config.yaml"
 const DefaultLLMProvider = "codex"
 const LLMProviderClaude = "claude"
+const LLMProviderKimi = "kimi"
 const TriggerModeAt = "at"
 const TriggerModeActive = "active"
 const TriggerModePrefix = "prefix"
@@ -46,10 +47,15 @@ type Config struct {
 	ClaudeTimeout          time.Duration     `mapstructure:"-"`
 	ClaudeTimeoutSecs      int               `mapstructure:"claude_timeout_secs"`
 	ClaudePromptPrefix     string            `mapstructure:"claude_prompt_prefix"`
+	KimiCommand            string            `mapstructure:"kimi_command"`
+	KimiTimeout            time.Duration     `mapstructure:"-"`
+	KimiTimeoutSecs        int               `mapstructure:"kimi_timeout_secs"`
+	KimiPromptPrefix       string            `mapstructure:"kimi_prompt_prefix"`
 	FailureMessage         string            `mapstructure:"failure_message"`
 	ThinkingMessage        string            `mapstructure:"thinking_message"`
 	WorkspaceDir           string            `mapstructure:"workspace_dir"`
 	MemoryDir              string            `mapstructure:"memory_dir"`
+	PromptDir              string            `mapstructure:"prompt_dir"`
 
 	QueueCapacity             int           `mapstructure:"queue_capacity"`
 	WorkerConcurrency         int           `mapstructure:"worker_concurrency"`
@@ -81,10 +87,13 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("codex_mcp_server_name", "alice-feishu")
 	v.SetDefault("claude_command", "claude")
 	v.SetDefault("claude_timeout_secs", 120)
+	v.SetDefault("kimi_command", "kimi")
+	v.SetDefault("kimi_timeout_secs", 120)
 	v.SetDefault("failure_message", "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault("thinking_message", "正在思考中...")
 	v.SetDefault("workspace_dir", ".")
 	v.SetDefault("memory_dir", ".memory")
+	v.SetDefault("prompt_dir", "prompts")
 	v.SetDefault("queue_capacity", 256)
 	v.SetDefault("worker_concurrency", 1)
 	v.SetDefault("automation_task_timeout_secs", 600)
@@ -121,10 +130,13 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.CodexMCPServerName = strings.TrimSpace(cfg.CodexMCPServerName)
 	cfg.ClaudeCommand = strings.TrimSpace(cfg.ClaudeCommand)
 	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
+	cfg.KimiCommand = strings.TrimSpace(cfg.KimiCommand)
+	cfg.KimiPromptPrefix = strings.TrimSpace(cfg.KimiPromptPrefix)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
 	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)
 	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
 	cfg.MemoryDir = strings.TrimSpace(cfg.MemoryDir)
+	cfg.PromptDir = strings.TrimSpace(cfg.PromptDir)
 	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
 
 	if cfg.FeishuAppID == "" {
@@ -154,6 +166,9 @@ func LoadFromFile(path string) (Config, error) {
 	if cfg.ClaudeCommand == "" {
 		cfg.ClaudeCommand = "claude"
 	}
+	if cfg.KimiCommand == "" {
+		cfg.KimiCommand = "kimi"
+	}
 	if cfg.CodexMCPServerName == "" {
 		cfg.CodexMCPServerName = "alice-feishu"
 	}
@@ -162,6 +177,9 @@ func LoadFromFile(path string) (Config, error) {
 	}
 	if cfg.MemoryDir == "" {
 		cfg.MemoryDir = ".memory"
+	}
+	if cfg.PromptDir == "" {
+		cfg.PromptDir = "prompts"
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
@@ -173,7 +191,7 @@ func LoadFromFile(path string) (Config, error) {
 		cfg.ThinkingMessage = "正在思考中..."
 	}
 	switch cfg.LLMProvider {
-	case DefaultLLMProvider, LLMProviderClaude:
+	case DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi:
 	default:
 		return Config{}, fmt.Errorf("unsupported llm_provider %q", cfg.LLMProvider)
 	}
@@ -203,6 +221,12 @@ func LoadFromFile(path string) (Config, error) {
 		}
 		cfg.ClaudeTimeoutSecs = 120
 	}
+	if cfg.KimiTimeoutSecs <= 0 {
+		if cfg.LLMProvider == LLMProviderKimi {
+			return Config{}, errors.New("kimi_timeout_secs must be > 0")
+		}
+		cfg.KimiTimeoutSecs = 120
+	}
 	for key := range cfg.CodexEnv {
 		if key == "" {
 			return Config{}, errors.New("env key must not be empty")
@@ -228,6 +252,7 @@ func LoadFromFile(path string) (Config, error) {
 	}
 	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
 	cfg.ClaudeTimeout = time.Duration(cfg.ClaudeTimeoutSecs) * time.Second
+	cfg.KimiTimeout = time.Duration(cfg.KimiTimeoutSecs) * time.Second
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 	cfg.IdleSummaryIdle = time.Duration(cfg.IdleSummaryHours) * time.Hour
 	cfg.GroupContextWindowTTL = time.Duration(cfg.GroupContextWindowMinutes) * time.Minute

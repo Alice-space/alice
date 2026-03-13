@@ -15,6 +15,7 @@ import (
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/mcpbridge"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 const (
@@ -36,6 +37,7 @@ var invalidStateKeyPattern = regexp.MustCompile(`[^a-zA-Z0-9._-]+`)
 type Runner struct {
 	stateDir string
 	backend  llm.Backend
+	prompts  *prompting.Loader
 	now      func() time.Time
 	mu       sync.Mutex
 }
@@ -67,10 +69,11 @@ type workflowRecord struct {
 	Decision string    `json:"decision,omitempty"`
 }
 
-func NewRunner(stateDir string, backend llm.Backend) *Runner {
+func NewRunner(stateDir string, backend llm.Backend, prompts *prompting.Loader) *Runner {
 	return &Runner{
 		stateDir: strings.TrimSpace(stateDir),
 		backend:  backend,
+		prompts:  prompts,
 		now:      time.Now,
 	}
 }
@@ -172,7 +175,11 @@ func (r *Runner) advanceOne(
 	now := r.nowUTC()
 	switch state.Phase {
 	case phaseManager:
-		reply, nextThreadID, err := r.runLLM(ctx, state.ManagerThreadID, buildManagerPrompt(*state), req)
+		prompt, err := r.buildManagerPrompt(*state)
+		if err != nil {
+			return "", false, err
+		}
+		reply, nextThreadID, err := r.runLLM(ctx, phaseManager, state.ManagerThreadID, prompt, req)
 		if err != nil {
 			return "", false, err
 		}
@@ -186,7 +193,11 @@ func (r *Runner) advanceOne(
 			state.Iteration,
 		), false, nil
 	case phaseWorker:
-		reply, nextThreadID, err := r.runLLM(ctx, state.WorkerThreadID, buildWorkerPrompt(*state), req)
+		prompt, err := r.buildWorkerPrompt(*state)
+		if err != nil {
+			return "", false, err
+		}
+		reply, nextThreadID, err := r.runLLM(ctx, phaseWorker, state.WorkerThreadID, prompt, req)
 		if err != nil {
 			return "", false, err
 		}
@@ -197,7 +208,11 @@ func (r *Runner) advanceOne(
 		state.appendHistory(now, phaseWorker, clipText(state.WorkerOutput, 120), "")
 		return "`worker` 已产出实现方案，进入 `reviewer`。", false, nil
 	case phaseReviewer:
-		reply, nextThreadID, err := r.runLLM(ctx, state.ReviewerThreadID, buildReviewerPrompt(*state), req)
+		prompt, err := r.buildReviewerPrompt(*state)
+		if err != nil {
+			return "", false, err
+		}
+		reply, nextThreadID, err := r.runLLM(ctx, phaseReviewer, state.ReviewerThreadID, prompt, req)
 		if err != nil {
 			return "", false, err
 		}
@@ -347,16 +362,18 @@ func phaseStepsPerRun(phase string) int {
 
 func (r *Runner) runLLM(
 	ctx context.Context,
+	agentName string,
 	threadID string,
 	prompt string,
 	req automation.WorkflowRunRequest,
 ) (reply string, nextThreadID string, err error) {
 	result, err := r.backend.Run(ctx, llm.RunRequest{
-		ThreadID: strings.TrimSpace(threadID),
-		UserText: strings.TrimSpace(prompt),
-		Model:    strings.TrimSpace(req.Model),
-		Profile:  strings.TrimSpace(req.Profile),
-		Env:      req.Env,
+		ThreadID:  strings.TrimSpace(threadID),
+		AgentName: strings.TrimSpace(agentName),
+		UserText:  strings.TrimSpace(prompt),
+		Model:     strings.TrimSpace(req.Model),
+		Profile:   strings.TrimSpace(req.Profile),
+		Env:       req.Env,
 	})
 	if err != nil {
 		return "", "", err
@@ -408,6 +425,42 @@ func buildReviewerPrompt(state workflowState) string {
 		"- 主要风险\n" +
 		"- 改进建议\n" +
 		"- 最后一行必须是 `DECISION: PASS` 或 `DECISION: FAIL`"
+}
+
+func (r *Runner) buildManagerPrompt(state workflowState) (string, error) {
+	if r.prompts == nil {
+		return buildManagerPrompt(state), nil
+	}
+	return r.prompts.RenderFile("code_army/manager.md.tmpl", map[string]any{
+		"Objective":    defaultIfEmpty(state.Objective, "（无）"),
+		"Iteration":    state.Iteration,
+		"LastDecision": defaultIfEmpty(state.LastDecision, "none"),
+	})
+}
+
+func (r *Runner) buildWorkerPrompt(state workflowState) (string, error) {
+	if r.prompts == nil {
+		return buildWorkerPrompt(state), nil
+	}
+	return r.prompts.RenderFile("code_army/worker.md.tmpl", map[string]any{
+		"Objective":      defaultIfEmpty(state.Objective, "（无）"),
+		"Iteration":      state.Iteration,
+		"ManagerPlan":    defaultIfEmpty(state.ManagerPlan, "（无）"),
+		"LastDecision":   defaultIfEmpty(state.LastDecision, "none"),
+		"ReviewerReport": defaultIfEmpty(state.ReviewerReport, "（无）"),
+	})
+}
+
+func (r *Runner) buildReviewerPrompt(state workflowState) (string, error) {
+	if r.prompts == nil {
+		return buildReviewerPrompt(state), nil
+	}
+	return r.prompts.RenderFile("code_army/reviewer.md.tmpl", map[string]any{
+		"Objective":    defaultIfEmpty(state.Objective, "（无）"),
+		"Iteration":    state.Iteration,
+		"ManagerPlan":  defaultIfEmpty(state.ManagerPlan, "（无）"),
+		"WorkerOutput": defaultIfEmpty(state.WorkerOutput, "（无）"),
+	})
 }
 
 func parseDecision(reply string) string {

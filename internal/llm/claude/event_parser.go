@@ -10,6 +10,7 @@ import (
 type parsedEvent struct {
 	SessionID      string
 	AssistantText  string
+	ToolCall       string
 	ResultText     string
 	ResultErrors   []string
 	ResultIsError  bool
@@ -70,6 +71,7 @@ func parseEventLine(line string) parsedEvent {
 		return parsedEvent{
 			SessionID:     sessionID,
 			AssistantText: extractAssistantText(message),
+			ToolCall:      extractAssistantToolUse(message),
 		}
 	case "result":
 		resultText := extractString(event, "result")
@@ -88,6 +90,37 @@ func parseEventLine(line string) parsedEvent {
 	default:
 		return parsedEvent{}
 	}
+}
+
+func extractAssistantToolUse(message map[string]any) string {
+	if len(message) == 0 {
+		return ""
+	}
+	content, ok := message["content"].([]any)
+	if !ok {
+		return ""
+	}
+	tools := make([]string, 0, len(content))
+	for _, raw := range content {
+		block, ok := raw.(map[string]any)
+		if !ok {
+			continue
+		}
+		if strings.ToLower(extractString(block, "type")) != "tool_use" {
+			continue
+		}
+		name := extractString(block, "name")
+		id := extractString(block, "id")
+		line := "tool_use"
+		if name != "" {
+			line += " name=`" + name + "`"
+		}
+		if id != "" {
+			line += " id=`" + id + "`"
+		}
+		tools = append(tools, line)
+	}
+	return strings.Join(tools, "; ")
 }
 
 func extractAssistantText(message map[string]any) string {

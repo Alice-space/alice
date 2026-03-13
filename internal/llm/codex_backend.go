@@ -5,13 +5,14 @@ import (
 	"strings"
 
 	corecodex "github.com/Alice-space/alice/internal/llm/codex"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type codexBackend struct {
 	runner corecodex.Runner
 }
 
-func newCodexBackend(cfg CodexConfig) *codexBackend {
+func newCodexBackend(cfg CodexConfig, prompts *prompting.Loader) *codexBackend {
 	return &codexBackend{
 		runner: corecodex.Runner{
 			Command:      cfg.Command,
@@ -19,6 +20,7 @@ func newCodexBackend(cfg CodexConfig) *codexBackend {
 			Env:          cfg.Env,
 			PromptPrefix: cfg.PromptPrefix,
 			WorkspaceDir: cfg.WorkspaceDir,
+			Prompts:      prompts,
 		},
 	}
 }
@@ -27,6 +29,7 @@ func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, erro
 	reply, nextThreadID, err := b.runner.RunWithThreadAndProgress(
 		ctx,
 		strings.TrimSpace(req.ThreadID),
+		strings.TrimSpace(req.AgentName),
 		req.UserText,
 		strings.TrimSpace(req.Model),
 		strings.TrimSpace(req.Profile),

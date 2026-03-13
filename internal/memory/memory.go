@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 const (
@@ -35,17 +36,19 @@ type Manager struct {
 	MaxShortTermRunes int
 	MaxEntryRunes     int
 
-	now func() time.Time
-	mu  sync.Mutex
+	now     func() time.Time
+	prompts *prompting.Loader
+	mu      sync.Mutex
 }
 
-func NewManager(dir string) *Manager {
+func NewManager(dir string, prompts *prompting.Loader) *Manager {
 	return &Manager{
 		Dir:               strings.TrimSpace(dir),
 		MaxLongTermRunes:  defaultMaxLongTermRunes,
 		MaxShortTermRunes: defaultMaxShortTermRunes,
 		MaxEntryRunes:     defaultMaxEntryRunes,
 		now:               time.Now,
+		prompts:           prompts,
 	}
 }
 
@@ -112,26 +115,22 @@ func (m *Manager) BuildPrompt(memoryScopeKey, userText string) (string, error) {
 	scopeLongPromptPath := absOrSame(scope.LongTermPath)
 	shortTermName := shortTermFileName(now)
 	scopeShortTermDir := absOrSame(scope.DailyDir)
-
-	prompt := "---\n" +
-		"记忆内容与更新规则：\n" +
-		"全局基线记忆：\n" +
-		"- 文件位置：" + globalLongPromptPath + "\n- 文件内容：\n" +
-		globalLongText + "\n\n" +
-		"当前会话记忆：\n" +
-		"- 会话标识：" + scope.Key + "\n" +
-		"- 长期记忆文件：" + scopeLongPromptPath + "\n" +
-		"- 长期记忆内容：\n" + scopeLongText + "\n" +
-		"- 分日期记忆目录：" + scopeShortTermDir + "\n" +
-		"- 文件命名：YYYY-MM-DD.md（例如：" + shortTermName + "）\n" +
-		"- 需要当前会话的历史信息时，请按日期自行检索对应文件。\n" +
-		"- 不要读取或修改其他群聊、私聊的记忆目录。\n\n" +
-		"按需记忆更新：\n" +
-		"- 系统仅会在会话空闲超时后自动追加“空闲摘要”到当前会话的分日期记忆；其余记忆更新请你自行编辑当前会话对应的记忆文件。\n" +
-		"- 全局基线记忆仅保留跨所有会话都生效的稳定规则；群聊/私聊特有信息应写入当前会话记忆。\n" +
-		"- 长期记忆内容有限，若用户未明确要求，不要将临时任务细节升级为长期偏好。\n" +
-		"---\n\n" +
-		"当前用户消息：\n" + userText
+	if m.prompts == nil {
+		return "", errors.New("memory prompt templates are unavailable")
+	}
+	prompt, err := m.prompts.RenderFile("memory/prompt.md.tmpl", map[string]any{
+		"GlobalLongPath":    globalLongPromptPath,
+		"GlobalLongText":    globalLongText,
+		"ScopeKey":          scope.Key,
+		"ScopeLongPath":     scopeLongPromptPath,
+		"ScopeLongText":     scopeLongText,
+		"ScopeShortTermDir": scopeShortTermDir,
+		"ShortTermName":     shortTermName,
+		"UserText":          userText,
+	})
+	if err != nil {
+		return "", err
+	}
 	logging.Debugf(
 		"memory prompt assembled dir=%s scope=%s global_long_term_file=%s scoped_long_term_file=%s scoped_short_term_dir=%s user_text=%q prompt=%q",
 		m.Dir,

@@ -2,10 +2,12 @@ package codearmy
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/llm"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 func TestInspector_ListAndGet_BySessionKey(t *testing.T) {
@@ -15,7 +17,7 @@ func TestInspector_ListAndGet_BySessionKey(t *testing.T) {
 			{Reply: "manager plan", NextThreadID: "thread-manager"},
 		},
 	}
-	runner := NewRunner(stateDir, backend)
+	runner := NewRunner(stateDir, backend, prompting.NewLoader(filepath.Join("..", "..", "prompts")))
 	req := automation.WorkflowRunRequest{
 		Workflow: automation.WorkflowCodeArmy,
 		TaskID:   "task_001",

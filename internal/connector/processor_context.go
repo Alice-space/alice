@@ -44,6 +44,7 @@ func (p *Processor) runLLM(
 	}
 	result, err := p.llm.Run(ctx, llm.RunRequest{
 		ThreadID:   strings.TrimSpace(threadID),
+		AgentName:  "assistant",
 		UserText:   userText,
 		Env:        env,
 		OnProgress: onAgentMessage,

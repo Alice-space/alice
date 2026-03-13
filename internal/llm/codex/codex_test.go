@@ -204,6 +204,7 @@ EOF
 	reply, _, err := runner.RunWithThreadAndProgress(
 		context.Background(),
 		"",
+		"assistant",
 		"hello",
 		"",
 		"",
@@ -285,7 +286,7 @@ wait $!
 	done := make(chan error, 1)
 	startedAt := time.Now()
 	go func() {
-		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "hello", "", "", nil, nil)
+		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "assistant", "hello", "", "", nil, nil)
 		done <- err
 	}()
 

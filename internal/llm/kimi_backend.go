@@ -4,17 +4,17 @@ import (
 	"context"
 	"strings"
 
-	coreclaude "github.com/Alice-space/alice/internal/llm/claude"
+	corekimi "github.com/Alice-space/alice/internal/llm/kimi"
 	"github.com/Alice-space/alice/internal/prompting"
 )
 
-type claudeBackend struct {
-	runner coreclaude.Runner
+type kimiBackend struct {
+	runner corekimi.Runner
 }
 
-func newClaudeBackend(cfg ClaudeConfig, prompts *prompting.Loader) *claudeBackend {
-	return &claudeBackend{
-		runner: coreclaude.Runner{
+func newKimiBackend(cfg KimiConfig, prompts *prompting.Loader) *kimiBackend {
+	return &kimiBackend{
+		runner: corekimi.Runner{
 			Command:      cfg.Command,
 			Timeout:      cfg.Timeout,
 			Env:          cfg.Env,
@@ -25,14 +25,13 @@ func newClaudeBackend(cfg ClaudeConfig, prompts *prompting.Loader) *claudeBacken
 	}
 }
 
-func (b *claudeBackend) Run(ctx context.Context, req RunRequest) (RunResult, error) {
+func (b *kimiBackend) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	reply, nextThreadID, err := b.runner.RunWithThreadAndProgress(
 		ctx,
 		strings.TrimSpace(req.ThreadID),
 		strings.TrimSpace(req.AgentName),
 		req.UserText,
 		strings.TrimSpace(req.Model),
-		strings.TrimSpace(req.Profile),
 		req.Env,
 		req.OnProgress,
 	)
@@ -42,4 +41,4 @@ func (b *claudeBackend) Run(ctx context.Context, req RunRequest) (RunResult, err
 	}, err
 }
 
-var _ Backend = (*claudeBackend)(nil)
+var _ Backend = (*kimiBackend)(nil)

@@ -3,11 +3,11 @@ package bootstrap
 import (
 	"context"
 	"errors"
-	"fmt"
 
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/llm"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type ConnectorRuntime struct {
@@ -16,9 +16,10 @@ type ConnectorRuntime struct {
 	AutomationStatePath string
 }
 
-func buildFactoryConfig(cfg config.Config) llm.FactoryConfig {
+func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.FactoryConfig {
 	return llm.FactoryConfig{
 		Provider: cfg.LLMProvider,
+		Prompts:  prompts,
 		Codex: llm.CodexConfig{
 			Command:      cfg.CodexCommand,
 			Timeout:      cfg.CodexTimeout,
@@ -33,11 +34,19 @@ func buildFactoryConfig(cfg config.Config) llm.FactoryConfig {
 			PromptPrefix: cfg.ClaudePromptPrefix,
 			WorkspaceDir: cfg.WorkspaceDir,
 		},
+		Kimi: llm.KimiConfig{
+			Command:      cfg.KimiCommand,
+			Timeout:      cfg.KimiTimeout,
+			Env:          cfg.CodexEnv,
+			PromptPrefix: cfg.KimiPromptPrefix,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 	}
 }
 
 func NewLLMProvider(cfg config.Config) (llm.Provider, error) {
-	return llm.NewProvider(buildFactoryConfig(cfg))
+	promptDir := ResolvePromptDir(cfg.WorkspaceDir, cfg.PromptDir)
+	return llm.NewProvider(buildFactoryConfig(cfg, prompting.NewLoader(promptDir)))
 }
 
 func RegisterMCPServer(ctx context.Context, provider llm.Provider, cfg config.Config, configPath string) error {
@@ -46,7 +55,7 @@ func RegisterMCPServer(ctx context.Context, provider llm.Provider, cfg config.Co
 	}
 	registrar := provider.MCPRegistrar()
 	if registrar == nil {
-		return fmt.Errorf("llm_provider %q does not support mcp registration", cfg.LLMProvider)
+		return nil
 	}
 	configAbsPath := ResolveConfigPath(configPath)
 	return registrar.EnsureMCPServerRegistered(ctx, llm.MCPRegistration{

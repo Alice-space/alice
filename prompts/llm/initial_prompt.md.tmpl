@@ -1,0 +1,9 @@
+{{- if .Resume -}}
+{{- .UserText -}}
+{{- else if .PromptPrefix -}}
+{{ .PromptPrefix }}
+
+{{ .UserText }}
+{{- else -}}
+{{- .UserText -}}
+{{- end -}}

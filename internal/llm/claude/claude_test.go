@@ -132,6 +132,7 @@ EOF
 	reply, nextSessionID, err := runner.RunWithThreadAndProgress(
 		context.Background(),
 		"",
+		"assistant",
 		"hello",
 		"",
 		"",
@@ -210,6 +211,7 @@ EOF
 	_, nextSessionID, err := runner.RunWithThreadAndProgress(
 		context.Background(),
 		"",
+		"assistant",
 		"hello",
 		"",
 		"",

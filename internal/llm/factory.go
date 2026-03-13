@@ -4,15 +4,20 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 const ProviderCodex = "codex"
 const ProviderClaude = "claude"
+const ProviderKimi = "kimi"
 
 type FactoryConfig struct {
 	Provider string
+	Prompts  *prompting.Loader
 	Codex    CodexConfig
 	Claude   ClaudeConfig
+	Kimi     KimiConfig
 }
 
 type CodexConfig struct {
@@ -24,6 +29,14 @@ type CodexConfig struct {
 }
 
 type ClaudeConfig struct {
+	Command      string
+	Timeout      time.Duration
+	Env          map[string]string
+	PromptPrefix string
+	WorkspaceDir string
+}
+
+type KimiConfig struct {
 	Command      string
 	Timeout      time.Duration
 	Env          map[string]string
@@ -50,13 +63,18 @@ func NewProvider(cfg FactoryConfig) (Provider, error) {
 	switch provider {
 	case ProviderCodex:
 		return providerBundle{
-			backend:      newCodexBackend(cfg.Codex),
+			backend:      newCodexBackend(cfg.Codex, cfg.Prompts),
 			mcpRegistrar: newCodexMCPRegistrar(cfg.Codex),
 		}, nil
 	case ProviderClaude:
 		return providerBundle{
-			backend:      newClaudeBackend(cfg.Claude),
+			backend:      newClaudeBackend(cfg.Claude, cfg.Prompts),
 			mcpRegistrar: newClaudeMCPRegistrar(cfg.Claude),
+		}, nil
+	case ProviderKimi:
+		return providerBundle{
+			backend:      newKimiBackend(cfg.Kimi, cfg.Prompts),
+			mcpRegistrar: nil,
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported llm_provider %q", provider)

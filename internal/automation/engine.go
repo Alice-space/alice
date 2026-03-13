@@ -13,6 +13,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/mcpbridge"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type TextSender interface {
@@ -51,6 +52,8 @@ type systemTaskRuntime struct {
 	nextRun  time.Time
 	running  bool
 }
+
+var actionTemplateRenderer = prompting.NewLoader(".")
 
 type taskDispatch struct {
 	text        string
@@ -278,10 +281,11 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			return taskDispatch{}, errors.New("action prompt is empty for run_llm")
 		}
 		result, err := e.llmRunner.Run(ctx, llm.RunRequest{
-			UserText: prompt,
-			Model:    task.Action.Model,
-			Profile:  task.Action.Profile,
-			Env:      buildTaskRunEnv(task),
+			AgentName: "scheduler",
+			UserText:  prompt,
+			Model:     task.Action.Model,
+			Profile:   task.Action.Profile,
+			Env:       buildTaskRunEnv(task),
 		})
 		if err != nil {
 			return taskDispatch{}, err
@@ -378,13 +382,22 @@ func renderActionTemplate(raw string, now time.Time) string {
 		now = time.Now().UTC()
 	}
 	now = now.UTC()
-	replacer := strings.NewReplacer(
+	template = strings.NewReplacer(
 		"{{now}}", now.Format(time.RFC3339),
 		"{{date}}", now.Format("2006-01-02"),
 		"{{time}}", now.Format("15:04:05"),
 		"{{unix}}", strconv.FormatInt(now.Unix(), 10),
-	)
-	return strings.TrimSpace(replacer.Replace(template))
+	).Replace(template)
+	rendered, err := actionTemplateRenderer.RenderString("automation-action", template, map[string]any{
+		"Now":  now,
+		"Date": now.Format("2006-01-02"),
+		"Time": now.Format("15:04:05"),
+		"Unix": now.Unix(),
+	})
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(rendered)
 }
 
 func buildTaskRunEnv(task Task) map[string]string {

@@ -49,6 +49,28 @@ func TestNewProvider_Claude(t *testing.T) {
 	}
 }
 
+func TestNewProvider_Kimi(t *testing.T) {
+	provider, err := NewProvider(FactoryConfig{
+		Provider: ProviderKimi,
+		Kimi: KimiConfig{
+			Command: "kimi",
+			Timeout: 30 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+	if provider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if provider.Backend() == nil {
+		t.Fatal("expected non-nil backend")
+	}
+	if provider.MCPRegistrar() != nil {
+		t.Fatal("kimi should not expose an mcp registrar")
+	}
+}
+
 func TestNewProvider_RejectsUnknownProvider(t *testing.T) {
 	_, err := NewProvider(FactoryConfig{Provider: "unknown"})
 	if err == nil {
@@ -79,6 +101,22 @@ func TestNewBackend_Claude(t *testing.T) {
 		Provider: ProviderClaude,
 		Claude: ClaudeConfig{
 			Command: "claude",
+			Timeout: 30 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("new backend failed: %v", err)
+	}
+	if backend == nil {
+		t.Fatal("expected non-nil backend")
+	}
+}
+
+func TestNewBackend_Kimi(t *testing.T) {
+	backend, err := NewBackend(FactoryConfig{
+		Provider: ProviderKimi,
+		Kimi: KimiConfig{
+			Command: "kimi",
 			Timeout: 30 * time.Second,
 		},
 	})

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/llm"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type backendStub struct {
@@ -50,7 +51,7 @@ func TestRunner_Run_TransitionsAndPersistsState(t *testing.T) {
 			{Reply: "review details\nDECISION: PASS", NextThreadID: "thread-reviewer"},
 		},
 	}
-	runner := NewRunner(stateDir, backend)
+	runner := NewRunner(stateDir, backend, prompting.NewLoader(filepath.Join("..", "..", "prompts")))
 	runner.now = func() time.Time {
 		return time.Date(2026, 2, 24, 9, 30, 0, 0, time.UTC)
 	}
@@ -167,7 +168,7 @@ func TestRunner_Run_PersistsCompletedPhaseBeforeLaterError(t *testing.T) {
 			context.DeadlineExceeded,
 		},
 	}
-	runner := NewRunner(stateDir, backend)
+	runner := NewRunner(stateDir, backend, prompting.NewLoader(filepath.Join("..", "..", "prompts")))
 	runner.now = func() time.Time {
 		return time.Date(2026, 3, 3, 10, 0, 0, 0, time.UTC)
 	}

@@ -22,6 +22,22 @@ func ResolveMemoryDir(workspaceDir, memoryDir string) string {
 	return filepath.Join(base, dir)
 }
 
+func ResolvePromptDir(workspaceDir, promptDir string) string {
+	dir := strings.TrimSpace(promptDir)
+	if dir == "" {
+		dir = "prompts"
+	}
+	if filepath.IsAbs(dir) {
+		return dir
+	}
+
+	base := strings.TrimSpace(workspaceDir)
+	if base == "" {
+		base = "."
+	}
+	return filepath.Join(base, dir)
+}
+
 func ResolveConfigPath(configPath string) string {
 	configPath = strings.TrimSpace(configPath)
 	if configPath == "" {

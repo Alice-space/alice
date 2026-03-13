@@ -15,10 +15,12 @@ import (
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/memory"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type connectorRuntimePaths struct {
 	memoryDir           string
+	promptDir           string
 	resourceDir         string
 	codeArmyStateDir    string
 	automationStatePath string
@@ -36,6 +38,7 @@ type connectorRuntimeBuilder struct {
 
 	memoryManager   *memory.Manager
 	automationStore *automation.Store
+	promptLoader    *prompting.Loader
 }
 
 func newConnectorRuntimeBuilder(cfg config.Config, provider llm.Provider) (*connectorRuntimeBuilder, error) {
@@ -59,6 +62,7 @@ func newConnectorRuntimePaths(cfg config.Config) connectorRuntimePaths {
 	memoryDir := ResolveMemoryDir(cfg.WorkspaceDir, cfg.MemoryDir)
 	return connectorRuntimePaths{
 		memoryDir:           memoryDir,
+		promptDir:           ResolvePromptDir(cfg.WorkspaceDir, cfg.PromptDir),
 		resourceDir:         filepath.Join(memoryDir, "resources"),
 		codeArmyStateDir:    filepath.Join(memoryDir, "code_army"),
 		automationStatePath: filepath.Join(memoryDir, "automation_state.json"),
@@ -68,6 +72,7 @@ func newConnectorRuntimePaths(cfg config.Config) connectorRuntimePaths {
 }
 
 func (b *connectorRuntimeBuilder) Build() (*ConnectorRuntime, error) {
+	b.promptLoader = prompting.NewLoader(b.paths.promptDir)
 	if err := b.prepareMemory(); err != nil {
 		return nil, err
 	}
@@ -97,7 +102,7 @@ func (b *connectorRuntimeBuilder) prepareMemory() error {
 		return err
 	}
 
-	memoryManager := memory.NewManager(b.paths.memoryDir)
+	memoryManager := memory.NewManager(b.paths.memoryDir, b.promptLoader)
 	if err := memoryManager.Init(); err != nil {
 		return err
 	}
@@ -147,7 +152,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 	automationEngine := automation.NewEngine(b.automationStore, b.sender)
 	automationEngine.SetUserTaskTimeout(b.cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(b.backend)
-	automationEngine.SetWorkflowRunner(codearmy.NewRunner(b.paths.codeArmyStateDir, b.backend))
+	automationEngine.SetWorkflowRunner(codearmy.NewRunner(b.paths.codeArmyStateDir, b.backend, b.promptLoader))
 
 	if err := automationEngine.RegisterSystemTask("system.idle_summary_scan", 60*time.Second, func(runCtx context.Context) {
 		b.processor.RunIdleSummaryScan(runCtx, b.cfg.IdleSummaryIdle)

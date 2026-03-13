@@ -6,6 +6,7 @@ type ProgressFunc func(step string)
 
 type RunRequest struct {
 	ThreadID   string
+	AgentName  string
 	UserText   string
 	Model      string
 	Profile    string
