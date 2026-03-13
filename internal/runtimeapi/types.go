@@ -10,6 +10,7 @@ import (
 const (
 	EnvBaseURL = "ALICE_RUNTIME_API_BASE_URL"
 	EnvToken   = "ALICE_RUNTIME_API_TOKEN"
+	EnvBin     = "ALICE_RUNTIME_BIN"
 
 	HeaderReceiveIDType   = "X-Alice-Receive-Id-Type"
 	HeaderReceiveID       = "X-Alice-Receive-Id"

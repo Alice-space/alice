@@ -26,12 +26,8 @@ claude_command: "claude"
 claude_timeout_secs: 120
 kimi_command: "kimi"
 kimi_timeout_secs: 120
-# Automatically register MCP server into the selected LLM CLI at startup.
-codex_mcp_auto_register: true
-# If true, startup fails when MCP registration fails.
-codex_mcp_register_strict: false
-# MCP server name used in `codex mcp` / `claude mcp` commands.
-codex_mcp_server_name: "alice-feishu"
+runtime_http_addr: "127.0.0.1:7331"
+runtime_http_token: ""
 workspace_dir: "."
 # Optional: environment variables passed to LLM process (proxy, etc.)
 env:

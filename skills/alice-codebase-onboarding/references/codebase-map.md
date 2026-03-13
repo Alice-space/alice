@@ -10,18 +10,16 @@ Purpose: Feishu bot connector that forwards user messages to Codex and sends rep
 - Parse `-c/--config` path.
 - Load YAML config via `internal/config`.
 - Auto-link bundled repo skills into `$CODEX_HOME/skills`.
-- Optional MCP registration for `alice-mcp-server`.
 - Build runtime via `internal/bootstrap/connector_runtime.go`.
 - Start long-connection app loop.
 
 2. `internal/bootstrap/connector_runtime.go`
 - Delegate assembly to `connectorRuntimeBuilder` (`internal/bootstrap/connector_runtime_builder.go`).
-- Keep only stable bootstrap-facing APIs: provider factory, MCP registration, runtime build entry.
+- Keep only stable bootstrap-facing APIs: provider factory and runtime build entry.
 
-3. `cmd/alice-mcp-server/main.go`
-- Load same config.
-- Reuse bootstrap path helpers.
-- Start MCP stdio server (`internal/mcpserver`).
+3. `cmd/connector/runtime_*.go`
+- Expose `alice-connector runtime ...` subcommands for bundled skills.
+- Reuse `internal/runtimeapi.Client` instead of hand-written shell HTTP calls.
 
 ## Runtime chain
 
@@ -48,7 +46,7 @@ Purpose: Feishu bot connector that forwards user messages to Codex and sends rep
 
 ## Operationally important files
 
-- `config.example.yaml`: baseline config template (includes `codex_mcp_*`).
+- `config.example.yaml`: baseline config template (includes `runtime_http_*`).
 - `scripts/update-self-and-sync-skill.sh`: canonical self-update command.
 - `skills/`: bundled skills that are auto-linked to `$CODEX_HOME/skills` on connector startup.
 - `docs/architecture.md` / `docs/architecture.zh-CN.md`: architecture and refactor status.

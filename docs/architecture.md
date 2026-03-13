@@ -9,13 +9,13 @@ This document describes the current target architecture after the runtime/skills
 - Keep the connector process focused on orchestration, not prompt literals or tool-specific business logic.
 - Treat LLM backends as interchangeable adapters.
 - Move chat-scoped operational capabilities into reusable skills that talk to Alice through a local HTTP API.
-- Keep MCP as a compatibility layer for media/file tools instead of the primary expansion surface.
+- Keep runtime skills and the local HTTP API as the only supported expansion surface.
 - Make debug traces auditable: every agent call should record markdown input/output/tool activity.
 
 ## Component map
 
 - `cmd/connector`
-  Starts the Feishu connector, automation engine, and local runtime HTTP API in one process group.
+  Starts the Feishu connector, automation engine, local runtime HTTP API, and the `runtime` skill-facing subcommands in one binary.
 - `internal/connector`
   Handles Feishu websocket intake, queueing, session serialization, interruption, reply dispatch, and per-run env injection.
 - `internal/llm`
@@ -27,11 +27,9 @@ This document describes the current target architecture after the runtime/skills
 - `internal/automation`
   Task persistence/execution for `send_text`, `run_llm`, and `run_workflow`.
 - `internal/runtimeapi`
-  Local authenticated HTTP server and client used by skills and MCP proxies.
-- `internal/mcpserver`
-  Compatibility MCP surface. Media/file tools prefer the runtime HTTP API and fall back to direct sender behavior.
+  Local authenticated HTTP server and client used by skills.
 - `skills/`
-  Runtime-facing operational skills such as `alice-memory`, `alice-scheduler`, and `alice-code-army`.
+  Runtime-facing operational skills such as `alice-memory`, `alice-message`, `alice-scheduler`, and `alice-code-army`.
 
 ## Prompt system
 
@@ -59,7 +57,6 @@ Key behaviors:
 
 - Shared high-level `llm.Backend` contract remains stable.
 - `kimi` uses the local `kimi` CLI in print/stream-json mode and reuses Alice session ids as Kimi session ids.
-- Providers that do not support MCP registration, such as `kimi`, simply skip MCP auto-registration.
 
 ## Runtime HTTP API
 
@@ -88,9 +85,11 @@ If `runtime_http_token` is omitted, the connector generates a per-process token 
 Operational modules are now exposed as skills instead of being reachable only through MCP tools:
 
 - `skills/alice-memory`
-  Inspect/update current chat memory through `scripts/alice-memory.sh`.
+  Inspect/update current chat memory through `alice-connector runtime memory ...`.
+- `skills/alice-message`
+  Send text/image/file through `alice-connector runtime message ...`.
 - `skills/alice-scheduler`
-  Manage automation tasks and workflow status through `scripts/alice-scheduler.sh`.
+  Manage automation tasks and workflow status through `alice-connector runtime automation ...` and `workflow ...`.
 - `skills/alice-code-army`
   Now composes with `alice-scheduler` instead of invoking MCP automation tools directly.
 
@@ -98,17 +97,18 @@ These skills rely on:
 
 - `ALICE_RUNTIME_API_BASE_URL`
 - `ALICE_RUNTIME_API_TOKEN`
+- `ALICE_RUNTIME_BIN`
 - existing session env such as `ALICE_MCP_RECEIVE_ID`, `ALICE_MCP_SESSION_KEY`, and related actor metadata
 
 ## MCP strategy
 
-MCP is no longer the preferred extension surface for Alice business operations.
+Alice no longer exposes business operations through MCP.
 
 Current posture:
 
-- Skills + runtime HTTP are the primary path for memory/scheduling/workflow operations.
-- `alice-mcp-server` remains available for compatibility.
-- `send_image` and `send_file` now prefer the runtime HTTP client path and fall back to direct sender behavior when the local runtime API is unavailable.
+- Skills + runtime HTTP are the primary path for memory/scheduling/workflow/message operations.
+- Bundled skills call the same `alice-connector` binary with `runtime ...` arguments.
+- The remaining `mcp` naming is limited to session-context env keys such as `ALICE_MCP_RECEIVE_ID`, which are still used as stable runtime context variables.
 
 This keeps legacy Codex MCP behavior alive while reducing duplication between skills and MCP handlers.
 
@@ -154,7 +154,7 @@ Actively used:
 2. Connector serializes work per session and builds per-run env.
 3. Env includes current chat context plus runtime HTTP auth.
 4. LLM backend renders prompt templates from disk and runs `codex`/`claude`/`kimi`.
-5. Skills invoked by the agent call the runtime HTTP API through bundled shell scripts.
+5. Skills invoked by the agent call `alice-connector runtime ...`, which then talks to the runtime HTTP API.
 6. Runtime HTTP API operates memory, automation, and message sending using the same session context.
 7. Automation tasks are persisted in `automation.db` through `bbolt`, migrating legacy JSON snapshots on first open.
 8. Runtime logs are emitted through `zerolog`, with optional file rotation handled by `lumberjack`.

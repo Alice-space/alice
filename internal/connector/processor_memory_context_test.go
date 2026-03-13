@@ -36,7 +36,7 @@ func TestProcessor_UsesMemoryPromptAndSavesInteraction(t *testing.T) {
 	if memory.lastBuildScope != "chat_id:oc_chat" {
 		t.Fatalf("unexpected memory build scope: %q", memory.lastBuildScope)
 	}
-	if !strings.Contains(memory.lastBuildInput, "send_image/send_file 无需传 receive_id_type、receive_id、source_message_id") ||
+	if !strings.Contains(memory.lastBuildInput, "alice-message skill") ||
 		!strings.Contains(memory.lastBuildInput, "hello") {
 		t.Fatalf("first memory build input should include concise tool hint and user text, got: %q", memory.lastBuildInput)
 	}
@@ -256,7 +256,7 @@ func TestProcessor_ReplyParentContextFetchFailureFallsBackToUserText(t *testing.
 		Text:                 "继续",
 	})
 
-	if !strings.Contains(fakeCodex.lastInput, "send_image/send_file 无需传 receive_id_type、receive_id、source_message_id") ||
+	if !strings.Contains(fakeCodex.lastInput, "alice-message skill") ||
 		!strings.Contains(fakeCodex.lastInput, "继续") {
 		t.Fatalf("expected fallback input to include concise tool hint and user text, got: %s", fakeCodex.lastInput)
 	}
@@ -308,7 +308,7 @@ func TestProcessor_ResumesCodexThreadWithinSameSession(t *testing.T) {
 	if len(fakeCodex.receivedInputs) != 2 {
 		t.Fatalf("expected 2 codex inputs, got %d", len(fakeCodex.receivedInputs))
 	}
-	if !strings.Contains(fakeCodex.receivedInputs[0], "send_image/send_file 无需传 receive_id_type、receive_id、source_message_id") ||
+	if !strings.Contains(fakeCodex.receivedInputs[0], "alice-message skill") ||
 		!strings.Contains(fakeCodex.receivedInputs[0], "A") {
 		t.Fatalf("first input should include concise mcp auto-route hint and first text, got %q", fakeCodex.receivedInputs[0])
 	}

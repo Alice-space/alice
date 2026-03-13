@@ -55,6 +55,12 @@ go build -o bin/alice-connector ./cmd/connector
 ./bin/alice-connector -c config.yaml
 ```
 
+同一个二进制还提供给 skill 使用的 runtime CLI：
+
+```bash
+./bin/alice-connector runtime memory context
+```
+
 ## 提交前检查
 
 手动运行全部检查：
@@ -87,6 +93,11 @@ make precommit-install
 本仓库已内置可复用 skill（目录 [`skills/`](./skills)）：
 
 - `alice-codebase-onboarding`
+- `alice-memory`
+- `alice-message`
+- `alice-scheduler`
+- `alice-code-army`
+- `file-printing`
 - `feishu-task`
 
 连接器启动时会自动把仓库内全部自带 skill 链接到 `$CODEX_HOME/skills`（默认 `~/.codex/skills`）。若同名目录已存在且不是软链接，会先自动备份一次再替换为软链接。
@@ -117,9 +128,8 @@ claude_command: "claude"
 claude_timeout_secs: 120
 kimi_command: "kimi"
 kimi_timeout_secs: 120
-codex_mcp_auto_register: true
-codex_mcp_register_strict: false
-codex_mcp_server_name: "alice-feishu"
+runtime_http_addr: "127.0.0.1:7331"
+runtime_http_token: ""
 workspace_dir: "."
 env:
   HTTPS_PROXY: "http://127.0.0.1:7890"
@@ -157,13 +167,11 @@ log_compress: false
 
 - `llm_provider`：LLM 后端类型选择。支持 `codex`（默认）、`claude`、`kimi`。
 - `codex_command` / `codex_timeout_secs`、`claude_command` / `claude_timeout_secs`、`kimi_command` / `kimi_timeout_secs`：对应后端 CLI 命令路径与超时秒数。
+- `runtime_http_addr` / `runtime_http_token`：Alice 本地 runtime HTTP API 的监听地址和鉴权 token。若 `runtime_http_token` 为空，Alice 会在每次启动时自动生成一个 token 并注入 agent 环境变量。
 - `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
 - `codex_prompt_prefix` / `claude_prompt_prefix` / `kimi_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
 - `immediate_feedback_mode`：收到引用回复消息后给用户的即时反馈方式。支持 `reply`（默认，直接回复 `收到！`）和 `reaction`（优先给原消息加表情，失败再回退 `收到！`）。
 - `immediate_feedback_reaction`：`immediate_feedback_mode=reaction` 时使用的飞书 reaction 类型，默认 `SMILE`。
-- `codex_mcp_auto_register`：启动时是否自动执行 `codex mcp add` 或 `claude mcp add` 注册内置 `alice-mcp-server`（默认 `true`）。
-- `codex_mcp_register_strict`：为 `true` 时，MCP 注册失败将导致启动失败；为 `false` 时仅记录告警并继续启动（默认 `false`）。
-- `codex_mcp_server_name`：注册到 LLM MCP 的服务名（默认 `alice-feishu`）。
 - `automation_task_timeout_secs`：单次自动化用户任务（`send_text`/`run_llm`）的执行超时秒数，默认 `600`。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
 - `group_context_window_minutes`：群聊未触发消息的缓存窗口（分钟，默认 `5`）。窗口内文本与多媒体会在后续触发时并入上下文（`at`/`prefix` 模式）。
@@ -206,7 +214,7 @@ log_compress: false
 - 若某聊天连续空闲达到 `idle_summary_hours`（默认 8 小时），后台会异步 resume 该线程并将“空闲摘要”追加到 `daily/YYYY-MM-DD.md`，同一段空闲期仅写一次。
 - 消息主处理路径不会等待空闲摘要落盘，新消息会被立即处理。
 - 在“引用回复”链路里，机器人会优先使用“话题回复”（`reply_in_thread=true`）发送收到/进度/结果；若飞书拒绝话题模式，则自动回退普通引用回复。
-- 对于 MCP `alice-feishu` 工具（`send_image`/`send_file`），发送目标始终由当前会话上下文自动决定，且不能由工具参数覆盖：私聊发送到当前私聊；群聊/话题群存在 `source_message_id` 时按该消息引用回复（优先 thread）。
+- 仓库自带 skill 通过本地 runtime HTTP API 发送文本/图片/文件，发送目标始终由当前会话上下文自动决定：私聊发送到当前私聊；群聊/话题群存在 `source_message_id` 时按该消息引用回复（优先 thread）。
 - 收到用户消息后，机器人会按 `immediate_feedback_mode` 立即反馈：默认引用回复 `收到！`，也可改成优先给原消息添加 reaction。
 - Codex 执行期间，流式 `agent_message` 会优先以卡片回复；若卡片失败，会依次回退到富文本（`post`）和纯文本回复。
 - 若回复内容中包含可解析的 @提及，连接器会直接发送纯文本消息（不走卡片/富文本），以确保飞书侧正确触发 mention。
@@ -227,7 +235,7 @@ log_compress: false
 ## 项目结构
 
 - `cmd/connector/main.go`：启动与生命周期
-- `cmd/alice-mcp-server/main.go`：注册到 Codex 的 MCP 服务入口
+- `cmd/connector/runtime_*.go`：挂在同一个 `alice-connector` 二进制上的 skill 运行时子命令
 - `internal/config/config.go`：配置文件读取与校验（`viper`）
 - `internal/bootstrap/`：两个二进制共享的启动/装配辅助模块，包含分阶段 connector runtime builder
 - `internal/automation/`：Alice 自动化任务的调度、存储与执行

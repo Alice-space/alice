@@ -37,6 +37,7 @@ type Engine struct {
 	sender          TextSender
 	llmRunner       LLMRunner
 	workflowRunner  WorkflowRunner
+	runEnv          map[string]string
 	userTaskTimeout time.Duration
 	tick            time.Duration
 	maxClaim        int
@@ -84,6 +85,25 @@ func (e *Engine) SetWorkflowRunner(runner WorkflowRunner) {
 		return
 	}
 	e.workflowRunner = runner
+}
+
+func (e *Engine) SetRunEnv(env map[string]string) {
+	if e == nil {
+		return
+	}
+	if len(env) == 0 {
+		e.runEnv = nil
+		return
+	}
+	e.runEnv = make(map[string]string, len(env))
+	for key, value := range env {
+		key = strings.TrimSpace(key)
+		value = strings.TrimSpace(value)
+		if key == "" || value == "" {
+			continue
+		}
+		e.runEnv[key] = value
+	}
 }
 
 func (e *Engine) SetUserTaskTimeout(timeout time.Duration) {
@@ -285,7 +305,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			UserText:  prompt,
 			Model:     task.Action.Model,
 			Profile:   task.Action.Profile,
-			Env:       buildTaskRunEnv(task),
+			Env:       e.buildTaskRunEnv(task),
 		})
 		if err != nil {
 			return taskDispatch{}, err
@@ -323,7 +343,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			Prompt:   prompt,
 			Model:    task.Action.Model,
 			Profile:  task.Action.Profile,
-			Env:      buildTaskRunEnv(task),
+			Env:      e.buildTaskRunEnv(task),
 		})
 		if err != nil {
 			return taskDispatch{}, err
@@ -400,7 +420,7 @@ func renderActionTemplate(raw string, now time.Time) string {
 	return strings.TrimSpace(rendered)
 }
 
-func buildTaskRunEnv(task Task) map[string]string {
+func (e *Engine) buildTaskRunEnv(task Task) map[string]string {
 	task = NormalizeTask(task)
 	ctx := mcpbridge.SessionContext{
 		ReceiveIDType: task.Route.ReceiveIDType,
@@ -418,7 +438,14 @@ func buildTaskRunEnv(task Task) map[string]string {
 	if err := ctx.Validate(); err != nil {
 		return nil
 	}
-	return ctx.ToEnv()
+	env := ctx.ToEnv()
+	for key, value := range e.runEnv {
+		if strings.TrimSpace(key) == "" || strings.TrimSpace(value) == "" {
+			continue
+		}
+		env[key] = value
+	}
+	return env
 }
 
 func buildMarkdownCardContent(markdown string) string {

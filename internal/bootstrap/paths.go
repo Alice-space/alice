@@ -4,6 +4,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/Alice-space/alice/internal/runtimeapi"
 )
 
 func ResolveMemoryDir(workspaceDir, memoryDir string) string {
@@ -50,16 +52,20 @@ func ResolveConfigPath(configPath string) string {
 	return abs
 }
 
-func ResolveMCPServerCommand(configAbsPath string) string {
-	if executablePath, err := os.Executable(); err == nil {
-		sibling := filepath.Join(filepath.Dir(executablePath), "alice-mcp-server")
-		if stat, statErr := os.Stat(sibling); statErr == nil && !stat.IsDir() {
-			return sibling
-		}
+func ResolveRuntimeBinary(workspaceDir string) string {
+	if override := strings.TrimSpace(os.Getenv(runtimeapi.EnvBin)); override != "" {
+		return override
 	}
-	configDir := filepath.Dir(strings.TrimSpace(configAbsPath))
-	if configDir == "" {
-		configDir = "."
+	if executablePath, err := os.Executable(); err == nil && strings.TrimSpace(executablePath) != "" {
+		return executablePath
 	}
-	return filepath.Join(configDir, "bin", "alice-mcp-server")
+	base := strings.TrimSpace(workspaceDir)
+	if base == "" {
+		base = "."
+	}
+	candidate := filepath.Join(base, "bin", "alice-connector")
+	if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
+		return candidate
+	}
+	return ""
 }

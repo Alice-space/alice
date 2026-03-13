@@ -324,11 +324,6 @@ func isBuiltinCommandEvent(event *larkim.P2MessageReceiveV1) bool {
 	return isBuiltinCommandText(job.Text)
 }
 
-func isBuiltinCommandText(text string) bool {
-	_, ok := parseCodeArmyCommand(text)
-	return ok
-}
-
 func trimGroupTriggerPrefix(text, triggerPrefix string) string {
 	trimmedText := strings.TrimSpace(text)
 	prefix := strings.TrimSpace(triggerPrefix)

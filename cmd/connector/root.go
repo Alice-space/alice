@@ -5,7 +5,6 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -35,6 +34,7 @@ func newRootCmd() *cobra.Command {
 			return runConnector(configPath)
 		},
 	})
+	root.AddCommand(newRuntimeCmd())
 	return root
 }
 
@@ -74,20 +74,6 @@ func runConnector(configPath string) error {
 			skillReport.Unchanged,
 			skillReport.Failed,
 		)
-	}
-
-	if cfg.CodexMCPAutoRegister {
-		mcpRegisterCtx, cancelRegister := context.WithTimeout(context.Background(), 20*time.Second)
-		err = bootstrap.RegisterMCPServer(mcpRegisterCtx, llmProvider, cfg, configPath)
-		cancelRegister()
-		if err != nil {
-			if cfg.CodexMCPRegisterStrict {
-				return err
-			}
-			logging.Warnf("register llm mcp server failed but ignored: %v", err)
-		} else {
-			logging.Infof("llm mcp server ready name=%s", cfg.CodexMCPServerName)
-		}
 	}
 
 	runtime, err := bootstrap.BuildConnectorRuntime(cfg, llmProvider)

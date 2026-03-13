@@ -7,11 +7,11 @@ runtime_bin="${ALICE_RUNTIME_BIN:-}"
 repo_bin="$repo_root/bin/alice-connector"
 
 if [[ -n "$runtime_bin" ]]; then
-  exec "$runtime_bin" runtime memory "$@"
+  exec "$runtime_bin" runtime message "$@"
 fi
 
 if [[ -x "$repo_bin" ]]; then
-  exec "$repo_bin" runtime memory "$@"
+  exec "$repo_bin" runtime message "$@"
 fi
 
-exec alice-connector runtime memory "$@"
+exec alice-connector runtime message "$@"

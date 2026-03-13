@@ -599,31 +599,35 @@ func TestShouldProcessIncomingMessage_GroupPrefixModeRequiresPrefixOrMention(t *
 }
 
 func TestShouldProcessIncomingMessage_BuiltinCommandBypassesGroupTrigger(t *testing.T) {
-	event := &larkim.P2MessageReceiveV1{
-		Event: &larkim.P2MessageReceiveV1Data{
-			Message: &larkim.EventMessage{
-				ChatType:    strPtr("group"),
-				MessageType: strPtr("text"),
-				Content:     strPtr(`{"text":"/codearmy status"}`),
-				ChatId:      strPtr("oc_chat"),
+	for _, text := range []string{"/codearmy status", "/help"} {
+		event := &larkim.P2MessageReceiveV1{
+			Event: &larkim.P2MessageReceiveV1Data{
+				Message: &larkim.EventMessage{
+					ChatType:    strPtr("group"),
+					MessageType: strPtr("text"),
+					Content:     strPtr(`{"text":"` + text + `"}`),
+					ChatId:      strPtr("oc_chat"),
+				},
 			},
-		},
-	}
+		}
 
-	if !shouldProcessIncomingMessage(event, "prefix", "!alice", "", "") {
-		t.Fatal("builtin slash command should be processed before normal group trigger matching")
+		if !shouldProcessIncomingMessage(event, "prefix", "!alice", "", "") {
+			t.Fatalf("builtin slash command %q should be processed before normal group trigger matching", text)
+		}
 	}
 }
 
 func TestNormalizeIncomingGroupJobTextForTriggerMode_PreservesBuiltinCommand(t *testing.T) {
-	job := &Job{
-		ChatType: "group",
-		Text:     "/codearmy status",
-	}
+	for _, text := range []string{"/codearmy status", "/help"} {
+		job := &Job{
+			ChatType: "group",
+			Text:     text,
+		}
 
-	normalizeIncomingGroupJobTextForTriggerMode(job, "prefix", "/")
+		normalizeIncomingGroupJobTextForTriggerMode(job, "prefix", "/")
 
-	if job.Text != "/codearmy status" {
-		t.Fatalf("expected builtin command text to stay intact, got %q", job.Text)
+		if job.Text != text {
+			t.Fatalf("expected builtin command text to stay intact, got %q", job.Text)
+		}
 	}
 }

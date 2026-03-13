@@ -1,0 +1,4 @@
+interface:
+  display_name: "Alice Message"
+  short_description: "向当前 Alice 会话发送文本、图片或文件"
+  default_prompt: "Use $alice-message to send text, images, or files into the current Alice chat."

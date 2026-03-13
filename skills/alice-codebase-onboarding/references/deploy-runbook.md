@@ -26,7 +26,7 @@ Use one command for pull/build/restart/sync snapshot:
 This command handles:
 
 - repository update (`git pull --ff-only`)
-- binaries build (`bin/alice-connector`, `bin/alice-mcp-server`)
+- binary build (`bin/alice-connector`, including `runtime` subcommands for bundled skills)
 - user service restart (`systemctl --user restart --no-block alice-codex-connector.service`)
 - sync snapshot write (default: `$CODEX_HOME/state/alice/sync-state.md`)
 

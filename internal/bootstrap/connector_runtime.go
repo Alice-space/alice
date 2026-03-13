@@ -55,22 +55,6 @@ func NewLLMProvider(cfg config.Config) (llm.Provider, error) {
 	return llm.NewProvider(buildFactoryConfig(cfg, prompting.NewLoader(promptDir)))
 }
 
-func RegisterMCPServer(ctx context.Context, provider llm.Provider, cfg config.Config, configPath string) error {
-	if provider == nil {
-		return errors.New("llm provider is nil")
-	}
-	registrar := provider.MCPRegistrar()
-	if registrar == nil {
-		return nil
-	}
-	configAbsPath := ResolveConfigPath(configPath)
-	return registrar.EnsureMCPServerRegistered(ctx, llm.MCPRegistration{
-		ServerName:    cfg.CodexMCPServerName,
-		ServerCommand: ResolveMCPServerCommand(configAbsPath),
-		ServerArgs:    []string{"-c", configAbsPath},
-	})
-}
-
 func BuildConnectorRuntime(cfg config.Config, provider llm.Provider) (*ConnectorRuntime, error) {
 	builder, err := newConnectorRuntimeBuilder(cfg, provider)
 	if err != nil {

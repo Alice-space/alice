@@ -67,7 +67,7 @@ func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID
 		)
 		return userText
 	}
-	userText = appendMCPToolContextHint(userText, job)
+	userText = appendRuntimeSkillHint(userText, job)
 
 	logging.Debugf("prompt assemble start event_id=%s memory_enabled=%t user_text=%q", job.EventID, p.memory != nil, userText)
 	if p.memory == nil {
@@ -85,12 +85,12 @@ func (p *Processor) buildPromptWithMemory(ctx context.Context, job Job, threadID
 	return prompt
 }
 
-func appendMCPToolContextHint(userText string, job Job) string {
+func appendRuntimeSkillHint(userText string, job Job) string {
 	if strings.TrimSpace(job.SourceMessageID) == "" {
 		return userText
 	}
 
-	hint := "工具调用说明：alice-feishu 的 send_image/send_file 无需传 receive_id_type、receive_id、source_message_id，系统会按当前会话自动路由。\n\n"
+	hint := "当前会话操作说明：发文本/图片/文件请使用 alice-message skill；memory 和定时任务请使用 alice-memory / alice-scheduler / alice-code-army skills。所有这些能力都通过 Alice 本地 HTTP API 自动路由，无需手动传 receive_id 或 source_message_id。\n\n"
 	return hint + strings.TrimSpace(userText)
 }
 
@@ -188,6 +188,9 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 	}
 	if strings.TrimSpace(p.runtimeAPIToken) != "" {
 		env[runtimeapi.EnvToken] = strings.TrimSpace(p.runtimeAPIToken)
+	}
+	if strings.TrimSpace(p.runtimeAPIBin) != "" {
+		env[runtimeapi.EnvBin] = strings.TrimSpace(p.runtimeAPIBin)
 	}
 	return env
 }

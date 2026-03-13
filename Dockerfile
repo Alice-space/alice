@@ -10,8 +10,7 @@ COPY go.mod go.sum ./
 RUN go mod download
 
 COPY . .
-RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/alice-connector ./cmd/connector && \
-    CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/alice-mcp-server ./cmd/alice-mcp-server
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags='-s -w' -o /out/alice-connector ./cmd/connector
 
 FROM node:${NODE_VERSION}-bookworm-slim AS runtime
 ENV DEBIAN_FRONTEND=noninteractive
@@ -36,7 +35,6 @@ ENV HOME=/home/alice \
 WORKDIR /app
 
 COPY --from=builder /out/alice-connector /usr/local/bin/alice-connector
-COPY --from=builder /out/alice-mcp-server /usr/local/bin/alice-mcp-server
 COPY config.example.yaml /app/config.yaml
 COPY skills /app/skills
 

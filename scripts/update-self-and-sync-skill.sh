@@ -124,7 +124,6 @@ STATE
 (
   cd "$repo"
   go build -o bin/alice-connector ./cmd/connector
-  go build -o bin/alice-mcp-server ./cmd/alice-mcp-server
 )
 
 if command -v systemctl >/dev/null 2>&1; then

@@ -45,16 +45,11 @@ type KimiConfig struct {
 }
 
 type providerBundle struct {
-	backend      Backend
-	mcpRegistrar MCPRegistrar
+	backend Backend
 }
 
 func (p providerBundle) Backend() Backend {
 	return p.backend
-}
-
-func (p providerBundle) MCPRegistrar() MCPRegistrar {
-	return p.mcpRegistrar
 }
 
 func NewProvider(cfg FactoryConfig) (Provider, error) {
@@ -63,18 +58,15 @@ func NewProvider(cfg FactoryConfig) (Provider, error) {
 	switch provider {
 	case ProviderCodex:
 		return providerBundle{
-			backend:      newCodexBackend(cfg.Codex, cfg.Prompts),
-			mcpRegistrar: newCodexMCPRegistrar(cfg.Codex),
+			backend: newCodexBackend(cfg.Codex, cfg.Prompts),
 		}, nil
 	case ProviderClaude:
 		return providerBundle{
-			backend:      newClaudeBackend(cfg.Claude, cfg.Prompts),
-			mcpRegistrar: newClaudeMCPRegistrar(cfg.Claude),
+			backend: newClaudeBackend(cfg.Claude, cfg.Prompts),
 		}, nil
 	case ProviderKimi:
 		return providerBundle{
-			backend:      newKimiBackend(cfg.Kimi, cfg.Prompts),
-			mcpRegistrar: nil,
+			backend: newKimiBackend(cfg.Kimi, cfg.Prompts),
 		}, nil
 	default:
 		return nil, fmt.Errorf("unsupported llm_provider %q", provider)
@@ -87,18 +79,6 @@ func NewBackend(cfg FactoryConfig) (Backend, error) {
 		return nil, err
 	}
 	return provider.Backend(), nil
-}
-
-func NewMCPRegistrar(cfg FactoryConfig) (MCPRegistrar, error) {
-	provider, err := NewProvider(cfg)
-	if err != nil {
-		return nil, err
-	}
-	registrar := provider.MCPRegistrar()
-	if registrar == nil {
-		return nil, fmt.Errorf("llm_provider %q does not support mcp registration", normalizeProvider(cfg.Provider))
-	}
-	return registrar, nil
 }
 
 func normalizeProvider(provider string) string {

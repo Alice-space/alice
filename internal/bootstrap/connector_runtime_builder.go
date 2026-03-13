@@ -142,7 +142,11 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 	)
 	processor.SetCodeArmyCommandDependencies(codearmy.NewInspector(b.paths.codeArmyStateDir), b.automationStore)
 	processor.SetImmediateFeedback(b.cfg.ImmediateFeedbackMode, b.cfg.ImmediateFeedbackReaction)
-	processor.SetRuntimeAPI(runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr), b.resolveRuntimeAPIToken())
+	processor.SetRuntimeAPI(
+		runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
+		b.resolveRuntimeAPIToken(),
+		ResolveRuntimeBinary(b.cfg.WorkspaceDir),
+	)
 	loadOptionalState("session state", b.paths.sessionStatePath, processor.LoadSessionState)
 	b.processor = processor
 	return nil
@@ -163,6 +167,11 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 	automationEngine.SetUserTaskTimeout(b.cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(b.backend)
 	automationEngine.SetWorkflowRunner(codearmy.NewRunner(b.paths.codeArmyStateDir, b.backend, b.promptLoader))
+	automationEngine.SetRunEnv(map[string]string{
+		runtimeapi.EnvBaseURL: runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
+		runtimeapi.EnvToken:   b.resolveRuntimeAPIToken(),
+		runtimeapi.EnvBin:     ResolveRuntimeBinary(b.cfg.WorkspaceDir),
+	})
 
 	if err := automationEngine.RegisterSystemTask("system.idle_summary_scan", 60*time.Second, func(runCtx context.Context) {
 		b.processor.RunIdleSummaryScan(runCtx, b.cfg.IdleSummaryIdle)

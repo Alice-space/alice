@@ -84,15 +84,6 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if cfg.CodexPromptPrefix != "" {
 		t.Fatalf("unexpected codex_prompt_prefix: %q", cfg.CodexPromptPrefix)
 	}
-	if !cfg.CodexMCPAutoRegister {
-		t.Fatal("codex_mcp_auto_register should default to true")
-	}
-	if cfg.CodexMCPRegisterStrict {
-		t.Fatal("codex_mcp_register_strict should default to false")
-	}
-	if cfg.CodexMCPServerName != "alice-feishu" {
-		t.Fatalf("unexpected codex_mcp_server_name: %q", cfg.CodexMCPServerName)
-	}
 	if len(cfg.CodexEnv) != 0 {
 		t.Fatalf("unexpected codex_env: %#v", cfg.CodexEnv)
 	}

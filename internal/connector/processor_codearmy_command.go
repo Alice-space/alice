@@ -37,17 +37,6 @@ func (p *Processor) SetCodeArmyCommandDependencies(inspector *codearmy.Inspector
 	p.automationStore = store
 }
 
-func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, JobProcessState) {
-	cmd, ok := parseCodeArmyCommand(job.Text)
-	if !ok {
-		return false, JobProcessCompleted
-	}
-	if cmd.action != "status" {
-		return false, JobProcessCompleted
-	}
-	return true, p.processCodeArmyStatusCommand(ctx, job, cmd.stateKey)
-}
-
 func parseCodeArmyCommand(text string) (codeArmyCommand, bool) {
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) < 2 {
