@@ -10,8 +10,8 @@ skip_restart=0
 restart_cmd="${ALICE_RESTART_CMD:-}"
 
 alice_home="${ALICE_HOME:-${HOME}/.alice}"
-install_bin="$alice_home/bin/alice-connector"
-pid_file="$alice_home/run/alice-connector.pid"
+install_bin="$alice_home/bin/alice"
+pid_file="$alice_home/run/alice.pid"
 
 if [[ -n "${CODEX_HOME:-}" ]]; then
   default_codex_home="$CODEX_HOME"
@@ -28,8 +28,8 @@ Usage:
 Options:
   --repo PATH             Target alice repository path (default: infer from script location)
   --service NAME          User systemd service name (default: alice-codex-connector.service)
-  --install-bin PATH      Install target binary path (default: $ALICE_HOME/bin/alice-connector)
-  --pid-file PATH         Runtime pid file path for non-systemd mode (default: $ALICE_HOME/run/alice-connector.pid)
+  --install-bin PATH      Install target binary path (default: $ALICE_HOME/bin/alice)
+  --pid-file PATH         Runtime pid file path for non-systemd mode (default: $ALICE_HOME/run/alice.pid)
   --restart-cmd CMD       Custom restart command (highest priority when restart is enabled)
   --sync-state-file PATH  Sync snapshot markdown path (default: $CODEX_HOME/state/alice/sync-state.md or $ALICE_HOME/.codex/state/alice/sync-state.md)
   --skip-pull             Skip git pull (still build/restart/sync)

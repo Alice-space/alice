@@ -69,7 +69,7 @@ func ResolveRuntimeBinary(workspaceDir string) string {
 	if base == "" {
 		base = config.DefaultWorkspaceDir()
 	}
-	candidate := filepath.Join(base, "bin", "alice-connector")
+	candidate := filepath.Join(base, "bin", "alice")
 	if stat, err := os.Stat(candidate); err == nil && !stat.IsDir() {
 		return candidate
 	}

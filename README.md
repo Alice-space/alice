@@ -22,7 +22,7 @@ A Feishu long-connection connector for Codex / Claude / Kimi.
 By default Alice uses:
 
 - Config: `${ALICE_HOME:-~/.alice}/config.yaml`
-- Binary: `${ALICE_HOME:-~/.alice}/bin/alice-connector`
+- Binary: `${ALICE_HOME:-~/.alice}/bin/alice`
 - Runtime state: `${ALICE_HOME:-~/.alice}/memory/`
 - Bundled skills: `${CODEX_HOME:-${ALICE_HOME:-~/.alice}/.codex}/skills/`
 
@@ -53,7 +53,7 @@ go run ./cmd/connector
 This mode is for production/runtime hosts where you only keep the binary and runtime files.
 
 1. Download a release asset from GitHub Releases (`linux_amd64`, `linux_arm64`, `darwin_*`, `windows_amd64`).
-2. Place it under `${ALICE_HOME:-~/.alice}/bin/alice-connector`.
+2. Place it under `${ALICE_HOME:-~/.alice}/bin/alice`.
 3. Create `${ALICE_HOME:-~/.alice}/config.yaml`.
 4. Run the binary directly.
 
@@ -65,12 +65,12 @@ mkdir -p "$ALICE_HOME/bin" "$ALICE_HOME/logs"
 
 # Replace VERSION with an actual tag, for example v1.2.3
 VERSION="vX.Y.Z"
-ASSET="alice-connector_${VERSION}_linux_amd64.tar.gz"
+ASSET="alice_${VERSION}_linux_amd64.tar.gz"
 
 curl -fL "https://github.com/Alice-space/alice/releases/download/${VERSION}/${ASSET}" -o "/tmp/${ASSET}"
 tar -xzf "/tmp/${ASSET}" -C "$ALICE_HOME/bin"
-mv "$ALICE_HOME/bin/alice-connector_${VERSION}_linux_amd64" "$ALICE_HOME/bin/alice-connector"
-chmod +x "$ALICE_HOME/bin/alice-connector"
+mv "$ALICE_HOME/bin/alice_${VERSION}_linux_amd64" "$ALICE_HOME/bin/alice"
+chmod +x "$ALICE_HOME/bin/alice"
 ```
 
 Create config (`$ALICE_HOME/config.yaml`):
@@ -89,19 +89,19 @@ prompt_dir: ""
 Run foreground:
 
 ```bash
-ALICE_HOME="$HOME/.alice" "$HOME/.alice/bin/alice-connector"
+ALICE_HOME="$HOME/.alice" "$HOME/.alice/bin/alice"
 ```
 
 Run background (without systemd):
 
 ```bash
-nohup env ALICE_HOME="$HOME/.alice" "$HOME/.alice/bin/alice-connector" \
+nohup env ALICE_HOME="$HOME/.alice" "$HOME/.alice/bin/alice" \
   >"$HOME/.alice/logs/connector.log" 2>&1 &
 ```
 
 Notes:
 
-- Alice writes pid file by default at `${ALICE_HOME}/run/alice-connector.pid`.
+- Alice writes pid file by default at `${ALICE_HOME}/run/alice.pid`.
 - On startup, embedded skills are materialized to `${CODEX_HOME}/skills`.
 - Legacy skill symlinks are auto-migrated to real directories.
 

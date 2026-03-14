@@ -25,7 +25,7 @@ func newRootCmd() *cobra.Command {
 	configPath := config.DefaultConfigPath()
 	pidFilePath := config.DefaultPIDFilePath()
 	root := &cobra.Command{
-		Use:           "alice-connector",
+		Use:           "alice",
 		Short:         "Run the Alice Feishu connector",
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -234,7 +234,7 @@ func preparePIDFile(path string) (func(), error) {
 
 	existingPID, err := readPIDFile(absPath)
 	if err == nil && existingPID > 0 && existingPID != os.Getpid() && isProcessRunning(existingPID) {
-		return nil, fmt.Errorf("alice-connector is already running pid=%d pid_file=%s", existingPID, absPath)
+		return nil, fmt.Errorf("alice is already running pid=%d pid_file=%s", existingPID, absPath)
 	}
 
 	selfPID := os.Getpid()

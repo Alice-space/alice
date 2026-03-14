@@ -52,7 +52,7 @@ Use this skill when the task is about the Alice repository or deployed runtime i
 - After updating, inspect `${CODEX_HOME:-${ALICE_HOME:-$HOME/.alice}/.codex}/state/alice/sync-state.md`.
 
 5. Remember the environment split.
-- Runtime skills (`alice-message`, `alice-memory`, `alice-scheduler`) resolve the connector binary via `ALICE_RUNTIME_BIN`, then `${ALICE_HOME:-$HOME/.alice}/bin/alice-connector`, then `PATH`.
+- Runtime skills (`alice-message`, `alice-memory`, `alice-scheduler`) resolve the connector binary via `ALICE_RUNTIME_BIN`, then `${ALICE_HOME:-$HOME/.alice}/bin/alice`, then `PATH`.
 - Normal runtime-skill execution does not require Go.
 - The canonical self-update path does require `git` and `go` on the target host because it rebuilds the runtime binary.
 

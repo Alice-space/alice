@@ -97,11 +97,11 @@ If `runtime_http_token` is omitted, the connector generates a per-process token 
 Operational modules are now exposed as skills instead of being reachable only through MCP tools:
 
 - `skills/alice-memory`
-  Inspect/update current chat memory through `alice-connector runtime memory ...`.
+  Inspect/update current chat memory through `alice runtime memory ...`.
 - `skills/alice-message`
-  Send text/image/file through `alice-connector runtime message ...`.
+  Send text/image/file through `alice runtime message ...`.
 - `skills/alice-scheduler`
-  Manage automation tasks and workflow status through `alice-connector runtime automation ...` and `workflow ...`.
+  Manage automation tasks and workflow status through `alice runtime automation ...` and `workflow ...`.
 - `skills/alice-code-army`
   Now composes with `alice-scheduler` instead of invoking MCP automation tools directly.
 
@@ -115,8 +115,8 @@ These skills rely on:
 Bundled runtime skill scripts resolve the runtime binary in this order:
 
 1. `ALICE_RUNTIME_BIN`
-2. `${ALICE_HOME:-$HOME/.alice}/bin/alice-connector`
-3. `alice-connector` from `PATH`
+2. `${ALICE_HOME:-$HOME/.alice}/bin/alice`
+3. `alice` from `PATH`
 
 ## MCP strategy
 
@@ -125,7 +125,7 @@ Alice no longer exposes business operations through MCP.
 Current posture:
 
 - Skills + runtime HTTP are the primary path for memory/scheduling/workflow/message operations.
-- Bundled skills call the same `alice-connector` binary with `runtime ...` arguments.
+- Bundled skills call the same `alice` binary with `runtime ...` arguments.
 - The remaining `mcp` naming is limited to session-context env keys such as `ALICE_MCP_RECEIVE_ID`, which are still used as stable runtime context variables.
 
 This preserves stable session env keys while avoiding duplicated business handlers across skills and core runtime code.
@@ -172,7 +172,7 @@ Actively used:
 2. Connector serializes work per session and builds per-run env.
 3. Env includes current chat context plus runtime HTTP auth.
 4. LLM backend renders prompt templates from disk and runs `codex`/`claude`/`kimi`.
-5. Skills invoked by the agent call `alice-connector runtime ...`, which then talks to the runtime HTTP API.
+5. Skills invoked by the agent call `alice runtime ...`, which then talks to the runtime HTTP API.
 6. Runtime HTTP API operates memory, automation, and message sending using the same session context.
 7. Automation tasks are persisted in `automation.db` through `bbolt`, migrating legacy JSON snapshots on first open.
 8. Runtime logs are emitted through `zerolog`, with optional file rotation handled by `lumberjack`.

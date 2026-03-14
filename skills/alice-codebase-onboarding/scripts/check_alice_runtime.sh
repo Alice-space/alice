@@ -8,8 +8,8 @@ repo="${ALICE_REPO:-$default_repo}"
 alice_home="${ALICE_HOME:-${HOME}/.alice}"
 codex_home="${CODEX_HOME:-$alice_home/.codex}"
 config_path="${ALICE_CONFIG:-$alice_home/config.yaml}"
-binary_path="${ALICE_RUNTIME_BIN:-$alice_home/bin/alice-connector}"
-pid_file="$alice_home/run/alice-connector.pid"
+binary_path="${ALICE_RUNTIME_BIN:-$alice_home/bin/alice}"
+pid_file="$alice_home/run/alice.pid"
 
 show_journal_lines=0
 service_name="${ALICE_SERVICE_NAME:-alice-codex-connector.service}"
@@ -22,8 +22,8 @@ Usage:
 Options:
   --repo PATH      Target alice repository path (optional)
   --config PATH    Runtime config path (default: $ALICE_HOME/config.yaml)
-  --binary PATH    Runtime connector binary path (default: $ALICE_HOME/bin/alice-connector)
-  --pid-file PATH  Runtime pid file path (default: $ALICE_HOME/run/alice-connector.pid)
+  --binary PATH    Runtime connector binary path (default: $ALICE_HOME/bin/alice)
+  --pid-file PATH  Runtime pid file path (default: $ALICE_HOME/run/alice.pid)
   --service NAME   Optional user systemd service name (default: alice-codex-connector.service)
   --journal N      Print last N lines of user service journal (0 disables, default: 0)
 USAGE

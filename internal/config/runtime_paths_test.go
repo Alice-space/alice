@@ -47,10 +47,10 @@ func TestDefaultRuntimePaths(t *testing.T) {
 	if got := DefaultPromptDir(); got != filepath.Join(aliceHome, "prompts") {
 		t.Fatalf("unexpected default prompt path: %q", got)
 	}
-	if got := DefaultPIDFilePath(); got != filepath.Join(aliceHome, "run", "alice-connector.pid") {
+	if got := DefaultPIDFilePath(); got != filepath.Join(aliceHome, "run", "alice.pid") {
 		t.Fatalf("unexpected default pid path: %q", got)
 	}
-	if got := DefaultRuntimeBinaryPath(); got != filepath.Join(aliceHome, "bin", "alice-connector") {
+	if got := DefaultRuntimeBinaryPath(); got != filepath.Join(aliceHome, "bin", "alice") {
 		t.Fatalf("unexpected default runtime binary path: %q", got)
 	}
 	if got := DefaultCodexHome(); got != filepath.Join(aliceHome, ".codex") {

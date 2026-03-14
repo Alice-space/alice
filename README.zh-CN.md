@@ -47,19 +47,19 @@ go run ./cmd/connector
 编译当前平台可执行文件：
 
 ```bash
-go build -o bin/alice-connector ./cmd/connector
+go build -o bin/alice ./cmd/connector
 ```
 
 运行：
 
 ```bash
-./bin/alice-connector
+./bin/alice
 ```
 
 同一个二进制还提供给 skill 使用的 runtime CLI：
 
 ```bash
-./bin/alice-connector runtime memory context
+./bin/alice runtime memory context
 ```
 
 ## 提交前检查
@@ -240,7 +240,7 @@ log_compress: false
 ## 项目结构
 
 - `cmd/connector/main.go`：启动与生命周期
-- `cmd/connector/runtime_*.go`：挂在同一个 `alice-connector` 二进制上的 skill 运行时子命令
+- `cmd/connector/runtime_*.go`：挂在同一个 `alice` 二进制上的 skill 运行时子命令
 - `internal/config/config.go`：配置文件读取与校验（`viper`）
 - `internal/bootstrap/`：两个二进制共享的启动/装配辅助模块，包含分阶段 connector runtime builder
 - `internal/automation/`：Alice 自动化任务的调度、存储与执行

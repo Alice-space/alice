@@ -3,7 +3,7 @@
 .PHONY: build run fmt fmt-check vet test secret-check check precommit-install
 
 build:
-	go build -o bin/alice-connector ./cmd/connector
+	go build -o bin/alice ./cmd/connector
 
 run:
 	go run ./cmd/connector

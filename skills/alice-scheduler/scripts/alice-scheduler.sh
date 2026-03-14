@@ -3,7 +3,7 @@ set -euo pipefail
 
 runtime_bin="${ALICE_RUNTIME_BIN:-}"
 alice_home="${ALICE_HOME:-$HOME/.alice}"
-home_bin="$alice_home/bin/alice-connector"
+home_bin="$alice_home/bin/alice"
 
 if [[ "${1:-}" == "code-army-status" ]]; then
   shift
@@ -13,7 +13,7 @@ if [[ "${1:-}" == "code-army-status" ]]; then
   if [[ -x "$home_bin" ]]; then
     exec "$home_bin" runtime workflow code-army-status "$@"
   fi
-  exec alice-connector runtime workflow code-army-status "$@"
+  exec alice runtime workflow code-army-status "$@"
 fi
 
 if [[ -n "$runtime_bin" ]]; then
@@ -24,4 +24,4 @@ if [[ -x "$home_bin" ]]; then
   exec "$home_bin" runtime automation "$@"
 fi
 
-exec alice-connector runtime automation "$@"
+exec alice runtime automation "$@"

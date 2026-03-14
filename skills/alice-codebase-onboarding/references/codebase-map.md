@@ -17,7 +17,7 @@ Purpose: Feishu bot connector that forwards user messages to Codex and sends rep
 - Start long-connection app loop.
 
 3. `cmd/connector/runtime_root.go`
-- Expose `alice-connector runtime ...` subcommands for bundled skills.
+- Expose `alice runtime ...` subcommands for bundled skills.
 - Load runtime HTTP auth and stable session context from env.
 - Reuse `internal/runtimeapi.Client` instead of shelling out curl or hand-written HTTP.
 

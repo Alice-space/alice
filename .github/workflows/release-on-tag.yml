@@ -67,7 +67,7 @@ jobs:
           DIST_DIR="dist"
           mkdir -p "$DIST_DIR"
 
-          BIN_NAME="alice-connector"
+          BIN_NAME="alice"
           EXT=""
           if [[ "${GOOS}" == "windows" ]]; then
             EXT=".exe"
@@ -89,7 +89,7 @@ jobs:
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: alice-connector-${{ matrix.goos }}-${{ matrix.goarch }}
+          name: alice-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
             dist/*.tar.gz
             dist/*.zip
@@ -102,7 +102,7 @@ jobs:
       - name: Download Build Artifacts
         uses: actions/download-artifact@v4
         with:
-          pattern: alice-connector-*
+          pattern: alice-*
           path: release-assets
           merge-multiple: true
 

@@ -35,7 +35,7 @@ The wrapper should only dispatch to the repo script. The repo script is the sour
 `scripts/update-self-and-sync-skill.sh` handles:
 
 - `git pull --ff-only` unless `--skip-pull`
-- `go build -o ${ALICE_HOME:-$HOME/.alice}/bin/alice-connector ./cmd/connector`
+- `go build -o ${ALICE_HOME:-$HOME/.alice}/bin/alice ./cmd/connector`
 - restart attempt (priority: `--restart-cmd` > systemd service > pid file stop/manual start) unless `--skip-restart`
 - sync snapshot write before/after restart attempt
 
@@ -63,8 +63,8 @@ If `go` is missing, the updater cannot rebuild the runtime binary; report that a
 Runtime skill execution is a different path:
 
 - bundled skills first honor `ALICE_RUNTIME_BIN`
-- then fall back to `${ALICE_HOME:-$HOME/.alice}/bin/alice-connector`
-- then `alice-connector` from `PATH`
+- then fall back to `${ALICE_HOME:-$HOME/.alice}/bin/alice`
+- then `alice` from `PATH`
 
 That means normal runtime skill usage does not imply a Go toolchain is present.
 
@@ -89,10 +89,10 @@ That means normal runtime skill usage does not imply a Go toolchain is present.
 
 3. Build and test
 - `go test ./...`
-- `go build -o "${ALICE_HOME:-$HOME/.alice}/bin/alice-connector" ./cmd/connector`
+- `go build -o "${ALICE_HOME:-$HOME/.alice}/bin/alice" ./cmd/connector`
 
 4. Foreground run
-- `./bin/alice-connector`
+- `./bin/alice`
 
 ## User-level systemd deployment
 
@@ -106,7 +106,7 @@ Core fields:
 - `Environment=ALICE_HOME=%h/.alice`
 - `Environment=HOME=%h`
 - `Environment=CODEX_HOME=%h/.alice/.codex`
-- `ExecStart=%h/.alice/bin/alice-connector -c %h/.alice/config.yaml`
+- `ExecStart=%h/.alice/bin/alice -c %h/.alice/config.yaml`
 - `Restart=always`
 
 Enable and start:
@@ -128,7 +128,7 @@ Restart after code/config update:
 ## Quick troubleshooting matrix
 
 1. Service inactive
-- `ls -l "${ALICE_HOME:-$HOME/.alice}/bin/alice-connector"`
+- `ls -l "${ALICE_HOME:-$HOME/.alice}/bin/alice"`
 - verify `ExecStart` path and working directory.
 
 2. Codex call fails

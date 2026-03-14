@@ -63,7 +63,7 @@ sudo -u codexbot -H bash -lc '
 sudo -u codexbot -H bash -lc '
   cd /home/codexbot/alice
   go mod tidy
-  go build -o /home/codexbot/.alice/bin/alice-connector ./cmd/connector
+  go build -o /home/codexbot/.alice/bin/alice ./cmd/connector
 '
 ```
 
@@ -110,7 +110,7 @@ sudo install -d -m 700 -o codexbot -g codexbot /home/codexbot/.alice/memory
 
 ```bash
 sudo -u codexbot -H env HOME=/home/codexbot CODEX_HOME=/home/codexbot/.alice/.codex \
-  bash -lc '/home/codexbot/.alice/bin/alice-connector -c /home/codexbot/.alice/config.yaml'
+  bash -lc '/home/codexbot/.alice/bin/alice -c /home/codexbot/.alice/config.yaml'
 ```
 
 说明：
@@ -143,7 +143,7 @@ WorkingDirectory=%h
 Environment=ALICE_HOME=%h/.alice
 Environment=HOME=%h
 Environment=CODEX_HOME=%h/.alice/.codex
-ExecStart=%h/.alice/bin/alice-connector -c %h/.alice/config.yaml
+ExecStart=%h/.alice/bin/alice -c %h/.alice/config.yaml
 Restart=always
 RestartSec=3
 NoNewPrivileges=yes

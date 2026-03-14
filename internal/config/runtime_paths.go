@@ -16,9 +16,9 @@ const (
 	defaultMemoryDirName       = "memory"
 	defaultPromptDirName       = "prompts"
 	defaultRunDirName          = "run"
-	defaultPIDFileName         = "alice-connector.pid"
+	defaultPIDFileName         = "alice.pid"
 	defaultBinaryDirName       = "bin"
-	defaultConnectorBinaryName = "alice-connector"
+	defaultConnectorBinaryName = "alice"
 	defaultCodexHomeDirName    = ".codex"
 )
 
