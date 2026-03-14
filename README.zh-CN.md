@@ -104,7 +104,7 @@ make precommit-install
 
 ## 配置文件
 
-程序从 YAML 配置文件读取参数（默认路径：`${ALICE_HOME:-~/.alice}/config.yaml`）。
+程序从 YAML 配置文件读取参数（默认路径：`~/.alice/config.yaml`，可通过 `alice_home` 或 `--alice-home` 覆盖）。
 
 你也可以传入自定义路径：
 
@@ -130,6 +130,7 @@ kimi_command: "kimi"
 kimi_timeout_secs: 120
 runtime_http_addr: "127.0.0.1:7331"
 runtime_http_token: ""
+alice_home: ""
 workspace_dir: ""
 env:
   HTTPS_PROXY: "http://127.0.0.1:7890"
@@ -169,8 +170,9 @@ log_compress: false
 - `llm_provider`：LLM 后端类型选择。支持 `codex`（默认）、`claude`、`kimi`。
 - `codex_command` / `codex_timeout_secs`、`claude_command` / `claude_timeout_secs`、`kimi_command` / `kimi_timeout_secs`：对应后端 CLI 命令路径与超时秒数。
 - `runtime_http_addr` / `runtime_http_token`：Alice 本地 runtime HTTP API 的监听地址和鉴权 token。若 `runtime_http_token` 为空，Alice 会在每次启动时自动生成一个 token 并注入 agent 环境变量。
-- `workspace_dir` / `memory_dir` / `prompt_dir`：运行时目录。默认在 `${ALICE_HOME:-~/.alice}` 下，分别是 `workspace/`、`memory/`、`prompts/`。
-- `CODEX_HOME`：若进程环境中未预设，Alice 默认使用 `${ALICE_HOME:-~/.alice}/.codex`，并自动注入到 Codex/Claude/Kimi 子进程（除非在 `env` 里显式覆盖）。
+- `alice_home`：运行时根目录（默认 `~/.alice`）。
+- `workspace_dir` / `memory_dir` / `prompt_dir`：运行时目录。默认在 `alice_home` 下，分别是 `workspace/`、`memory/`、`prompts/`。
+- `CODEX_HOME`：若进程环境中未预设，Alice 默认使用 `alice_home/.codex`，并自动注入到 Codex/Claude/Kimi 子进程（除非在 `env` 里显式覆盖）。
 - `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
 - `codex_prompt_prefix` / `claude_prompt_prefix` / `kimi_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
 - `immediate_feedback_mode`：收到引用回复消息后给用户的即时反馈方式。支持 `reply`（默认，直接回复 `收到！`）和 `reaction`（优先给原消息加表情，失败再回退 `收到！`）。

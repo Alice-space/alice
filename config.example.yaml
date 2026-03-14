@@ -28,13 +28,15 @@ kimi_command: "kimi"
 kimi_timeout_secs: 120
 runtime_http_addr: "127.0.0.1:7331"
 runtime_http_token: ""
-# Runtime directories (leave empty to use defaults under ALICE_HOME, default: ~/.alice)
-# workspace_dir default: $ALICE_HOME/workspace
-# memory_dir default: $ALICE_HOME/memory
-# prompt_dir default: $ALICE_HOME/prompts
+# Optional runtime home (default: ~/.alice). You can also override with CLI flag --alice-home.
+alice_home: ""
+# Runtime directories (leave empty to use defaults under alice_home)
+# workspace_dir default: <alice_home>/workspace
+# memory_dir default: <alice_home>/memory
+# prompt_dir default: <alice_home>/prompts
 workspace_dir: ""
 # Optional: environment variables passed to LLM process (proxy, etc.)
-# CODEX_HOME defaults to $ALICE_HOME/.codex when omitted.
+# CODEX_HOME defaults to <alice_home>/.codex when omitted.
 env:
   HTTPS_PROXY: "http://127.0.0.1:7890"
   ALL_PROXY: "socks5://127.0.0.1:7891"

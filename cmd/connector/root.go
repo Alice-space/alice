@@ -24,6 +24,23 @@ import (
 func newRootCmd() *cobra.Command {
 	configPath := config.DefaultConfigPath()
 	pidFilePath := config.DefaultPIDFilePath()
+	aliceHome := ""
+	executeConnector := func(cmd *cobra.Command) error {
+		override := strings.TrimSpace(aliceHome)
+		if override != "" {
+			_ = os.Setenv(config.EnvAliceHome, config.ResolveAliceHomeDir(override))
+		}
+		effectiveConfigPath := configPath
+		if !cmd.Flags().Changed("config") {
+			effectiveConfigPath = config.DefaultConfigPath()
+		}
+		effectivePIDFilePath := pidFilePath
+		pidFileExplicit := cmd.Flags().Changed("pid-file")
+		if !pidFileExplicit {
+			effectivePIDFilePath = config.DefaultPIDFilePath()
+		}
+		return runConnector(effectiveConfigPath, effectivePIDFilePath, pidFileExplicit)
+	}
 	root := &cobra.Command{
 		Use:           "alice",
 		Short:         "Run the Alice Feishu connector",
@@ -31,9 +48,10 @@ func newRootCmd() *cobra.Command {
 		SilenceErrors: true,
 		Args:          cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runConnector(configPath, pidFilePath)
+			return executeConnector(cmd)
 		},
 	}
+	root.PersistentFlags().StringVar(&aliceHome, "alice-home", "", "alice runtime home dir (default: ~/.alice)")
 	root.PersistentFlags().StringVarP(&configPath, "config", "c", config.DefaultConfigPath(), "path to config yaml")
 	root.PersistentFlags().StringVar(&pidFilePath, "pid-file", config.DefaultPIDFilePath(), "path to pid file (empty disables pid lock)")
 	root.AddCommand(&cobra.Command{
@@ -41,26 +59,31 @@ func newRootCmd() *cobra.Command {
 		Short: "Run the connector process",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runConnector(configPath, pidFilePath)
+			return executeConnector(cmd)
 		},
 	})
 	root.AddCommand(newRuntimeCmd())
 	return root
 }
 
-func runConnector(configPath, pidFilePath string) error {
+func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	configPath = bootstrap.ResolveConfigPath(configPath)
-	codexHome := ensureIsolatedCodexHomeEnv()
+	cfg, err := config.LoadFromFile(configPath)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(cfg.AliceHome) != "" {
+		_ = os.Setenv(config.EnvAliceHome, cfg.AliceHome)
+	}
+	codexHome := ensureIsolatedCodexHomeEnv(cfg.AliceHome)
+	if !pidFileExplicit {
+		pidFilePath = config.PIDFilePathForAliceHome(cfg.AliceHome)
+	}
 	pidCleanup, err := preparePIDFile(pidFilePath)
 	if err != nil {
 		return err
 	}
 	defer pidCleanup()
-
-	cfg, err := config.LoadFromFile(configPath)
-	if err != nil {
-		return err
-	}
 	if err := ensureWorkspaceDir(cfg.WorkspaceDir); err != nil {
 		return err
 	}
@@ -301,8 +324,8 @@ func ensureWorkspaceDir(path string) error {
 	return nil
 }
 
-func ensureIsolatedCodexHomeEnv() string {
-	target := config.DefaultCodexHome()
+func ensureIsolatedCodexHomeEnv(aliceHome string) string {
+	target := config.CodexHomeForAliceHome(aliceHome)
 	_ = os.Setenv(config.EnvCodexHome, target)
 	return target
 }

@@ -24,14 +24,7 @@ const (
 
 func AliceHomeDir() string {
 	if override := strings.TrimSpace(os.Getenv(EnvAliceHome)); override != "" {
-		override = expandHomePrefix(override)
-		if filepath.IsAbs(override) {
-			return filepath.Clean(override)
-		}
-		if abs, err := filepath.Abs(override); err == nil {
-			return filepath.Clean(abs)
-		}
-		return filepath.Clean(override)
+		return normalizeHomePath(override)
 	}
 
 	home, err := os.UserHomeDir()
@@ -44,36 +37,87 @@ func AliceHomeDir() string {
 	return defaultAliceHomeName
 }
 
+func ResolveAliceHomeDir(override string) string {
+	override = strings.TrimSpace(override)
+	if override != "" {
+		return normalizeHomePath(override)
+	}
+	return AliceHomeDir()
+}
+
 func DefaultConfigPath() string {
-	return filepath.Join(AliceHomeDir(), defaultConfigFileName)
+	return ConfigPathForAliceHome("")
 }
 
 func DefaultWorkspaceDir() string {
-	return filepath.Join(AliceHomeDir(), defaultWorkspaceDirName)
+	return WorkspaceDirForAliceHome("")
 }
 
 func DefaultMemoryDir() string {
-	return filepath.Join(AliceHomeDir(), defaultMemoryDirName)
+	return MemoryDirForAliceHome("")
 }
 
 func DefaultPromptDir() string {
-	return filepath.Join(AliceHomeDir(), defaultPromptDirName)
+	return PromptDirForAliceHome("")
 }
 
 func DefaultRunDir() string {
-	return filepath.Join(AliceHomeDir(), defaultRunDirName)
+	return RunDirForAliceHome("")
 }
 
 func DefaultPIDFilePath() string {
-	return filepath.Join(DefaultRunDir(), defaultPIDFileName)
+	return PIDFilePathForAliceHome("")
 }
 
 func DefaultRuntimeBinaryPath() string {
-	return filepath.Join(AliceHomeDir(), defaultBinaryDirName, defaultConnectorBinaryName)
+	return RuntimeBinaryPathForAliceHome("")
 }
 
 func DefaultCodexHome() string {
-	return filepath.Join(AliceHomeDir(), defaultCodexHomeDirName)
+	return CodexHomeForAliceHome("")
+}
+
+func ConfigPathForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultConfigFileName)
+}
+
+func WorkspaceDirForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultWorkspaceDirName)
+}
+
+func MemoryDirForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultMemoryDirName)
+}
+
+func PromptDirForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultPromptDirName)
+}
+
+func RunDirForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultRunDirName)
+}
+
+func PIDFilePathForAliceHome(aliceHome string) string {
+	return filepath.Join(RunDirForAliceHome(aliceHome), defaultPIDFileName)
+}
+
+func RuntimeBinaryPathForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultBinaryDirName, defaultConnectorBinaryName)
+}
+
+func CodexHomeForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultCodexHomeDirName)
+}
+
+func normalizeHomePath(path string) string {
+	path = expandHomePrefix(path)
+	if filepath.IsAbs(path) {
+		return filepath.Clean(path)
+	}
+	if abs, err := filepath.Abs(path); err == nil {
+		return filepath.Clean(abs)
+	}
+	return filepath.Clean(path)
 }
 
 func expandHomePrefix(path string) string {

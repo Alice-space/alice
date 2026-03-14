@@ -80,7 +80,9 @@ feishu_app_id: "cli_xxxxx"
 feishu_app_secret: "xxxxxx"
 llm_provider: "codex"
 codex_command: "codex"
-# Optional: defaults are already under ALICE_HOME
+# Optional: runtime home (default ~/.alice)
+alice_home: ""
+# Optional: defaults are already under alice_home
 workspace_dir: ""
 memory_dir: ""
 prompt_dir: ""
@@ -89,13 +91,19 @@ prompt_dir: ""
 Run foreground:
 
 ```bash
-ALICE_HOME="$HOME/.alice" "$HOME/.alice/bin/alice"
+"$HOME/.alice/bin/alice"
+```
+
+Use a custom runtime home:
+
+```bash
+"$HOME/.alice/bin/alice" --alice-home "/path/to/alice-home"
 ```
 
 Run background (without systemd):
 
 ```bash
-nohup env ALICE_HOME="$HOME/.alice" "$HOME/.alice/bin/alice" \
+nohup "$HOME/.alice/bin/alice" \
   >"$HOME/.alice/logs/connector.log" 2>&1 &
 ```
 
@@ -118,6 +126,7 @@ Common optional keys:
 - `<provider>_command` / `<provider>_timeout_secs`
 - `runtime_http_addr` / `runtime_http_token`
 - `env`: extra env vars passed to backend process
+- `alice_home`: runtime home directory (default `~/.alice`)
 - `workspace_dir` / `memory_dir` / `prompt_dir`
 - `trigger_mode`: `at` / `active` / `prefix`
 - `trigger_prefix`

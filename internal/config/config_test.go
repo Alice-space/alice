@@ -78,6 +78,9 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if cfg.GroupContextWindowTTL != 5*time.Minute {
 		t.Fatalf("unexpected group_context_window_ttl: %s", cfg.GroupContextWindowTTL)
 	}
+	if cfg.AliceHome != AliceHomeDir() {
+		t.Fatalf("unexpected alice_home: %s", cfg.AliceHome)
+	}
 	if cfg.WorkspaceDir != DefaultWorkspaceDir() {
 		t.Fatalf("unexpected workspace_dir: %s", cfg.WorkspaceDir)
 	}
@@ -110,6 +113,41 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	}
 	if cfg.LogCompress {
 		t.Fatal("log_compress should default to false")
+	}
+}
+
+func TestLoadFromFile_AliceHomeDrivesDefaultDirs(t *testing.T) {
+	dir := t.TempDir()
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(EnvAliceHome, "")
+
+	path := filepath.Join(dir, "config.yaml")
+	content := `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+alice_home: "~/.alice-custom"
+`
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+
+	cfg, err := LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("load config failed: %v", err)
+	}
+	wantAliceHome := filepath.Join(home, ".alice-custom")
+	if cfg.AliceHome != wantAliceHome {
+		t.Fatalf("unexpected alice_home got=%q want=%q", cfg.AliceHome, wantAliceHome)
+	}
+	if cfg.WorkspaceDir != filepath.Join(wantAliceHome, "workspace") {
+		t.Fatalf("unexpected workspace_dir: %s", cfg.WorkspaceDir)
+	}
+	if cfg.MemoryDir != filepath.Join(wantAliceHome, "memory") {
+		t.Fatalf("unexpected memory_dir: %s", cfg.MemoryDir)
+	}
+	if cfg.PromptDir != filepath.Join(wantAliceHome, "prompts") {
+		t.Fatalf("unexpected prompt_dir: %s", cfg.PromptDir)
 	}
 }
 

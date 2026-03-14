@@ -51,6 +51,7 @@ type Config struct {
 	RuntimeHTTPToken   string            `mapstructure:"runtime_http_token"`
 	FailureMessage     string            `mapstructure:"failure_message"`
 	ThinkingMessage    string            `mapstructure:"thinking_message"`
+	AliceHome          string            `mapstructure:"alice_home"`
 	WorkspaceDir       string            `mapstructure:"workspace_dir"`
 	MemoryDir          string            `mapstructure:"memory_dir"`
 	PromptDir          string            `mapstructure:"prompt_dir"`
@@ -93,9 +94,10 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("runtime_http_token", "")
 	v.SetDefault("failure_message", "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault("thinking_message", "正在思考中...")
-	v.SetDefault("workspace_dir", DefaultWorkspaceDir())
-	v.SetDefault("memory_dir", DefaultMemoryDir())
-	v.SetDefault("prompt_dir", DefaultPromptDir())
+	v.SetDefault("alice_home", AliceHomeDir())
+	v.SetDefault("workspace_dir", "")
+	v.SetDefault("memory_dir", "")
+	v.SetDefault("prompt_dir", "")
 	v.SetDefault("queue_capacity", 256)
 	v.SetDefault("worker_concurrency", 1)
 	v.SetDefault("automation_task_timeout_secs", 600)
@@ -142,6 +144,7 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
 	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)
+	cfg.AliceHome = strings.TrimSpace(cfg.AliceHome)
 	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
 	cfg.MemoryDir = strings.TrimSpace(cfg.MemoryDir)
 	cfg.PromptDir = strings.TrimSpace(cfg.PromptDir)
@@ -181,14 +184,19 @@ func LoadFromFile(path string) (Config, error) {
 	if cfg.RuntimeHTTPAddr == "" {
 		cfg.RuntimeHTTPAddr = "127.0.0.1:7331"
 	}
+	if cfg.AliceHome == "" {
+		cfg.AliceHome = AliceHomeDir()
+	} else {
+		cfg.AliceHome = ResolveAliceHomeDir(cfg.AliceHome)
+	}
 	if cfg.WorkspaceDir == "" {
-		cfg.WorkspaceDir = DefaultWorkspaceDir()
+		cfg.WorkspaceDir = WorkspaceDirForAliceHome(cfg.AliceHome)
 	}
 	if cfg.MemoryDir == "" {
-		cfg.MemoryDir = DefaultMemoryDir()
+		cfg.MemoryDir = MemoryDirForAliceHome(cfg.AliceHome)
 	}
 	if cfg.PromptDir == "" {
-		cfg.PromptDir = DefaultPromptDir()
+		cfg.PromptDir = PromptDirForAliceHome(cfg.AliceHome)
 	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
