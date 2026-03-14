@@ -198,6 +198,9 @@ func LoadFromFile(path string) (Config, error) {
 	if cfg.PromptDir == "" {
 		cfg.PromptDir = PromptDirForAliceHome(cfg.AliceHome)
 	}
+	if cfg.LogFile == "" {
+		cfg.LogFile = LogFilePathForAliceHome(cfg.AliceHome)
+	}
 	if cfg.LogLevel == "" {
 		cfg.LogLevel = "info"
 	}

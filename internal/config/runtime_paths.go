@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 const (
@@ -15,6 +16,7 @@ const (
 	defaultWorkspaceDirName    = "workspace"
 	defaultMemoryDirName       = "memory"
 	defaultPromptDirName       = "prompts"
+	defaultLogDirName          = "log"
 	defaultRunDirName          = "run"
 	defaultPIDFileName         = "alice.pid"
 	defaultBinaryDirName       = "bin"
@@ -65,6 +67,14 @@ func DefaultRunDir() string {
 	return RunDirForAliceHome("")
 }
 
+func DefaultLogDir() string {
+	return LogDirForAliceHome("")
+}
+
+func DefaultLogFilePath() string {
+	return LogFilePathForAliceHome("")
+}
+
 func DefaultPIDFilePath() string {
 	return PIDFilePathForAliceHome("")
 }
@@ -95,6 +105,22 @@ func PromptDirForAliceHome(aliceHome string) string {
 
 func RunDirForAliceHome(aliceHome string) string {
 	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultRunDirName)
+}
+
+func LogDirForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultLogDirName)
+}
+
+func LogFilePathForAliceHome(aliceHome string) string {
+	return LogFilePathForAliceHomeAt(aliceHome, time.Now())
+}
+
+func LogFilePathForAliceHomeAt(aliceHome string, at time.Time) string {
+	if at.IsZero() {
+		at = time.Now()
+	}
+	at = at.Local()
+	return filepath.Join(LogDirForAliceHome(aliceHome), at.Format("2006-01-02")+".log")
 }
 
 func PIDFilePathForAliceHome(aliceHome string) string {

@@ -351,7 +351,7 @@ install_or_update() {
   require_cmd install
   require_systemd_user
 
-  mkdir -p "$ALICE_HOME/bin" "$ALICE_HOME/logs" "$ALICE_HOME/run" "$ALICE_HOME/.codex"
+  mkdir -p "$ALICE_HOME/bin" "$ALICE_HOME/log" "$ALICE_HOME/run" "$ALICE_HOME/.codex"
 
   local version
   version="$VERSION"

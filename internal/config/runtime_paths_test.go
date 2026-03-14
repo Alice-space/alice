@@ -3,6 +3,7 @@ package config
 import (
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestAliceHomeDir_DefaultFromHome(t *testing.T) {
@@ -47,6 +48,12 @@ func TestDefaultRuntimePaths(t *testing.T) {
 	if got := DefaultPromptDir(); got != filepath.Join(aliceHome, "prompts") {
 		t.Fatalf("unexpected default prompt path: %q", got)
 	}
+	if got := DefaultLogDir(); got != filepath.Join(aliceHome, "log") {
+		t.Fatalf("unexpected default log dir path: %q", got)
+	}
+	if got := DefaultLogFilePath(); filepath.Dir(got) != filepath.Join(aliceHome, "log") {
+		t.Fatalf("unexpected default log file dir: %q", got)
+	}
 	if got := DefaultPIDFilePath(); got != filepath.Join(aliceHome, "run", "alice.pid") {
 		t.Fatalf("unexpected default pid path: %q", got)
 	}
@@ -79,6 +86,13 @@ func TestRuntimePaths_ForAliceHomeOverride(t *testing.T) {
 	}
 	if got := PromptDirForAliceHome(override); got != filepath.Join(aliceHome, "prompts") {
 		t.Fatalf("unexpected prompt path: %q", got)
+	}
+	if got := LogDirForAliceHome(override); got != filepath.Join(aliceHome, "log") {
+		t.Fatalf("unexpected log dir path: %q", got)
+	}
+	logAt := time.Date(2026, 3, 14, 9, 30, 0, 0, time.Local)
+	if got := LogFilePathForAliceHomeAt(override, logAt); got != filepath.Join(aliceHome, "log", "2026-03-14.log") {
+		t.Fatalf("unexpected log file path: %q", got)
 	}
 	if got := PIDFilePathForAliceHome(override); got != filepath.Join(aliceHome, "run", "alice.pid") {
 		t.Fatalf("unexpected pid path: %q", got)

@@ -99,8 +99,11 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if cfg.LogLevel != "info" {
 		t.Fatalf("unexpected log_level: %q", cfg.LogLevel)
 	}
-	if cfg.LogFile != "" {
-		t.Fatalf("unexpected log_file: %q", cfg.LogFile)
+	if got, want := filepath.Dir(cfg.LogFile), LogDirForAliceHome(cfg.AliceHome); got != want {
+		t.Fatalf("unexpected log_file dir: got=%q want=%q", got, want)
+	}
+	if _, err := time.ParseInLocation("2006-01-02.log", filepath.Base(cfg.LogFile), time.Local); err != nil {
+		t.Fatalf("unexpected log_file basename: %q err=%v", filepath.Base(cfg.LogFile), err)
 	}
 	if cfg.LogMaxSizeMB != 20 {
 		t.Fatalf("unexpected log_max_size_mb: %d", cfg.LogMaxSizeMB)
@@ -148,6 +151,12 @@ alice_home: "~/.alice-custom"
 	}
 	if cfg.PromptDir != filepath.Join(wantAliceHome, "prompts") {
 		t.Fatalf("unexpected prompt_dir: %s", cfg.PromptDir)
+	}
+	if got, want := filepath.Dir(cfg.LogFile), filepath.Join(wantAliceHome, "log"); got != want {
+		t.Fatalf("unexpected log_file dir: got=%q want=%q", got, want)
+	}
+	if _, err := time.ParseInLocation("2006-01-02.log", filepath.Base(cfg.LogFile), time.Local); err != nil {
+		t.Fatalf("unexpected log_file basename: %q err=%v", filepath.Base(cfg.LogFile), err)
 	}
 }
 

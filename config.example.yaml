@@ -72,7 +72,7 @@ group_context_window_minutes: 5
 
 # debug | info | warn | error
 log_level: "info"
-# Optional rotating log file. Empty means stderr only.
+# Optional rotating log file. Empty means auto default: <alice_home>/log/YYYY-MM-DD.log
 log_file: ""
 log_max_size_mb: 20
 log_max_backups: 5

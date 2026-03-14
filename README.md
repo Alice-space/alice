@@ -23,6 +23,7 @@ By default Alice uses:
 
 - Config: `${ALICE_HOME:-~/.alice}/config.yaml`
 - Binary: `${ALICE_HOME:-~/.alice}/bin/alice`
+- Logs: `${ALICE_HOME:-~/.alice}/log/YYYY-MM-DD.log` (default)
 - Runtime state: `${ALICE_HOME:-~/.alice}/memory/`
 - Bundled skills: `${ALICE_HOME:-~/.alice}/.codex/skills/`
 
@@ -114,7 +115,7 @@ Common optional keys:
 - `workspace_dir` / `memory_dir` / `prompt_dir`
 - `trigger_mode`: `at` / `active` / `prefix`
 - `trigger_prefix`
-- `log_file` and rotate options
+- `log_file` (default `${ALICE_HOME}/log/YYYY-MM-DD.log`) and rotate options
 
 Default process env behavior:
 
