@@ -71,7 +71,7 @@ func TestStore_CreateListPatchClaim(t *testing.T) {
 }
 
 func TestStore_ClaimCronTask(t *testing.T) {
-	base := time.Date(2026, 2, 23, 8, 0, 0, 0, time.UTC)
+	base := time.Date(2026, 2, 23, 8, 0, 0, 0, time.Local)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
 	store.now = func() time.Time { return base }
 
@@ -90,7 +90,7 @@ func TestStore_ClaimCronTask(t *testing.T) {
 		t.Fatalf("create cron task failed: %v", err)
 	}
 
-	none, err := store.ClaimDueTasks(time.Date(2026, 2, 23, 8, 59, 0, 0, time.UTC), 10)
+	none, err := store.ClaimDueTasks(time.Date(2026, 2, 23, 8, 59, 0, 0, time.Local), 10)
 	if err != nil {
 		t.Fatalf("claim before due failed: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestStore_ClaimCronTask(t *testing.T) {
 		t.Fatalf("expected no claimed tasks before due, got %+v", none)
 	}
 
-	claimedAt := time.Date(2026, 2, 23, 9, 0, 0, 0, time.UTC)
+	claimedAt := time.Date(2026, 2, 23, 9, 0, 0, 0, time.Local)
 	claimed, err := store.ClaimDueTasks(claimedAt, 10)
 	if err != nil {
 		t.Fatalf("claim cron due tasks failed: %v", err)
@@ -111,7 +111,7 @@ func TestStore_ClaimCronTask(t *testing.T) {
 	if err != nil {
 		t.Fatalf("get cron task failed: %v", err)
 	}
-	wantNext := time.Date(2026, 2, 24, 9, 0, 0, 0, time.UTC)
+	wantNext := time.Date(2026, 2, 24, 9, 0, 0, 0, time.Local)
 	if !updated.NextRunAt.Equal(wantNext) {
 		t.Fatalf("unexpected cron next run at: got=%s want=%s", updated.NextRunAt.Format(time.RFC3339), wantNext.Format(time.RFC3339))
 	}

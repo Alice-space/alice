@@ -230,6 +230,7 @@ log_compress: false
 - `codex_prompt_prefix` / `claude_prompt_prefix` / `kimi_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
 - `immediate_feedback_mode`：收到引用回复消息后给用户的即时反馈方式。支持 `reply`（默认，直接回复 `收到！`）和 `reaction`（优先给原消息加表情，失败再回退 `收到！`）。
 - `immediate_feedback_reaction`：`immediate_feedback_mode=reaction` 时使用的飞书 reaction 类型，默认 `SMILE`。
+- 自动化 cron 调度使用运行机器的操作系统时区（`time.Local`）。
 - `automation_task_timeout_secs`：单次自动化用户任务（`send_text`/`run_llm`）的执行超时秒数，默认 `600`。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
 - `group_context_window_minutes`：群聊未触发消息的缓存窗口（分钟，默认 `5`）。窗口内文本与多媒体会在后续触发时并入上下文（`at`/`prefix` 模式）。

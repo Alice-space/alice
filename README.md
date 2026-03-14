@@ -115,6 +115,7 @@ Common optional keys:
 - `workspace_dir` / `memory_dir` / `prompt_dir`
 - `trigger_mode`: `at` / `active` / `prefix`
 - `trigger_prefix`
+- automation cron scheduling uses OS timezone (`time.Local`)
 - `log_file` (default `${ALICE_HOME}/log/YYYY-MM-DD.log`) and rotate options
 
 Default process env behavior:

@@ -101,7 +101,7 @@ JSON
 
 ## Cron 说明
 
-Alice 自动化当前仅接受标准 5 段 cron。`cron_expr` 中不要写 `CRON_TZ=...`。用户要求按上海时间调度时，需要换算为 UTC 的 5 段表达式，并在回复里明确标注目标 `Asia/Shanghai` 时间与换算关系。
+Alice 自动化当前仅接受标准 5 段 cron。`cron_expr` 中不要写 `CRON_TZ=...`。调度基于运行机器的操作系统时区（`time.Local`），回复时应明确写出“按当前机器时区执行”。
 
 ## 回复模式
 

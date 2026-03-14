@@ -15,6 +15,7 @@ import (
 
 	"github.com/fsnotify/fsnotify"
 	"github.com/spf13/cobra"
+	"github.com/spf13/viper"
 
 	"github.com/Alice-space/alice/internal/bootstrap"
 	"github.com/Alice-space/alice/internal/config"
@@ -98,6 +99,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		return err
 	}
 	logging.Debugf("debug logging enabled log_level=%s config=%s", cfg.LogLevel, configPath)
+	logging.Infof("runtime timezone=%s", time.Now().Location().String())
 	logging.Infof("runtime CODEX_HOME=%s", codexHome)
 	if strings.TrimSpace(pidFilePath) != "" {
 		logging.Infof("pid file enabled path=%s", pidFilePath)
@@ -156,62 +158,45 @@ func startConfigHotReload(ctx context.Context, configPath string, runtime *boots
 	if err != nil {
 		return err
 	}
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return err
-	}
-	configDir := filepath.Dir(absConfigPath)
-	if err := watcher.Add(configDir); err != nil {
-		_ = watcher.Close()
+	watcher := viper.New()
+	watcher.SetConfigFile(absConfigPath)
+	watcher.SetConfigType("yaml")
+	if err := watcher.ReadInConfig(); err != nil {
 		return err
 	}
 	logging.Infof("config hot reload enabled path=%s", absConfigPath)
 
+	var timerMu sync.Mutex
+	var timer *time.Timer
+	scheduleReload := func() {
+		timerMu.Lock()
+		defer timerMu.Unlock()
+		if timer != nil {
+			timer.Stop()
+		}
+		timer = time.AfterFunc(300*time.Millisecond, func() {
+			reloadConfigFromDisk(absConfigPath, runtime)
+		})
+	}
+	watcher.OnConfigChange(func(event fsnotify.Event) {
+		changedPath := filepath.Clean(strings.TrimSpace(event.Name))
+		if changedPath != filepath.Clean(absConfigPath) {
+			return
+		}
+		logging.Infof("config change detected path=%s op=%s", absConfigPath, event.Op.String())
+		scheduleReload()
+	})
+	watcher.WatchConfig()
+
 	go func() {
-		defer watcher.Close()
-		var timerMu sync.Mutex
-		var timer *time.Timer
-		scheduleReload := func() {
-			timerMu.Lock()
-			defer timerMu.Unlock()
-			if timer != nil {
-				timer.Stop()
-			}
-			timer = time.AfterFunc(300*time.Millisecond, func() {
-				reloadConfigFromDisk(absConfigPath, runtime)
-			})
+		<-ctx.Done()
+		timerMu.Lock()
+		if timer != nil {
+			timer.Stop()
 		}
-		for {
-			select {
-			case <-ctx.Done():
-				return
-			case err := <-watcher.Errors:
-				if err != nil {
-					logging.Warnf("config watcher error: %v", err)
-				}
-			case event, ok := <-watcher.Events:
-				if !ok {
-					return
-				}
-				if !isConfigFileEvent(event, absConfigPath) {
-					continue
-				}
-				logging.Infof("config change detected path=%s op=%s", absConfigPath, event.Op.String())
-				scheduleReload()
-			}
-		}
+		timerMu.Unlock()
 	}()
 	return nil
-}
-
-func isConfigFileEvent(event fsnotify.Event, configPath string) bool {
-	changedPath := filepath.Clean(strings.TrimSpace(event.Name))
-	targetPath := filepath.Clean(strings.TrimSpace(configPath))
-	if changedPath != targetPath {
-		return false
-	}
-	const interestingOps = fsnotify.Write | fsnotify.Create | fsnotify.Rename | fsnotify.Remove | fsnotify.Chmod
-	return event.Op&interestingOps != 0
 }
 
 func reloadConfigFromDisk(configPath string, runtime *bootstrap.ConnectorRuntime) {

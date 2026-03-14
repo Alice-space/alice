@@ -213,9 +213,9 @@ func TestValidateTask_MaxRunsReachedPausedAllowed(t *testing.T) {
 }
 
 func TestNextRunAt_Cron(t *testing.T) {
-	from := time.Date(2026, 2, 23, 8, 30, 0, 0, time.UTC)
+	from := time.Date(2026, 2, 23, 8, 30, 0, 0, time.Local)
 	next := NextRunAt(from, Schedule{Type: ScheduleTypeCron, CronExpr: "0 9 * * *"})
-	want := time.Date(2026, 2, 23, 9, 0, 0, 0, time.UTC)
+	want := time.Date(2026, 2, 23, 9, 0, 0, 0, time.Local)
 	if !next.Equal(want) {
 		t.Fatalf("unexpected cron next run at: got=%s want=%s", next.Format(time.RFC3339), want.Format(time.RFC3339))
 	}

@@ -176,7 +176,7 @@ func (r *Runner) advanceOne(
 		return "", false, errors.New("workflow state is nil")
 	}
 
-	now := r.nowUTC()
+	now := r.nowLocal()
 	switch state.Phase {
 	case phaseManager:
 		prompt, err := r.buildManagerPrompt(*state)
@@ -457,7 +457,7 @@ func (r *Runner) loadState(path, workflow, sessionKey, stateKey, taskID string) 
 	data, err := os.ReadFile(path)
 	if err != nil {
 		if os.IsNotExist(err) {
-			now := r.nowUTC()
+			now := r.nowLocal()
 			return workflowState{
 				Version:    stateVersion,
 				Workflow:   workflow,
@@ -557,7 +557,7 @@ func (s *workflowState) appendHistory(at time.Time, phase, summary, decision str
 		return
 	}
 	s.History = append(s.History, workflowRecord{
-		At:       at.UTC(),
+		At:       at.Local(),
 		Phase:    normalizePhase(phase),
 		Summary:  strings.TrimSpace(summary),
 		Decision: strings.ToLower(strings.TrimSpace(decision)),
@@ -567,15 +567,15 @@ func (s *workflowState) appendHistory(at time.Time, phase, summary, decision str
 	}
 }
 
-func (r *Runner) nowUTC() time.Time {
+func (r *Runner) nowLocal() time.Time {
 	if r == nil || r.now == nil {
-		return time.Now().UTC()
+		return time.Now().Local()
 	}
 	now := r.now()
 	if now.IsZero() {
-		return time.Now().UTC()
+		return time.Now().Local()
 	}
-	return now.UTC()
+	return now.Local()
 }
 
 func (r *Runner) stateFilePath(sessionKey, stateKey string) string {

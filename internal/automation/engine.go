@@ -415,13 +415,13 @@ func (e *Engine) tickDuration() time.Duration {
 
 func (e *Engine) nowTime() time.Time {
 	if e == nil || e.now == nil {
-		return time.Now().UTC()
+		return time.Now().Local()
 	}
 	now := e.now()
 	if now.IsZero() {
-		return time.Now().UTC()
+		return time.Now().Local()
 	}
-	return now.UTC()
+	return now.Local()
 }
 
 func renderActionTemplate(raw string, now time.Time) (string, error) {
@@ -430,9 +430,9 @@ func renderActionTemplate(raw string, now time.Time) (string, error) {
 		return "", nil
 	}
 	if now.IsZero() {
-		now = time.Now().UTC()
+		now = time.Now().Local()
 	}
-	now = now.UTC()
+	now = now.Local()
 	template = strings.NewReplacer(
 		"{{now}}", now.Format(time.RFC3339),
 		"{{date}}", now.Format("2006-01-02"),

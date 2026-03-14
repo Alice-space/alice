@@ -203,7 +203,8 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 		runner.mu.Unlock()
 		t.Fatal("expected run_llm task to invoke llm runner")
 	}
-	if runner.lastReq.UserText != "请回复当前时间 2026-02-23T10:01:04Z" {
+	wantPrompt := "请回复当前时间 " + base.Add(2*time.Second).Local().Format(time.RFC3339)
+	if runner.lastReq.UserText != wantPrompt {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm prompt: %q", runner.lastReq.UserText)
 	}

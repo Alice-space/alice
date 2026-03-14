@@ -168,16 +168,16 @@ func (l *Loader) readEmbedded(name string) ([]byte, error) {
 func templateFuncMap() template.FuncMap {
 	funcMap := sprig.TxtFuncMap()
 	funcMap["now"] = func() string {
-		return time.Now().UTC().Format(time.RFC3339)
+		return time.Now().Local().Format(time.RFC3339)
 	}
 	funcMap["date"] = func() string {
-		return time.Now().UTC().Format("2006-01-02")
+		return time.Now().Local().Format("2006-01-02")
 	}
 	funcMap["time"] = func() string {
-		return time.Now().UTC().Format("15:04:05")
+		return time.Now().Local().Format("15:04:05")
 	}
 	funcMap["unix"] = func() int64 {
-		return time.Now().UTC().Unix()
+		return time.Now().Local().Unix()
 	}
 	return funcMap
 }

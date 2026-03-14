@@ -235,7 +235,7 @@ func NextRunAt(from time.Time, schedule Schedule) time.Time {
 	if from.IsZero() {
 		from = time.Now()
 	}
-	from = from.UTC()
+	from = from.Local()
 	switch normalized.Type {
 	case ScheduleTypeInterval:
 		if normalized.EverySeconds <= 0 {

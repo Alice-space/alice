@@ -270,7 +270,7 @@ func (s *Server) handleMemoryContext(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	snapshot, err := s.memory.Snapshot(memoryScopeKey(session), time.Now().UTC())
+	snapshot, err := s.memory.Snapshot(memoryScopeKey(session), time.Now().Local())
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -298,7 +298,7 @@ func (s *Server) handleMemoryWriteLongTerm(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	snapshot, err := s.memory.Snapshot(memoryScopeKey(session), time.Now().UTC())
+	snapshot, err := s.memory.Snapshot(memoryScopeKey(session), time.Now().Local())
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return

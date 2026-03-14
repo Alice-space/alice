@@ -33,7 +33,7 @@ func nextCronRunAt(from time.Time, raw string) (time.Time, error) {
 		return time.Time{}, fmt.Errorf("invalid cron_expr %q: %w", raw, err)
 	}
 	if from.IsZero() {
-		from = time.Now().UTC()
+		from = time.Now().Local()
 	}
-	return schedule.Next(from.UTC()), nil
+	return schedule.Next(from.Local()), nil
 }

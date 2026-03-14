@@ -3,12 +3,10 @@ package config
 import (
 	"errors"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/viper"
-	"gopkg.in/yaml.v3"
 )
 
 const DefaultLLMProvider = "codex"
@@ -118,10 +116,6 @@ func LoadFromFile(path string) (Config, error) {
 	if err := v.Unmarshal(&cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config yaml failed: %w", err)
 	}
-	envMap, err := loadEnvFromYAML(path)
-	if err != nil {
-		return Config{}, err
-	}
 
 	cfg.FeishuAppID = strings.TrimSpace(cfg.FeishuAppID)
 	cfg.FeishuAppSecret = strings.TrimSpace(cfg.FeishuAppSecret)
@@ -134,7 +128,7 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.ImmediateFeedbackReaction = strings.ToUpper(strings.TrimSpace(cfg.ImmediateFeedbackReaction))
 	cfg.LLMProvider = strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
 	cfg.CodexCommand = strings.TrimSpace(cfg.CodexCommand)
-	cfg.CodexEnv = normalizeEnvMap(envMap)
+	cfg.CodexEnv = normalizeEnvMap(v.GetStringMapString("env"))
 	cfg.CodexPromptPrefix = strings.TrimSpace(cfg.CodexPromptPrefix)
 	cfg.ClaudeCommand = strings.TrimSpace(cfg.ClaudeCommand)
 	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
@@ -296,22 +290,8 @@ func normalizeEnvMap(in map[string]string) map[string]string {
 
 	out := make(map[string]string, len(in))
 	for key, value := range in {
-		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		out[normalizedKey] = strings.TrimSpace(value)
 	}
 	return out
-}
-
-func loadEnvFromYAML(path string) (map[string]string, error) {
-	content, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("read config file %q failed: %w", path, err)
-	}
-
-	var raw struct {
-		Env map[string]string `yaml:"env"`
-	}
-	if err := yaml.Unmarshal(content, &raw); err != nil {
-		return nil, fmt.Errorf("parse config yaml failed: %w", err)
-	}
-	return raw.Env, nil
 }

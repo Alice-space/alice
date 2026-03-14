@@ -145,7 +145,7 @@ func (s *Store) ResetRunningTasks() error {
 	if s == nil {
 		return errors.New("store is nil")
 	}
-	now := s.nowUTC()
+	now := s.nowLocal()
 	return s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
 		changed := false
 		for idx := range snapshot.Tasks {
@@ -168,7 +168,7 @@ func (s *Store) CreateTask(task Task) (Task, error) {
 		return Task{}, errors.New("store is nil")
 	}
 	task = NormalizeTask(task)
-	now := s.nowUTC()
+	now := s.nowLocal()
 	if task.ID == "" {
 		task.ID = newTaskID(now)
 	}
@@ -221,7 +221,7 @@ func (s *Store) PatchTask(taskID string, mutate func(task *Task) error) (Task, e
 			return false, err
 		}
 		task = NormalizeTask(task)
-		task.UpdatedAt = s.nowUTC()
+		task.UpdatedAt = s.nowLocal()
 		task.Revision++
 		if task.NextRunAt.IsZero() && task.Status == TaskStatusActive {
 			task.NextRunAt = NextRunAt(task.UpdatedAt, task.Schedule)
@@ -247,9 +247,9 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 		limit = 20
 	}
 	if at.IsZero() {
-		at = s.nowUTC()
+		at = s.nowLocal()
 	}
-	at = at.UTC()
+	at = at.Local()
 
 	claimed := make([]Task, 0, limit)
 	err := s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
@@ -286,7 +286,7 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 			default:
 				continue
 			}
-			next := task.NextRunAt.UTC()
+			next := task.NextRunAt.Local()
 			if !next.IsZero() && next.After(at) {
 				continue
 			}
@@ -319,9 +319,9 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 	}
 	_, err := s.PatchTask(taskID, func(task *Task) error {
 		if at.IsZero() {
-			at = s.nowUTC()
+			at = s.nowLocal()
 		}
-		at = at.UTC()
+		at = at.Local()
 		task.Running = false
 		if runErr != nil {
 			task.ConsecutiveFailures++
@@ -528,10 +528,10 @@ func writeSnapshotVersion(tx *bolt.Tx, version int) error {
 	return nil
 }
 
-func (s *Store) nowUTC() time.Time {
-	now := time.Now().UTC()
+func (s *Store) nowLocal() time.Time {
+	now := time.Now().Local()
 	if s != nil && s.now != nil {
-		now = s.now().UTC()
+		now = s.now().Local()
 	}
 	return now
 }
@@ -557,7 +557,7 @@ func findTaskIndex(tasks []Task, taskID string) int {
 
 func newTaskID(now time.Time) string {
 	if now.IsZero() {
-		now = time.Now().UTC()
+		now = time.Now().Local()
 	}
 	id, err := ulid.New(ulid.Timestamp(now), ulid.Monotonic(rand.Reader, 0))
 	if err != nil {
