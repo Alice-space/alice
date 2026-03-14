@@ -21,6 +21,11 @@ jobs:
         with:
           go-version-file: go.mod
 
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep
+
       - name: Quality Gate
         run: make check
 
