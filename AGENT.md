@@ -70,13 +70,15 @@ Implementation and docs must describe the same behavior.
 
 - Stage only intended files.
 - Use clear commit messages (what changed + why).
+- Default target branch is `dev` (not `main`).
 - Suggested flow:
 
 ```bash
 git -C /home/codexbot/alice status
 git -C /home/codexbot/alice add <intended-files>
 git -C /home/codexbot/alice commit -m "<clear-message>"
-git -C /home/codexbot/alice push
+git -C /home/codexbot/alice push github dev
+git -C /home/codexbot/alice push origin dev
 ```
 
 ## 7. Definition of Done
@@ -88,3 +90,18 @@ A change is done only when all are true:
 - Docs/config/tests synced with behavior.
 - Commit pushed.
 - (If deploy task) service health re-verified with evidence.
+
+## 8. Dev/Main Branch and Release Rules
+
+- `dev` is the default development branch for all routine changes.
+- Direct push to `main` is forbidden by policy; use `dev -> main` only.
+- Pull requests targeting `main` must come from branch `dev`.
+- Merge to `main` should use merge-commit mode (not squash/rebase), because release workflow validates merge ancestry.
+- On each `dev` push:
+  - CI runs quality gate and builds dev binaries.
+  - CI updates prerelease tag `dev-latest`.
+- On each valid `dev -> main` merge:
+  - CI runs quality gate.
+  - CI computes next `vX.Y.Z` tag automatically.
+  - CI builds release artifacts and creates GitHub Release.
+- Manual `v*` tag push release remains supported for exceptional/manual scenarios.
