@@ -52,7 +52,12 @@ func newRootCmd() *cobra.Command {
 			return executeConnector(cmd)
 		},
 	}
-	root.PersistentFlags().StringVar(&aliceHome, "alice-home", "", "alice runtime home dir (default: ~/.alice)")
+	root.PersistentFlags().StringVar(
+		&aliceHome,
+		"alice-home",
+		"",
+		fmt.Sprintf("alice runtime home dir (default: ~/%s)", config.DefaultAliceHomeName()),
+	)
 	root.PersistentFlags().StringVarP(&configPath, "config", "c", config.DefaultConfigPath(), "path to config yaml")
 	root.PersistentFlags().StringVar(&pidFilePath, "pid-file", config.DefaultPIDFilePath(), "path to pid file (empty disables pid lock)")
 	root.AddCommand(&cobra.Command{

@@ -143,7 +143,9 @@ jobs:
           OUT_PATH="${DIST_DIR}/${BIN_FILE}"
 
           CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
-            go build -trimpath -ldflags "-s -w" -o "${OUT_PATH}" ./cmd/connector
+            go build -trimpath \
+              -ldflags "-s -w -X github.com/Alice-space/alice/internal/config.defaultAliceHomeName=.alice" \
+              -o "${OUT_PATH}" ./cmd/connector
 
           if [[ "${{ matrix.archive }}" == "zip" ]]; then
             (cd "${DIST_DIR}" && zip -q "${FILE_BASE}.zip" "${BIN_FILE}")

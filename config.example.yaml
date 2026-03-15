@@ -29,7 +29,8 @@ kimi_command: "kimi"
 kimi_timeout_secs: 120
 runtime_http_addr: "127.0.0.1:7331"
 runtime_http_token: ""
-# Optional runtime home (default: ~/.alice). You can also override with CLI flag --alice-home.
+# Optional runtime home (release default: ~/.alice; dev build default: ~/.alice-dev).
+# You can also override with CLI flag --alice-home.
 alice_home: ""
 # Runtime directories (leave empty to use defaults under alice_home)
 # workspace_dir default: <alice_home>/workspace

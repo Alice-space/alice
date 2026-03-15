@@ -6,13 +6,37 @@ import (
 	"time"
 )
 
+func TestDefaultAliceHomeName_Fallback(t *testing.T) {
+	origin := defaultAliceHomeName
+	t.Cleanup(func() {
+		defaultAliceHomeName = origin
+	})
+
+	defaultAliceHomeName = ""
+	if got := DefaultAliceHomeName(); got != ".alice" {
+		t.Fatalf("unexpected fallback alice home name: %q", got)
+	}
+}
+
+func TestDefaultAliceHomeName_Override(t *testing.T) {
+	origin := defaultAliceHomeName
+	t.Cleanup(func() {
+		defaultAliceHomeName = origin
+	})
+
+	defaultAliceHomeName = ".alice-dev"
+	if got := DefaultAliceHomeName(); got != ".alice-dev" {
+		t.Fatalf("unexpected overridden alice home name: %q", got)
+	}
+}
+
 func TestAliceHomeDir_DefaultFromHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv(EnvAliceHome, "")
 
 	got := AliceHomeDir()
-	want := filepath.Join(home, ".alice")
+	want := filepath.Join(home, DefaultAliceHomeName())
 	if filepath.Clean(got) != filepath.Clean(want) {
 		t.Fatalf("unexpected alice home dir got=%q want=%q", got, want)
 	}
@@ -35,7 +59,7 @@ func TestDefaultRuntimePaths(t *testing.T) {
 	t.Setenv("HOME", home)
 	t.Setenv(EnvAliceHome, "")
 
-	aliceHome := filepath.Join(home, ".alice")
+	aliceHome := filepath.Join(home, DefaultAliceHomeName())
 	if got := DefaultConfigPath(); got != filepath.Join(aliceHome, "config.yaml") {
 		t.Fatalf("unexpected default config path: %q", got)
 	}

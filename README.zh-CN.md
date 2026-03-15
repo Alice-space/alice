@@ -74,6 +74,8 @@ curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alic
 curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- install --channel dev
 ```
 
+使用 `--channel dev` 时，若未显式传 `--home` 且未设置 `ALICE_HOME`，默认目录为 `~/.alice-dev`。
+
 卸载（删除服务、二进制、`~/.alice`）：
 
 ```bash
@@ -88,7 +90,7 @@ curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alic
 
 脚本会自动完成：
 
-- 默认下载 stable GitHub Release 并安装到 `${ALICE_HOME:-~/.alice}/bin/alice`（仅在显式 `--channel dev` 时安装 dev 预发布）
+- 默认下载 stable GitHub Release 并安装到 `${ALICE_HOME:-~/.alice}/bin/alice`；显式 `--channel dev` 时切换到 dev 预发布（默认目录 `~/.alice-dev`）
 - 若 release 提供 `SHA256SUMS`，会先校验校验和再解压安装
 - 初始化 `${ALICE_HOME:-~/.alice}` 目录和默认 `config.yaml`（若不存在）
 - 检测并复制已有 Codex 登录凭证 `auth.json` 到 `${ALICE_HOME}/.codex/`
@@ -241,7 +243,7 @@ log_compress: false
 - `llm_provider`：LLM 后端类型选择。支持 `codex`（默认）、`claude`、`kimi`。
 - `codex_command` / `codex_timeout_secs`、`claude_command` / `claude_timeout_secs`、`kimi_command` / `kimi_timeout_secs`：对应后端 CLI 命令路径与超时秒数。
 - `runtime_http_addr` / `runtime_http_token`：Alice 本地 runtime HTTP API 的监听地址和鉴权 token。若 `runtime_http_token` 为空，Alice 会在每次启动时自动生成一个 token 并注入 agent 环境变量。
-- `alice_home`：运行时根目录（默认 `~/.alice`）。
+- `alice_home`：运行时根目录（release 默认 `~/.alice`；dev 预发布二进制默认 `~/.alice-dev`）。
 - `workspace_dir` / `memory_dir` / `prompt_dir`：运行时目录。默认在 `alice_home` 下，分别是 `workspace/`、`memory/`、`prompts/`。
 - `CODEX_HOME`：Alice 启动时会强制设置为 `alice_home/.codex`；子进程默认继承该值（若在 `env` 里显式设置则以显式值为准）。
 - `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。

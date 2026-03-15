@@ -11,7 +11,6 @@ const (
 	EnvAliceHome = "ALICE_HOME"
 	EnvCodexHome = "CODEX_HOME"
 
-	defaultAliceHomeName       = ".alice"
 	defaultConfigFileName      = "config.yaml"
 	defaultWorkspaceDirName    = "workspace"
 	defaultMemoryDirName       = "memory"
@@ -24,6 +23,18 @@ const (
 	defaultCodexHomeDirName    = ".codex"
 )
 
+// defaultAliceHomeName is intentionally mutable via -ldflags -X.
+// Release builds should keep ".alice"; dev builds can set ".alice-dev".
+var defaultAliceHomeName = ".alice"
+
+func DefaultAliceHomeName() string {
+	name := strings.TrimSpace(defaultAliceHomeName)
+	if name == "" {
+		return ".alice"
+	}
+	return name
+}
+
 func AliceHomeDir() string {
 	if override := strings.TrimSpace(os.Getenv(EnvAliceHome)); override != "" {
 		return normalizeHomePath(override)
@@ -31,12 +42,12 @@ func AliceHomeDir() string {
 
 	home, err := os.UserHomeDir()
 	if err == nil && strings.TrimSpace(home) != "" {
-		return filepath.Join(home, defaultAliceHomeName)
+		return filepath.Join(home, DefaultAliceHomeName())
 	}
-	if abs, absErr := filepath.Abs(defaultAliceHomeName); absErr == nil {
+	if abs, absErr := filepath.Abs(DefaultAliceHomeName()); absErr == nil {
 		return abs
 	}
-	return defaultAliceHomeName
+	return DefaultAliceHomeName()
 }
 
 func ResolveAliceHomeDir(override string) string {

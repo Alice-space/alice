@@ -9,7 +9,7 @@ if [[ $# -gt 0 && "$1" != -* ]]; then
 fi
 
 REPO="${ALICE_REPO:-$REPO_DEFAULT}"
-ALICE_HOME="${ALICE_HOME:-$HOME/.alice}"
+ALICE_HOME="${ALICE_HOME:-}"
 CHANNEL="release"
 SERVICE_NAME="alice.service"
 SERVICE_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
@@ -470,6 +470,13 @@ main() {
       die "unsupported channel: $CHANNEL"
       ;;
   esac
+  if [[ -z "$(trim "$ALICE_HOME")" ]]; then
+    if [[ "$CHANNEL" == "dev" ]]; then
+      ALICE_HOME="$HOME/.alice-dev"
+    else
+      ALICE_HOME="$HOME/.alice"
+    fi
+  fi
   normalize_alice_paths
 
   case "$ACTION" in

@@ -15,19 +15,21 @@ A Feishu long-connection connector for Codex / Claude / Kimi.
 
 - Standalone runtime: binary can run without repository checkout
 - Embedded prompts + skills: prompts are bundled in binary; bundled skills are synced on startup
-- Isolated runtime home: defaults to `${ALICE_HOME:-~/.alice}`
+- Isolated runtime home: release builds default to `~/.alice`, dev builds default to `~/.alice-dev`
 - Isolated Codex home: defaults to `${ALICE_HOME}/.codex`
 - Dev/Main branch release pipeline with automatic tagging on main merge
 
 ## Runtime Layout
 
-By default Alice uses:
+Release builds use this default layout (`~/.alice`):
 
 - Config: `${ALICE_HOME:-~/.alice}/config.yaml`
 - Binary: `${ALICE_HOME:-~/.alice}/bin/alice`
 - Logs: `${ALICE_HOME:-~/.alice}/log/YYYY-MM-DD.log` (default)
 - Runtime state: `${ALICE_HOME:-~/.alice}/memory/`
 - Bundled skills: `${ALICE_HOME:-~/.alice}/.codex/skills/`
+
+Dev builds use the same layout under `~/.alice-dev` by default.
 
 ## Requirements
 
@@ -80,6 +82,8 @@ Install dev prerelease explicitly (default is stable release):
 curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- install --channel dev
 ```
 
+`--channel dev` defaults to `~/.alice-dev` unless `--home` or `ALICE_HOME` is provided.
+
 Uninstall (remove service + binary + `~/.alice`):
 
 ```bash
@@ -94,7 +98,7 @@ curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alic
 
 What the installer does:
 
-- Downloads stable GitHub Release assets by default (dev builds only when `--channel dev` is provided)
+- Downloads stable GitHub Release assets by default (`~/.alice`), and uses dev prerelease channel only when `--channel dev` is provided (`~/.alice-dev`)
 - Verifies release checksum against `SHA256SUMS` when available
 - Initializes `${ALICE_HOME:-~/.alice}` directories and default `config.yaml` (if missing)
 - Copies existing Codex auth (`auth.json`) into `${ALICE_HOME}/.codex/` when available
