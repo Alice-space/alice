@@ -74,7 +74,7 @@ jobs:
           tar -C "${DIST_DIR}" -czf "${DIST_DIR}/${FILE_BASE}.tar.gz" "${BIN_FILE}"
 
       - name: Upload Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: alice-dev-${{ matrix.goos }}-${{ matrix.goarch }}
           path: dist/*.tar.gz
