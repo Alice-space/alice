@@ -222,7 +222,7 @@ download_and_install_binary() {
   url="https://github.com/$REPO/releases/download/${version}/${asset}"
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' RETURN
+  trap 'if [[ -n "${tmpdir:-}" ]]; then rm -rf "${tmpdir}"; fi' RETURN
 
   log "downloading $url"
   curl -fL "$url" -o "$tmpdir/$asset"
@@ -405,6 +405,7 @@ install_or_update() {
   else
     log "config missing feishu_app_id/feishu_app_secret; service installed but not started"
     log "please edit $CONFIG_PATH, then rerun install/update"
+    log "or start manually after config is ready: systemctl --user enable --now $SERVICE_NAME"
   fi
 }
 
