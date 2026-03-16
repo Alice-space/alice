@@ -92,12 +92,13 @@ curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alic
 
 - 默认下载 stable GitHub Release 并安装到 `${ALICE_HOME:-~/.alice}/bin/alice`；显式 `--channel dev` 时切换到 dev 预发布（默认目录 `~/.alice-dev`）
 - 若 release 提供 `SHA256SUMS`，会先校验校验和再解压安装
-- 初始化 `${ALICE_HOME:-~/.alice}` 目录和默认 `config.yaml`（若不存在）
+- 初始化 `${ALICE_HOME:-~/.alice}` 目录
 - 检测并复制已有 Codex 登录凭证 `auth.json` 到 `${ALICE_HOME}/.codex/`
 - 安装并管理 `systemd --user` 服务（默认 `alice.service`，自动拉起与崩溃重启）
 - 尝试开启 linger，尽量保证退出登录后服务仍保持活跃
+- 若 `config.yaml` 不存在，服务首次启动会从内嵌 `config.example.yaml` 释放配置并正常退出
 
-首次安装后请先配置 `${ALICE_HOME:-~/.alice}/config.yaml` 中的 `feishu_app_id` 和 `feishu_app_secret`，然后再次执行安装命令触发启动/重启。
+首次安装后请先配置 `${ALICE_HOME:-~/.alice}/config.yaml` 中的 `feishu_app_id` 和 `feishu_app_secret`，然后执行 `systemctl --user restart alice.service`（或再次执行安装命令）启动服务。
 
 ## 编译
 

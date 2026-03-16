@@ -237,61 +237,6 @@ download_and_install_binary() {
   log "installed binary to $BIN_PATH"
 }
 
-create_default_config_if_missing() {
-  if [[ -f "$CONFIG_PATH" ]]; then
-    return
-  fi
-
-  mkdir -p "$(dirname "$CONFIG_PATH")"
-  cat > "$CONFIG_PATH" <<'YAML'
-feishu_app_id: ""
-feishu_app_secret: ""
-feishu_base_url: "https://open.feishu.cn"
-llm_provider: "codex"
-codex_command: "codex"
-codex_timeout_secs: 120
-runtime_http_addr: "127.0.0.1:7331"
-runtime_http_token: ""
-alice_home: ""
-workspace_dir: ""
-memory_dir: ""
-prompt_dir: ""
-env: {}
-queue_capacity: 256
-worker_concurrency: 1
-automation_task_timeout_secs: 600
-idle_summary_hours: 8
-group_context_window_minutes: 5
-log_level: "info"
-log_file: ""
-log_max_size_mb: 20
-log_max_backups: 5
-log_max_age_days: 7
-log_compress: false
-YAML
-  log "created default config at $CONFIG_PATH"
-}
-
-yaml_value() {
-  local key file line value
-  key="$1"
-  file="$2"
-  line="$(grep -E "^[[:space:]]*$key[[:space:]]*:" "$file" | head -n1 || true)"
-  value="${line#*:}"
-  value="$(trim "$value")"
-  value="${value%\"}"
-  value="${value#\"}"
-  printf '%s' "$value"
-}
-
-config_has_required_credentials() {
-  [[ -f "$CONFIG_PATH" ]] || return 1
-  local app_id app_secret
-  app_id="$(yaml_value feishu_app_id "$CONFIG_PATH")"
-  app_secret="$(yaml_value feishu_app_secret "$CONFIG_PATH")"
-  [[ -n "$app_id" && -n "$app_secret" ]]
-}
-
 copy_codex_auth_if_exists() {
   local target src
   mkdir -p "$ALICE_HOME/.codex"
@@ -354,8 +299,8 @@ Environment=CODEX_HOME=$ALICE_HOME/.codex
 Environment=HOME=$HOME
 Environment=PATH=$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory=$ALICE_HOME
-ExecStart=$BIN_PATH -c $CONFIG_PATH
-Restart=always
+ExecStart=$BIN_PATH
+Restart=on-failure
 RestartSec=3
 NoNewPrivileges=yes
 
@@ -386,26 +331,26 @@ install_or_update() {
   log "target version: $version"
 
   download_and_install_binary "$version" "$CHANNEL"
-  create_default_config_if_missing
   copy_codex_auth_if_exists
   write_systemd_unit
 
   enable_linger_if_possible
   systemctl_user daemon-reload
 
-  if config_has_required_credentials; then
-    systemctl_user enable "$SERVICE_NAME" >/dev/null
-    if systemctl_user is-active --quiet "$SERVICE_NAME"; then
-      systemctl_user restart "$SERVICE_NAME"
-      log "service restarted: $SERVICE_NAME"
-    else
-      systemctl_user start "$SERVICE_NAME"
-      log "service started: $SERVICE_NAME"
-    fi
+  systemctl_user enable "$SERVICE_NAME" >/dev/null
+  if systemctl_user is-active --quiet "$SERVICE_NAME"; then
+    systemctl_user restart "$SERVICE_NAME"
+    log "service restarted: $SERVICE_NAME"
   else
-    log "config missing feishu_app_id/feishu_app_secret; service installed but not started"
-    log "please edit $CONFIG_PATH, then rerun install/update"
-    log "or start manually after config is ready: systemctl --user enable --now $SERVICE_NAME"
+    systemctl_user start "$SERVICE_NAME"
+    sleep 1
+    if systemctl_user is-active --quiet "$SERVICE_NAME"; then
+      log "service started: $SERVICE_NAME"
+    else
+      log "service exited after startup (likely first-run config bootstrap)"
+      log "check/edit config: $CONFIG_PATH"
+      log "start command: systemctl --user restart $SERVICE_NAME"
+    fi
   fi
 }
 
@@ -428,18 +373,26 @@ validate_alice_home_for_delete() {
 uninstall() {
   if has_systemd_user; then
     if systemctl_user list-unit-files | grep -q "^$SERVICE_NAME"; then
+      log "stopping and disabling service: $SERVICE_NAME"
       systemctl_user disable --now "$SERVICE_NAME" >/dev/null 2>&1 || true
     else
+      log "service unit not found; stopping if running: $SERVICE_NAME"
       systemctl_user stop "$SERVICE_NAME" >/dev/null 2>&1 || true
     fi
   else
     log "systemd --user unavailable; skipping service stop/disable"
   fi
 
-  rm -f "$SERVICE_FILE"
+  if [[ -f "$SERVICE_FILE" ]]; then
+    rm -f "$SERVICE_FILE"
+    log "removed systemd unit file: $SERVICE_FILE"
+  else
+    log "systemd unit file not found: $SERVICE_FILE"
+  fi
   if has_systemd_user; then
     systemctl_user daemon-reload >/dev/null 2>&1 || true
     systemctl_user reset-failed >/dev/null 2>&1 || true
+    log "reloaded user systemd daemon and reset failed state"
   fi
 
   rm -f "$BIN_PATH"

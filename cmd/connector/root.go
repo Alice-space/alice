@@ -17,6 +17,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	aliceassets "github.com/Alice-space/alice"
 	"github.com/Alice-space/alice/internal/bootstrap"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
@@ -74,6 +75,25 @@ func newRootCmd() *cobra.Command {
 
 func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	configPath = bootstrap.ResolveConfigPath(configPath)
+	created, err := ensureConfigFileExists(configPath)
+	if err != nil {
+		return err
+	}
+	if created {
+		fmt.Printf("[alice] created initial config at %s from embedded template\n", configPath)
+		fmt.Printf("[alice] please edit feishu_app_id/feishu_app_secret, then restart service\n")
+		return nil
+	}
+	ready, err := configHasRequiredCredentials(configPath)
+	if err != nil {
+		return err
+	}
+	if !ready {
+		fmt.Printf("[alice] config found but feishu_app_id/feishu_app_secret are empty: %s\n", configPath)
+		fmt.Printf("[alice] please edit config and restart service\n")
+		return nil
+	}
+
 	cfg, err := config.LoadFromFile(configPath)
 	if err != nil {
 		return err
@@ -153,6 +173,33 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 
 	logging.Infof("connector stopped")
 	return nil
+}
+
+func ensureConfigFileExists(configPath string) (bool, error) {
+	if _, err := os.Stat(configPath); err == nil {
+		return false, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return false, fmt.Errorf("check config path failed: %w", err)
+	}
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+		return false, fmt.Errorf("create config directory failed: %w", err)
+	}
+	if err := os.WriteFile(configPath, aliceassets.ConfigExampleYAML, 0o600); err != nil {
+		return false, fmt.Errorf("write initial config failed: %w", err)
+	}
+	return true, nil
+}
+
+func configHasRequiredCredentials(configPath string) (bool, error) {
+	v := viper.New()
+	v.SetConfigFile(configPath)
+	v.SetConfigType("yaml")
+	if err := v.ReadInConfig(); err != nil {
+		return false, fmt.Errorf("read config yaml failed: %w", err)
+	}
+	appID := strings.TrimSpace(v.GetString("feishu_app_id"))
+	appSecret := strings.TrimSpace(v.GetString("feishu_app_secret"))
+	return appID != "" && appSecret != "", nil
 }
 
 func startConfigHotReload(ctx context.Context, configPath string, runtime *bootstrap.ConnectorRuntime) error {

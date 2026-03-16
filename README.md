@@ -100,15 +100,16 @@ What the installer does:
 
 - Downloads stable GitHub Release assets by default (`~/.alice`), and uses dev prerelease channel only when `--channel dev` is provided (`~/.alice-dev`)
 - Verifies release checksum against `SHA256SUMS` when available
-- Initializes `${ALICE_HOME:-~/.alice}` directories and default `config.yaml` (if missing)
+- Initializes `${ALICE_HOME:-~/.alice}` directories
 - Copies existing Codex auth (`auth.json`) into `${ALICE_HOME}/.codex/` when available
 - Installs and manages `systemd --user` service (`alice.service` by default; override with `--service NAME`) for auto-restart
 - Attempts to enable user linger so the service can stay alive after logout
+- If `config.yaml` is missing, the service writes it from embedded `config.example.yaml` on first boot and exits cleanly
 
 After first install:
 
 1. Edit `${ALICE_HOME:-~/.alice}/config.yaml` and set `feishu_app_id` + `feishu_app_secret`
-2. Re-run the install command once to start/restart the service with your config
+2. Start or restart service: `systemctl --user restart alice.service` (or rerun installer)
 
 ## Configuration
 
