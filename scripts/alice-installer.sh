@@ -222,7 +222,7 @@ download_and_install_binary() {
   url="https://github.com/$REPO/releases/download/${version}/${asset}"
 
   tmpdir="$(mktemp -d)"
-  trap 'rm -rf "$tmpdir"' RETURN
+  trap 'if [[ -n "${tmpdir:-}" ]]; then rm -rf "${tmpdir}"; fi' RETURN
 
   log "downloading $url"
   curl -fL "$url" -o "$tmpdir/$asset"
