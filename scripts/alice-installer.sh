@@ -9,6 +9,7 @@ if [[ $# -gt 0 && "$1" != -* ]]; then
 fi
 
 REPO="${ALICE_REPO:-$REPO_DEFAULT}"
+CDN_BRANCH="${ALICE_CDN_BRANCH:-cdn}"
 ALICE_HOME="${ALICE_HOME:-}"
 CHANNEL="release"
 SERVICE_NAME="alice.service"
@@ -171,13 +172,21 @@ fetch_latest_version() {
   printf '%s' "$tag"
 }
 
+cdn_base_url() {
+  printf 'https://cdn.jsdelivr.net/gh/%s@%s' "$REPO" "$CDN_BRANCH"
+}
+
 verify_asset_checksum() {
   local version asset file_path tmpdir sums_url sums_file expected actual
   version="$1"
   asset="$2"
   file_path="$3"
   tmpdir="$4"
-  sums_url="https://github.com/$REPO/releases/download/${version}/SHA256SUMS"
+  if [[ "$CHANNEL" == "dev" ]]; then
+    sums_url="$(cdn_base_url)/dev/SHA256SUMS"
+  else
+    sums_url="$(cdn_base_url)/releases/${version}/SHA256SUMS"
+  fi
   sums_file="$tmpdir/SHA256SUMS"
 
   if ! curl -fsSL "$sums_url" -o "$sums_file"; then
@@ -219,7 +228,11 @@ download_and_install_binary() {
       die "unsupported channel: $channel"
       ;;
   esac
-  url="https://github.com/$REPO/releases/download/${version}/${asset}"
+  if [[ "$channel" == "dev" ]]; then
+    url="$(cdn_base_url)/dev/${asset}"
+  else
+    url="$(cdn_base_url)/releases/${version}/${asset}"
+  fi
 
   tmpdir="$(mktemp -d)"
   trap 'if [[ -n "${tmpdir:-}" ]]; then rm -rf "${tmpdir}"; fi' RETURN

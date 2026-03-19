@@ -7,6 +7,7 @@ feishu_base_url: "https://open.feishu.cn"
 # Optional but recommended for group chats: strict bot mention filtering
 # In trigger_mode=at (default), if both are empty, all group/topic-group messages are ignored.
 # In trigger_mode=active/prefix, matching follows trigger_mode + trigger_prefix rules.
+# Empty means Alice will not use a preconfigured bot identity for mention matching.
 feishu_bot_open_id: ""
 feishu_bot_user_id: ""
 # Group trigger mode:
@@ -17,27 +18,38 @@ trigger_mode: "at"
 # Prefix used by trigger_mode:
 # - active: ignore messages starting with this prefix
 # - prefix: only process messages starting with this prefix, and strip prefix before LLM input
+# Empty means:
+# - active: no prefix-based ignore rule
+# - prefix: invalid config (trigger_prefix is required)
 trigger_prefix: ""
 
 # LLM runtime (supported providers: codex, claude, kimi)
 llm_provider: "codex"
 codex_command: "codex"
 codex_timeout_secs: 172800
+# Optional. Empty means inherit Codex CLI default model from ~/.codex/config.toml.
+# Current local examples on 2026-03-19 (Codex 0.115.0): gpt-5.4, gpt-5.4-mini, gpt-5.3-codex,
+# gpt-5.2-codex, gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1, gpt-5-codex, gpt-5.
 codex_model: ""
+# Optional. Empty means inherit Codex CLI default reasoning effort.
+# Common values: low, medium, high, xhigh. Some models support only a subset; e.g. a few older
+# mini models only allow medium/high, and some non-codex GPT-5 models also support minimal.
 codex_model_reasoning_effort: ""
 claude_command: "claude"
 claude_timeout_secs: 172800
 kimi_command: "kimi"
 kimi_timeout_secs: 172800
 runtime_http_addr: "127.0.0.1:7331"
+# Optional. Empty means Alice auto-generates a runtime API token on each startup.
 runtime_http_token: ""
 # Optional runtime home (release default: ~/.alice; dev build default: ~/.alice-dev).
-# You can also override with CLI flag --alice-home.
+# Empty means use the build-channel default. You can also override with CLI flag --alice-home.
 alice_home: ""
 # Runtime directories (leave empty to use defaults under alice_home)
 # workspace_dir default: <alice_home>/workspace
 # memory_dir default: <alice_home>/memory
 # prompt_dir default: <alice_home>/prompts
+# Empty means use the default path under alice_home.
 workspace_dir: ""
 # Optional: environment variables passed to LLM process (proxy, etc.)
 # Connector process sets CODEX_HOME to <alice_home>/.codex at startup.
@@ -46,11 +58,13 @@ env:
   HTTPS_PROXY: "http://127.0.0.1:7890"
   ALL_PROXY: "socks5://127.0.0.1:7891"
 # Memory directory (long-term MEMORY.md + short-term YYYY-MM-DD.md)
+# Empty means use <alice_home>/memory.
 memory_dir: ""
+# Empty means use <alice_home>/prompts.
 prompt_dir: ""
 
 # Prompt and fallback
-# Optional, default is empty. Set this only if you want a global instruction prefix.
+# Optional. Empty means disabled. Set this only if you want a global instruction prefix.
 codex_prompt_prefix: ""
 claude_prompt_prefix: ""
 kimi_prompt_prefix: ""

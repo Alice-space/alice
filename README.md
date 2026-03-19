@@ -61,25 +61,25 @@ Installer script (in this repo): [`scripts/alice-installer.sh`](./scripts/alice-
 Install latest release (also works as update if run again):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- install
+curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install
 ```
 
 Update to latest release (explicit action):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- update
+curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- update
 ```
 
 Install/update to a pinned version:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- install --version vX.Y.Z
+curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install --version vX.Y.Z
 ```
 
 Install dev prerelease explicitly (default is stable release):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- install --channel dev
+curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install --channel dev
 ```
 
 `--channel dev` defaults to `~/.alice-dev` unless `--home` or `ALICE_HOME` is provided.
@@ -87,13 +87,13 @@ curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alic
 Uninstall (remove service + binary + `~/.alice`):
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- uninstall
+curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 ```
 
 Uninstall but keep runtime data:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- uninstall --keep-data
+curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall --keep-data
 ```
 
 What the installer does:

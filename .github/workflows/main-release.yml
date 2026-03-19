@@ -166,6 +166,11 @@ jobs:
     needs: [verify-and-tag, build]
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v8
         with:
@@ -185,3 +190,11 @@ jobs:
           tag_name: ${{ needs.verify-and-tag.outputs.release_tag }}
           generate_release_notes: true
           files: release-assets/*
+
+      - name: Publish Release Assets To CDN Branch
+        run: |
+          set -euo pipefail
+          bash scripts/publish-cdn-assets.sh \
+            --mode release \
+            --version "${{ needs.verify-and-tag.outputs.release_tag }}" \
+            --source-dir release-assets

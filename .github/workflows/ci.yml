@@ -9,7 +9,7 @@ on:
       - dev
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
   check:
@@ -87,6 +87,9 @@ jobs:
     permissions:
       contents: write
     steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
       - name: Download Build Artifacts
         uses: actions/download-artifact@v8
         with:
@@ -111,3 +114,8 @@ jobs:
           generate_release_notes: false
           files: release-assets/*
           fail_on_unmatched_files: true
+
+      - name: Publish Dev Assets To CDN Branch
+        run: |
+          set -euo pipefail
+          bash scripts/publish-cdn-assets.sh --mode dev --source-dir release-assets

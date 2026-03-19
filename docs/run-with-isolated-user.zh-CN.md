@@ -56,7 +56,7 @@ sudo -u codexbot -H env HOME=/home/codexbot CODEX_HOME=/home/codexbot/.alice/.co
 
 ```bash
 sudo -u codexbot -H bash -lc '
-  curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- install
+  curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install
 '
 ```
 
@@ -92,7 +92,7 @@ memory_dir: "/home/codexbot/.alice/memory"
 
 ```bash
 sudo -u codexbot -H bash -lc '
-  curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- install
+  curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install
 '
 ```
 
@@ -122,7 +122,7 @@ sudo -u codexbot -H bash -lc '
 
 ```bash
 sudo -u codexbot -H bash -lc '
-  curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- uninstall
+  curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 '
 ```
 
@@ -130,7 +130,7 @@ sudo -u codexbot -H bash -lc '
 
 ```bash
 sudo -u codexbot -H bash -lc '
-  curl -fsSL https://raw.githubusercontent.com/Alice-space/alice/main/scripts/alice-installer.sh | bash -s -- uninstall --keep-data
+  curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall --keep-data
 '
 ```
 
