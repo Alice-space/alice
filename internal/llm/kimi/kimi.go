@@ -4,15 +4,21 @@ import (
 	"bufio"
 	"bytes"
 	"context"
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/mcpbridge"
 	"github.com/Alice-space/alice/internal/prompting"
 )
 
@@ -39,14 +45,15 @@ func (r Runner) RunWithThreadAndProgress(
 	env map[string]string,
 	onThinking func(step string),
 ) (string, string, error) {
+	requestedThreadID := strings.TrimSpace(threadID)
 	agentName = strings.TrimSpace(agentName)
 	model = strings.TrimSpace(model)
-	prompt, err := r.renderPrompt(threadID, userText)
+	prompt, err := r.renderPrompt(requestedThreadID, userText)
 	if err != nil {
-		return "", strings.TrimSpace(threadID), err
+		return "", requestedThreadID, err
 	}
 	if strings.TrimSpace(prompt) == "" {
-		return "", strings.TrimSpace(threadID), errors.New("empty prompt")
+		return "", requestedThreadID, errors.New("empty prompt")
 	}
 
 	timeout := r.Timeout
@@ -56,10 +63,13 @@ func (r Runner) RunWithThreadAndProgress(
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmdArgs := buildExecArgs(threadID, prompt, model)
+	workDir := r.resolvedWorkspaceDir()
+	sessionEnv := mergeEnvMap(r.Env, env)
+	execThreadID := effectiveThreadID(requestedThreadID, sessionEnv)
+	cmdArgs := buildExecArgs(execThreadID, prompt, model)
 	cmd := exec.CommandContext(tctx, r.Command, cmdArgs...)
-	if strings.TrimSpace(r.WorkspaceDir) != "" {
-		cmd.Dir = r.WorkspaceDir
+	if workDir != "" {
+		cmd.Dir = workDir
 	}
 	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
 
@@ -85,7 +95,7 @@ func (r Runner) RunWithThreadAndProgress(
 
 	var stdout bytes.Buffer
 	finalMessage := ""
-	activeThreadID := strings.TrimSpace(threadID)
+	activeThreadID := execThreadID
 	toolCalls := make([]string, 0, 2)
 	emitTrace := func(runErr error) {
 		logging.DebugAgentTrace(logging.AgentTrace{
@@ -108,6 +118,9 @@ func (r Runner) RunWithThreadAndProgress(
 		stdout.WriteByte('\n')
 
 		event := parseEventLine(line)
+		if strings.TrimSpace(event.SessionID) != "" {
+			activeThreadID = strings.TrimSpace(event.SessionID)
+		}
 		if strings.TrimSpace(event.ToolCall) != "" {
 			toolCalls = append(toolCalls, strings.TrimSpace(event.ToolCall))
 		}
@@ -123,6 +136,9 @@ func (r Runner) RunWithThreadAndProgress(
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		<-stderrDone
+		if strings.TrimSpace(activeThreadID) == "" {
+			activeThreadID = r.discoverThreadID(workDir, sessionEnv)
+		}
 		runErr := fmt.Errorf("read kimi output failed: %w", scanErr)
 		emitTrace(runErr)
 		return "", activeThreadID, runErr
@@ -130,6 +146,9 @@ func (r Runner) RunWithThreadAndProgress(
 
 	err = cmd.Wait()
 	<-stderrDone
+	if strings.TrimSpace(activeThreadID) == "" {
+		activeThreadID = r.discoverThreadID(workDir, sessionEnv)
+	}
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
 		timeoutErr := errors.New("kimi timeout")
 		emitTrace(timeoutErr)
@@ -207,4 +226,148 @@ func errorString(err error) string {
 		return ""
 	}
 	return err.Error()
+}
+
+func (r Runner) resolvedWorkspaceDir() string {
+	workspaceDir := strings.TrimSpace(r.WorkspaceDir)
+	if workspaceDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil {
+			return ""
+		}
+		workspaceDir = cwd
+	}
+	absDir, err := filepath.Abs(workspaceDir)
+	if err != nil {
+		return filepath.Clean(workspaceDir)
+	}
+	return filepath.Clean(absDir)
+}
+
+func mergeEnvMap(base map[string]string, overrides map[string]string) map[string]string {
+	if len(base) == 0 && len(overrides) == 0 {
+		return nil
+	}
+	merged := make(map[string]string, len(base)+len(overrides))
+	for key, value := range base {
+		merged[key] = value
+	}
+	for key, value := range overrides {
+		merged[key] = value
+	}
+	return merged
+}
+
+func effectiveThreadID(threadID string, env map[string]string) string {
+	threadID = strings.TrimSpace(threadID)
+	if threadID != "" {
+		return threadID
+	}
+	if sessionKey := strings.TrimSpace(env[mcpbridge.EnvSessionKey]); sessionKey != "" {
+		return sessionKey
+	}
+	return ""
+}
+
+func (r Runner) discoverThreadID(workDir string, env map[string]string) string {
+	workDir = strings.TrimSpace(workDir)
+	if workDir == "" {
+		return ""
+	}
+
+	shareDir := strings.TrimSpace(env["KIMI_SHARE_DIR"])
+	if shareDir == "" {
+		shareDir = strings.TrimSpace(os.Getenv("KIMI_SHARE_DIR"))
+	}
+	if shareDir == "" {
+		homeDir, err := os.UserHomeDir()
+		if err != nil || strings.TrimSpace(homeDir) == "" {
+			return ""
+		}
+		shareDir = filepath.Join(homeDir, ".kimi")
+	}
+
+	if threadID := discoverThreadIDFromMetadata(shareDir, workDir); threadID != "" {
+		return threadID
+	}
+	return discoverThreadIDFromSessionDirs(shareDir, workDir)
+}
+
+func discoverThreadIDFromMetadata(shareDir string, workDir string) string {
+	raw, err := os.ReadFile(filepath.Join(shareDir, "kimi.json"))
+	if err != nil {
+		return ""
+	}
+
+	var metadata struct {
+		WorkDirs []struct {
+			Path          string `json:"path"`
+			LastSessionID string `json:"last_session_id"`
+		} `json:"work_dirs"`
+	}
+	if err := json.Unmarshal(raw, &metadata); err != nil {
+		return ""
+	}
+
+	for _, entry := range metadata.WorkDirs {
+		if normalizePath(entry.Path) != normalizePath(workDir) {
+			continue
+		}
+		if strings.TrimSpace(entry.LastSessionID) != "" {
+			return strings.TrimSpace(entry.LastSessionID)
+		}
+	}
+	return ""
+}
+
+func discoverThreadIDFromSessionDirs(shareDir string, workDir string) string {
+	workDirHash := md5.Sum([]byte(normalizePath(workDir)))
+	sessionRoot := filepath.Join(shareDir, "sessions", hex.EncodeToString(workDirHash[:]))
+
+	entries, err := os.ReadDir(sessionRoot)
+	if err != nil {
+		return ""
+	}
+
+	type candidate struct {
+		name    string
+		modTime time.Time
+	}
+	candidates := make([]candidate, 0, len(entries))
+	for _, entry := range entries {
+		if !entry.IsDir() {
+			continue
+		}
+		info, err := entry.Info()
+		if err != nil {
+			continue
+		}
+		candidates = append(candidates, candidate{
+			name:    strings.TrimSpace(entry.Name()),
+			modTime: info.ModTime(),
+		})
+	}
+	if len(candidates) == 0 {
+		return ""
+	}
+
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].modTime.Equal(candidates[j].modTime) {
+			return candidates[i].name > candidates[j].name
+		}
+		return candidates[i].modTime.After(candidates[j].modTime)
+	})
+	return candidates[0].name
+}
+
+func normalizePath(path string) string {
+	path = strings.TrimSpace(path)
+	if path == "" {
+		return ""
+	}
+	absPath, err := filepath.Abs(path)
+	if err != nil {
+		return filepath.Clean(path)
+	}
+	return filepath.Clean(absPath)
 }
