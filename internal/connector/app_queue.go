@@ -118,12 +118,24 @@ func (a *App) enqueueJob(job *Job) (queued bool, cancelActive context.CancelFunc
 	job.SessionVersion = nextVersion
 	active, interruptActive := a.state.active[job.SessionKey]
 	interruptActive = interruptActive && active.cancel != nil && active.version < nextVersion
+	supersedeQueued := false
+	for _, pendingJob := range a.state.pending {
+		if strings.TrimSpace(pendingJob.SessionKey) != job.SessionKey {
+			continue
+		}
+		if pendingJob.SessionVersion < nextVersion {
+			supersedeQueued = true
+			break
+		}
+	}
 
 	select {
 	case a.queue <- *job:
 		if interruptActive {
 			cancelActive = active.cancel
 			canceledEventID = active.eventID
+		}
+		if interruptActive || supersedeQueued {
 			if nextVersion > a.state.superseded[job.SessionKey] {
 				a.state.superseded[job.SessionKey] = nextVersion
 			}
