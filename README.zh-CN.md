@@ -100,6 +100,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 
 首次安装后请先配置 `${ALICE_HOME:-~/.alice}/config.yaml` 中的 `feishu_app_id` 和 `feishu_app_secret`，然后执行 `systemctl --user restart alice.service`（或再次执行安装命令）启动服务。
 
+安装完成后可用 `alice --version` 确认当前二进制版本。
+
 ## 编译
 
 编译当前平台可执行文件：

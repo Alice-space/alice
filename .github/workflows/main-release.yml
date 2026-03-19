@@ -144,7 +144,7 @@ jobs:
 
           CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
             go build -trimpath \
-              -ldflags "-s -w -X github.com/Alice-space/alice/internal/config.defaultAliceHomeName=.alice" \
+              -ldflags "-s -w -X github.com/Alice-space/alice/internal/config.defaultAliceHomeName=.alice -X github.com/Alice-space/alice/internal/buildinfo.Version=${VERSION}" \
               -o "${OUT_PATH}" ./cmd/connector
 
           if [[ "${{ matrix.archive }}" == "zip" ]]; then

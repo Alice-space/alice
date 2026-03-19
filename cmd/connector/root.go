@@ -19,6 +19,7 @@ import (
 
 	aliceassets "github.com/Alice-space/alice"
 	"github.com/Alice-space/alice/internal/bootstrap"
+	"github.com/Alice-space/alice/internal/buildinfo"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
 )
@@ -27,7 +28,12 @@ func newRootCmd() *cobra.Command {
 	configPath := config.DefaultConfigPath()
 	pidFilePath := config.DefaultPIDFilePath()
 	aliceHome := ""
+	showVersion := false
 	executeConnector := func(cmd *cobra.Command) error {
+		if showVersion {
+			_, err := fmt.Fprintln(cmd.OutOrStdout(), buildinfo.CurrentVersion())
+			return err
+		}
 		override := strings.TrimSpace(aliceHome)
 		if override != "" {
 			_ = os.Setenv(config.EnvAliceHome, config.ResolveAliceHomeDir(override))
@@ -59,6 +65,7 @@ func newRootCmd() *cobra.Command {
 		"",
 		fmt.Sprintf("alice runtime home dir (default: ~/%s)", config.DefaultAliceHomeName()),
 	)
+	root.Flags().BoolVar(&showVersion, "version", false, "print Alice version and exit")
 	root.PersistentFlags().StringVarP(&configPath, "config", "c", config.DefaultConfigPath(), "path to config yaml")
 	root.PersistentFlags().StringVar(&pidFilePath, "pid-file", config.DefaultPIDFilePath(), "path to pid file (empty disables pid lock)")
 	root.AddCommand(&cobra.Command{

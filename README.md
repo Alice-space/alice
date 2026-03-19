@@ -110,6 +110,7 @@ After first install:
 
 1. Edit `${ALICE_HOME:-~/.alice}/config.yaml` and set `feishu_app_id` + `feishu_app_secret`
 2. Start or restart service: `systemctl --user restart alice.service` (or rerun installer)
+3. Confirm the installed binary version: `alice --version`
 
 ## Configuration
 
