@@ -28,21 +28,21 @@ const (
 )
 
 type LLMProfileConfig struct {
-	Provider         string `mapstructure:"provider"`
-	Model            string `mapstructure:"model"`
-	Profile          string `mapstructure:"profile"`
-	ReasoningEffort  string `mapstructure:"reasoning_effort"`
-	Personality      string `mapstructure:"personality"`
+	Provider        string `mapstructure:"provider"`
+	Model           string `mapstructure:"model"`
+	Profile         string `mapstructure:"profile"`
+	ReasoningEffort string `mapstructure:"reasoning_effort"`
+	Personality     string `mapstructure:"personality"`
 }
 
 type GroupSceneConfig struct {
-	Enabled           bool   `mapstructure:"enabled"`
-	RequireMention    bool   `mapstructure:"require_mention"`
-	TriggerTag        string `mapstructure:"trigger_tag"`
-	SessionScope      string `mapstructure:"session_scope"`
-	LLMProfile        string `mapstructure:"llm_profile"`
-	NoReplyToken      string `mapstructure:"no_reply_token"`
-	CreateFeishuThread bool  `mapstructure:"create_feishu_thread"`
+	Enabled            bool   `mapstructure:"enabled"`
+	RequireMention     bool   `mapstructure:"require_mention"`
+	TriggerTag         string `mapstructure:"trigger_tag"`
+	SessionScope       string `mapstructure:"session_scope"`
+	LLMProfile         string `mapstructure:"llm_profile"`
+	NoReplyToken       string `mapstructure:"no_reply_token"`
+	CreateFeishuThread bool   `mapstructure:"create_feishu_thread"`
 }
 
 type GroupScenesConfig struct {
@@ -61,7 +61,7 @@ type Config struct {
 	ImmediateFeedbackMode     string `mapstructure:"immediate_feedback_mode"`
 	ImmediateFeedbackReaction string `mapstructure:"immediate_feedback_reaction"`
 
-	LLMProvider string                       `mapstructure:"llm_provider"`
+	LLMProvider string                      `mapstructure:"llm_provider"`
 	LLMProfiles map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
 	GroupScenes GroupScenesConfig           `mapstructure:"group_scenes"`
 

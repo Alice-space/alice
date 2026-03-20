@@ -75,14 +75,14 @@ func TestApplyReloadableFields(t *testing.T) {
 		GroupScenes: config.GroupScenesConfig{
 			Chat: config.GroupSceneConfig{Enabled: true, LLMProfile: "chat", SessionScope: config.GroupSceneSessionPerChat, NoReplyToken: "[[NO_REPLY]]"},
 		},
-		LogLevel:                  "info",
-		LogFile:                   "",
-		LogMaxSizeMB:              20,
-		LogMaxBackups:             5,
-		LogMaxAgeDays:             7,
-		LogCompress:               false,
-		QueueCapacity:             256,
-		WorkerConcurrency:         1,
+		LogLevel:          "info",
+		LogFile:           "",
+		LogMaxSizeMB:      20,
+		LogMaxBackups:     5,
+		LogMaxAgeDays:     7,
+		LogCompress:       false,
+		QueueCapacity:     256,
+		WorkerConcurrency: 1,
 	}
 	next := current
 	next.TriggerMode = config.TriggerModePrefix
