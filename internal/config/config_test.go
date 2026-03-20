@@ -78,11 +78,14 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if cfg.IdleSummaryIdle != 8*time.Hour {
 		t.Fatalf("unexpected idle_summary_idle: %s", cfg.IdleSummaryIdle)
 	}
-	if cfg.GroupContextWindowMinutes != 5 {
-		t.Fatalf("unexpected group_context_window_minutes: %d", cfg.GroupContextWindowMinutes)
+	if len(cfg.LLMProfiles) != 0 {
+		t.Fatalf("unexpected llm_profiles: %#v", cfg.LLMProfiles)
 	}
-	if cfg.GroupContextWindowTTL != 5*time.Minute {
-		t.Fatalf("unexpected group_context_window_ttl: %s", cfg.GroupContextWindowTTL)
+	if cfg.GroupScenes.Chat.Enabled {
+		t.Fatal("chat scene should default to disabled")
+	}
+	if cfg.GroupScenes.Work.Enabled {
+		t.Fatal("work scene should default to disabled")
 	}
 	if cfg.AliceHome != AliceHomeDir() {
 		t.Fatalf("unexpected alice_home: %s", cfg.AliceHome)
@@ -318,24 +321,50 @@ idle_summary_hours: 0
 	}
 }
 
-func TestLoadFromFile_GroupContextWindowMinutesInvalid(t *testing.T) {
+func TestLoadFromFile_GroupScenesConfig(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	content := `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-group_context_window_minutes: 0
+llm_profiles:
+  chat:
+    provider: codex
+    model: gpt-5.4-mini
+    reasoning_effort: low
+    personality: Friendly
+  work:
+    provider: codex
+    model: gpt-5.4
+    reasoning_effort: xhigh
+    personality: pragmatic
+group_scenes:
+  chat:
+    enabled: true
+    llm_profile: chat
+  work:
+    enabled: true
+    llm_profile: work
 `
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write config failed: %v", err)
 	}
 
-	_, err := LoadFromFile(path)
-	if err == nil {
-		t.Fatal("expected error, got nil")
+	cfg, err := LoadFromFile(path)
+	if err != nil {
+		t.Fatalf("load config failed: %v", err)
 	}
-	if !strings.Contains(err.Error(), "group_context_window_minutes must be > 0") {
-		t.Fatalf("unexpected error: %v", err)
+	if !cfg.GroupScenes.Chat.Enabled || cfg.GroupScenes.Chat.LLMProfile != "chat" {
+		t.Fatalf("unexpected chat scene: %#v", cfg.GroupScenes.Chat)
+	}
+	if !cfg.GroupScenes.Work.Enabled || cfg.GroupScenes.Work.LLMProfile != "work" {
+		t.Fatalf("unexpected work scene: %#v", cfg.GroupScenes.Work)
+	}
+	if cfg.LLMProfiles["chat"].Personality != "friendly" {
+		t.Fatalf("unexpected chat personality: %#v", cfg.LLMProfiles["chat"])
+	}
+	if cfg.LLMProfiles["work"].ReasoningEffort != "xhigh" {
+		t.Fatalf("unexpected work profile: %#v", cfg.LLMProfiles["work"])
 	}
 }
 

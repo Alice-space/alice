@@ -33,19 +33,19 @@ type App struct {
 }
 
 type appRuntimeConfig struct {
-	triggerMode           string
-	triggerPrefix         string
-	feishuBotOpenID       string
-	feishuBotUserID       string
-	groupContextWindowTTL time.Duration
-	idleSummaryIdle       time.Duration
+	triggerMode     string
+	triggerPrefix   string
+	llmProvider     string
+	llmProfiles     map[string]config.LLMProfileConfig
+	groupScenes     config.GroupScenesConfig
+	feishuBotOpenID string
+	feishuBotUserID string
+	idleSummaryIdle time.Duration
 }
 
 const (
 	idleSummaryScanInterval   = 60 * time.Second
 	sessionStateFlushInterval = 1 * time.Second
-	defaultGroupContextWindow = 5 * time.Minute
-	maxMediaWindowEntries     = 20
 )
 
 func NewApp(cfg config.Config, processor *Processor) *App {
@@ -62,12 +62,14 @@ func NewApp(cfg config.Config, processor *Processor) *App {
 
 func newAppRuntimeConfig(cfg config.Config) appRuntimeConfig {
 	return appRuntimeConfig{
-		triggerMode:           cfg.TriggerMode,
-		triggerPrefix:         cfg.TriggerPrefix,
-		feishuBotOpenID:       cfg.FeishuBotOpenID,
-		feishuBotUserID:       cfg.FeishuBotUserID,
-		groupContextWindowTTL: cfg.GroupContextWindowTTL,
-		idleSummaryIdle:       cfg.IdleSummaryIdle,
+		triggerMode:     cfg.TriggerMode,
+		triggerPrefix:   cfg.TriggerPrefix,
+		llmProvider:     cfg.LLMProvider,
+		llmProfiles:     cloneLLMProfiles(cfg.LLMProfiles),
+		groupScenes:     cfg.GroupScenes,
+		feishuBotOpenID: cfg.FeishuBotOpenID,
+		feishuBotUserID: cfg.FeishuBotUserID,
+		idleSummaryIdle: cfg.IdleSummaryIdle,
 	}
 }
 
@@ -95,6 +97,17 @@ func (a *App) IdleSummaryIdle() time.Duration {
 		return 8 * time.Hour
 	}
 	return cfg.idleSummaryIdle
+}
+
+func cloneLLMProfiles(in map[string]config.LLMProfileConfig) map[string]config.LLMProfileConfig {
+	if len(in) == 0 {
+		return map[string]config.LLMProfileConfig{}
+	}
+	out := make(map[string]config.LLMProfileConfig, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
 }
 
 func (a *App) SetPromptLoader(loader *prompting.Loader) {
@@ -306,33 +319,8 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageReceiveV1) error {
 	logIncomingEventDebug(event)
 	runtimeCfg := a.runtimeConfig()
-	accepted := shouldProcessIncomingMessage(
-		event,
-		runtimeCfg.triggerMode,
-		runtimeCfg.triggerPrefix,
-		runtimeCfg.feishuBotOpenID,
-		runtimeCfg.feishuBotUserID,
-	)
-	a.cacheGroupContextWindow(ctx, event, accepted)
-	if !accepted {
-		logging.Debugf(
-			"incoming message ignored source=feishu_im event_id=%s reason=group_trigger_unmatched trigger_mode=%s chat_type=%s",
-			eventID(event),
-			normalizedTriggerMode(runtimeCfg.triggerMode),
-			strings.TrimSpace(deref(event.Event.Message.ChatType)),
-		)
-		return nil
-	}
 
 	job, err := BuildJob(event)
-	if err != nil {
-		if errors.Is(err, ErrIgnoreMessage) {
-			if syntheticJob, ok := a.buildSyntheticMentionJob(event); ok {
-				job = syntheticJob
-				err = nil
-			}
-		}
-	}
 	if err != nil {
 		if errors.Is(err, ErrIgnoreMessage) {
 			logging.Debugf("incoming message ignored source=feishu_im event_id=%s", eventID(event))
@@ -342,11 +330,15 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 		logging.Debugf("incoming message rejected source=feishu_im event_id=%s err=%v", eventID(event), err)
 		return nil
 	}
-	normalizeIncomingGroupJobTextForTriggerMode(job, runtimeCfg.triggerMode, runtimeCfg.triggerPrefix)
-	if event != nil && event.Event != nil {
-		a.resolveJobSessionKey(job, event.Event.Message)
+	if !a.routeIncomingJob(job, event) {
+		logging.Debugf(
+			"incoming message ignored source=feishu_im event_id=%s reason=group_trigger_unmatched trigger_mode=%s chat_type=%s",
+			eventID(event),
+			normalizedTriggerMode(runtimeCfg.triggerMode),
+			strings.TrimSpace(deref(event.Event.Message.ChatType)),
+		)
+		return nil
 	}
-	a.mergeRecentGroupContextWindow(job)
 	job.BotOpenID = strings.TrimSpace(runtimeCfg.feishuBotOpenID)
 	job.BotUserID = strings.TrimSpace(runtimeCfg.feishuBotUserID)
 

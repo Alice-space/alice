@@ -193,6 +193,9 @@ EOF
 		"hello",
 		"",
 		"",
+		"",
+		"",
+		"",
 		nil,
 		nil,
 	)
@@ -220,7 +223,7 @@ func TestBuildPrompt_NewThreadIncludesPrefix(t *testing.T) {
 		Prompts:      prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 		PromptPrefix: "你是助手Alice。",
 	}
-	prompt, err := runner.renderPrompt("", "你好")
+	prompt, err := runner.renderPrompt("", "你好", "", "")
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
@@ -233,7 +236,7 @@ func TestBuildPrompt_NewThreadWithEmptyPrefix(t *testing.T) {
 	runner := Runner{
 		Prompts: prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 	}
-	prompt, err := runner.renderPrompt("", "你好")
+	prompt, err := runner.renderPrompt("", "你好", "", "")
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
@@ -247,7 +250,7 @@ func TestBuildPrompt_ResumeThreadSkipsPrefix(t *testing.T) {
 		Prompts:      prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 		PromptPrefix: "你是助手Alice。",
 	}
-	prompt, err := runner.renderPrompt("thread_123", "你好")
+	prompt, err := runner.renderPrompt("thread_123", "你好", "", "")
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
@@ -277,6 +280,9 @@ EOF
 		"",
 		"assistant",
 		"hello",
+		"",
+		"",
+		"",
 		"",
 		"",
 		map[string]string{"ALICE_TEST_ENV": "env_ok"},
@@ -357,7 +363,7 @@ wait $!
 	done := make(chan error, 1)
 	startedAt := time.Now()
 	go func() {
-		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "assistant", "hello", "", "", nil, nil)
+		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "assistant", "hello", "", "", "", "", "", nil, nil)
 		done <- err
 	}()
 

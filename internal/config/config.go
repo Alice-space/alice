@@ -22,6 +22,34 @@ const DefaultImmediateFeedbackReaction = "SMILE"
 
 var configValidator = validator.New()
 
+const (
+	GroupSceneSessionPerChat   = "per_chat"
+	GroupSceneSessionPerThread = "per_thread"
+)
+
+type LLMProfileConfig struct {
+	Provider         string `mapstructure:"provider"`
+	Model            string `mapstructure:"model"`
+	Profile          string `mapstructure:"profile"`
+	ReasoningEffort  string `mapstructure:"reasoning_effort"`
+	Personality      string `mapstructure:"personality"`
+}
+
+type GroupSceneConfig struct {
+	Enabled           bool   `mapstructure:"enabled"`
+	RequireMention    bool   `mapstructure:"require_mention"`
+	TriggerTag        string `mapstructure:"trigger_tag"`
+	SessionScope      string `mapstructure:"session_scope"`
+	LLMProfile        string `mapstructure:"llm_profile"`
+	NoReplyToken      string `mapstructure:"no_reply_token"`
+	CreateFeishuThread bool  `mapstructure:"create_feishu_thread"`
+}
+
+type GroupScenesConfig struct {
+	Chat GroupSceneConfig `mapstructure:"chat"`
+	Work GroupSceneConfig `mapstructure:"work"`
+}
+
 type Config struct {
 	FeishuAppID               string `mapstructure:"feishu_app_id"`
 	FeishuAppSecret           string `mapstructure:"feishu_app_secret"`
@@ -33,7 +61,9 @@ type Config struct {
 	ImmediateFeedbackMode     string `mapstructure:"immediate_feedback_mode"`
 	ImmediateFeedbackReaction string `mapstructure:"immediate_feedback_reaction"`
 
-	LLMProvider string `mapstructure:"llm_provider"`
+	LLMProvider string                       `mapstructure:"llm_provider"`
+	LLMProfiles map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
+	GroupScenes GroupScenesConfig           `mapstructure:"group_scenes"`
 
 	CodexCommand         string            `mapstructure:"codex_command"`
 	CodexTimeout         time.Duration     `mapstructure:"-"`
@@ -65,9 +95,6 @@ type Config struct {
 	AutomationTaskTimeout     time.Duration `mapstructure:"-"`
 	IdleSummaryHours          int           `mapstructure:"idle_summary_hours"`
 	IdleSummaryIdle           time.Duration
-
-	GroupContextWindowMinutes int           `mapstructure:"group_context_window_minutes"`
-	GroupContextWindowTTL     time.Duration `mapstructure:"-"`
 
 	LogLevel      string `mapstructure:"log_level"`
 	LogFile       string `mapstructure:"log_file"`
@@ -107,7 +134,20 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("worker_concurrency", 1)
 	v.SetDefault("automation_task_timeout_secs", 6000)
 	v.SetDefault("idle_summary_hours", 8)
-	v.SetDefault("group_context_window_minutes", 5)
+	v.SetDefault("group_scenes.chat.enabled", false)
+	v.SetDefault("group_scenes.chat.require_mention", false)
+	v.SetDefault("group_scenes.chat.trigger_tag", "")
+	v.SetDefault("group_scenes.chat.session_scope", GroupSceneSessionPerChat)
+	v.SetDefault("group_scenes.chat.llm_profile", "")
+	v.SetDefault("group_scenes.chat.no_reply_token", "[[NO_REPLY]]")
+	v.SetDefault("group_scenes.chat.create_feishu_thread", false)
+	v.SetDefault("group_scenes.work.enabled", false)
+	v.SetDefault("group_scenes.work.require_mention", true)
+	v.SetDefault("group_scenes.work.trigger_tag", "#work")
+	v.SetDefault("group_scenes.work.session_scope", GroupSceneSessionPerThread)
+	v.SetDefault("group_scenes.work.llm_profile", "")
+	v.SetDefault("group_scenes.work.no_reply_token", "")
+	v.SetDefault("group_scenes.work.create_feishu_thread", true)
 	v.SetDefault("log_level", "info")
 	v.SetDefault("log_file", "")
 	v.SetDefault("log_max_size_mb", 20)
@@ -134,6 +174,8 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.ImmediateFeedbackMode = strings.ToLower(strings.TrimSpace(cfg.ImmediateFeedbackMode))
 	cfg.ImmediateFeedbackReaction = strings.ToUpper(strings.TrimSpace(cfg.ImmediateFeedbackReaction))
 	cfg.LLMProvider = strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
+	cfg.LLMProfiles = normalizeLLMProfiles(cfg.LLMProfiles)
+	cfg.GroupScenes = normalizeGroupScenes(cfg.GroupScenes)
 	cfg.CodexCommand = strings.TrimSpace(cfg.CodexCommand)
 	cfg.CodexModel = strings.TrimSpace(cfg.CodexModel)
 	cfg.CodexReasoningEffort = strings.ToLower(strings.TrimSpace(cfg.CodexReasoningEffort))
@@ -269,7 +311,6 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.KimiTimeout = time.Duration(cfg.KimiTimeoutSecs) * time.Second
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 	cfg.IdleSummaryIdle = time.Duration(cfg.IdleSummaryHours) * time.Hour
-	cfg.GroupContextWindowTTL = time.Duration(cfg.GroupContextWindowMinutes) * time.Minute
 
 	return cfg, nil
 }
@@ -287,6 +328,45 @@ func normalizeEnvMap(in map[string]string) map[string]string {
 	return out
 }
 
+func normalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileConfig {
+	if len(in) == 0 {
+		return map[string]LLMProfileConfig{}
+	}
+	out := make(map[string]LLMProfileConfig, len(in))
+	for rawName, profile := range in {
+		name := strings.ToLower(strings.TrimSpace(rawName))
+		if name == "" {
+			continue
+		}
+		profile.Provider = strings.ToLower(strings.TrimSpace(profile.Provider))
+		profile.Model = strings.TrimSpace(profile.Model)
+		profile.Profile = strings.TrimSpace(profile.Profile)
+		profile.ReasoningEffort = strings.ToLower(strings.TrimSpace(profile.ReasoningEffort))
+		profile.Personality = strings.ToLower(strings.TrimSpace(profile.Personality))
+		out[name] = profile
+	}
+	return out
+}
+
+func normalizeGroupScenes(in GroupScenesConfig) GroupScenesConfig {
+	in.Chat.TriggerTag = strings.TrimSpace(in.Chat.TriggerTag)
+	in.Chat.SessionScope = strings.ToLower(strings.TrimSpace(in.Chat.SessionScope))
+	in.Chat.LLMProfile = strings.ToLower(strings.TrimSpace(in.Chat.LLMProfile))
+	in.Chat.NoReplyToken = strings.TrimSpace(in.Chat.NoReplyToken)
+	if in.Chat.SessionScope == "" {
+		in.Chat.SessionScope = GroupSceneSessionPerChat
+	}
+
+	in.Work.TriggerTag = strings.TrimSpace(in.Work.TriggerTag)
+	in.Work.SessionScope = strings.ToLower(strings.TrimSpace(in.Work.SessionScope))
+	in.Work.LLMProfile = strings.ToLower(strings.TrimSpace(in.Work.LLMProfile))
+	in.Work.NoReplyToken = strings.TrimSpace(in.Work.NoReplyToken)
+	if in.Work.SessionScope == "" {
+		in.Work.SessionScope = GroupSceneSessionPerThread
+	}
+	return in
+}
+
 type baseConfigValidation struct {
 	FeishuAppID               string `validate:"required"`
 	FeishuAppSecret           string `validate:"required"`
@@ -294,7 +374,6 @@ type baseConfigValidation struct {
 	WorkerConcurrency         int    `validate:"gt=0"`
 	AutomationTaskTimeoutSecs int    `validate:"gt=0"`
 	IdleSummaryHours          int    `validate:"gt=0"`
-	GroupContextWindowMinutes int    `validate:"gt=0"`
 }
 
 func validateBaseConfig(cfg Config) error {
@@ -305,7 +384,6 @@ func validateBaseConfig(cfg Config) error {
 		WorkerConcurrency:         cfg.WorkerConcurrency,
 		AutomationTaskTimeoutSecs: cfg.AutomationTaskTimeoutSecs,
 		IdleSummaryHours:          cfg.IdleSummaryHours,
-		GroupContextWindowMinutes: cfg.GroupContextWindowMinutes,
 	}
 	if err := configValidator.Struct(base); err != nil {
 		var validationErrs validator.ValidationErrors
@@ -326,11 +404,46 @@ func validateBaseConfig(cfg Config) error {
 				return errors.New("automation_task_timeout_secs must be > 0")
 			case "IdleSummaryHours":
 				return errors.New("idle_summary_hours must be > 0")
-			case "GroupContextWindowMinutes":
-				return errors.New("group_context_window_minutes must be > 0")
 			}
 		}
 		return err
+	}
+	for name, profile := range cfg.LLMProfiles {
+		switch profile.Provider {
+		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi:
+		default:
+			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
+		}
+	}
+	if cfg.GroupScenes.Chat.Enabled {
+		if cfg.GroupScenes.Chat.LLMProfile == "" {
+			return errors.New("group_scenes.chat.llm_profile is required when chat scene is enabled")
+		}
+		profile, ok := cfg.LLMProfiles[cfg.GroupScenes.Chat.LLMProfile]
+		if !ok {
+			return fmt.Errorf("group_scenes.chat.llm_profile %q is undefined", cfg.GroupScenes.Chat.LLMProfile)
+		}
+		if profile.Provider != "" && profile.Provider != cfg.LLMProvider {
+			return fmt.Errorf("group_scenes.chat.llm_profile %q provider %q does not match current llm_provider %q", cfg.GroupScenes.Chat.LLMProfile, profile.Provider, cfg.LLMProvider)
+		}
+		if cfg.GroupScenes.Chat.SessionScope != GroupSceneSessionPerChat {
+			return fmt.Errorf("group_scenes.chat.session_scope must be %q", GroupSceneSessionPerChat)
+		}
+	}
+	if cfg.GroupScenes.Work.Enabled {
+		if cfg.GroupScenes.Work.LLMProfile == "" {
+			return errors.New("group_scenes.work.llm_profile is required when work scene is enabled")
+		}
+		profile, ok := cfg.LLMProfiles[cfg.GroupScenes.Work.LLMProfile]
+		if !ok {
+			return fmt.Errorf("group_scenes.work.llm_profile %q is undefined", cfg.GroupScenes.Work.LLMProfile)
+		}
+		if profile.Provider != "" && profile.Provider != cfg.LLMProvider {
+			return fmt.Errorf("group_scenes.work.llm_profile %q provider %q does not match current llm_provider %q", cfg.GroupScenes.Work.LLMProfile, profile.Provider, cfg.LLMProvider)
+		}
+		if cfg.GroupScenes.Work.SessionScope != GroupSceneSessionPerThread {
+			return fmt.Errorf("group_scenes.work.session_scope must be %q", GroupSceneSessionPerThread)
+		}
 	}
 	return nil
 }

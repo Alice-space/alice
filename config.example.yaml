@@ -5,17 +5,17 @@ feishu_app_secret: "xxxxxx"
 # Optional, default is https://open.feishu.cn
 feishu_base_url: "https://open.feishu.cn"
 # Optional but recommended for group chats: strict bot mention filtering
-# In trigger_mode=at (default), if both are empty, all group/topic-group messages are ignored.
-# In trigger_mode=active/prefix, matching follows trigger_mode + trigger_prefix rules.
+# If group_scenes.work.require_mention=true, Alice uses these IDs to recognize @bot.
+# If group_scenes is disabled, matching falls back to trigger_mode + trigger_prefix rules.
 # Empty means Alice will not use a preconfigured bot identity for mention matching.
 feishu_bot_open_id: ""
 feishu_bot_user_id: ""
-# Group trigger mode:
+# Legacy group trigger mode used when group_scenes is disabled:
 # - at: only process group/topic-group messages that @bot (default)
 # - active: process all group/topic-group messages, except messages starting with trigger_prefix
 # - prefix: only process group/topic-group messages starting with trigger_prefix
 trigger_mode: "at"
-# Prefix used by trigger_mode:
+# Prefix used by legacy trigger_mode:
 # - active: ignore messages starting with this prefix
 # - prefix: only process messages starting with this prefix, and strip prefix before LLM input
 # Empty means:
@@ -35,6 +35,22 @@ codex_model: ""
 # Common values: low, medium, high, xhigh. Some models only support a subset; e.g. a few mini
 # models only allow medium/high, and some non-codex GPT-5 models also support minimal.
 codex_model_reasoning_effort: ""
+# Optional named LLM profiles for scene routing.
+# provider must match llm_provider when set.
+# personality loads prompts/llm/personalities/<name>.md.tmpl on new Codex threads.
+llm_profiles:
+  chat:
+    provider: "codex"
+    model: "gpt-5.4-mini"
+    profile: ""
+    reasoning_effort: "low"
+    personality: "friendly"
+  work:
+    provider: "codex"
+    model: "gpt-5.4"
+    profile: ""
+    reasoning_effort: "xhigh"
+    personality: "pragmatic"
 claude_command: "claude"
 claude_timeout_secs: 172800
 kimi_command: "kimi"
@@ -76,6 +92,25 @@ thinking_message: "正在思考中..."
 immediate_feedback_mode: "reply"
 # Feishu reaction type when immediate_feedback_mode is reaction.
 immediate_feedback_reaction: "SMILE"
+# Optional scene router for group/topic-group chats. When enabled, it takes priority over
+# trigger_mode / trigger_prefix.
+group_scenes:
+  chat:
+    enabled: true
+    require_mention: false
+    trigger_tag: ""
+    session_scope: "per_chat"
+    llm_profile: "chat"
+    no_reply_token: "[[NO_REPLY]]"
+    create_feishu_thread: false
+  work:
+    enabled: true
+    require_mention: true
+    trigger_tag: "#work"
+    session_scope: "per_thread"
+    llm_profile: "work"
+    no_reply_token: ""
+    create_feishu_thread: true
 
 # Queue and worker
 queue_capacity: 256
@@ -83,9 +118,6 @@ worker_concurrency: 1
 # Timeout (seconds) for one automation user task execution (run_llm/send_text)
 automation_task_timeout_secs: 6000
 idle_summary_hours: 8
-# Group context cache window (minutes) for non-@ group messages.
-# On @ trigger, text + media from this window are merged into context.
-group_context_window_minutes: 5
 
 # debug | info | warn | error
 log_level: "info"

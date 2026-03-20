@@ -94,6 +94,14 @@ type Job struct {
 	MemoryScopeKey       string
 	SessionKey           string
 	SessionVersion       uint64
+	Scene                string
+	ResponseMode         string
+	LLMModel             string
+	LLMProfile           string
+	LLMReasoningEffort   string
+	LLMPersonality       string
+	NoReplyToken         string
+	DisableAck           bool
 	WorkflowPhase        string
 }
 
@@ -106,6 +114,10 @@ const (
 
 const (
 	jobWorkflowPhaseNormal = "normal"
+	jobSceneChat           = "chat"
+	jobSceneWork           = "work"
+	jobResponseModeReply   = "reply"
+	jobResponseModeSend    = "send"
 )
 
 func normalizeJobWorkflowPhase(raw string) string {

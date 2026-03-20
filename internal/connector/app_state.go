@@ -7,15 +7,13 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
-	"time"
 
 	"github.com/Alice-space/alice/internal/logging"
 )
 
 type runtimeStateSnapshot struct {
-	Latest      map[string]uint64             `json:"latest"`
-	Pending     []Job                         `json:"pending"`
-	MediaWindow map[string][]mediaWindowEntry `json:"media_window,omitempty"`
+	Latest  map[string]uint64 `json:"latest"`
+	Pending []Job             `json:"pending"`
 }
 
 func (a *App) LoadRuntimeState(path string) error {
@@ -65,36 +63,6 @@ func (a *App) LoadRuntimeState(path string) error {
 		pendingByKey[pendingJobKey(job)] = job
 	}
 
-	now := a.now()
-	loadedMediaWindow := make(map[string][]mediaWindowEntry, len(snapshot.MediaWindow))
-	for rawKey, rawEntries := range snapshot.MediaWindow {
-		windowKey := strings.TrimSpace(rawKey)
-		if windowKey == "" {
-			continue
-		}
-		entries := make([]mediaWindowEntry, 0, len(rawEntries))
-		for _, rawEntry := range rawEntries {
-			entry, ok := normalizeMediaWindowEntry(rawEntry)
-			if !ok {
-				continue
-			}
-			if !entry.ReceivedAt.IsZero() && now.Sub(entry.ReceivedAt) > a.groupContextWindowTTL() {
-				continue
-			}
-			entries = append(entries, entry)
-		}
-		if len(entries) == 0 {
-			continue
-		}
-		sort.Slice(entries, func(i, j int) bool {
-			return entries[i].ReceivedAt.Before(entries[j].ReceivedAt)
-		})
-		if len(entries) > maxMediaWindowEntries {
-			entries = append([]mediaWindowEntry(nil), entries[len(entries)-maxMediaWindowEntries:]...)
-		}
-		loadedMediaWindow[windowKey] = entries
-	}
-
 	restoredJobs := make([]Job, 0, len(pendingByKey))
 	for _, job := range pendingByKey {
 		restoredJobs = append(restoredJobs, job)
@@ -104,7 +72,6 @@ func (a *App) LoadRuntimeState(path string) error {
 	a.state.mu.Lock()
 	a.state.latest = loadedLatest
 	a.state.pending = pendingByKey
-	a.state.mediaWindow = loadedMediaWindow
 	a.state.runtimeStateVersion = 0
 	a.state.runtimeStateFlushedVersion = 0
 	a.state.mu.Unlock()
@@ -122,11 +89,10 @@ func (a *App) LoadRuntimeState(path string) error {
 	}
 
 	logging.Debugf(
-		"runtime state loaded file=%s latest=%d pending=%d media_windows=%d restored=%d dropped=%d",
+		"runtime state loaded file=%s latest=%d pending=%d restored=%d dropped=%d",
 		path,
 		len(loadedLatest),
 		len(pendingByKey),
-		len(loadedMediaWindow),
 		restoredCount,
 		droppedCount,
 	)
@@ -143,7 +109,6 @@ func (a *App) FlushRuntimeStateIfDirty() error {
 
 func (a *App) flushRuntimeStateFile(force bool) error {
 	a.state.mu.Lock()
-	a.pruneExpiredMediaWindowLocked(a.now())
 	path := strings.TrimSpace(a.state.runtimeStatePath)
 	currentVersion := a.state.runtimeStateVersion
 	flushedVersion := a.state.runtimeStateFlushedVersion
@@ -157,9 +122,8 @@ func (a *App) flushRuntimeStateFile(force bool) error {
 	}
 
 	snapshot := runtimeStateSnapshot{
-		Latest:      make(map[string]uint64, len(a.state.latest)),
-		Pending:     make([]Job, 0, len(a.state.pending)),
-		MediaWindow: make(map[string][]mediaWindowEntry, len(a.state.mediaWindow)),
+		Latest:  make(map[string]uint64, len(a.state.latest)),
+		Pending: make([]Job, 0, len(a.state.pending)),
 	}
 	for sessionKey, version := range a.state.latest {
 		if strings.TrimSpace(sessionKey) == "" || version == 0 {
@@ -169,23 +133,6 @@ func (a *App) flushRuntimeStateFile(force bool) error {
 	}
 	for _, job := range a.state.pending {
 		snapshot.Pending = append(snapshot.Pending, job)
-	}
-	for windowKey, entries := range a.state.mediaWindow {
-		if strings.TrimSpace(windowKey) == "" || len(entries) == 0 {
-			continue
-		}
-		clonedEntries := make([]mediaWindowEntry, 0, len(entries))
-		for _, entry := range entries {
-			normalized, ok := normalizeMediaWindowEntry(entry)
-			if !ok {
-				continue
-			}
-			clonedEntries = append(clonedEntries, normalized)
-		}
-		if len(clonedEntries) == 0 {
-			continue
-		}
-		snapshot.MediaWindow[windowKey] = clonedEntries
 	}
 	a.state.mu.Unlock()
 
@@ -359,6 +306,13 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	job.EventID = strings.TrimSpace(job.EventID)
 	job.MemoryScopeKey = strings.TrimSpace(job.MemoryScopeKey)
 	job.SessionKey = strings.TrimSpace(job.SessionKey)
+	job.Scene = strings.ToLower(strings.TrimSpace(job.Scene))
+	job.ResponseMode = strings.ToLower(strings.TrimSpace(job.ResponseMode))
+	job.LLMModel = strings.TrimSpace(job.LLMModel)
+	job.LLMProfile = strings.TrimSpace(job.LLMProfile)
+	job.LLMReasoningEffort = strings.ToLower(strings.TrimSpace(job.LLMReasoningEffort))
+	job.LLMPersonality = strings.ToLower(strings.TrimSpace(job.LLMPersonality))
+	job.NoReplyToken = strings.TrimSpace(job.NoReplyToken)
 	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
 	if len(job.Attachments) > 0 {
 		normalized := make([]Attachment, 0, len(job.Attachments))
@@ -381,30 +335,6 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 		return Job{}, false
 	}
 	return job, true
-}
-
-func normalizeMediaWindowEntry(entry mediaWindowEntry) (mediaWindowEntry, bool) {
-	entry.SourceMessageID = strings.TrimSpace(entry.SourceMessageID)
-	entry.MessageType = strings.TrimSpace(entry.MessageType)
-	entry.Speaker = strings.TrimSpace(entry.Speaker)
-	entry.Text = strings.TrimSpace(entry.Text)
-	entry.RawContent = strings.TrimSpace(entry.RawContent)
-	normalized := make([]Attachment, 0, len(entry.Attachments))
-	for _, rawAttachment := range entry.Attachments {
-		attachment, ok := normalizeAttachment(rawAttachment)
-		if !ok {
-			continue
-		}
-		normalized = append(normalized, attachment)
-	}
-	entry.Attachments = normalized
-	if !hasMediaWindowEntryContent(entry) {
-		return mediaWindowEntry{}, false
-	}
-	if entry.ReceivedAt.IsZero() {
-		entry.ReceivedAt = time.Now()
-	}
-	return entry, true
 }
 
 func normalizeAttachment(attachment Attachment) (Attachment, bool) {

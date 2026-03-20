@@ -37,7 +37,7 @@ type fileDiffStat struct {
 type repoDiffSnapshot map[string]fileDiffStat
 
 func (r Runner) Run(ctx context.Context, userText string) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", nil, nil)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", nil, nil)
 	return reply, err
 }
 
@@ -46,7 +46,7 @@ func (r Runner) RunWithProgress(
 	userText string,
 	onThinking func(step string),
 ) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", nil, onThinking)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", nil, onThinking)
 	return reply, err
 }
 
@@ -55,7 +55,7 @@ func (r Runner) RunWithThread(
 	threadID string,
 	userText string,
 ) (string, string, error) {
-	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", nil, nil)
+	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", "", "", "", nil, nil)
 }
 
 func (r Runner) RunWithThreadAndProgress(
@@ -65,6 +65,9 @@ func (r Runner) RunWithThreadAndProgress(
 	userText string,
 	model string,
 	profile string,
+	reasoningEffort string,
+	personality string,
+	noReplyToken string,
 	env map[string]string,
 	onThinking func(step string),
 ) (string, string, error) {
@@ -73,9 +76,12 @@ func (r Runner) RunWithThreadAndProgress(
 		model = strings.TrimSpace(r.DefaultModel)
 	}
 	profile = strings.TrimSpace(profile)
-	reasoningEffort := strings.TrimSpace(r.DefaultReasoningEffort)
+	reasoningEffort = strings.TrimSpace(reasoningEffort)
+	if reasoningEffort == "" {
+		reasoningEffort = strings.TrimSpace(r.DefaultReasoningEffort)
+	}
 	agentName = strings.TrimSpace(agentName)
-	prompt, err := r.renderPrompt(threadID, userText)
+	prompt, err := r.renderPrompt(threadID, userText, personality, noReplyToken)
 	logging.Debugf(
 		"codex prompt assemble thread_id=%s model=%q profile=%q prefix=%q user_prompt=%q final_prompt=%q",
 		threadID,
@@ -301,17 +307,41 @@ func (r Runner) RunWithThreadAndProgress(
 	return finalMessage, activeThreadID, nil
 }
 
-func (r Runner) renderPrompt(threadID string, userText string) (string, error) {
+func (r Runner) renderPrompt(threadID string, userText string, personality string, noReplyToken string) (string, error) {
 	loader := r.Prompts
 	if loader == nil {
 		loader = prompting.DefaultLoader()
 	}
+	promptPrefix, err := r.composePromptPrefix(loader, personality, noReplyToken)
+	if err != nil {
+		return "", err
+	}
 	return loader.RenderFile("llm/initial_prompt.md.tmpl", map[string]any{
 		"Resume":       strings.TrimSpace(threadID) != "",
 		"ThreadID":     strings.TrimSpace(threadID),
-		"PromptPrefix": strings.TrimSpace(r.PromptPrefix),
+		"PromptPrefix": promptPrefix,
 		"UserText":     strings.TrimSpace(userText),
 	})
+}
+
+func (r Runner) composePromptPrefix(loader *prompting.Loader, personality string, noReplyToken string) (string, error) {
+	parts := make([]string, 0, 2)
+	if prefix := strings.TrimSpace(r.PromptPrefix); prefix != "" {
+		parts = append(parts, prefix)
+	}
+	personality = strings.ToLower(strings.TrimSpace(personality))
+	if personality != "" {
+		rendered, err := loader.RenderFile("llm/personalities/"+personality+".md.tmpl", map[string]any{
+			"NoReplyToken": strings.TrimSpace(noReplyToken),
+		})
+		if err != nil {
+			return "", err
+		}
+		if rendered != "" {
+			parts = append(parts, rendered)
+		}
+	}
+	return strings.Join(parts, "\n\n"), nil
 }
 
 func errorString(err error) string {

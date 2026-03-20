@@ -5,13 +5,16 @@ import "context"
 type ProgressFunc func(step string)
 
 type RunRequest struct {
-	ThreadID   string
-	AgentName  string
-	UserText   string
-	Model      string
-	Profile    string
-	Env        map[string]string
-	OnProgress ProgressFunc
+	ThreadID        string
+	AgentName       string
+	UserText        string
+	Model           string
+	Profile         string
+	ReasoningEffort string
+	Personality     string
+	NoReplyToken    string
+	Env             map[string]string
+	OnProgress      ProgressFunc
 }
 
 type RunResult struct {

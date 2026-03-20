@@ -401,7 +401,7 @@ func (p *Processor) runIdleSummaryTask(ctx context.Context, candidate idleSummar
 		logging.Errorf("render idle summary prompt failed session=%s thread_id=%s: %v", candidate.SessionKey, candidate.ThreadID, err)
 		return
 	}
-	reply, nextThreadID, err := p.runLLM(ctx, candidate.ThreadID, prompt, nil, nil)
+	reply, nextThreadID, err := p.runLLM(ctx, candidate.ThreadID, prompt, llmRunOptions{}, nil, nil)
 	if err != nil {
 		logging.Errorf("idle summary llm failed session=%s thread_id=%s: %v", candidate.SessionKey, candidate.ThreadID, err)
 		return

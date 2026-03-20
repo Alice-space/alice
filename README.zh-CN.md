@@ -202,6 +202,19 @@ codex_command: "codex"
 codex_timeout_secs: 172800
 codex_model: ""
 codex_model_reasoning_effort: ""
+llm_profiles:
+  chat:
+    provider: "codex"
+    model: "gpt-5.4-mini"
+    profile: ""
+    reasoning_effort: "low"
+    personality: "friendly"
+  work:
+    provider: "codex"
+    model: "gpt-5.4"
+    profile: ""
+    reasoning_effort: "xhigh"
+    personality: "pragmatic"
 claude_command: "claude"
 claude_timeout_secs: 172800
 kimi_command: "kimi"
@@ -223,12 +236,28 @@ failure_message: "Codex 暂时不可用，请稍后重试。"
 thinking_message: "正在思考中..."
 immediate_feedback_mode: "reply"
 immediate_feedback_reaction: "SMILE"
+group_scenes:
+  chat:
+    enabled: true
+    require_mention: false
+    trigger_tag: ""
+    session_scope: "per_chat"
+    llm_profile: "chat"
+    no_reply_token: "[[NO_REPLY]]"
+    create_feishu_thread: false
+  work:
+    enabled: true
+    require_mention: true
+    trigger_tag: "#work"
+    session_scope: "per_thread"
+    llm_profile: "work"
+    no_reply_token: ""
+    create_feishu_thread: true
 
 queue_capacity: 256
 worker_concurrency: 1
 automation_task_timeout_secs: 6000
 idle_summary_hours: 8
-group_context_window_minutes: 5
 
 log_level: "info"
 log_file: ""
@@ -249,22 +278,22 @@ log_compress: false
 - `codex_command` / `codex_timeout_secs`、`claude_command` / `claude_timeout_secs`、`kimi_command` / `kimi_timeout_secs`：对应后端 CLI 命令路径与超时秒数。
 - `codex_model`：可选，显式指定 Codex CLI 使用的模型；为空时沿用 Codex 自身配置。当前本机可见模型示例包括 `gpt-5.4`、`gpt-5.4-mini`、`gpt-5.3-codex`、`gpt-5.2-codex`、`gpt-5.2`、`gpt-5.1-codex-max`、`gpt-5.1-codex`、`gpt-5.1`、`gpt-5-codex`、`gpt-5`；实际可用集取决于 Codex 版本和账号权限。
 - `codex_model_reasoning_effort`：可选，显式指定 Codex CLI 的思考强度；为空时沿用 Codex 自身配置。常见取值有 `low`、`medium`、`high`、`xhigh`；少数模型还支持 `minimal` 或只支持其中一部分。Alice 会把它映射到 `codex exec -c model_reasoning_effort=...`。
+- `llm_profiles`：命名的 LLM 档位配置。可为不同场景分别指定 `model`、`profile`、`reasoning_effort`、`personality`；`provider` 若设置，必须与当前 `llm_provider` 一致。
 - `runtime_http_addr` / `runtime_http_token`：Alice 本地 runtime HTTP API 的监听地址和鉴权 token。若 `runtime_http_token` 为空，Alice 会在每次启动时自动生成一个 token 并注入 agent 环境变量。
 - `alice_home`：运行时根目录（release 默认 `~/.alice`；dev 预发布二进制默认 `~/.alice-dev`）。
 - `workspace_dir` / `memory_dir` / `prompt_dir`：运行时目录。默认在 `alice_home` 下，分别是 `workspace/`、`memory/`、`prompts/`。
 - `CODEX_HOME`：Alice 启动时会强制设置为 `alice_home/.codex`；子进程默认继承该值（若在 `env` 里显式设置则以显式值为准）。
 - `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
 - `codex_prompt_prefix` / `claude_prompt_prefix` / `kimi_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
+- `group_scenes`：群聊/话题群的场景路由配置。启用后优先于 `trigger_mode` / `trigger_prefix`。常见做法是让 `chat` 场景按群共享一个 session，让 `work` 场景由 `#work + @bot` 新开 thread/session。
 - `immediate_feedback_mode`：收到引用回复消息后给用户的即时反馈方式。支持 `reply`（默认，直接回复 `收到！`）和 `reaction`（优先给原消息加表情，失败再回退 `收到！`）。
 - `immediate_feedback_reaction`：`immediate_feedback_mode=reaction` 时使用的飞书 reaction 类型，默认 `SMILE`。
 - 自动化 cron 调度使用运行机器的操作系统时区（`time.Local`）。
 - `automation_task_timeout_secs`：单次自动化用户任务（`send_text`/`run_llm`）的执行超时秒数，默认 `6000`。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
-- `group_context_window_minutes`：群聊未触发消息的缓存窗口（分钟，默认 `5`）。窗口内文本与多媒体会在后续触发时并入上下文（`at`/`prefix` 模式）。
 - `log_file` / `log_max_size_mb` / `log_max_backups` / `log_max_age_days` / `log_compress`：滚动日志配置；`log_file` 为空时默认写入 `alice_home/log/YYYY-MM-DD.log`，底层使用 `zerolog + lumberjack`。
-- `trigger_mode`：群聊触发策略，支持 `at`（默认）、`active`、`prefix`。
-- `trigger_prefix`：群聊触发前缀。`active` 下命中此前缀会忽略，但艾特机器人仍会触发；`prefix` 下“命中前缀”或“艾特机器人”任一满足即触发。`prefix` 模式下命中前缀时会在发送给 Codex 前剥离前缀。
-- `feishu_bot_open_id` / `feishu_bot_user_id`：群聊/话题群中用于匹配机器人艾特的 ID。
+- `trigger_mode` / `trigger_prefix`：旧的群聊触发策略。仅在未启用 `group_scenes` 时使用，兼容 `at` / `active` / `prefix` 三种模式。
+- `feishu_bot_open_id` / `feishu_bot_user_id`：群聊/话题群中用于匹配机器人艾特的 ID；若 `group_scenes.work.require_mention=true`，也依赖这里的 bot 身份。
 
 ## 隔离运行（独立用户）
 
@@ -276,12 +305,13 @@ log_compress: false
 
 - 二进制可直接前台运行；生产部署建议使用安装脚本创建 `systemd --user` 服务做自动拉起与保活。
 - 支持接收消息类型：`text`、`image`、`sticker`、`audio`、`file`。
-- 群聊/话题群触发由 `trigger_mode` 控制：
+- 若启用了 `group_scenes`，群聊/话题群会按场景路由：
+  - `chat`：不要求 @，整个群共享一个 Codex session；新消息统一 resume 到这条 session。若模型输出 `no_reply_token`（默认 `[[NO_REPLY]]`），连接器会静默不发言。
+  - `work`：仅在根消息满足 `trigger_tag + @bot` 时触发；会创建一条专属 work session，并优先以飞书 thread reply 继续该话题。
+- 若未启用 `group_scenes`，则回退到 `trigger_mode` 控制：
   - `at`：仅处理艾特机器人的消息。若 `feishu_bot_open_id` 与 `feishu_bot_user_id` 都为空，则群聊/话题群消息全部忽略。
   - `active`：默认处理所有消息，但命中 `trigger_prefix` 的消息会忽略；若同时艾特机器人，仍会处理。
   - `prefix`：命中 `trigger_prefix` 或艾特机器人的消息会处理。
-- 在 `trigger_mode=at` 和 `trigger_mode=prefix` 下，群聊/话题群中未触发消息会按“同群同人”进入滑动窗口缓存（时长由 `group_context_window_minutes` 配置），缓存内容包含文本与多媒体。
-- 同一用户后续在该群再次触发时，会把窗口内缓存的文本与多媒体并入本次上下文；thread 消息会按 `thread_id`/`root_id` 隔离，不跨 thread 混入。
 - 群聊中的 `<at ...>...</at>` 会先清理，再发送给 Codex。
 - 说话人上下文仍会注入参与者的 id 映射和 `@提及` 文本，并附带“可直接使用 `@姓名`/`@id`”提示，但会过滤机器人自身身份（`feishu_bot_open_id`/`feishu_bot_user_id`）对应的注入内容。
 - 发送回复时会基于当前消息上下文中的身份信息，把 `@姓名`/`@id` 自动规范化为飞书 mention 标签（`<at user_id="...">...</at>`）。
@@ -296,8 +326,9 @@ log_compress: false
 - 每次调用 Codex 前，只会注入长期记忆；分日期记忆只提供目录位置，让 Codex 按需检索。
 - 会话复用规则：
   - 单聊（`p2p`）默认按 chat 级别复用同一个 Codex session；后续消息会在原 session 上继续 resume。
-  - 群聊/话题群中，不属于任何话题线程的顶层消息会按消息维度新建一个 Codex session。
-  - 群聊/话题群一旦进入某个飞书话题线程，后续同一 thread 的消息会继续复用该 session；若 `root_id`/`parent_id` 指向机器人自己的回复，也会自动回到原 session。
+  - 群聊/话题群若启用 `group_scenes.chat`，整个群共享 `chat` 场景的单一 session。
+  - 群聊/话题群若启用 `group_scenes.work`，每个 `#work + @bot` 根消息会新建一个 work session；后续同一飞书 thread 会复用该 session。
+  - 未启用 `group_scenes` 时，群聊/话题群顶层消息按消息维度建 session；进入某个飞书 thread 后，后续同一 thread 会继续复用该 session。
 - 若某聊天连续空闲达到 `idle_summary_hours`（默认 8 小时），后台会异步 resume 该线程并将“空闲摘要”追加到 `daily/YYYY-MM-DD.md`，同一段空闲期仅写一次。
 - 消息主处理路径不会等待空闲摘要落盘，新消息会被立即处理。
 - 在“引用回复”链路里，机器人会优先使用“话题回复”（`reply_in_thread=true`）发送收到/进度/结果；若飞书拒绝话题模式，则自动回退普通引用回复。

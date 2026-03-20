@@ -530,3 +530,58 @@ func TestProcessor_NoSourceMentionUsesSendText(t *testing.T) {
 		t.Fatalf("unexpected mention send text: %q", sender.lastSendText)
 	}
 }
+
+func TestProcessor_SendModeSuppressesNoReplyToken(t *testing.T) {
+	fakeCodex := codexStub{resp: "[[NO_REPLY]]"}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		ResponseMode:  jobResponseModeSend,
+		NoReplyToken:  "[[NO_REPLY]]",
+		Text:          "hello",
+	})
+
+	if sender.sendCardCalls != 0 {
+		t.Fatalf("expected no card sends, got %d", sender.sendCardCalls)
+	}
+	if sender.sendCalls != 0 {
+		t.Fatalf("expected no text sends, got %d", sender.sendCalls)
+	}
+}
+
+func TestProcessor_PassesJobLLMRunOptionsToBackend(t *testing.T) {
+	fakeCodex := &codexCaptureStub{resp: "[[NO_REPLY]]"}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:          "oc_chat",
+		ReceiveIDType:      "chat_id",
+		ResponseMode:       jobResponseModeSend,
+		NoReplyToken:       "[[NO_REPLY]]",
+		LLMModel:           "gpt-5.4-mini",
+		LLMProfile:         "balanced",
+		LLMReasoningEffort: "low",
+		LLMPersonality:     "friendly",
+		Text:               "hello",
+	})
+
+	if fakeCodex.lastReq.Model != "gpt-5.4-mini" {
+		t.Fatalf("unexpected model passed to llm: %q", fakeCodex.lastReq.Model)
+	}
+	if fakeCodex.lastReq.Profile != "balanced" {
+		t.Fatalf("unexpected profile passed to llm: %q", fakeCodex.lastReq.Profile)
+	}
+	if fakeCodex.lastReq.ReasoningEffort != "low" {
+		t.Fatalf("unexpected reasoning effort passed to llm: %q", fakeCodex.lastReq.ReasoningEffort)
+	}
+	if fakeCodex.lastReq.Personality != "friendly" {
+		t.Fatalf("unexpected personality passed to llm: %q", fakeCodex.lastReq.Personality)
+	}
+	if fakeCodex.lastReq.NoReplyToken != "[[NO_REPLY]]" {
+		t.Fatalf("unexpected no-reply token passed to llm: %q", fakeCodex.lastReq.NoReplyToken)
+	}
+}

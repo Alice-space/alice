@@ -173,10 +173,14 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 		job.Text,
 		len(job.Attachments),
 	)
-	if strings.TrimSpace(job.SourceMessageID) != "" {
+	if effectiveJobResponseMode(job) == jobResponseModeReply && strings.TrimSpace(job.SourceMessageID) != "" {
 		return p.processReplyMessage(ctx, job)
 	}
+	return p.processSendMessage(ctx, job)
+}
 
+func (p *Processor) processSendMessage(ctx context.Context, job Job) JobProcessState {
+	sessionKey := sessionKeyForJob(job)
 	p.prepareJobForLLM(ctx, &job)
 	currentThreadID := p.getThreadID(sessionKey)
 	promptText := p.buildPromptWithMemory(ctx, job, currentThreadID)
@@ -184,6 +188,7 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 		ctx,
 		currentThreadID,
 		promptText,
+		jobLLMRunOptions(job),
 		p.buildLLMRunEnv(job),
 		nil,
 	)
@@ -203,6 +208,9 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 		logging.Errorf("llm failed event_id=%s: %v", job.EventID, err)
 		reply = p.runtimeSnapshot().failureMessage
 	}
+	if shouldSuppressReply(job, reply) {
+		reply = ""
+	}
 	p.recordInteraction(job, p.buildCurrentUserInput(job), reply, failed)
 
 	if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
@@ -214,7 +222,10 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcessState {
 	sessionKey := sessionKeyForJob(job)
 	p.rememberSessionScope(sessionKey, memoryScopeKeyForJob(job))
-	ackDelivered := p.sendImmediateFeedback(ctx, job)
+	ackDelivered := false
+	if !job.DisableAck {
+		ackDelivered = p.sendImmediateFeedback(ctx, job)
+	}
 
 	lastSentAgentMessage := ""
 	sendAgentMessage := func(agentMessage string) {
@@ -224,6 +235,9 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 			normalized = strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix))
 		}
 		if normalized == "" {
+			return
+		}
+		if shouldSuppressReply(job, normalized) {
 			return
 		}
 		if normalized == lastSentAgentMessage {
@@ -261,6 +275,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		ctx,
 		currentThreadID,
 		promptText,
+		jobLLMRunOptions(job),
 		p.buildLLMRunEnv(job),
 		sendAgentMessage,
 	)
@@ -313,6 +328,9 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		logging.Errorf("llm failed event_id=%s: %v", job.EventID, runErr)
 		finalReply = p.runtimeSnapshot().failureMessage
 	}
+	if shouldSuppressReply(job, finalReply) {
+		finalReply = ""
+	}
 	p.recordInteraction(job, p.buildCurrentUserInput(job), finalReply, failed)
 	if strings.TrimSpace(finalReply) != "" &&
 		strings.TrimSpace(finalReply) != lastSentAgentMessage {
@@ -324,6 +342,38 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		}
 	}
 	return JobProcessCompleted
+}
+
+func effectiveJobResponseMode(job Job) string {
+	switch strings.ToLower(strings.TrimSpace(job.ResponseMode)) {
+	case jobResponseModeSend:
+		return jobResponseModeSend
+	case jobResponseModeReply:
+		return jobResponseModeReply
+	default:
+		if strings.TrimSpace(job.SourceMessageID) != "" {
+			return jobResponseModeReply
+		}
+		return jobResponseModeSend
+	}
+}
+
+func jobLLMRunOptions(job Job) llmRunOptions {
+	return llmRunOptions{
+		Model:           job.LLMModel,
+		Profile:         job.LLMProfile,
+		ReasoningEffort: job.LLMReasoningEffort,
+		Personality:     job.LLMPersonality,
+		NoReplyToken:    job.NoReplyToken,
+	}
+}
+
+func shouldSuppressReply(job Job, reply string) bool {
+	token := strings.TrimSpace(job.NoReplyToken)
+	if token == "" {
+		return false
+	}
+	return strings.TrimSpace(reply) == token
 }
 
 func (p *Processor) sendImmediateFeedback(ctx context.Context, job Job) bool {

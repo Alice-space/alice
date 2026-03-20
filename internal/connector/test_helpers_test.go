@@ -43,15 +43,20 @@ type codexCaptureStub struct {
 	err       error
 	lastInput string
 	lastEnv   map[string]string
+	lastReq   llm.RunRequest
 }
 
 func (c *codexCaptureStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+	c.lastReq = req
 	c.lastInput = req.UserText
 	if len(req.Env) == 0 {
+		c.lastReq.Env = nil
 		c.lastEnv = nil
 	} else {
+		c.lastReq.Env = make(map[string]string, len(req.Env))
 		c.lastEnv = make(map[string]string, len(req.Env))
 		for key, value := range req.Env {
+			c.lastReq.Env[key] = value
 			c.lastEnv[key] = value
 		}
 	}

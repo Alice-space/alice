@@ -141,6 +141,14 @@ func applyReloadableFields(dst *config.Config, src config.Config, changed map[st
 	applyStringField(&dst.ImmediateFeedbackReaction, src.ImmediateFeedbackReaction, "immediate_feedback_reaction", changed)
 
 	applyStringField(&dst.LLMProvider, src.LLMProvider, "llm_provider", changed)
+	if !llmProfileMapEqual(dst.LLMProfiles, src.LLMProfiles) {
+		dst.LLMProfiles = cloneLLMProfileMap(src.LLMProfiles)
+		changed["llm_profiles"] = struct{}{}
+	}
+	if dst.GroupScenes != src.GroupScenes {
+		dst.GroupScenes = src.GroupScenes
+		changed["group_scenes"] = struct{}{}
+	}
 	applyStringField(&dst.CodexCommand, src.CodexCommand, "codex_command", changed)
 	applyIntField(&dst.CodexTimeoutSecs, src.CodexTimeoutSecs, "codex_timeout_secs", changed)
 	applyDurationField(&dst.CodexTimeout, src.CodexTimeout, "codex_timeout", changed)
@@ -166,8 +174,6 @@ func applyReloadableFields(dst *config.Config, src config.Config, changed map[st
 	applyDurationField(&dst.AutomationTaskTimeout, src.AutomationTaskTimeout, "automation_task_timeout", changed)
 	applyIntField(&dst.IdleSummaryHours, src.IdleSummaryHours, "idle_summary_hours", changed)
 	applyDurationField(&dst.IdleSummaryIdle, src.IdleSummaryIdle, "idle_summary_idle", changed)
-	applyIntField(&dst.GroupContextWindowMinutes, src.GroupContextWindowMinutes, "group_context_window_minutes", changed)
-	applyDurationField(&dst.GroupContextWindowTTL, src.GroupContextWindowTTL, "group_context_window_ttl", changed)
 
 	applyStringField(&dst.LogLevel, src.LogLevel, "log_level", changed)
 	applyStringField(&dst.LogFile, src.LogFile, "log_file", changed)
@@ -179,6 +185,8 @@ func applyReloadableFields(dst *config.Config, src config.Config, changed map[st
 
 func llmRuntimeConfigChanged(current, next config.Config) bool {
 	return current.LLMProvider != next.LLMProvider ||
+		!llmProfileMapEqual(current.LLMProfiles, next.LLMProfiles) ||
+		current.GroupScenes != next.GroupScenes ||
 		current.CodexCommand != next.CodexCommand ||
 		current.CodexTimeout != next.CodexTimeout ||
 		current.CodexModel != next.CodexModel ||
@@ -260,6 +268,29 @@ func cloneStringMap(in map[string]string) map[string]string {
 		return map[string]string{}
 	}
 	out := make(map[string]string, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
+func llmProfileMapEqual(left, right map[string]config.LLMProfileConfig) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, value := range left {
+		if rightValue, ok := right[key]; !ok || rightValue != value {
+			return false
+		}
+	}
+	return true
+}
+
+func cloneLLMProfileMap(in map[string]config.LLMProfileConfig) map[string]config.LLMProfileConfig {
+	if len(in) == 0 {
+		return map[string]config.LLMProfileConfig{}
+	}
+	out := make(map[string]config.LLMProfileConfig, len(in))
 	for key, value := range in {
 		out[key] = value
 	}

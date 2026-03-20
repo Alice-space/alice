@@ -17,7 +17,6 @@ type runtimeStore struct {
 	mu          sync.Mutex
 	latest      map[string]uint64
 	pending     map[string]Job
-	mediaWindow map[string][]mediaWindowEntry
 	sessionMu   map[string]*sync.Mutex
 	active      map[string]activeSessionRun
 	superseded  map[string]uint64
@@ -31,7 +30,6 @@ func newRuntimeStore() *runtimeStore {
 	return &runtimeStore{
 		latest:      make(map[string]uint64),
 		pending:     make(map[string]Job),
-		mediaWindow: make(map[string][]mediaWindowEntry),
 		sessionMu:   make(map[string]*sync.Mutex),
 		active:      make(map[string]activeSessionRun),
 		superseded:  make(map[string]uint64),

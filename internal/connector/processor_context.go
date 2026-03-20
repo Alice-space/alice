@@ -32,10 +32,19 @@ func splitMessageLines(message string) []string {
 	return lines
 }
 
+type llmRunOptions struct {
+	Model           string
+	Profile         string
+	ReasoningEffort string
+	Personality     string
+	NoReplyToken    string
+}
+
 func (p *Processor) runLLM(
 	ctx context.Context,
 	threadID string,
 	userText string,
+	options llmRunOptions,
 	env map[string]string,
 	onAgentMessage func(message string),
 ) (string, string, error) {
@@ -44,11 +53,16 @@ func (p *Processor) runLLM(
 		return "", strings.TrimSpace(threadID), fmt.Errorf("llm backend is nil")
 	}
 	result, err := snapshot.llm.Run(ctx, llm.RunRequest{
-		ThreadID:   strings.TrimSpace(threadID),
-		AgentName:  "assistant",
-		UserText:   userText,
-		Env:        env,
-		OnProgress: onAgentMessage,
+		ThreadID:        strings.TrimSpace(threadID),
+		AgentName:       "assistant",
+		UserText:        userText,
+		Model:           strings.TrimSpace(options.Model),
+		Profile:         strings.TrimSpace(options.Profile),
+		ReasoningEffort: strings.TrimSpace(options.ReasoningEffort),
+		Personality:     strings.TrimSpace(options.Personality),
+		NoReplyToken:    strings.TrimSpace(options.NoReplyToken),
+		Env:             env,
+		OnProgress:      onAgentMessage,
 	})
 	nextThreadID := strings.TrimSpace(result.NextThreadID)
 	if nextThreadID == "" {

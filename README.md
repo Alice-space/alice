@@ -127,7 +127,9 @@ Common optional keys:
 - `env`: extra env vars passed to backend process
 - `alice_home`: runtime home directory (default `~/.alice`)
 - `workspace_dir` / `memory_dir` / `prompt_dir`
-- `trigger_mode`: `at` / `active` / `prefix`
+- `llm_profiles`: named scene-specific model / reasoning / personality presets
+- `group_scenes`: optional group chat scene router; when enabled it overrides legacy trigger matching
+- `trigger_mode`: `at` / `active` / `prefix` (legacy fallback when `group_scenes` is disabled)
 - `trigger_prefix`
 - automation cron scheduling uses OS timezone (`time.Local`)
 - `log_file` (default `${ALICE_HOME}/log/YYYY-MM-DD.log`) and rotate options

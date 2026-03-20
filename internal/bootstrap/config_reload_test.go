@@ -69,8 +69,12 @@ func TestApplyReloadableFields(t *testing.T) {
 		AutomationTaskTimeout:     100 * time.Minute,
 		IdleSummaryHours:          8,
 		IdleSummaryIdle:           8 * time.Hour,
-		GroupContextWindowMinutes: 5,
-		GroupContextWindowTTL:     5 * time.Minute,
+		LLMProfiles: map[string]config.LLMProfileConfig{
+			"chat": {Provider: config.DefaultLLMProvider, Model: "gpt-5.4-mini", ReasoningEffort: "low", Personality: "friendly"},
+		},
+		GroupScenes: config.GroupScenesConfig{
+			Chat: config.GroupSceneConfig{Enabled: true, LLMProfile: "chat", SessionScope: config.GroupSceneSessionPerChat, NoReplyToken: "[[NO_REPLY]]"},
+		},
 		LogLevel:                  "info",
 		LogFile:                   "",
 		LogMaxSizeMB:              20,
@@ -94,8 +98,14 @@ func TestApplyReloadableFields(t *testing.T) {
 	next.LogLevel = "debug"
 	next.AutomationTaskTimeoutSecs = 900
 	next.AutomationTaskTimeout = 15 * time.Minute
-	next.GroupContextWindowMinutes = 10
-	next.GroupContextWindowTTL = 10 * time.Minute
+	next.LLMProfiles = map[string]config.LLMProfileConfig{
+		"chat": {Provider: config.DefaultLLMProvider, Model: "gpt-5.4-mini", ReasoningEffort: "medium", Personality: "friendly"},
+		"work": {Provider: config.DefaultLLMProvider, Model: "gpt-5.4", ReasoningEffort: "xhigh", Personality: "pragmatic"},
+	}
+	next.GroupScenes = config.GroupScenesConfig{
+		Chat: config.GroupSceneConfig{Enabled: true, LLMProfile: "chat", SessionScope: config.GroupSceneSessionPerChat, NoReplyToken: "[[NO_REPLY]]"},
+		Work: config.GroupSceneConfig{Enabled: true, LLMProfile: "work", SessionScope: config.GroupSceneSessionPerThread, TriggerTag: "#work", RequireMention: true, CreateFeishuThread: true},
+	}
 	next.QueueCapacity = 1024
 	next.WorkerConcurrency = 8
 
@@ -110,6 +120,12 @@ func TestApplyReloadableFields(t *testing.T) {
 	}
 	if !stringMapEqual(current.CodexEnv, next.CodexEnv) {
 		t.Fatalf("env should be hot-reloaded, got=%v want=%v", current.CodexEnv, next.CodexEnv)
+	}
+	if !llmProfileMapEqual(current.LLMProfiles, next.LLMProfiles) {
+		t.Fatalf("llm_profiles should be hot-reloaded, got=%v want=%v", current.LLMProfiles, next.LLMProfiles)
+	}
+	if current.GroupScenes != next.GroupScenes {
+		t.Fatalf("group_scenes should be hot-reloaded, got=%#v want=%#v", current.GroupScenes, next.GroupScenes)
 	}
 	if current.LogLevel != "debug" {
 		t.Fatalf("log_level should be hot-reloaded, got=%q", current.LogLevel)
@@ -128,6 +144,12 @@ func TestApplyReloadableFields(t *testing.T) {
 	}
 	if _, ok := changed["env"]; !ok {
 		t.Fatalf("changed set should include env, got=%v", changed)
+	}
+	if _, ok := changed["llm_profiles"]; !ok {
+		t.Fatalf("changed set should include llm_profiles, got=%v", changed)
+	}
+	if _, ok := changed["group_scenes"]; !ok {
+		t.Fatalf("changed set should include group_scenes, got=%v", changed)
 	}
 	if _, ok := changed["log_level"]; !ok {
 		t.Fatalf("changed set should include log_level, got=%v", changed)

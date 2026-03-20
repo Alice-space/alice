@@ -35,6 +35,9 @@ func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, erro
 		req.UserText,
 		strings.TrimSpace(req.Model),
 		strings.TrimSpace(req.Profile),
+		strings.TrimSpace(req.ReasoningEffort),
+		strings.TrimSpace(req.Personality),
+		strings.TrimSpace(req.NoReplyToken),
 		req.Env,
 		req.OnProgress,
 	)
