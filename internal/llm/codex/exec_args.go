@@ -1,8 +1,8 @@
 package codex
 
 import (
-	"strconv"
 	"sort"
+	"strconv"
 	"strings"
 )
 
