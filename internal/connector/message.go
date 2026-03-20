@@ -399,9 +399,12 @@ func logIncomingEventDebug(event *larkim.P2MessageReceiveV1) {
 
 	message := event.Event.Message
 	logging.Debugf(
-		"incoming message source=feishu_im event_id=%s message_id=%s message_type=%s chat_id=%s raw_content=%s",
+		"incoming message source=feishu_im event_id=%s message_id=%s parent_id=%s root_id=%s thread_id=%s message_type=%s chat_id=%s raw_content=%s",
 		eventID(event),
 		strings.TrimSpace(deref(message.MessageId)),
+		strings.TrimSpace(deref(message.ParentId)),
+		strings.TrimSpace(deref(message.RootId)),
+		strings.TrimSpace(deref(message.ThreadId)),
 		strings.TrimSpace(deref(message.MessageType)),
 		strings.TrimSpace(deref(message.ChatId)),
 		deref(message.Content),
@@ -478,10 +481,10 @@ func buildSessionKeyCandidatesForMessage(receiveIDType, receiveID string, messag
 		} else if rootID != "" {
 			appendSessionKeyCandidate(&candidates, base+"|thread:"+rootID)
 		}
+		if parentID != "" {
+			appendSessionKeyCandidate(&candidates, base+"|message:"+parentID)
+		}
 		if threadID != "" || rootID != "" {
-			if parentID != "" {
-				appendSessionKeyCandidate(&candidates, base+"|message:"+parentID)
-			}
 			if rootID != "" {
 				appendSessionKeyCandidate(&candidates, base+"|message:"+rootID)
 			}

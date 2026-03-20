@@ -89,16 +89,6 @@ func (a *App) resolveExistingWorkSession(job *Job, event *larkim.P2MessageReceiv
 	if job == nil || message == nil {
 		return ""
 	}
-	cfg := a.runtimeConfig()
-	if !shouldProcessIncomingMessage(
-		event,
-		cfg.triggerMode,
-		cfg.triggerPrefix,
-		cfg.feishuBotOpenID,
-		cfg.feishuBotUserID,
-	) {
-		return ""
-	}
 	sessionKey := strings.TrimSpace(a.findExistingSessionKey(buildSessionKeyCandidatesForMessage(job.ReceiveIDType, job.ReceiveID, message)))
 	if !isWorkSceneSessionKey(sessionKey) {
 		return ""
