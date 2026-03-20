@@ -20,6 +20,11 @@ Environment:
   ALICE_RUNTIME_BIN            Override the alice runtime binary path.
   ALICE_HOME                   Override Alice home (default: ~/.alice).
   ALICE_CODE_ARMY_GITLAB_HOST  Default GitLab host for sync commands (default: code.ihep.ac.cn).
+
+Visibility contract:
+  create requires a visible GitLab issue (`issue_iid`) in the payload.
+  patch / upsert-trial / add-guidance / add-review / add-pitfall / apply-command
+  auto-sync the issue (and MR when available) after mutating campaign state.
 EOF
 }
 
@@ -62,6 +67,24 @@ campaign_json() {
 campaign_exists() {
   local campaign_id="$1"
   campaign_json "$campaign_id" >/dev/null
+}
+
+campaign_repo() {
+  local payload="$1"
+  jq -r '.campaign.repo | if . == null then "" else tostring end' <<<"$payload"
+}
+
+campaign_issue_iid() {
+  local payload="$1"
+  jq -r '.campaign.issue_iid | if . == null then "" else tostring end' <<<"$payload"
+}
+
+require_visible_create_payload() {
+  local create_json="$1" repo issue_iid
+  repo="$(jq -r '.repo | if . == null then "" else tostring end' <<<"$create_json")"
+  issue_iid="$(jq -r '.issue_iid | if . == null then "" else tostring end' <<<"$create_json")"
+  [[ -n "$repo" ]] || die "visible campaign requires repo in create payload"
+  [[ -n "$issue_iid" ]] || die "visible campaign requires issue_iid; create or bind a GitLab issue first"
 }
 
 find_trial_json() {
@@ -323,9 +346,43 @@ upsert_trial_json() {
   run_campaigns upsert-trial "$campaign_id" "$payload" >/dev/null
 }
 
+mutate_campaign_and_sync_issue() {
+  local subcmd="$1" campaign_id="$2" payload_json="$3"
+  run_campaigns "$subcmd" "$campaign_id" "$payload_json" >/dev/null
+  sync_issue "$campaign_id" >/dev/null
+  campaign_json "$campaign_id"
+}
+
+create_visible() {
+  local create_json="$1" created campaign_id
+  require_visible_create_payload "$create_json"
+  created="$(run_campaigns create "$create_json")"
+  campaign_id="$(jq -r '.campaign.id // ""' <<<"$created")"
+  [[ -n "$campaign_id" ]] || die "failed to extract campaign id from create response"
+  sync_issue "$campaign_id" >/dev/null
+  campaign_json "$campaign_id"
+}
+
+upsert_trial_and_sync() {
+  local campaign_id="$1" payload_json="$2" trial_id payload merge_request
+  trial_id="$(jq -r '.trial.id // ""' <<<"$payload_json")"
+  [[ -n "$trial_id" ]] || die "trial payload missing trial.id"
+  run_campaigns upsert-trial "$campaign_id" "$payload_json" >/dev/null
+  sync_issue "$campaign_id" >/dev/null
+  payload="$(campaign_json "$campaign_id")"
+  merge_request="$(jq -r --arg trial_id "$trial_id" '
+    .campaign.trials[]? | select(.id == $trial_id) | .merge_request | if . == null then "" else tostring end
+  ' <<<"$payload")"
+  if [[ -n "$merge_request" ]]; then
+    sync_trial "$campaign_id" "$trial_id" >/dev/null
+    payload="$(campaign_json "$campaign_id")"
+  fi
+  printf '%s\n' "$payload"
+}
+
 apply_command() {
   local campaign_id="$1" command_text="$2" source="${3:-manual}"
-  local payload trial_id current trial_json updated_trial patch_json winner_id summary
+  local payload trial_id current trial_json updated_trial patch_json winner_id summary merge_request
   payload="$(campaign_json "$campaign_id")"
   command_text="${command_text#"${command_text%%[![:space:]]*}"}"
   command_text="${command_text%"${command_text##*[![:space:]]}"}"
@@ -372,16 +429,26 @@ apply_command() {
   fi
 
   append_guidance "$campaign_id" "$source" "$command_text" "$summary"
+  sync_issue "$campaign_id" >/dev/null
+  if [[ -n "${trial_id:-}" ]]; then
+    payload="$(campaign_json "$campaign_id")"
+    merge_request="$(jq -r --arg trial_id "$trial_id" '
+      .campaign.trials[]? | select(.id == $trial_id) | .merge_request | if . == null then "" else tostring end
+    ' <<<"$payload")"
+    if [[ -n "$merge_request" ]]; then
+      sync_trial "$campaign_id" "$trial_id" >/dev/null
+    fi
+  fi
   run_campaigns get "$campaign_id"
 }
 
 sync_issue() {
   local campaign_id="$1" payload repo issue_iid body
   payload="$(campaign_json "$campaign_id")"
-  repo="$(jq -r '.campaign.repo // ""' <<<"$payload")"
-  issue_iid="$(jq -r '.campaign.issue_iid // ""' <<<"$payload")"
+  repo="$(campaign_repo "$payload")"
+  issue_iid="$(campaign_issue_iid "$payload")"
   [[ -n "$repo" ]] || die "campaign repo is empty"
-  [[ -n "$issue_iid" ]] || die "campaign issue_iid is empty"
+  [[ -n "$issue_iid" ]] || die "campaign ${campaign_id} is not GitLab-visible yet: missing issue_iid"
   body="$(render_issue_note "$campaign_id")"
   gitlab_note_issue "$repo" "$issue_iid" "$body"
 }
@@ -420,9 +487,33 @@ main() {
     help|-h|--help)
       usage
       ;;
-    list|get|create|patch|upsert-trial|add-guidance|add-review|add-pitfall)
+    list|get)
       shift
       exec "$ALICE_BIN" runtime campaigns "$cmd" "$@"
+      ;;
+    create)
+      [[ $# -eq 2 ]] || die "usage: $PROGRAM create CREATE_JSON"
+      create_visible "$2"
+      ;;
+    patch)
+      [[ $# -eq 3 ]] || die "usage: $PROGRAM patch CAMPAIGN_ID PATCH_JSON"
+      mutate_campaign_and_sync_issue "patch" "$2" "$3"
+      ;;
+    upsert-trial)
+      [[ $# -eq 3 ]] || die "usage: $PROGRAM upsert-trial CAMPAIGN_ID TRIAL_PAYLOAD_JSON"
+      upsert_trial_and_sync "$2" "$3"
+      ;;
+    add-guidance)
+      [[ $# -eq 3 ]] || die "usage: $PROGRAM add-guidance CAMPAIGN_ID GUIDANCE_PAYLOAD_JSON"
+      mutate_campaign_and_sync_issue "add-guidance" "$2" "$3"
+      ;;
+    add-review)
+      [[ $# -eq 3 ]] || die "usage: $PROGRAM add-review CAMPAIGN_ID REVIEW_PAYLOAD_JSON"
+      mutate_campaign_and_sync_issue "add-review" "$2" "$3"
+      ;;
+    add-pitfall)
+      [[ $# -eq 3 ]] || die "usage: $PROGRAM add-pitfall CAMPAIGN_ID PITFALL_PAYLOAD_JSON"
+      mutate_campaign_and_sync_issue "add-pitfall" "$2" "$3"
       ;;
     render-issue-note)
       [[ $# -eq 2 ]] || die "usage: $PROGRAM render-issue-note CAMPAIGN_ID"

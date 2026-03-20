@@ -1,4 +1,4 @@
 interface:
   display_name: "Alice 代码军队"
-  short_description: "编排 GitLab + cluster + reviewer 的多 trial 优化闭环"
-  default_prompt: "使用 $alice-code-army 在当前 Alice 会话里组织一个基于 issue / MR 的多 trial 优化流程，并说明如何打断、比较、收敛和记录踩坑。"
+  short_description: "编排 GitLab 可见的 issue / MR / trial 优化闭环"
+  default_prompt: "使用 $alice-code-army 在当前 Alice 会话里组织一个 GitLab 可见的 issue / MR 多 trial 优化流程，缺少 issue / MR 时先补齐，再说明如何打断、比较、收敛和记录踩坑。"
