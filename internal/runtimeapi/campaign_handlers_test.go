@@ -23,6 +23,11 @@ func TestCampaignHandlers_CreateListAndMutate(t *testing.T) {
 		ChatType:      "group",
 		SessionKey:    "chat_id:oc_chat|thread:omt_1",
 	}
+	otherThread := session
+	otherThread.SessionKey = "chat_id:oc_chat|thread:omt_2"
+	otherChat := session
+	otherChat.ReceiveID = "oc_other"
+	otherChat.SessionKey = "chat_id:oc_other|thread:omt_3"
 
 	created, err := client.CreateCampaign(t.Context(), session, CreateCampaignRequest{
 		Title:             "Optimize Model-X",
@@ -43,7 +48,7 @@ func TestCampaignHandlers_CreateListAndMutate(t *testing.T) {
 		t.Fatalf("expected campaign id, got %#v", createdCampaign)
 	}
 
-	listed, err := client.ListCampaigns(t.Context(), session, "", 20)
+	listed, err := client.ListCampaigns(t.Context(), otherThread, "", 20)
 	if err != nil {
 		t.Fatalf("list campaigns failed: %v", err)
 	}
@@ -51,7 +56,23 @@ func TestCampaignHandlers_CreateListAndMutate(t *testing.T) {
 		t.Fatalf("expected one campaign, got %d", got)
 	}
 
-	updated, err := client.UpsertTrial(t.Context(), session, campaignID, UpsertTrialRequest{
+	hidden, err := client.ListCampaigns(t.Context(), otherChat, "", 20)
+	if err != nil {
+		t.Fatalf("list campaigns in other chat failed: %v", err)
+	}
+	if got := int(hidden["count"].(float64)); got != 0 {
+		t.Fatalf("expected other chat to see zero campaigns, got %d", got)
+	}
+
+	fetched, err := client.GetCampaign(t.Context(), otherThread, campaignID)
+	if err != nil {
+		t.Fatalf("get campaign from sibling thread failed: %v", err)
+	}
+	if fetched["campaign"] == nil {
+		t.Fatalf("expected campaign payload, got %#v", fetched)
+	}
+
+	updated, err := client.UpsertTrial(t.Context(), otherThread, campaignID, UpsertTrialRequest{
 		Trial: campaign.Trial{
 			ID:         "trial-1",
 			Hypothesis: "distill smaller model",
@@ -65,7 +86,7 @@ func TestCampaignHandlers_CreateListAndMutate(t *testing.T) {
 		t.Fatalf("expected trial in response, got %#v", updated)
 	}
 
-	guidance, err := client.AddGuidance(t.Context(), session, campaignID, AddGuidanceRequest{
+	guidance, err := client.AddGuidance(t.Context(), otherThread, campaignID, AddGuidanceRequest{
 		Guidance: campaign.Guidance{
 			Source:  "feishu",
 			Command: "/alice hold",

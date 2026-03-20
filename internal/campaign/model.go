@@ -59,6 +59,22 @@ type SessionRoute struct {
 	ChatType      string `json:"chat_type,omitempty"`
 }
 
+func (r SessionRoute) VisibilityKey() string {
+	receiveIDType := strings.ToLower(strings.TrimSpace(r.ReceiveIDType))
+	receiveID := strings.TrimSpace(r.ReceiveID)
+	if receiveIDType != "" && receiveID != "" {
+		return receiveIDType + ":" + receiveID
+	}
+	scopeKey := strings.TrimSpace(r.ScopeKey)
+	if scopeKey == "" {
+		return ""
+	}
+	if idx := strings.Index(scopeKey, "|"); idx >= 0 {
+		scopeKey = strings.TrimSpace(scopeKey[:idx])
+	}
+	return scopeKey
+}
+
 type Actor struct {
 	UserID string `json:"user_id,omitempty"`
 	OpenID string `json:"open_id,omitempty"`

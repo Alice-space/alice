@@ -54,13 +54,13 @@ func (s *Store) Path() string {
 	return s.path
 }
 
-func (s *Store) ListCampaigns(scopeKey, statusFilter string, limit int) ([]Campaign, error) {
+func (s *Store) ListCampaigns(visibilityKey, statusFilter string, limit int) ([]Campaign, error) {
 	if s == nil {
 		return nil, errors.New("store is nil")
 	}
-	scopeKey = strings.TrimSpace(scopeKey)
-	if scopeKey == "" {
-		return nil, errors.New("scope key is empty")
+	visibilityKey = strings.TrimSpace(visibilityKey)
+	if visibilityKey == "" {
+		return nil, errors.New("visibility key is empty")
 	}
 	statusFilter = strings.ToLower(strings.TrimSpace(statusFilter))
 	if limit <= 0 {
@@ -75,7 +75,7 @@ func (s *Store) ListCampaigns(scopeKey, statusFilter string, limit int) ([]Campa
 		filtered := make([]Campaign, 0, len(snapshot.Campaigns))
 		for _, raw := range snapshot.Campaigns {
 			item := NormalizeCampaign(raw)
-			if item.Session.ScopeKey != scopeKey {
+			if item.Session.VisibilityKey() != visibilityKey {
 				continue
 			}
 			if statusFilter != "" && statusFilter != "all" && string(item.Status) != statusFilter {

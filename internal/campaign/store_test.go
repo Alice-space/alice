@@ -28,12 +28,20 @@ func TestStore_CreateListAndGetCampaign(t *testing.T) {
 		t.Fatalf("expected tags to be deduplicated, got %#v", created.Tags)
 	}
 
-	listed, err := store.ListCampaigns("chat_id:oc_chat|thread:omt_1", "", 20)
+	listed, err := store.ListCampaigns((SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_2"}).VisibilityKey(), "", 20)
 	if err != nil {
 		t.Fatalf("list campaigns failed: %v", err)
 	}
 	if len(listed) != 1 {
 		t.Fatalf("expected one campaign, got %d", len(listed))
+	}
+
+	hidden, err := store.ListCampaigns((SessionRoute{ScopeKey: "chat_id:oc_other|thread:omt_9"}).VisibilityKey(), "", 20)
+	if err != nil {
+		t.Fatalf("list hidden campaigns failed: %v", err)
+	}
+	if len(hidden) != 0 {
+		t.Fatalf("expected other chat to see no campaigns, got %d", len(hidden))
 	}
 
 	loaded, err := store.GetCampaign(created.ID)

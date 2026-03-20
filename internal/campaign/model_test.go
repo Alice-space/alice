@@ -28,6 +28,22 @@ func TestNormalizeCampaign_Defaults(t *testing.T) {
 	}
 }
 
+func TestSessionRouteVisibilityKey(t *testing.T) {
+	if got := (SessionRoute{
+		ScopeKey:      "chat_id:oc_chat|thread:omt_1",
+		ReceiveIDType: "chat_id",
+		ReceiveID:     "oc_chat",
+	}).VisibilityKey(); got != "chat_id:oc_chat" {
+		t.Fatalf("unexpected receive-id visibility key: %q", got)
+	}
+
+	if got := (SessionRoute{
+		ScopeKey: "chat_id:oc_chat|scene:work|seed:om_root",
+	}).VisibilityKey(); got != "chat_id:oc_chat" {
+		t.Fatalf("unexpected scope fallback visibility key: %q", got)
+	}
+}
+
 func TestValidateCampaign(t *testing.T) {
 	item := Campaign{
 		ID:                "camp_1",

@@ -38,7 +38,7 @@ func (s *Server) handleCampaignList(c *gin.Context) {
 			return
 		}
 	}
-	items, err := s.campaigns.ListCampaigns(scopeCtx.session.ScopeKey, c.Query("status"), limit)
+	items, err := s.campaigns.ListCampaigns(scopeCtx.session.VisibilityKey(), c.Query("status"), limit)
 	if err != nil {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
@@ -93,7 +93,7 @@ func (s *Server) handleCampaignGet(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	if item.Session.ScopeKey != scopeCtx.session.ScopeKey {
+	if !campaignVisibleToSession(item, scopeCtx.session) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
 		return
 	}
@@ -120,7 +120,7 @@ func (s *Server) handleCampaignPatch(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	if current.Session.ScopeKey != scopeCtx.session.ScopeKey {
+	if !campaignVisibleToSession(current, scopeCtx.session) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
 		return
 	}
@@ -169,7 +169,7 @@ func (s *Server) handleCampaignTrialUpsert(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	if current.Session.ScopeKey != scopeCtx.session.ScopeKey {
+	if !campaignVisibleToSession(current, scopeCtx.session) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
 		return
 	}
@@ -210,7 +210,7 @@ func (s *Server) handleCampaignGuidanceAdd(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	if current.Session.ScopeKey != scopeCtx.session.ScopeKey {
+	if !campaignVisibleToSession(current, scopeCtx.session) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
 		return
 	}
@@ -251,7 +251,7 @@ func (s *Server) handleCampaignReviewAdd(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	if current.Session.ScopeKey != scopeCtx.session.ScopeKey {
+	if !campaignVisibleToSession(current, scopeCtx.session) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
 		return
 	}
@@ -292,7 +292,7 @@ func (s *Server) handleCampaignPitfallAdd(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
-	if current.Session.ScopeKey != scopeCtx.session.ScopeKey {
+	if !campaignVisibleToSession(current, scopeCtx.session) {
 		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
 		return
 	}
@@ -415,6 +415,14 @@ func applyCampaignPatch(
 		return campaign.Campaign{}, errors.New("private scope does not support scope_all manage mode")
 	}
 	return next, nil
+}
+
+func campaignVisibleToSession(item campaign.Campaign, session campaign.SessionRoute) bool {
+	visibilityKey := session.VisibilityKey()
+	if visibilityKey == "" {
+		return false
+	}
+	return item.Session.VisibilityKey() == visibilityKey
 }
 
 func canManageCampaign(item campaign.Campaign, actorID string) bool {
