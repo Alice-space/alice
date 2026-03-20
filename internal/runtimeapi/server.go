@@ -569,13 +569,21 @@ func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automation
 		return automation.Task{}, errors.New("cron_expr is required for cron schedule")
 	}
 	if task.Action.Type == "" {
-		if strings.TrimSpace(task.Action.Prompt) != "" {
+		switch {
+		case strings.TrimSpace(task.Action.Workflow) != "":
+			task.Action.Type = automation.ActionTypeRunWorkflow
+		case strings.TrimSpace(task.Action.Prompt) != "":
 			task.Action.Type = automation.ActionTypeRunLLM
-		} else {
+		default:
 			task.Action.Type = automation.ActionTypeSendText
 		}
 	}
 	applySceneLLMProfileDefaults(&task, scopeCtx, s.runtimeConfig())
+	if task.Action.Type == automation.ActionTypeRunWorkflow {
+		task.Action.SessionKey = scopeSessionKey(scopeCtx.session)
+	} else {
+		task.Action.SessionKey = ""
+	}
 	if err := validateMentionPermission(scopeCtx, task.Action.MentionUserIDs); err != nil {
 		return automation.Task{}, err
 	}
@@ -586,7 +594,10 @@ func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automation
 }
 
 func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScopeContext, runtime automationRuntimeConfig) {
-	if task == nil || task.Action.Type != automation.ActionTypeRunLLM {
+	if task == nil {
+		return
+	}
+	if task.Action.Type != automation.ActionTypeRunLLM && task.Action.Type != automation.ActionTypeRunWorkflow {
 		return
 	}
 	profile, ok := resolveSceneLLMProfile(runtime, scopeCtx.session.SessionKey)
@@ -667,6 +678,11 @@ func applyTaskPatch(current automation.Task, patchBytes []byte, contentType stri
 	next.ConsecutiveFailures = current.ConsecutiveFailures
 	next.Running = current.Running
 	next.Revision = current.Revision
+	if next.Action.Type == automation.ActionTypeRunWorkflow {
+		next.Action.SessionKey = scopeSessionKey(scopeCtx.session)
+	} else {
+		next.Action.SessionKey = ""
+	}
 	if err := validateMentionPermission(scopeCtx, next.Action.MentionUserIDs); err != nil {
 		return automation.Task{}, err
 	}

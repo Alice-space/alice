@@ -61,6 +61,28 @@ func (s *llmRunnerStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResul
 	return s.result, s.err
 }
 
+type workflowRunnerStub struct {
+	mu          sync.Mutex
+	calls       int
+	lastReq     WorkflowRunRequest
+	result      WorkflowRunResult
+	err         error
+	deadlineSet bool
+	deadline    time.Time
+}
+
+func (s *workflowRunnerStub) Run(ctx context.Context, req WorkflowRunRequest) (WorkflowRunResult, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.calls++
+	s.lastReq = req
+	if deadline, ok := ctx.Deadline(); ok {
+		s.deadlineSet = true
+		s.deadline = deadline
+	}
+	return s.result, s.err
+}
+
 func TestEngine_RunSystemTask(t *testing.T) {
 	engine := NewEngine(nil, nil)
 	engine.tick = 10 * time.Millisecond
@@ -238,6 +260,128 @@ func TestEngine_RunUserTask_UsesConfiguredTimeout(t *testing.T) {
 	remaining := sender.deadline.Sub(start)
 	if remaining < 119*time.Second || remaining > 121*time.Second {
 		t.Fatalf("unexpected configured timeout window: %s", remaining)
+	}
+}
+
+func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:            ActionTypeRunWorkflow,
+			Text:            "流程播报",
+			Prompt:          "请推进代码军队流程",
+			Workflow:        "code_army",
+			StateKey:        "project_alpha",
+			SessionKey:      "chat_id:oc_chat|thread:omt_alpha",
+			Model:           "gpt-4.1-mini",
+			Profile:         "workflow-runner",
+			ReasoningEffort: "high",
+			Personality:     "pragmatic",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{Message: "workflow 已完成"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	runner.mu.Lock()
+	if runner.calls == 0 {
+		runner.mu.Unlock()
+		t.Fatal("expected run_workflow task to invoke workflow runner")
+	}
+	if runner.lastReq.Workflow != "code_army" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow name: %q", runner.lastReq.Workflow)
+	}
+	if runner.lastReq.StateKey != "project_alpha" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow state key: %q", runner.lastReq.StateKey)
+	}
+	if runner.lastReq.SessionKey != "chat_id:oc_chat|thread:omt_alpha" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow session key: %q", runner.lastReq.SessionKey)
+	}
+	if runner.lastReq.ReasoningEffort != "high" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow reasoning effort: %q", runner.lastReq.ReasoningEffort)
+	}
+	if runner.lastReq.Personality != "pragmatic" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow personality: %q", runner.lastReq.Personality)
+	}
+	if got := runner.lastReq.Env["ALICE_MCP_SESSION_KEY"]; got != "chat_id:oc_chat|thread:omt_alpha" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow session key env: %q", got)
+	}
+	runner.mu.Unlock()
+
+	sender.mu.Lock()
+	if sender.sendTextCalls == 0 {
+		sender.mu.Unlock()
+		t.Fatal("expected run_workflow task to send text")
+	}
+	if sender.lastText == "" {
+		sender.mu.Unlock()
+		t.Fatal("expected non-empty run_workflow dispatch text")
+	}
+	sender.mu.Unlock()
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.LastResult == "" {
+		t.Fatalf("expected last result to be recorded, task=%+v", stored)
+	}
+}
+
+func TestEngine_RunUserTask_RunWorkflow_SkipsAutomationTimeout(t *testing.T) {
+	sender := &senderStub{}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{Message: "workflow finished"},
+	}
+	engine := NewEngine(nil, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.SetUserTaskTimeout(2 * time.Minute)
+
+	engine.runUserTask(context.Background(), Task{
+		Scope:   Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:   Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator: Actor{UserID: "ou_actor"},
+		Action: Action{
+			Type:     ActionTypeRunWorkflow,
+			Prompt:   "推进代码军队流程",
+			Workflow: "code_army",
+			StateKey: "project_alpha",
+		},
+	})
+
+	runner.mu.Lock()
+	defer runner.mu.Unlock()
+	if runner.calls != 1 {
+		t.Fatalf("expected workflow runner to be called once, got %d", runner.calls)
+	}
+	if runner.deadlineSet {
+		t.Fatalf("expected workflow runner context to skip automation deadline, got %s", runner.deadline)
 	}
 }
 

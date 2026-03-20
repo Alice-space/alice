@@ -106,6 +106,60 @@ func TestValidateTask_RunLLMEmptyPromptRejected(t *testing.T) {
 	}
 }
 
+func TestValidateTask_RunWorkflow(t *testing.T) {
+	task := Task{
+		ID:       "task_run_workflow",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:            ActionTypeRunWorkflow,
+			Prompt:          "请推进当前 campaign",
+			Workflow:        " code_army ",
+			StateKey:        " fm16 ",
+			SessionKey:      " chat_id:oc_chat|thread:omt_1 ",
+			Model:           "gpt-5.4",
+			Profile:         "worker-cheap",
+			ReasoningEffort: "high",
+			Personality:     "pragmatic",
+			MentionUserIDs:  []string{"ou_actor"},
+		},
+		Status: TaskStatusActive,
+	}
+	if err := ValidateTask(task); err != nil {
+		t.Fatalf("expected run_workflow task to be valid, got err=%v", err)
+	}
+	normalized := NormalizeTask(task)
+	if normalized.Action.Workflow != "code_army" {
+		t.Fatalf("unexpected normalized workflow: %q", normalized.Action.Workflow)
+	}
+	if normalized.Action.StateKey != "fm16" {
+		t.Fatalf("unexpected normalized state key: %q", normalized.Action.StateKey)
+	}
+	if normalized.Action.SessionKey != "chat_id:oc_chat|thread:omt_1" {
+		t.Fatalf("unexpected normalized session key: %q", normalized.Action.SessionKey)
+	}
+}
+
+func TestValidateTask_RunWorkflowEmptyWorkflowRejected(t *testing.T) {
+	task := Task{
+		ID:       "task_run_workflow_empty_workflow",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:   ActionTypeRunWorkflow,
+			Prompt: "请推进当前 campaign",
+		},
+		Status: TaskStatusActive,
+	}
+	if err := ValidateTask(task); err == nil {
+		t.Fatal("expected empty run_workflow workflow error")
+	}
+}
+
 func TestValidateTask_Cron(t *testing.T) {
 	task := Task{
 		ID:       "task_cron",

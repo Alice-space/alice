@@ -124,3 +124,69 @@ func TestBuildTaskFromRequest_PreservesExplicitRunLLMSelectors(t *testing.T) {
 		t.Fatalf("unexpected personality override: %q", task.Action.Personality)
 	}
 }
+
+func TestBuildTaskFromRequest_InferRunWorkflowAndSetSessionKey(t *testing.T) {
+	srv := NewServer(
+		"",
+		"",
+		nil,
+		nil,
+		nil,
+		config.Config{
+			LLMProfiles: map[string]config.LLMProfileConfig{
+				"work": {
+					Provider:        "codex",
+					Model:           "gpt-5.4",
+					Profile:         "work-profile",
+					ReasoningEffort: "xhigh",
+					Personality:     "pragmatic",
+				},
+			},
+			GroupScenes: config.GroupScenesConfig{
+				Work: config.GroupSceneConfig{
+					Enabled:    true,
+					LLMProfile: "work",
+				},
+			},
+		},
+	)
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 900,
+			},
+			Action: automation.Action{
+				Workflow: "code_army",
+				Prompt:   "/alice reconcile campaign camp_x",
+			},
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: mcpbridge.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if task.Action.Type != automation.ActionTypeRunWorkflow {
+		t.Fatalf("unexpected workflow action type: %q", task.Action.Type)
+	}
+	if task.Action.Model != "gpt-5.4" {
+		t.Fatalf("unexpected workflow model: %q", task.Action.Model)
+	}
+	if task.Action.Profile != "work-profile" {
+		t.Fatalf("unexpected workflow profile: %q", task.Action.Profile)
+	}
+	if task.Action.ReasoningEffort != "xhigh" {
+		t.Fatalf("unexpected workflow reasoning effort: %q", task.Action.ReasoningEffort)
+	}
+	if task.Action.Personality != "pragmatic" {
+		t.Fatalf("unexpected workflow personality: %q", task.Action.Personality)
+	}
+	if task.Action.SessionKey != "chat_id:oc_chat|scene:work|thread:omt_1" {
+		t.Fatalf("unexpected workflow session key: %q", task.Action.SessionKey)
+	}
+}

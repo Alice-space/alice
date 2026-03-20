@@ -5,6 +5,7 @@ import (
 	"sort"
 	"time"
 
+	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
@@ -77,6 +78,7 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 	if r.AutomationEngine != nil {
 		if llmChanged && backend != nil {
 			r.AutomationEngine.SetLLMRunner(backend)
+			r.AutomationEngine.SetWorkflowRunner(automation.NewPromptWorkflowRunner(backend))
 		}
 		r.AutomationEngine.SetUserTaskTimeout(merged.AutomationTaskTimeout)
 	}

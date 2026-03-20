@@ -33,6 +33,7 @@ type Engine struct {
 	sender          TextSender
 	runtimeMu       sync.RWMutex
 	llmRunner       LLMRunner
+	workflowRunner  WorkflowRunner
 	runEnv          map[string]string
 	userTaskTimeout time.Duration
 	tick            time.Duration
@@ -72,6 +73,15 @@ func (e *Engine) SetLLMRunner(runner LLMRunner) {
 	e.runtimeMu.Lock()
 	defer e.runtimeMu.Unlock()
 	e.llmRunner = runner
+}
+
+func (e *Engine) SetWorkflowRunner(runner WorkflowRunner) {
+	if e == nil {
+		return
+	}
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
+	e.workflowRunner = runner
 }
 
 func (e *Engine) SetRunEnv(env map[string]string) {
@@ -291,6 +301,10 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 }
 
 func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Context, context.CancelFunc) {
+	task = NormalizeTask(task)
+	if task.Action.Type == ActionTypeRunWorkflow {
+		return ctx, func() {}
+	}
 	return context.WithTimeout(ctx, e.userTaskTimeoutDuration())
 }
 
@@ -366,6 +380,54 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 		reply := strings.TrimSpace(result.Reply)
 		if reply == "" {
 			return "", errors.New("llm reply is empty")
+		}
+		prefix, err := renderActionTemplate(task.Action.Text, runAt)
+		if err != nil {
+			return "", err
+		}
+		message := reply
+		if prefix != "" {
+			message = prefix + "\n" + reply
+		}
+		text, err := BuildDispatchText(Action{
+			Type:           ActionTypeSendText,
+			Text:           message,
+			MentionUserIDs: task.Action.MentionUserIDs,
+		})
+		if err != nil {
+			return "", err
+		}
+		return text, nil
+	case ActionTypeRunWorkflow:
+		runner := e.workflowRunnerValue()
+		if runner == nil {
+			return "", errors.New("automation workflow runner is nil")
+		}
+		prompt, err := renderActionTemplate(task.Action.Prompt, runAt)
+		if err != nil {
+			return "", err
+		}
+		if prompt == "" {
+			return "", errors.New("action prompt is empty for run_workflow")
+		}
+		result, err := runner.Run(ctx, WorkflowRunRequest{
+			Workflow:        task.Action.Workflow,
+			TaskID:          task.ID,
+			StateKey:        task.Action.StateKey,
+			SessionKey:      task.Action.SessionKey,
+			Prompt:          prompt,
+			Model:           task.Action.Model,
+			Profile:         task.Action.Profile,
+			ReasoningEffort: task.Action.ReasoningEffort,
+			Personality:     task.Action.Personality,
+			Env:             e.buildTaskRunEnv(task),
+		})
+		if err != nil {
+			return "", err
+		}
+		reply := strings.TrimSpace(result.Message)
+		if reply == "" {
+			return "", errors.New("workflow reply is empty")
 		}
 		prefix, err := renderActionTemplate(task.Action.Text, runAt)
 		if err != nil {
@@ -471,6 +533,15 @@ func (e *Engine) llmRunnerValue() LLMRunner {
 	return e.llmRunner
 }
 
+func (e *Engine) workflowRunnerValue() WorkflowRunner {
+	if e == nil {
+		return nil
+	}
+	e.runtimeMu.RLock()
+	defer e.runtimeMu.RUnlock()
+	return e.workflowRunner
+}
+
 func (e *Engine) runEnvSnapshot() map[string]string {
 	if e == nil {
 		return nil
@@ -489,6 +560,9 @@ func (e *Engine) runEnvSnapshot() map[string]string {
 
 func taskSessionKey(task Task) string {
 	task = NormalizeTask(task)
+	if sessionKey := strings.TrimSpace(task.Action.SessionKey); sessionKey != "" {
+		return sessionKey
+	}
 	if strings.TrimSpace(task.Route.ReceiveIDType) == "" || strings.TrimSpace(task.Route.ReceiveID) == "" {
 		return ""
 	}

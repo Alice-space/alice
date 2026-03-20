@@ -31,8 +31,9 @@ const (
 type ActionType string
 
 const (
-	ActionTypeSendText ActionType = "send_text"
-	ActionTypeRunLLM   ActionType = "run_llm"
+	ActionTypeSendText    ActionType = "send_text"
+	ActionTypeRunLLM      ActionType = "run_llm"
+	ActionTypeRunWorkflow ActionType = "run_workflow"
 )
 
 type TaskStatus string
@@ -78,6 +79,9 @@ type Action struct {
 	Prompt          string     `json:"prompt,omitempty"`
 	Model           string     `json:"model,omitempty"`
 	Profile         string     `json:"profile,omitempty"`
+	Workflow        string     `json:"workflow,omitempty"`
+	StateKey        string     `json:"state_key,omitempty"`
+	SessionKey      string     `json:"session_key,omitempty"`
 	ReasoningEffort string     `json:"reasoning_effort,omitempty"`
 	Personality     string     `json:"personality,omitempty"`
 	MentionUserIDs  []string   `json:"mention_user_ids,omitempty"`
@@ -128,6 +132,9 @@ func NormalizeTask(task Task) Task {
 	task.Action.Prompt = strings.TrimSpace(task.Action.Prompt)
 	task.Action.Model = strings.TrimSpace(task.Action.Model)
 	task.Action.Profile = strings.TrimSpace(task.Action.Profile)
+	task.Action.Workflow = normalizeWorkflowName(task.Action.Workflow)
+	task.Action.StateKey = strings.TrimSpace(task.Action.StateKey)
+	task.Action.SessionKey = strings.TrimSpace(task.Action.SessionKey)
 	task.Action.ReasoningEffort = strings.ToLower(strings.TrimSpace(task.Action.ReasoningEffort))
 	task.Action.Personality = strings.ToLower(strings.TrimSpace(task.Action.Personality))
 	task.Action.MentionUserIDs = uniqueNonEmptyStrings(task.Action.MentionUserIDs)
@@ -192,6 +199,16 @@ func ValidateTask(task Task) error {
 	case ActionTypeRunLLM:
 		if strings.TrimSpace(task.Action.Prompt) == "" {
 			return errors.New("action prompt is empty for run_llm")
+		}
+		if _, err := buildMentionParts(task.Action.MentionUserIDs); err != nil {
+			return err
+		}
+	case ActionTypeRunWorkflow:
+		if task.Action.Workflow == "" {
+			return errors.New("action workflow is empty for run_workflow")
+		}
+		if strings.TrimSpace(task.Action.Prompt) == "" {
+			return errors.New("action prompt is empty for run_workflow")
 		}
 		if _, err := buildMentionParts(task.Action.MentionUserIDs); err != nil {
 			return err
