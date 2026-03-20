@@ -11,6 +11,7 @@ import (
 	"github.com/oklog/ulid/v2"
 
 	"github.com/Alice-space/alice/internal/automation"
+	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/llm"
@@ -25,6 +26,7 @@ type connectorRuntimePaths struct {
 	promptDir           string
 	resourceDir         string
 	automationStatePath string
+	campaignStatePath   string
 	sessionStatePath    string
 	runtimeStatePath    string
 }
@@ -39,6 +41,7 @@ type connectorRuntimeBuilder struct {
 
 	memoryManager    *memory.Manager
 	automationStore  *automation.Store
+	campaignStore    *campaign.Store
 	automationEngine *automation.Engine
 	promptLoader     *prompting.Loader
 	apiServer        *runtimeapi.Server
@@ -69,6 +72,7 @@ func newConnectorRuntimePaths(cfg config.Config) connectorRuntimePaths {
 		promptDir:           ResolvePromptDir(cfg.WorkspaceDir, cfg.PromptDir),
 		resourceDir:         filepath.Join(memoryDir, "resources"),
 		automationStatePath: filepath.Join(memoryDir, "automation.db"),
+		campaignStatePath:   filepath.Join(memoryDir, "campaigns.db"),
 		sessionStatePath:    filepath.Join(memoryDir, "session_state.json"),
 		runtimeStatePath:    filepath.Join(memoryDir, "runtime_state.json"),
 	}
@@ -82,6 +86,7 @@ func (b *connectorRuntimeBuilder) Build() (*ConnectorRuntime, error) {
 
 	b.buildSender()
 	b.buildAutomationStore()
+	b.buildCampaignStore()
 
 	if err := b.buildProcessor(); err != nil {
 		return nil, err
@@ -103,6 +108,7 @@ func (b *connectorRuntimeBuilder) Build() (*ConnectorRuntime, error) {
 		RuntimeAPIToken:     b.apiToken,
 		MemoryDir:           b.paths.memoryDir,
 		AutomationStatePath: b.paths.automationStatePath,
+		CampaignStatePath:   b.paths.campaignStatePath,
 		PromptLoader:        b.promptLoader,
 		Config:              b.cfg,
 	}, nil
@@ -128,6 +134,10 @@ func (b *connectorRuntimeBuilder) buildSender() {
 
 func (b *connectorRuntimeBuilder) buildAutomationStore() {
 	b.automationStore = automation.NewStore(b.paths.automationStatePath)
+}
+
+func (b *connectorRuntimeBuilder) buildCampaignStore() {
+	b.campaignStore = campaign.NewStore(b.paths.campaignStatePath)
 }
 
 func (b *connectorRuntimeBuilder) buildProcessor() error {
@@ -199,6 +209,7 @@ func (b *connectorRuntimeBuilder) buildRuntimeAPI() {
 		b.sender,
 		b.memoryManager,
 		b.automationStore,
+		b.campaignStore,
 	)
 }
 

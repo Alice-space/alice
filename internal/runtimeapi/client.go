@@ -101,6 +101,107 @@ func (c *Client) DeleteTask(ctx context.Context, session mcpbridge.SessionContex
 	return c.delete(ctx, session, "/api/v1/automation/tasks/"+taskID, nil)
 }
 
+func (c *Client) ListCampaigns(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	status string,
+	limit int,
+) (map[string]any, error) {
+	query := map[string]string{}
+	if status = strings.TrimSpace(status); status != "" {
+		query["status"] = status
+	}
+	if limit > 0 {
+		query["limit"] = fmt.Sprintf("%d", limit)
+	}
+	return c.get(ctx, session, "/api/v1/campaigns", query)
+}
+
+func (c *Client) CreateCampaign(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	req CreateCampaignRequest,
+) (map[string]any, error) {
+	return c.post(ctx, session, "/api/v1/campaigns", req)
+}
+
+func (c *Client) GetCampaign(ctx context.Context, session mcpbridge.SessionContext, campaignID string) (map[string]any, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign id is required")
+	}
+	return c.get(ctx, session, "/api/v1/campaigns/"+campaignID, nil)
+}
+
+func (c *Client) PatchCampaign(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	campaignID string,
+	contentType string,
+	patchBody []byte,
+) (map[string]any, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign id is required")
+	}
+	if strings.TrimSpace(contentType) == "" {
+		contentType = "application/merge-patch+json"
+	}
+	return c.do(ctx, session, http.MethodPatch, "/api/v1/campaigns/"+campaignID, patchBody, contentType, nil)
+}
+
+func (c *Client) UpsertTrial(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	campaignID string,
+	req UpsertTrialRequest,
+) (map[string]any, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign id is required")
+	}
+	return c.post(ctx, session, "/api/v1/campaigns/"+campaignID+"/trials", req)
+}
+
+func (c *Client) AddGuidance(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	campaignID string,
+	req AddGuidanceRequest,
+) (map[string]any, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign id is required")
+	}
+	return c.post(ctx, session, "/api/v1/campaigns/"+campaignID+"/guidance", req)
+}
+
+func (c *Client) AddReview(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	campaignID string,
+	req AddReviewRequest,
+) (map[string]any, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign id is required")
+	}
+	return c.post(ctx, session, "/api/v1/campaigns/"+campaignID+"/reviews", req)
+}
+
+func (c *Client) AddPitfall(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	campaignID string,
+	req AddPitfallRequest,
+) (map[string]any, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign id is required")
+	}
+	return c.post(ctx, session, "/api/v1/campaigns/"+campaignID+"/pitfalls", req)
+}
+
 func (c *Client) get(
 	ctx context.Context,
 	session mcpbridge.SessionContext,

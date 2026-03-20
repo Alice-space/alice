@@ -16,6 +16,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Alice-space/alice/internal/automation"
+	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 	"github.com/Alice-space/alice/internal/memory"
 )
@@ -46,11 +47,18 @@ type Server struct {
 	sender     Sender
 	memory     *memory.Manager
 	automation *automation.Store
+	campaigns  *campaign.Store
 	engine     *gin.Engine
 	httpSrv    *http.Server
 }
 
-func NewServer(addr, token string, sender Sender, memoryManager *memory.Manager, store *automation.Store) *Server {
+func NewServer(
+	addr, token string,
+	sender Sender,
+	memoryManager *memory.Manager,
+	automationStore *automation.Store,
+	campaignStore *campaign.Store,
+) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
 	engine.Use(gin.Recovery())
@@ -60,7 +68,8 @@ func NewServer(addr, token string, sender Sender, memoryManager *memory.Manager,
 		token:      strings.TrimSpace(token),
 		sender:     sender,
 		memory:     memoryManager,
-		automation: store,
+		automation: automationStore,
+		campaigns:  campaignStore,
 		engine:     engine,
 	}
 	engine.Use(srv.authMiddleware())
@@ -78,6 +87,14 @@ func NewServer(addr, token string, sender Sender, memoryManager *memory.Manager,
 	api.GET("/automation/tasks/:taskID", srv.handleAutomationTaskGet)
 	api.PATCH("/automation/tasks/:taskID", srv.handleAutomationTaskPatch)
 	api.DELETE("/automation/tasks/:taskID", srv.handleAutomationTaskDelete)
+	api.GET("/campaigns", srv.handleCampaignList)
+	api.POST("/campaigns", srv.handleCampaignCreate)
+	api.GET("/campaigns/:campaignID", srv.handleCampaignGet)
+	api.PATCH("/campaigns/:campaignID", srv.handleCampaignPatch)
+	api.POST("/campaigns/:campaignID/trials", srv.handleCampaignTrialUpsert)
+	api.POST("/campaigns/:campaignID/guidance", srv.handleCampaignGuidanceAdd)
+	api.POST("/campaigns/:campaignID/reviews", srv.handleCampaignReviewAdd)
+	api.POST("/campaigns/:campaignID/pitfalls", srv.handleCampaignPitfallAdd)
 	return srv
 }
 

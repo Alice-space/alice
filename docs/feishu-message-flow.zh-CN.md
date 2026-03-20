@@ -822,6 +822,7 @@ backend 返回 `NextThreadID` 后，`Processor` 会把它写回 session state。
 - `/api/v1/messages/file`
 - `/api/v1/memory/*`
 - `/api/v1/automation/*`
+- `/api/v1/campaigns/*`
 
 ### 15.2 为什么 tool 不需要传 receive_id
 

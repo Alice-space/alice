@@ -78,6 +78,8 @@ Current API groups:
   Inspect memory context, rewrite long-term memory, append daily summaries.
 - `/api/v1/automation/*`
   Create/list/get/patch/delete scheduled tasks.
+- `/api/v1/campaigns/*`
+  Manage code-army campaigns, trials, guidance, reviews, and pitfalls in the current conversation scope.
 
 Configuration:
 
@@ -97,7 +99,7 @@ Operational modules are now exposed as skills instead of being reachable only th
 - `skills/alice-scheduler`
   Manage automation tasks through `alice runtime automation ...`.
 - `skills/alice-code-army`
-  Acts as the long-running optimization orchestration skill, using GitLab issue / MR, cluster execution, Feishu control, and reviewer models to run multi-trial loops.
+  Acts as the long-running optimization orchestration skill, using `alice runtime campaigns ...` to manage multi-trial campaign state before deeper GitLab/cluster integrations.
 
 These skills rely on:
 
@@ -118,7 +120,7 @@ Alice no longer exposes business operations through MCP.
 
 Current posture:
 
-- Skills + runtime HTTP are the primary path for memory/scheduling/message operations.
+- Skills + runtime HTTP are the primary path for memory/scheduling/campaign/message operations.
 - Bundled skills call the same `alice` binary with `runtime ...` arguments.
 - The remaining `mcp` naming is limited to session-context env keys such as `ALICE_MCP_RECEIVE_ID`, which are still used as stable runtime context variables.
 
@@ -170,7 +172,7 @@ Actively used:
 3. Env includes current chat context plus runtime HTTP auth.
 4. LLM backend renders prompt templates from disk and runs `codex`/`claude`/`kimi`.
 5. Skills invoked by the agent call `alice runtime ...`, which then talks to the runtime HTTP API.
-6. Runtime HTTP API operates memory, automation, and message sending using the same session context.
+6. Runtime HTTP API operates memory, automation, campaign state, and message sending using the same session context.
 7. Automation tasks are persisted in `automation.db` through `bbolt`.
 8. Runtime logs are emitted through `zerolog`, with optional file rotation handled by `lumberjack`.
 9. Debug traces record each agent call in markdown for replay/audit.
