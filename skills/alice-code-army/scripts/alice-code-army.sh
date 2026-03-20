@@ -37,6 +37,27 @@ require_cmd() {
   command -v "$1" >/dev/null 2>&1 || die "missing required command: $1"
 }
 
+resolve_ihep_gitlab_helper() {
+  local script_dir repo_helper installed_helper
+  script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  repo_helper="$(cd "$script_dir/../../ihep-gitlab/scripts" 2>/dev/null && pwd)/ihep-gitlab.sh" || true
+  installed_helper="$ALICE_HOME_DIR/.codex/skills/ihep-gitlab/scripts/ihep-gitlab.sh"
+
+  if [[ -x "$repo_helper" ]]; then
+    printf '%s\n' "$repo_helper"
+    return 0
+  fi
+  if [[ -x "$installed_helper" ]]; then
+    printf '%s\n' "$installed_helper"
+    return 0
+  fi
+  if command -v ihep-gitlab.sh >/dev/null 2>&1; then
+    command -v ihep-gitlab.sh
+    return 0
+  fi
+  return 1
+}
+
 resolve_alice_bin() {
   if [[ -n "${ALICE_RUNTIME_BIN:-}" ]]; then
     printf '%s\n' "$ALICE_RUNTIME_BIN"
@@ -117,13 +138,22 @@ extract_mr_iid() {
 }
 
 gitlab_note_issue() {
-  local repo="$1" iid="$2" body="$3"
+  local repo="$1" iid="$2" body="$3" helper=""
+  if helper="$(resolve_ihep_gitlab_helper 2>/dev/null)"; then
+    "$helper" issue-note --host "$DEFAULT_GITLAB_HOST" --repo "$repo" --iid "$iid" --message "$body"
+    return
+  fi
   require_cmd glab
   GITLAB_HOST="$DEFAULT_GITLAB_HOST" glab issue note "$iid" -R "$repo" -m "$body"
 }
 
 gitlab_note_mr() {
-  local repo="$1" iid="$2" body="$3"
+  local repo="$1" iid="$2" body="$3" helper=""
+  if helper="$(resolve_ihep_gitlab_helper 2>/dev/null)"; then
+    if "$helper" mr-note --host "$DEFAULT_GITLAB_HOST" --repo "$repo" --iid "$iid" --message "$body"; then
+      return
+    fi
+  fi
   require_cmd glab
   GITLAB_HOST="$DEFAULT_GITLAB_HOST" glab mr note "$iid" -R "$repo" -m "$body"
 }
