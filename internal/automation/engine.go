@@ -352,11 +352,13 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 			return "", errors.New("action prompt is empty for run_llm")
 		}
 		result, err := runner.Run(ctx, llm.RunRequest{
-			AgentName: "scheduler",
-			UserText:  prompt,
-			Model:     task.Action.Model,
-			Profile:   task.Action.Profile,
-			Env:       e.buildTaskRunEnv(task),
+			AgentName:       "scheduler",
+			UserText:        prompt,
+			Model:           task.Action.Model,
+			Profile:         task.Action.Profile,
+			ReasoningEffort: task.Action.ReasoningEffort,
+			Personality:     task.Action.Personality,
+			Env:             e.buildTaskRunEnv(task),
 		})
 		if err != nil {
 			return "", err

@@ -6,12 +6,13 @@ import (
 	"testing"
 
 	"github.com/Alice-space/alice/internal/campaign"
+	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 )
 
 func TestCampaignHandlers_CreateListAndMutate(t *testing.T) {
 	store := campaign.NewStore(filepath.Join(t.TempDir(), "campaigns.db"))
-	server := NewServer("", "", nil, nil, store)
+	server := NewServer("", "", nil, nil, store, config.Config{})
 	httpServer := httptest.NewServer(server.engine)
 	defer httpServer.Close()
 

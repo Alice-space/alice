@@ -64,6 +64,9 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 	if r.App != nil {
 		r.App.UpdateRuntimeConfig(merged)
 	}
+	if r.RuntimeAPI != nil {
+		r.RuntimeAPI.UpdateRuntimeConfig(merged)
+	}
 	if r.Processor != nil {
 		if llmChanged && backend != nil {
 			r.Processor.SetLLMBackend(backend)

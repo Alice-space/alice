@@ -73,12 +73,14 @@ type Schedule struct {
 }
 
 type Action struct {
-	Type           ActionType `json:"type"`
-	Text           string     `json:"text"`
-	Prompt         string     `json:"prompt,omitempty"`
-	Model          string     `json:"model,omitempty"`
-	Profile        string     `json:"profile,omitempty"`
-	MentionUserIDs []string   `json:"mention_user_ids,omitempty"`
+	Type            ActionType `json:"type"`
+	Text            string     `json:"text"`
+	Prompt          string     `json:"prompt,omitempty"`
+	Model           string     `json:"model,omitempty"`
+	Profile         string     `json:"profile,omitempty"`
+	ReasoningEffort string     `json:"reasoning_effort,omitempty"`
+	Personality     string     `json:"personality,omitempty"`
+	MentionUserIDs  []string   `json:"mention_user_ids,omitempty"`
 }
 
 type Task struct {
@@ -126,6 +128,8 @@ func NormalizeTask(task Task) Task {
 	task.Action.Prompt = strings.TrimSpace(task.Action.Prompt)
 	task.Action.Model = strings.TrimSpace(task.Action.Model)
 	task.Action.Profile = strings.TrimSpace(task.Action.Profile)
+	task.Action.ReasoningEffort = strings.ToLower(strings.TrimSpace(task.Action.ReasoningEffort))
+	task.Action.Personality = strings.ToLower(strings.TrimSpace(task.Action.Personality))
 	task.Action.MentionUserIDs = uniqueNonEmptyStrings(task.Action.MentionUserIDs)
 	task.Status = TaskStatus(strings.ToLower(strings.TrimSpace(string(task.Status))))
 	task.LastResult = strings.TrimSpace(task.LastResult)

@@ -138,12 +138,14 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 		Creator:  Actor{UserID: "ou_actor"},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
 		Action: Action{
-			Type:           ActionTypeRunLLM,
-			Text:           "定时播报",
-			Prompt:         "请回复当前时间 {{now}}",
-			Model:          "gpt-4.1-mini",
-			Profile:        "worker-cheap",
-			MentionUserIDs: []string{"ou_actor"},
+			Type:            ActionTypeRunLLM,
+			Text:            "定时播报",
+			Prompt:          "请回复当前时间 {{now}}",
+			Model:           "gpt-4.1-mini",
+			Profile:         "worker-cheap",
+			ReasoningEffort: "xhigh",
+			Personality:     "pragmatic",
+			MentionUserIDs:  []string{"ou_actor"},
 		},
 	})
 	if err != nil {
@@ -180,6 +182,14 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 	if runner.lastReq.Profile != "worker-cheap" {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm profile: %q", runner.lastReq.Profile)
+	}
+	if runner.lastReq.ReasoningEffort != "xhigh" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm reasoning effort: %q", runner.lastReq.ReasoningEffort)
+	}
+	if runner.lastReq.Personality != "pragmatic" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm personality: %q", runner.lastReq.Personality)
 	}
 	if got := runner.lastReq.Env["ALICE_MCP_RECEIVE_ID"]; got != "ou_actor" {
 		runner.mu.Unlock()

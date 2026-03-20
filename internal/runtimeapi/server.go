@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	securejoin "github.com/cyphar/filepath-securejoin"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/campaign"
+	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 )
 
@@ -46,8 +48,15 @@ type Server struct {
 	sender     Sender
 	automation *automation.Store
 	campaigns  *campaign.Store
+	runtimeMu  sync.RWMutex
+	runtime    automationRuntimeConfig
 	engine     *gin.Engine
 	httpSrv    *http.Server
+}
+
+type automationRuntimeConfig struct {
+	llmProfiles map[string]config.LLMProfileConfig
+	groupScenes config.GroupScenesConfig
 }
 
 func NewServer(
@@ -55,6 +64,7 @@ func NewServer(
 	sender Sender,
 	automationStore *automation.Store,
 	campaignStore *campaign.Store,
+	cfg config.Config,
 ) *Server {
 	gin.SetMode(gin.ReleaseMode)
 	engine := gin.New()
@@ -66,6 +76,7 @@ func NewServer(
 		sender:     sender,
 		automation: automationStore,
 		campaigns:  campaignStore,
+		runtime:    newAutomationRuntimeConfig(cfg),
 		engine:     engine,
 	}
 	engine.Use(srv.authMiddleware())
@@ -91,6 +102,24 @@ func NewServer(
 	return srv
 }
 
+func newAutomationRuntimeConfig(cfg config.Config) automationRuntimeConfig {
+	return automationRuntimeConfig{
+		llmProfiles: cloneLLMProfiles(cfg.LLMProfiles),
+		groupScenes: cfg.GroupScenes,
+	}
+}
+
+func cloneLLMProfiles(in map[string]config.LLMProfileConfig) map[string]config.LLMProfileConfig {
+	if len(in) == 0 {
+		return map[string]config.LLMProfileConfig{}
+	}
+	out := make(map[string]config.LLMProfileConfig, len(in))
+	for key, value := range in {
+		out[key] = value
+	}
+	return out
+}
+
 func (s *Server) Addr() string {
 	if s == nil {
 		return ""
@@ -110,6 +139,27 @@ func (s *Server) Token() string {
 		return ""
 	}
 	return s.token
+}
+
+func (s *Server) UpdateRuntimeConfig(cfg config.Config) {
+	if s == nil {
+		return
+	}
+	s.runtimeMu.Lock()
+	s.runtime = newAutomationRuntimeConfig(cfg)
+	s.runtimeMu.Unlock()
+}
+
+func (s *Server) runtimeConfig() automationRuntimeConfig {
+	if s == nil {
+		return automationRuntimeConfig{}
+	}
+	s.runtimeMu.RLock()
+	defer s.runtimeMu.RUnlock()
+	return automationRuntimeConfig{
+		llmProfiles: cloneLLMProfiles(s.runtime.llmProfiles),
+		groupScenes: s.runtime.groupScenes,
+	}
 }
 
 func (s *Server) Run(ctx context.Context) error {
@@ -284,7 +334,7 @@ func (s *Server) handleAutomationTaskCreate(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	task, err := buildTaskFromRequest(req, scopeCtx)
+	task, err := s.buildTaskFromRequest(req, scopeCtx)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -489,7 +539,7 @@ func resolveAutomationScope(session mcpbridge.SessionContext) (automationScopeCo
 	return ctx, nil
 }
 
-func buildTaskFromRequest(req CreateTaskRequest, scopeCtx automationScopeContext) (automation.Task, error) {
+func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automationScopeContext) (automation.Task, error) {
 	task := automation.Task{
 		Title:      strings.TrimSpace(req.Title),
 		Scope:      scopeCtx.scope,
@@ -525,6 +575,7 @@ func buildTaskFromRequest(req CreateTaskRequest, scopeCtx automationScopeContext
 			task.Action.Type = automation.ActionTypeSendText
 		}
 	}
+	applySceneLLMProfileDefaults(&task, scopeCtx, s.runtimeConfig())
 	if err := validateMentionPermission(scopeCtx, task.Action.MentionUserIDs); err != nil {
 		return automation.Task{}, err
 	}
@@ -532,6 +583,44 @@ func buildTaskFromRequest(req CreateTaskRequest, scopeCtx automationScopeContext
 		task.Status = automation.TaskStatusPaused
 	}
 	return automation.NormalizeTask(task), nil
+}
+
+func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScopeContext, runtime automationRuntimeConfig) {
+	if task == nil || task.Action.Type != automation.ActionTypeRunLLM {
+		return
+	}
+	profile, ok := resolveSceneLLMProfile(runtime, scopeCtx.session.SessionKey)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(task.Action.Model) == "" {
+		task.Action.Model = strings.TrimSpace(profile.Model)
+	}
+	if strings.TrimSpace(task.Action.Profile) == "" {
+		task.Action.Profile = strings.TrimSpace(profile.Profile)
+	}
+	if strings.TrimSpace(task.Action.ReasoningEffort) == "" {
+		task.Action.ReasoningEffort = strings.TrimSpace(profile.ReasoningEffort)
+	}
+	if strings.TrimSpace(task.Action.Personality) == "" {
+		task.Action.Personality = strings.TrimSpace(profile.Personality)
+	}
+}
+
+func resolveSceneLLMProfile(runtime automationRuntimeConfig, sessionKey string) (config.LLMProfileConfig, bool) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	switch {
+	case strings.Contains(sessionKey, "|scene:work"):
+		name := strings.TrimSpace(runtime.groupScenes.Work.LLMProfile)
+		profile, ok := runtime.llmProfiles[name]
+		return profile, ok
+	case strings.Contains(sessionKey, "|scene:chat"):
+		name := strings.TrimSpace(runtime.groupScenes.Chat.LLMProfile)
+		profile, ok := runtime.llmProfiles[name]
+		return profile, ok
+	default:
+		return config.LLMProfileConfig{}, false
+	}
 }
 
 func applyTaskPatch(current automation.Task, patchBytes []byte, contentType string, scopeCtx automationScopeContext) (automation.Task, error) {

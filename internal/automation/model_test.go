@@ -48,11 +48,13 @@ func TestValidateTask_RunLLM(t *testing.T) {
 		Creator:  Actor{UserID: "ou_actor"},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
 		Action: Action{
-			Type:           ActionTypeRunLLM,
-			Prompt:         "请输出当前时间 {{now}}",
-			Model:          "gpt-4.1-mini",
-			Profile:        "worker-cheap",
-			MentionUserIDs: []string{"ou_actor"},
+			Type:            ActionTypeRunLLM,
+			Prompt:          "请输出当前时间 {{now}}",
+			Model:           "gpt-4.1-mini",
+			Profile:         "worker-cheap",
+			ReasoningEffort: "high",
+			Personality:     "pragmatic",
+			MentionUserIDs:  []string{"ou_actor"},
 		},
 		Status: TaskStatusActive,
 	}
@@ -64,10 +66,12 @@ func TestValidateTask_RunLLM(t *testing.T) {
 func TestNormalizeTask_TrimRunLLMSelectors(t *testing.T) {
 	task := NormalizeTask(Task{
 		Action: Action{
-			Type:    ActionTypeRunLLM,
-			Prompt:  "hi",
-			Model:   "  gpt-4.1-mini  ",
-			Profile: "  worker-cheap  ",
+			Type:            ActionTypeRunLLM,
+			Prompt:          "hi",
+			Model:           "  gpt-4.1-mini  ",
+			Profile:         "  worker-cheap  ",
+			ReasoningEffort: "  XHIGH  ",
+			Personality:     "  Pragmatic  ",
 		},
 	})
 	if task.Action.Model != "gpt-4.1-mini" {
@@ -75,6 +79,12 @@ func TestNormalizeTask_TrimRunLLMSelectors(t *testing.T) {
 	}
 	if task.Action.Profile != "worker-cheap" {
 		t.Fatalf("unexpected normalized profile: %q", task.Action.Profile)
+	}
+	if task.Action.ReasoningEffort != "xhigh" {
+		t.Fatalf("unexpected normalized reasoning effort: %q", task.Action.ReasoningEffort)
+	}
+	if task.Action.Personality != "pragmatic" {
+		t.Fatalf("unexpected normalized personality: %q", task.Action.Personality)
 	}
 }
 
