@@ -54,7 +54,7 @@ func (a *App) routeGroupSceneJob(job *Job, event *larkim.P2MessageReceiveV1, mes
 		applyWorkSceneToJob(job, cfg, sessionKey)
 		normalizeIncomingGroupJobTextForTriggerMode(job, cfg.triggerMode, cfg.triggerPrefix)
 		if a.processor != nil && message != nil {
-			a.processor.rememberSessionAliases(sessionKey, buildSessionKeyCandidatesForMessage(job.ReceiveIDType, job.ReceiveID, message)...)
+			a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
 		}
 		return true
 	}
@@ -73,7 +73,7 @@ func (a *App) routeGroupSceneJob(job *Job, event *larkim.P2MessageReceiveV1, mes
 		normalizeIncomingGroupJobTextForTriggerMode(job, cfg.triggerMode, cfg.triggerPrefix)
 		job.Text = trimSceneTriggerTag(job.Text, cfg.groupScenes.Work.TriggerTag)
 		if a.processor != nil && message != nil {
-			a.processor.rememberSessionAliases(sessionKey, buildSessionKeyCandidatesForMessage(job.ReceiveIDType, job.ReceiveID, message)...)
+			a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
 		}
 		return true
 	}
@@ -89,11 +89,30 @@ func (a *App) resolveExistingWorkSession(job *Job, event *larkim.P2MessageReceiv
 	if job == nil || message == nil {
 		return ""
 	}
-	sessionKey := strings.TrimSpace(a.findExistingSessionKey(buildSessionKeyCandidatesForMessage(job.ReceiveIDType, job.ReceiveID, message)))
+	sessionKey := strings.TrimSpace(a.findExistingSessionKey(buildWorkSceneLookupCandidates(job.ReceiveIDType, job.ReceiveID, message)))
 	if !isWorkSceneSessionKey(sessionKey) {
 		return ""
 	}
 	return sessionKey
+}
+
+func buildWorkSceneLookupCandidates(receiveIDType, receiveID string, message *larkim.EventMessage) []string {
+	base := buildSessionKey(receiveIDType, receiveID)
+	if base == "" || message == nil {
+		return nil
+	}
+
+	candidates := make([]string, 0, 3)
+	if threadID := strings.TrimSpace(deref(message.ThreadId)); threadID != "" {
+		appendSessionKeyCandidate(&candidates, base+threadAliasToken+threadID)
+	}
+	if rootID := strings.TrimSpace(deref(message.RootId)); rootID != "" {
+		appendSessionKeyCandidate(&candidates, buildWorkSceneSessionKey(receiveIDType, receiveID, rootID))
+	}
+	if parentID := strings.TrimSpace(deref(message.ParentId)); parentID != "" {
+		appendSessionKeyCandidate(&candidates, buildWorkSceneSessionKey(receiveIDType, receiveID, parentID))
+	}
+	return candidates
 }
 
 func applyChatSceneToJob(job *Job, cfg appRuntimeConfig) {

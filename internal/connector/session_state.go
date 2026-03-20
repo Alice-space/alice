@@ -15,6 +15,7 @@ import (
 type sessionState struct {
 	ThreadID      string    `json:"thread_id"`
 	Aliases       []string  `json:"aliases,omitempty"`
+	WorkThreadID  string    `json:"work_thread_id,omitempty"`
 	LastMessageAt time.Time `json:"last_message_at"`
 }
 
@@ -23,6 +24,9 @@ type sessionStateSnapshot struct {
 }
 
 const maxSessionAliases = 32
+const workSceneSeedKeyToken = "|scene:work|seed:"
+const messageAliasToken = "|message:"
+const threadAliasToken = "|thread:"
 
 func (p *Processor) getThreadID(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
@@ -67,6 +71,7 @@ func (p *Processor) rememberSessionAliases(sessionKey string, aliases ...string)
 	if !ok {
 		state = sessionState{}
 	}
+	workSeedAlias := buildWorkSceneSeedAlias(canonicalKey)
 
 	changed := false
 	for _, rawAlias := range aliases {
@@ -78,13 +83,24 @@ func (p *Processor) rememberSessionAliases(sessionKey string, aliases ...string)
 		if existingKey != "" && existingKey != canonicalKey {
 			continue
 		}
+		if alias == workSeedAlias {
+			continue
+		}
+		if threadID := extractThreadIDFromAlias(alias); isWorkSceneSessionKey(canonicalKey) && threadID != "" {
+			if state.WorkThreadID == threadID {
+				continue
+			}
+			state.WorkThreadID = threadID
+			changed = true
+			continue
+		}
 		if containsSessionAlias(state.Aliases, alias) {
 			continue
 		}
-		state.Aliases = appendSessionAlias(state.Aliases, alias)
+		state.Aliases = appendSessionAliasWithLimit(state.Aliases, alias, maxSessionAliases)
 		changed = true
 	}
-	if !changed {
+	if !changed && ok {
 		return
 	}
 
@@ -113,6 +129,31 @@ func (p *Processor) setThreadID(sessionKey string, threadID string) {
 		return
 	}
 	state.ThreadID = threadID
+	p.sessions[canonicalKey] = state
+	p.markStateChangedLocked()
+}
+
+func (p *Processor) setWorkThreadID(sessionKey string, workThreadID string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	workThreadID = strings.TrimSpace(workThreadID)
+	if sessionKey == "" || workThreadID == "" {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
+	if canonicalKey == "" {
+		canonicalKey = sessionKey
+	}
+	state, ok := p.sessions[canonicalKey]
+	if !ok {
+		state = sessionState{}
+	}
+	if state.WorkThreadID == workThreadID {
+		return
+	}
+	state.WorkThreadID = workThreadID
 	p.sessions[canonicalKey] = state
 	p.markStateChangedLocked()
 }
@@ -177,7 +218,11 @@ func (p *Processor) LoadSessionState(path string) error {
 			continue
 		}
 		state.ThreadID = strings.TrimSpace(state.ThreadID)
+		state.WorkThreadID = strings.TrimSpace(state.WorkThreadID)
 		state.Aliases = normalizeSessionAliases(state.Aliases, key)
+		if isWorkSceneSessionKey(key) {
+			state.Aliases, state.WorkThreadID = migrateWorkThreadID(state.Aliases, state.WorkThreadID)
+		}
 		loaded[key] = state
 	}
 
@@ -200,7 +245,7 @@ func (p *Processor) resolveCanonicalSessionKeyLocked(sessionKey string) string {
 		return sessionKey
 	}
 	for canonicalKey, state := range p.sessions {
-		if containsSessionAlias(state.Aliases, sessionKey) {
+		if stateMatchesSessionKey(canonicalKey, state, sessionKey) {
 			return canonicalKey
 		}
 	}
@@ -211,7 +256,7 @@ func normalizeSessionAliases(aliases []string, canonicalKey string) []string {
 	normalized := make([]string, 0, len(aliases))
 	for _, rawAlias := range aliases {
 		alias := strings.TrimSpace(rawAlias)
-		if alias == "" || alias == strings.TrimSpace(canonicalKey) || containsSessionAlias(normalized, alias) {
+		if alias == "" || alias == strings.TrimSpace(canonicalKey) || isThreadSessionAlias(alias) || containsSessionAlias(normalized, alias) {
 			continue
 		}
 		normalized = append(normalized, alias)
@@ -223,16 +268,20 @@ func normalizeSessionAliases(aliases []string, canonicalKey string) []string {
 }
 
 func appendSessionAlias(aliases []string, alias string) []string {
+	return appendSessionAliasWithLimit(aliases, alias, maxSessionAliases)
+}
+
+func appendSessionAliasWithLimit(aliases []string, alias string, limit int) []string {
 	aliases = normalizeSessionAliases(aliases, "")
 	alias = strings.TrimSpace(alias)
 	if alias == "" || containsSessionAlias(aliases, alias) {
 		return aliases
 	}
 	aliases = append(aliases, alias)
-	if len(aliases) <= maxSessionAliases {
+	if limit <= 0 || len(aliases) <= limit {
 		return aliases
 	}
-	return append([]string(nil), aliases[len(aliases)-maxSessionAliases:]...)
+	return append([]string(nil), aliases[len(aliases)-limit:]...)
 }
 
 func containsSessionAlias(aliases []string, alias string) bool {
@@ -246,6 +295,77 @@ func containsSessionAlias(aliases []string, alias string) bool {
 		}
 	}
 	return false
+}
+
+func migrateWorkThreadID(aliases []string, workThreadID string) ([]string, string) {
+	regular := make([]string, 0, len(aliases))
+	workThreadID = strings.TrimSpace(workThreadID)
+	for _, rawAlias := range aliases {
+		alias := strings.TrimSpace(rawAlias)
+		if alias == "" {
+			continue
+		}
+		if isThreadSessionAlias(alias) {
+			if workThreadID == "" {
+				workThreadID = extractThreadIDFromAlias(alias)
+			}
+			continue
+		}
+		regular = appendSessionAliasWithLimit(regular, alias, maxSessionAliases)
+	}
+	return regular, workThreadID
+}
+
+func stateMatchesSessionKey(canonicalKey string, state sessionState, sessionKey string) bool {
+	if containsSessionAlias(state.Aliases, sessionKey) {
+		return true
+	}
+	sessionKey = strings.TrimSpace(sessionKey)
+	if buildWorkSceneSeedAlias(canonicalKey) == sessionKey {
+		return true
+	}
+	return buildWorkSceneThreadAlias(canonicalKey, state.WorkThreadID) == sessionKey
+}
+
+func buildWorkSceneSeedAlias(canonicalKey string) string {
+	canonicalKey = strings.TrimSpace(canonicalKey)
+	idx := strings.Index(canonicalKey, workSceneSeedKeyToken)
+	if idx <= 0 {
+		return ""
+	}
+	base := strings.TrimSpace(canonicalKey[:idx])
+	seedMessageID := strings.TrimSpace(canonicalKey[idx+len(workSceneSeedKeyToken):])
+	if base == "" || seedMessageID == "" {
+		return ""
+	}
+	return base + messageAliasToken + seedMessageID
+}
+
+func isThreadSessionAlias(alias string) bool {
+	return strings.Contains(strings.TrimSpace(alias), threadAliasToken)
+}
+
+func buildWorkSceneThreadAlias(canonicalKey, workThreadID string) string {
+	canonicalKey = strings.TrimSpace(canonicalKey)
+	workThreadID = strings.TrimSpace(workThreadID)
+	idx := strings.Index(canonicalKey, workSceneSeedKeyToken)
+	if idx <= 0 || workThreadID == "" {
+		return ""
+	}
+	base := strings.TrimSpace(canonicalKey[:idx])
+	if base == "" {
+		return ""
+	}
+	return base + threadAliasToken + workThreadID
+}
+
+func extractThreadIDFromAlias(alias string) string {
+	alias = strings.TrimSpace(alias)
+	idx := strings.Index(alias, threadAliasToken)
+	if idx < 0 {
+		return ""
+	}
+	return strings.TrimSpace(alias[idx+len(threadAliasToken):])
 }
 
 func (p *Processor) FlushSessionState() error {
