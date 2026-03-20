@@ -187,6 +187,7 @@ func (b *connectorRuntimeBuilder) buildRuntimeAPI() {
 		b.sender,
 		b.automationStore,
 		b.campaignStore,
+		b.cfg,
 	)
 }
 
