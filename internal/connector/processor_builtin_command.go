@@ -31,7 +31,10 @@ func isHelpCommand(text string) bool {
 
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
 	reply := buildBuiltinHelpMarkdown(p.runtimeSnapshot().helpConfig)
-	if err := p.replies.respond(ctx, job, reply); err != nil {
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
 		logging.Errorf("send builtin help reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted

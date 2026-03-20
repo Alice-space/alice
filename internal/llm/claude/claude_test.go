@@ -128,7 +128,7 @@ func TestBuildPrompt_ResumeThreadSkipsPrefix(t *testing.T) {
 	}
 }
 
-func TestBuildPrompt_NewThreadIncludesPersonalityMode(t *testing.T) {
+func TestBuildPrompt_NewThreadIgnoresPersonalityText(t *testing.T) {
 	runner := Runner{
 		Prompts: prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 	}
@@ -136,10 +136,8 @@ func TestBuildPrompt_NewThreadIncludesPersonalityMode(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
-	for _, want := range []string{"普通模式", "[[NO_REPLY]]"} {
-		if !strings.Contains(prompt, want) {
-			t.Fatalf("expected prompt to contain %q, got %q", want, prompt)
-		}
+	if prompt != "你好" {
+		t.Fatalf("unexpected prompt: %q", prompt)
 	}
 }
 

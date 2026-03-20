@@ -39,7 +39,7 @@ func TestApp_OnMessageReceive_GroupChatSceneQueuesPostWithoutMention(t *testing.
 	if job.Scene != jobSceneChat {
 		t.Fatalf("unexpected scene: %q", job.Scene)
 	}
-	if job.ResponseMode != jobResponseModeSend {
+	if job.ResponseMode != jobResponseModeReply {
 		t.Fatalf("unexpected response mode: %q", job.ResponseMode)
 	}
 	if len(job.Attachments) != 1 {
@@ -62,5 +62,8 @@ func TestApp_OnMessageReceive_GroupChatSceneQueuesPostWithoutMention(t *testing.
 	}
 	if job.LLMPersonality != "friendly" {
 		t.Fatalf("unexpected llm personality: %q", job.LLMPersonality)
+	}
+	if job.CreateFeishuThread {
+		t.Fatalf("chat scene post reply should not create thread")
 	}
 }

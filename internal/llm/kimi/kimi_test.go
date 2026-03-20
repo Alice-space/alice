@@ -52,7 +52,7 @@ func TestBuildPrompt_UsesPrefixOnlyForNewThread(t *testing.T) {
 	}
 }
 
-func TestBuildPrompt_UsesPersonalityForNewThread(t *testing.T) {
+func TestBuildPrompt_IgnoresPersonalityText(t *testing.T) {
 	runner := Runner{
 		Prompts: prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 	}
@@ -60,8 +60,8 @@ func TestBuildPrompt_UsesPersonalityForNewThread(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
-	if !strings.Contains(prompt, "工作模式") {
-		t.Fatalf("expected prompt to contain work mode, got %q", prompt)
+	if prompt != "你好" {
+		t.Fatalf("unexpected prompt: %q", prompt)
 	}
 }
 

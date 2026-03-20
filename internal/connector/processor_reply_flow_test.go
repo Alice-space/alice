@@ -125,6 +125,45 @@ func TestProcessor_SendsAgentMessagesAsRichTextMarkdown(t *testing.T) {
 	}
 }
 
+func TestProcessor_ChatSceneRepliesWithRichTextInsteadOfCards(t *testing.T) {
+	fakeCodex := codexStreamingStub{
+		resp:          "最终答复",
+		agentMessages: []string{"阶段提示", "最终答复"},
+	}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:          "oc_chat",
+		ReceiveIDType:      "chat_id",
+		SourceMessageID:    "om_src",
+		Scene:              jobSceneChat,
+		ResponseMode:       jobResponseModeReply,
+		CreateFeishuThread: false,
+		DisableAck:         true,
+		Text:               "hello",
+	})
+
+	if sender.replyCardCalls != 0 {
+		t.Fatalf("chat scene should not use reply cards, got %d", sender.replyCardCalls)
+	}
+	if sender.replyRichMarkdownCalls != 2 {
+		t.Fatalf("chat scene should use rich markdown replies for progress/final, got %d", sender.replyRichMarkdownCalls)
+	}
+	if sender.replyRichMarkdownDirectCalls != 2 {
+		t.Fatalf("chat scene should reply directly without thread, got %d", sender.replyRichMarkdownDirectCalls)
+	}
+	if len(sender.replyMarkdownTexts) != 2 {
+		t.Fatalf("unexpected markdown reply history: %#v", sender.replyMarkdownTexts)
+	}
+	if sender.replyMarkdownTexts[0] != "阶段提示" {
+		t.Fatalf("unexpected progress markdown reply: %q", sender.replyMarkdownTexts[0])
+	}
+	if sender.replyMarkdownTexts[1] != "最终答复" {
+		t.Fatalf("unexpected final markdown reply: %q", sender.replyMarkdownTexts[1])
+	}
+}
+
 func TestProcessor_FileChangeEventRepliesInThread(t *testing.T) {
 	fakeCodex := codexStreamingStub{
 		resp:          "最终答复",

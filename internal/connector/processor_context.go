@@ -116,7 +116,7 @@ func (p *Processor) appendRuntimeSkillHint(userText string, job Job) string {
 }
 
 func (p *Processor) buildUserTextWithReplyContext(ctx context.Context, job Job, threadID string) string {
-	currentText := p.buildCurrentUserInput(job)
+	currentText := p.buildCurrentUserInputWithThread(job, threadID)
 	if strings.TrimSpace(threadID) != "" {
 		logging.Debugf(
 			"reply context skipped event_id=%s reason=resume_thread thread_id=%s",
@@ -265,6 +265,10 @@ func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {
 }
 
 func (p *Processor) buildCurrentUserInput(job Job) string {
+	return p.buildCurrentUserInputWithThread(job, "")
+}
+
+func (p *Processor) buildCurrentUserInputWithThread(job Job, threadID string) string {
 	baseText := strings.TrimSpace(job.Text)
 
 	botOpenID := strings.TrimSpace(job.BotOpenID)
@@ -272,7 +276,13 @@ func (p *Processor) buildCurrentUserInput(job Job) string {
 	senderName := normalizeUserDisplayName(strings.TrimSpace(job.SenderName), "用户")
 	mentionedNames := buildMentionDisplayNames(job.MentionedUsers, botOpenID, botUserID)
 	speakerKnown := strings.TrimSpace(job.SenderName) != ""
-	mappings := buildUserIDMappings(job, senderName, botOpenID, botUserID)
+	mappings := buildUserIDMappings(
+		job,
+		senderName,
+		botOpenID,
+		botUserID,
+		strings.TrimSpace(threadID) == "",
+	)
 	identityContextEnabled := speakerKnown || len(mentionedNames) > 0 || len(mappings) > 0
 
 	speechText := baseText
@@ -305,12 +315,13 @@ func buildUserIDMappings(
 	senderName string,
 	botOpenID string,
 	botUserID string,
+	includeSender bool,
 ) []userMappingPromptData {
 	senderID := preferredID(job.SenderOpenID, job.SenderUserID, job.SenderUnionID)
 	mappings := make([]userMappingPromptData, 0, len(job.MentionedUsers)+1)
 	seen := make(map[string]struct{}, len(job.MentionedUsers)+1)
 
-	if senderID != "" && !isBotIdentity(job.SenderOpenID, job.SenderUserID, senderID, botOpenID, botUserID) {
+	if includeSender && senderID != "" && !isBotIdentity(job.SenderOpenID, job.SenderUserID, senderID, botOpenID, botUserID) {
 		key := senderName + "\x00" + senderID
 		mappings = append(mappings, userMappingPromptData{Name: senderName, ID: senderID})
 		seen[key] = struct{}{}

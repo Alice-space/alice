@@ -37,10 +37,13 @@ func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
 	if llmStub.calls != 0 {
 		t.Fatalf("expected builtin command to bypass llm, got %d llm calls", llmStub.calls)
 	}
-	if sender.replyCardCalls != 1 {
-		t.Fatalf("expected one direct reply card, got %d", sender.replyCardCalls)
+	if sender.replyCardCalls != 0 {
+		t.Fatalf("expected help command not to use card reply, got %d", sender.replyCardCalls)
 	}
-	reply := sender.replyCards[0]
+	if sender.replyRichMarkdownCalls != 1 || sender.replyRichMarkdownDirectCalls != 1 {
+		t.Fatalf("expected one direct rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
+	}
+	reply := sender.replyMarkdownTexts[0]
 	for _, want := range []string{
 		"## Alice 内建命令",
 		"`/help`",

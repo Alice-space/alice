@@ -203,6 +203,55 @@ func TestProcessor_BuildsIdentityAwareUserContext_SkipsBotIdentity(t *testing.T)
 	}
 }
 
+func TestProcessor_ResumeThreadSkipsRepeatedSenderMappingHint(t *testing.T) {
+	fakeCodex := &codexResumableCaptureStub{
+		respByCall:   []string{"ok-1", "ok-2"},
+		threadByCall: []string{"thread_1", "thread_1"},
+	}
+	sender := &senderStub{
+		userNameByIdentity: map[string]string{
+			"open_id:ou_bob": "Bob",
+		},
+	}
+	processor := NewProcessor(
+		fakeCodex,
+		sender,
+		"Codex 暂时不可用，请稍后重试。",
+		"正在思考中...",
+	)
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		SenderOpenID:  "ou_bob",
+		Text:          "第一次",
+		SessionKey:    "chat_id:oc_chat",
+	})
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		SenderOpenID:  "ou_bob",
+		Text:          "第二次",
+		SessionKey:    "chat_id:oc_chat",
+	})
+
+	if len(fakeCodex.receivedInputs) != 2 {
+		t.Fatalf("expected 2 codex inputs, got %d", len(fakeCodex.receivedInputs))
+	}
+	if !strings.Contains(fakeCodex.receivedInputs[0], "用户Bob的id是ou_bob") {
+		t.Fatalf("first input should include sender mapping hint, got %q", fakeCodex.receivedInputs[0])
+	}
+	if strings.Contains(fakeCodex.receivedInputs[1], "用户Bob的id是ou_bob") {
+		t.Fatalf("resume input should not repeat sender mapping hint, got %q", fakeCodex.receivedInputs[1])
+	}
+	if strings.Contains(fakeCodex.receivedInputs[1], "@提及规则：若需要在回复中艾特某人") {
+		t.Fatalf("resume input should not repeat mention rule, got %q", fakeCodex.receivedInputs[1])
+	}
+	if fakeCodex.receivedInputs[1] != "Bob说：第二次" {
+		t.Fatalf("unexpected resume input: %q", fakeCodex.receivedInputs[1])
+	}
+}
+
 func TestProcessor_AttachesReplyParentMessageContext(t *testing.T) {
 	fakeCodex := &codexCaptureStub{resp: "final answer"}
 	sender := &senderStub{

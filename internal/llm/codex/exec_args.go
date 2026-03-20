@@ -1,15 +1,17 @@
 package codex
 
 import (
+	"strconv"
 	"sort"
 	"strings"
 )
 
-func buildExecArgs(threadID string, prompt string, model string, profile string, reasoningEffort string) []string {
+func buildExecArgs(threadID string, prompt string, model string, profile string, reasoningEffort string, personality string) []string {
 	threadID = strings.TrimSpace(threadID)
 	model = strings.TrimSpace(model)
 	profile = strings.TrimSpace(profile)
 	reasoningEffort = strings.TrimSpace(reasoningEffort)
+	personality = strings.TrimSpace(personality)
 
 	buildFlags := func() []string {
 		args := []string{
@@ -24,7 +26,10 @@ func buildExecArgs(threadID string, prompt string, model string, profile string,
 			args = append(args, "-p", profile)
 		}
 		if reasoningEffort != "" {
-			args = append(args, "-c", `model_reasoning_effort="`+reasoningEffort+`"`)
+			args = append(args, "-c", "model_reasoning_effort="+strconv.Quote(reasoningEffort))
+		}
+		if personality != "" {
+			args = append(args, "-c", "personality="+strconv.Quote(personality))
 		}
 		return args
 	}

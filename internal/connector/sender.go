@@ -134,6 +134,17 @@ func (s *LarkSender) ReplyText(ctx context.Context, sourceMessageID, text string
 	)
 }
 
+func (s *LarkSender) ReplyTextDirect(ctx context.Context, sourceMessageID, text string) (string, error) {
+	return s.replyMessage(
+		ctx,
+		sourceMessageID,
+		"text",
+		textMessageContent(text),
+		false,
+		"reply success but response message_id is empty",
+	)
+}
+
 func (s *LarkSender) ReplyRichText(ctx context.Context, sourceMessageID string, lines []string) (string, error) {
 	return s.replyMessagePreferThread(
 		ctx,
@@ -154,12 +165,34 @@ func (s *LarkSender) ReplyRichTextMarkdown(ctx context.Context, sourceMessageID,
 	)
 }
 
+func (s *LarkSender) ReplyRichTextMarkdownDirect(ctx context.Context, sourceMessageID, markdown string) (string, error) {
+	return s.replyMessage(
+		ctx,
+		sourceMessageID,
+		"post",
+		richTextMarkdownMessageContent(markdown),
+		false,
+		"reply markdown rich text success but response message_id is empty",
+	)
+}
+
 func (s *LarkSender) ReplyCard(ctx context.Context, sourceMessageID, cardContent string) (string, error) {
 	return s.replyMessagePreferThread(
 		ctx,
 		sourceMessageID,
 		"interactive",
 		cardContent,
+		"reply card success but response message_id is empty",
+	)
+}
+
+func (s *LarkSender) ReplyCardDirect(ctx context.Context, sourceMessageID, cardContent string) (string, error) {
+	return s.replyMessage(
+		ctx,
+		sourceMessageID,
+		"interactive",
+		cardContent,
+		false,
 		"reply card success but response message_id is empty",
 	)
 }

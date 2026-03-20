@@ -106,7 +106,7 @@ func (r Runner) RunWithThreadAndProgress(
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmdArgs := buildExecArgs(threadID, prompt, model, profile, reasoningEffort)
+	cmdArgs := buildExecArgs(threadID, prompt, model, profile, reasoningEffort, personality)
 	cmd := exec.CommandContext(tctx, r.Command, cmdArgs...)
 	configureInterruptibleCommand(cmd, "codex")
 	if strings.TrimSpace(r.WorkspaceDir) != "" {

@@ -6,10 +6,6 @@ import (
 	"strings"
 )
 
-type sendCardCapable interface {
-	SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error
-}
-
 // replyDispatcher owns the Feishu reply/send fallback policy so Processor can
 // focus on job flow instead of transport-specific downgrade rules.
 type replyDispatcher struct {
@@ -42,8 +38,9 @@ func (d *replyDispatcher) reply(
 	if normalized == "" {
 		return "", nil
 	}
+	preferThread := jobPrefersThreadReply(job)
 	if forceText {
-		if messageID, textErr := d.sender.ReplyText(ctx, sourceMessageID, normalized); textErr == nil {
+		if messageID, textErr := d.replyText(ctx, sourceMessageID, normalized, preferThread); textErr == nil {
 			return messageID, nil
 		}
 		normalized = strings.TrimSpace(markdown)
@@ -51,10 +48,12 @@ func (d *replyDispatcher) reply(
 			return "", nil
 		}
 	}
-	if messageID, cardErr := d.sender.ReplyCard(ctx, sourceMessageID, buildReplyCardContent(normalized)); cardErr == nil {
-		return messageID, nil
+	if jobAllowsCards(job) {
+		if messageID, cardErr := d.replyCard(ctx, sourceMessageID, buildReplyCardContent(normalized), preferThread); cardErr == nil {
+			return messageID, nil
+		}
 	}
-	return d.replyMarkdownPost(ctx, sourceMessageID, normalized, false)
+	return d.replyMarkdownPost(ctx, sourceMessageID, normalized, false, preferThread)
 }
 
 func (d *replyDispatcher) send(
@@ -81,8 +80,8 @@ func (d *replyDispatcher) send(
 			return nil
 		}
 	}
-	if sender, ok := d.sender.(sendCardCapable); ok {
-		if cardErr := sender.SendCard(ctx, receiveIDType, receiveID, buildReplyCardContent(normalized)); cardErr == nil {
+	if jobAllowsCards(job) {
+		if cardErr := d.sender.SendCard(ctx, receiveIDType, receiveID, buildReplyCardContent(normalized)); cardErr == nil {
 			return nil
 		}
 	}
@@ -94,6 +93,7 @@ func (d *replyDispatcher) replyMarkdownPost(
 	sourceMessageID,
 	markdown string,
 	forceText bool,
+	preferThread bool,
 ) (string, error) {
 	if d == nil || d.sender == nil {
 		return "", errors.New("reply dispatcher sender is nil")
@@ -104,14 +104,65 @@ func (d *replyDispatcher) replyMarkdownPost(
 		return "", nil
 	}
 	if forceText {
-		return d.sender.ReplyText(ctx, sourceMessageID, normalized)
+		return d.replyText(ctx, sourceMessageID, normalized, preferThread)
 	}
-	if messageID, richErr := d.sender.ReplyRichTextMarkdown(ctx, sourceMessageID, normalized); richErr == nil {
+	if messageID, richErr := d.replyRichTextMarkdown(ctx, sourceMessageID, normalized, preferThread); richErr == nil {
 		return messageID, nil
 	}
-	messageID, textErr := d.sender.ReplyText(ctx, sourceMessageID, normalized)
+	messageID, textErr := d.replyText(ctx, sourceMessageID, normalized, preferThread)
 	if textErr != nil {
 		return "", textErr
 	}
 	return messageID, nil
+}
+
+func (d *replyDispatcher) replyText(
+	ctx context.Context,
+	sourceMessageID string,
+	text string,
+	preferThread bool,
+) (string, error) {
+	if preferThread {
+		return d.sender.ReplyText(ctx, sourceMessageID, text)
+	}
+	return d.sender.ReplyTextDirect(ctx, sourceMessageID, text)
+}
+
+func (d *replyDispatcher) replyRichTextMarkdown(
+	ctx context.Context,
+	sourceMessageID string,
+	markdown string,
+	preferThread bool,
+) (string, error) {
+	if preferThread {
+		return d.sender.ReplyRichTextMarkdown(ctx, sourceMessageID, markdown)
+	}
+	return d.sender.ReplyRichTextMarkdownDirect(ctx, sourceMessageID, markdown)
+}
+
+func (d *replyDispatcher) replyCard(
+	ctx context.Context,
+	sourceMessageID string,
+	cardContent string,
+	preferThread bool,
+) (string, error) {
+	if preferThread {
+		return d.sender.ReplyCard(ctx, sourceMessageID, cardContent)
+	}
+	return d.sender.ReplyCardDirect(ctx, sourceMessageID, cardContent)
+}
+
+func jobAllowsCards(job Job) bool {
+	return strings.TrimSpace(job.Scene) != jobSceneChat
+}
+
+func jobPrefersThreadReply(job Job) bool {
+	switch strings.TrimSpace(job.Scene) {
+	case jobSceneChat:
+		return false
+	case jobSceneWork:
+		return job.CreateFeishuThread
+	default:
+		return true
+	}
 }

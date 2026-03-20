@@ -320,6 +320,7 @@ type senderStub struct {
 	reactionTypes   []string
 	reactionTargets []string
 	replyTextCalls  int
+	replyTextDirectCalls int
 	lastReplyText   string
 	replyTexts      []string
 	replyTargets    []string
@@ -329,11 +330,13 @@ type senderStub struct {
 	replyRichLines  [][]string
 
 	replyRichMarkdownCalls int
+	replyRichMarkdownDirectCalls int
 	lastReplyMarkdown      string
 	replyMarkdownTexts     []string
 	replyRichMarkdownErr   error
 
 	replyCardCalls int
+	replyCardDirectCalls int
 	lastReplyCard  string
 	replyCards     []string
 	replyCardErr   error
@@ -456,6 +459,20 @@ func (s *senderStub) ReplyText(_ context.Context, sourceMessageID string, text s
 	return "om_reply_text", nil
 }
 
+func (s *senderStub) ReplyTextDirect(_ context.Context, sourceMessageID string, text string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.replyTextCalls++
+	s.replyTextDirectCalls++
+	s.lastReplyText = text
+	s.replyTexts = append(s.replyTexts, text)
+	s.replyTargets = append(s.replyTargets, sourceMessageID)
+	if s.replyTextErr != nil {
+		return "", s.replyTextErr
+	}
+	return "om_reply_text_direct", nil
+}
+
 func (s *senderStub) ReplyRichText(_ context.Context, sourceMessageID string, lines []string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -480,6 +497,20 @@ func (s *senderStub) ReplyRichTextMarkdown(_ context.Context, sourceMessageID, m
 	return "om_reply_rich_markdown", nil
 }
 
+func (s *senderStub) ReplyRichTextMarkdownDirect(_ context.Context, sourceMessageID, markdown string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.replyRichMarkdownCalls++
+	s.replyRichMarkdownDirectCalls++
+	s.lastReplyMarkdown = markdown
+	s.replyMarkdownTexts = append(s.replyMarkdownTexts, markdown)
+	s.replyTargets = append(s.replyTargets, sourceMessageID)
+	if s.replyRichMarkdownErr != nil {
+		return "", s.replyRichMarkdownErr
+	}
+	return "om_reply_rich_markdown_direct", nil
+}
+
 func (s *senderStub) ReplyCard(_ context.Context, sourceMessageID string, cardContent string) (string, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -491,6 +522,20 @@ func (s *senderStub) ReplyCard(_ context.Context, sourceMessageID string, cardCo
 		return "", s.replyCardErr
 	}
 	return "om_reply_card", nil
+}
+
+func (s *senderStub) ReplyCardDirect(_ context.Context, sourceMessageID string, cardContent string) (string, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.replyCardCalls++
+	s.replyCardDirectCalls++
+	s.lastReplyCard = cardContent
+	s.replyCards = append(s.replyCards, cardContent)
+	s.replyTargets = append(s.replyTargets, sourceMessageID)
+	if s.replyCardErr != nil {
+		return "", s.replyCardErr
+	}
+	return "om_reply_card_direct", nil
 }
 
 func (s *senderStub) GetMessageText(_ context.Context, messageID string) (string, error) {

@@ -111,10 +111,11 @@ func applyChatSceneToJob(job *Job, cfg appRuntimeConfig) {
 		return
 	}
 	job.Scene = jobSceneChat
-	job.ResponseMode = jobResponseModeSend
+	job.ResponseMode = jobResponseModeReply
 	job.DisableAck = true
 	job.SessionKey = buildChatSceneSessionKey(job.ReceiveIDType, job.ReceiveID)
 	job.MemoryScopeKey = buildChatSceneMemoryScopeKey(job.ReceiveIDType, job.ReceiveID)
+	job.CreateFeishuThread = cfg.groupScenes.Chat.CreateFeishuThread
 	job.NoReplyToken = strings.TrimSpace(cfg.groupScenes.Chat.NoReplyToken)
 	applyLLMProfileToJob(job, cfg.llmProvider, cfg.llmProfiles[cfg.groupScenes.Chat.LLMProfile])
 }
@@ -128,6 +129,7 @@ func applyWorkSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
 	job.DisableAck = true
 	job.SessionKey = strings.TrimSpace(sessionKey)
 	job.MemoryScopeKey = buildWorkSceneMemoryScopeKeyFromSessionKey(sessionKey)
+	job.CreateFeishuThread = cfg.groupScenes.Work.CreateFeishuThread
 	job.NoReplyToken = strings.TrimSpace(cfg.groupScenes.Work.NoReplyToken)
 	applyLLMProfileToJob(job, cfg.llmProvider, cfg.llmProfiles[cfg.groupScenes.Work.LLMProfile])
 }

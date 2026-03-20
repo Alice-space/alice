@@ -93,7 +93,7 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 		if job.Scene != jobSceneChat {
 			t.Fatalf("job %d unexpected scene: %q", idx+1, job.Scene)
 		}
-		if job.ResponseMode != jobResponseModeSend {
+		if job.ResponseMode != jobResponseModeReply {
 			t.Fatalf("job %d unexpected response mode: %q", idx+1, job.ResponseMode)
 		}
 		if !job.DisableAck {
@@ -110,6 +110,9 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 		}
 		if job.NoReplyToken != "[[NO_REPLY]]" {
 			t.Fatalf("job %d unexpected no-reply token: %q", idx+1, job.NoReplyToken)
+		}
+		if job.CreateFeishuThread {
+			t.Fatalf("job %d chat scene should reply directly instead of creating thread", idx+1)
 		}
 	}
 	if job1.SessionVersion != 1 {
@@ -176,6 +179,9 @@ func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) 
 	}
 	if job1.ResponseMode != jobResponseModeReply || job2.ResponseMode != jobResponseModeReply {
 		t.Fatalf("unexpected work response modes: %q %q", job1.ResponseMode, job2.ResponseMode)
+	}
+	if !job1.CreateFeishuThread || !job2.CreateFeishuThread {
+		t.Fatalf("work scene should keep create_feishu_thread enabled")
 	}
 	if job1.SessionKey != "chat_id:oc_chat|scene:work|seed:om_work_root" {
 		t.Fatalf("unexpected work start session key: %q", job1.SessionKey)

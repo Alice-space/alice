@@ -250,7 +250,7 @@ func (p *Processor) processSendMessage(ctx context.Context, job Job) JobProcessS
 	if shouldSuppressReply(job, reply) {
 		reply = ""
 	}
-	p.recordInteraction(job, p.buildCurrentUserInput(job), reply, failed)
+	p.recordInteraction(job, p.buildCurrentUserInputWithThread(job, currentThreadID), reply, failed)
 
 	if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
 		logging.Errorf("send message failed event_id=%s: %v", job.EventID, sendErr)
@@ -370,7 +370,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	if shouldSuppressReply(job, finalReply) {
 		finalReply = ""
 	}
-	p.recordInteraction(job, p.buildCurrentUserInput(job), finalReply, failed)
+	p.recordInteraction(job, p.buildCurrentUserInputWithThread(job, currentThreadID), finalReply, failed)
 	if strings.TrimSpace(finalReply) != "" &&
 		strings.TrimSpace(finalReply) != lastSentAgentMessage {
 		messageID, replyErr := p.replies.reply(ctx, job, job.SourceMessageID, finalReply)

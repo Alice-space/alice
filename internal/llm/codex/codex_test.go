@@ -118,7 +118,7 @@ func TestIsSuccessfulCommandExecutionCompleted(t *testing.T) {
 }
 
 func TestBuildExecArgs_ResumeThread(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello", "", "", "")
+	args := buildExecArgs("thread_123", "hello", "", "", "", "")
 	if !slices.Contains(args, "resume") {
 		t.Fatalf("expected resume args, got: %#v", args)
 	}
@@ -137,7 +137,7 @@ func TestBuildExecArgs_ResumeThread(t *testing.T) {
 }
 
 func TestBuildExecArgs_NewThreadUsesDangerousBypass(t *testing.T) {
-	args := buildExecArgs("", "hello", "", "", "")
+	args := buildExecArgs("", "hello", "", "", "", "")
 	if !slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Fatalf("new thread args should include dangerous bypass flag, got: %#v", args)
 	}
@@ -150,7 +150,7 @@ func TestBuildExecArgs_NewThreadUsesDangerousBypass(t *testing.T) {
 }
 
 func TestBuildExecArgs_WithModelAndProfile(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello", "gpt-4.1-mini", "worker-cheap", "")
+	args := buildExecArgs("thread_123", "hello", "gpt-4.1-mini", "worker-cheap", "", "")
 	if !slices.Contains(args, "-m") || !slices.Contains(args, "gpt-4.1-mini") {
 		t.Fatalf("expected model selector in args, got: %#v", args)
 	}
@@ -160,9 +160,16 @@ func TestBuildExecArgs_WithModelAndProfile(t *testing.T) {
 }
 
 func TestBuildExecArgs_WithReasoningEffort(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello", "gpt-5.4", "", "high")
+	args := buildExecArgs("thread_123", "hello", "gpt-5.4", "", "high", "")
 	if !slices.Contains(args, "-c") || !slices.Contains(args, `model_reasoning_effort="high"`) {
 		t.Fatalf("expected reasoning effort override in args, got: %#v", args)
+	}
+}
+
+func TestBuildExecArgs_WithPersonality(t *testing.T) {
+	args := buildExecArgs("thread_123", "hello", "gpt-5.4", "", "", "pragmatic")
+	if !slices.Contains(args, "-c") || !slices.Contains(args, `personality="pragmatic"`) {
+		t.Fatalf("expected personality override in args, got: %#v", args)
 	}
 }
 
@@ -241,6 +248,20 @@ func TestBuildPrompt_NewThreadWithEmptyPrefix(t *testing.T) {
 		t.Fatalf("render prompt failed: %v", err)
 	}
 	if prompt != "你好" {
+		t.Fatalf("unexpected prompt: %q", prompt)
+	}
+}
+
+func TestBuildPrompt_NewThreadDoesNotInjectPersonalityText(t *testing.T) {
+	runner := Runner{
+		Prompts:      prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
+		PromptPrefix: "你是助手Alice。",
+	}
+	prompt, err := runner.renderPrompt("", "你好", "friendly", "[[NO_REPLY]]")
+	if err != nil {
+		t.Fatalf("render prompt failed: %v", err)
+	}
+	if prompt != "你是助手Alice。\n\n你好" {
 		t.Fatalf("unexpected prompt: %q", prompt)
 	}
 }
