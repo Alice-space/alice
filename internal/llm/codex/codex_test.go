@@ -118,31 +118,43 @@ func TestIsSuccessfulCommandExecutionCompleted(t *testing.T) {
 }
 
 func TestBuildExecArgs_ResumeThread(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello", "", "", "", "")
+	args := buildExecArgs("thread_123", "hello", "", "", "", "", ExecPolicyConfig{
+		Sandbox:        "workspace-write",
+		AskForApproval: "never",
+	})
 	if !slices.Contains(args, "resume") {
 		t.Fatalf("expected resume args, got: %#v", args)
 	}
 	if !slices.Contains(args, "thread_123") {
 		t.Fatalf("expected thread id in args, got: %#v", args)
 	}
-	if !slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
-		t.Fatalf("resume args should include dangerous bypass flag, got: %#v", args)
+	if !slices.Contains(args, "--sandbox") || !slices.Contains(args, "workspace-write") {
+		t.Fatalf("resume args should include workspace sandbox flag, got: %#v", args)
 	}
-	if slices.Contains(args, "--sandbox") {
-		t.Fatalf("resume args should not include --sandbox, got: %#v", args)
+	if !slices.Contains(args, "-a") || !slices.Contains(args, "never") {
+		t.Fatalf("resume args should include approval mode, got: %#v", args)
+	}
+	if slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Fatalf("resume args should not include dangerous bypass flag, got: %#v", args)
 	}
 	if !slices.Contains(args, "--") {
 		t.Fatalf("resume args should include option terminator, got: %#v", args)
 	}
 }
 
-func TestBuildExecArgs_NewThreadUsesDangerousBypass(t *testing.T) {
-	args := buildExecArgs("", "hello", "", "", "", "")
-	if !slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
-		t.Fatalf("new thread args should include dangerous bypass flag, got: %#v", args)
+func TestBuildExecArgs_NewThreadUsesWorkspaceSandbox(t *testing.T) {
+	args := buildExecArgs("", "hello", "", "", "", "", ExecPolicyConfig{
+		Sandbox:        "workspace-write",
+		AskForApproval: "never",
+	})
+	if !slices.Contains(args, "--sandbox") || !slices.Contains(args, "workspace-write") {
+		t.Fatalf("new thread args should include workspace sandbox flag, got: %#v", args)
 	}
-	if slices.Contains(args, "--sandbox") {
-		t.Fatalf("new thread args should not include --sandbox, got: %#v", args)
+	if !slices.Contains(args, "-a") || !slices.Contains(args, "never") {
+		t.Fatalf("new thread args should include approval mode, got: %#v", args)
+	}
+	if slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Fatalf("new thread args should not include dangerous bypass flag, got: %#v", args)
 	}
 	if !slices.Contains(args, "--") {
 		t.Fatalf("new thread args should include option terminator, got: %#v", args)
@@ -150,7 +162,10 @@ func TestBuildExecArgs_NewThreadUsesDangerousBypass(t *testing.T) {
 }
 
 func TestBuildExecArgs_WithModelAndProfile(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello", "gpt-4.1-mini", "worker-cheap", "", "")
+	args := buildExecArgs("thread_123", "hello", "gpt-4.1-mini", "worker-cheap", "", "", ExecPolicyConfig{
+		Sandbox:        "workspace-write",
+		AskForApproval: "never",
+	})
 	if !slices.Contains(args, "-m") || !slices.Contains(args, "gpt-4.1-mini") {
 		t.Fatalf("expected model selector in args, got: %#v", args)
 	}
@@ -160,16 +175,36 @@ func TestBuildExecArgs_WithModelAndProfile(t *testing.T) {
 }
 
 func TestBuildExecArgs_WithReasoningEffort(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello", "gpt-5.4", "", "high", "")
+	args := buildExecArgs("thread_123", "hello", "gpt-5.4", "", "high", "", ExecPolicyConfig{
+		Sandbox:        "workspace-write",
+		AskForApproval: "never",
+	})
 	if !slices.Contains(args, "-c") || !slices.Contains(args, `model_reasoning_effort="high"`) {
 		t.Fatalf("expected reasoning effort override in args, got: %#v", args)
 	}
 }
 
 func TestBuildExecArgs_WithPersonality(t *testing.T) {
-	args := buildExecArgs("thread_123", "hello", "gpt-5.4", "", "", "pragmatic")
+	args := buildExecArgs("thread_123", "hello", "gpt-5.4", "", "", "pragmatic", ExecPolicyConfig{
+		Sandbox:        "workspace-write",
+		AskForApproval: "never",
+	})
 	if !slices.Contains(args, "-c") || !slices.Contains(args, `personality="pragmatic"`) {
 		t.Fatalf("expected personality override in args, got: %#v", args)
+	}
+}
+
+func TestBuildExecArgs_WithAddDirs(t *testing.T) {
+	args := buildExecArgs("", "hello", "", "", "", "", ExecPolicyConfig{
+		Sandbox:        "workspace-write",
+		AskForApproval: "never",
+		AddDirs:        []string{"/tmp/resources", "/tmp/assets"},
+	})
+	if !slices.Contains(args, "--add-dir") {
+		t.Fatalf("expected add-dir flags, got: %#v", args)
+	}
+	if !slices.Contains(args, "/tmp/resources") || !slices.Contains(args, "/tmp/assets") {
+		t.Fatalf("expected add-dir paths, got: %#v", args)
 	}
 }
 
@@ -203,6 +238,7 @@ EOF
 		"",
 		"",
 		"",
+		"",
 		nil,
 		nil,
 	)
@@ -217,6 +253,9 @@ EOF
 		t.Fatalf("read args failed: %v", err)
 	}
 	args := strings.Split(strings.TrimSpace(string(rawArgs)), "\n")
+	if !slices.Contains(args, "--sandbox") || !slices.Contains(args, "workspace-write") {
+		t.Fatalf("expected workspace sandbox in args, got: %#v", args)
+	}
 	if !slices.Contains(args, "-m") || !slices.Contains(args, "gpt-5.4") {
 		t.Fatalf("expected default model in args, got: %#v", args)
 	}
@@ -306,6 +345,7 @@ EOF
 		"",
 		"",
 		"",
+		"",
 		map[string]string{"ALICE_TEST_ENV": "env_ok"},
 		nil,
 	)
@@ -384,7 +424,7 @@ wait $!
 	done := make(chan error, 1)
 	startedAt := time.Now()
 	go func() {
-		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "assistant", "hello", "", "", "", "", "", nil, nil)
+		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "assistant", "hello", "", "", "", "", "", "", nil, nil)
 		done <- err
 	}()
 

@@ -31,7 +31,7 @@ type ConnectorRuntime struct {
 }
 
 func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.FactoryConfig {
-	defaultEnv := applyLLMProcessEnvDefaults(cfg.CodexEnv)
+	defaultEnv := applyLLMProcessEnvDefaults(cfg.CodexEnv, cfg.CodexHome)
 	return llm.FactoryConfig{
 		Provider: cfg.LLMProvider,
 		Prompts:  prompts,
@@ -43,6 +43,8 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 			Env:             defaultEnv,
 			PromptPrefix:    cfg.CodexPromptPrefix,
 			WorkspaceDir:    cfg.WorkspaceDir,
+			ChatExecPolicy:  buildCodexExecPolicy(cfg.Permissions.Codex.Chat),
+			WorkExecPolicy:  buildCodexExecPolicy(cfg.Permissions.Codex.Work),
 		},
 		Claude: llm.ClaudeConfig{
 			Command:      cfg.ClaudeCommand,
@@ -61,7 +63,15 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 	}
 }
 
-func applyLLMProcessEnvDefaults(raw map[string]string) map[string]string {
+func buildCodexExecPolicy(policy config.CodexExecPolicyConfig) llm.ExecPolicyConfig {
+	return llm.ExecPolicyConfig{
+		Sandbox:        strings.TrimSpace(policy.Sandbox),
+		AskForApproval: strings.TrimSpace(policy.AskForApproval),
+		AddDirs:        append([]string(nil), policy.AddDirs...),
+	}
+}
+
+func applyLLMProcessEnvDefaults(raw map[string]string, codexHome string) map[string]string {
 	out := make(map[string]string, len(raw)+1)
 	for key, value := range raw {
 		trimmedKey := strings.TrimSpace(key)
@@ -72,7 +82,11 @@ func applyLLMProcessEnvDefaults(raw map[string]string) map[string]string {
 		out[trimmedKey] = trimmedValue
 	}
 	if strings.TrimSpace(out[config.EnvCodexHome]) == "" {
-		out[config.EnvCodexHome] = config.DefaultCodexHome()
+		if strings.TrimSpace(codexHome) != "" {
+			out[config.EnvCodexHome] = strings.TrimSpace(codexHome)
+		} else {
+			out[config.EnvCodexHome] = config.DefaultCodexHome()
+		}
 	}
 	return out
 }

@@ -57,6 +57,7 @@ type Server struct {
 type automationRuntimeConfig struct {
 	llmProfiles map[string]config.LLMProfileConfig
 	groupScenes config.GroupScenesConfig
+	permissions config.BotPermissionsConfig
 }
 
 func NewServer(
@@ -106,6 +107,7 @@ func newAutomationRuntimeConfig(cfg config.Config) automationRuntimeConfig {
 	return automationRuntimeConfig{
 		llmProfiles: cloneLLMProfiles(cfg.LLMProfiles),
 		groupScenes: cfg.GroupScenes,
+		permissions: cfg.Permissions,
 	}
 }
 
@@ -159,6 +161,7 @@ func (s *Server) runtimeConfig() automationRuntimeConfig {
 	return automationRuntimeConfig{
 		llmProfiles: cloneLLMProfiles(s.runtime.llmProfiles),
 		groupScenes: s.runtime.groupScenes,
+		permissions: s.runtime.permissions,
 	}
 }
 
@@ -205,6 +208,10 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 }
 
 func (s *Server) handleSendImage(c *gin.Context) {
+	if !s.allowRuntimeMessage() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime message is disabled for this bot"})
+		return
+	}
 	if s.sender == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "sender is unavailable"})
 		return
@@ -250,6 +257,10 @@ func (s *Server) handleSendImage(c *gin.Context) {
 }
 
 func (s *Server) handleSendFile(c *gin.Context) {
+	if !s.allowRuntimeMessage() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime message is disabled for this bot"})
+		return
+	}
 	if s.sender == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "sender is unavailable"})
 		return
@@ -295,6 +306,10 @@ func (s *Server) handleSendFile(c *gin.Context) {
 }
 
 func (s *Server) handleAutomationTaskList(c *gin.Context) {
+	if !s.allowRuntimeAutomation() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime automation is disabled for this bot"})
+		return
+	}
 	if s.automation == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
@@ -320,6 +335,10 @@ func (s *Server) handleAutomationTaskList(c *gin.Context) {
 }
 
 func (s *Server) handleAutomationTaskCreate(c *gin.Context) {
+	if !s.allowRuntimeAutomation() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime automation is disabled for this bot"})
+		return
+	}
 	if s.automation == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
@@ -348,6 +367,10 @@ func (s *Server) handleAutomationTaskCreate(c *gin.Context) {
 }
 
 func (s *Server) handleAutomationTaskGet(c *gin.Context) {
+	if !s.allowRuntimeAutomation() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime automation is disabled for this bot"})
+		return
+	}
 	if s.automation == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
@@ -374,6 +397,10 @@ func (s *Server) handleAutomationTaskGet(c *gin.Context) {
 }
 
 func (s *Server) handleAutomationTaskPatch(c *gin.Context) {
+	if !s.allowRuntimeAutomation() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime automation is disabled for this bot"})
+		return
+	}
 	if s.automation == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
@@ -423,6 +450,10 @@ func (s *Server) handleAutomationTaskPatch(c *gin.Context) {
 }
 
 func (s *Server) handleAutomationTaskDelete(c *gin.Context) {
+	if !s.allowRuntimeAutomation() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime automation is disabled for this bot"})
+		return
+	}
 	if s.automation == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
@@ -453,6 +484,22 @@ func (s *Server) handleAutomationTaskDelete(c *gin.Context) {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "task": deleted})
+}
+
+func (s *Server) allowRuntimeMessage() bool {
+	return runtimePermissionEnabled(s.runtimeConfig().permissions.RuntimeMessage)
+}
+
+func (s *Server) allowRuntimeAutomation() bool {
+	return runtimePermissionEnabled(s.runtimeConfig().permissions.RuntimeAutomation)
+}
+
+func (s *Server) allowRuntimeCampaigns() bool {
+	return runtimePermissionEnabled(s.runtimeConfig().permissions.RuntimeCampaigns)
+}
+
+func runtimePermissionEnabled(flag *bool) bool {
+	return flag == nil || *flag
 }
 
 func sessionContextFromHeaders(c *gin.Context) (mcpbridge.SessionContext, error) {

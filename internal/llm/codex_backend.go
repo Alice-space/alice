@@ -22,7 +22,17 @@ func newCodexBackend(cfg CodexConfig, prompts *prompting.Loader) *codexBackend {
 			Env:                    cfg.Env,
 			PromptPrefix:           cfg.PromptPrefix,
 			WorkspaceDir:           cfg.WorkspaceDir,
-			Prompts:                prompts,
+			ChatExecPolicy: corecodex.ExecPolicyConfig{
+				Sandbox:        strings.TrimSpace(cfg.ChatExecPolicy.Sandbox),
+				AskForApproval: strings.TrimSpace(cfg.ChatExecPolicy.AskForApproval),
+				AddDirs:        append([]string(nil), cfg.ChatExecPolicy.AddDirs...),
+			},
+			WorkExecPolicy: corecodex.ExecPolicyConfig{
+				Sandbox:        strings.TrimSpace(cfg.WorkExecPolicy.Sandbox),
+				AskForApproval: strings.TrimSpace(cfg.WorkExecPolicy.AskForApproval),
+				AddDirs:        append([]string(nil), cfg.WorkExecPolicy.AddDirs...),
+			},
+			Prompts: prompts,
 		},
 	}
 }
@@ -33,6 +43,7 @@ func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, erro
 		strings.TrimSpace(req.ThreadID),
 		strings.TrimSpace(req.AgentName),
 		req.UserText,
+		strings.TrimSpace(req.Scene),
 		strings.TrimSpace(req.Model),
 		strings.TrimSpace(req.Profile),
 		strings.TrimSpace(req.ReasoningEffort),

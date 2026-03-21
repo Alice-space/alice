@@ -4,6 +4,9 @@ feishu_app_secret: "xxxxxx"
 
 # Optional, default is https://open.feishu.cn
 feishu_base_url: "https://open.feishu.cn"
+# Optional bot display name injected into chat-scene SOUL prompt.
+# Empty means use Alice / bot_id.
+bot_name: "Alice"
 # Optional but recommended for group chats: strict bot mention filtering
 # Alice uses these IDs to recognize @bot when trigger_mode=at.
 # Empty means Alice will not use a preconfigured bot identity for mention matching.
@@ -56,11 +59,16 @@ runtime_http_token: ""
 # Optional runtime home (release default: ~/.alice; dev build default: ~/.alice-dev).
 # Empty means use the build-channel default. You can also override with CLI flag --alice-home.
 alice_home: ""
+# Optional dedicated Codex home. Empty means <alice_home>/.codex.
+codex_home: ""
 # Runtime directories (leave empty to use defaults under alice_home)
 # workspace_dir default: <alice_home>/workspace
 # prompt_dir default: <alice_home>/prompts
 # Empty means use the default path under alice_home.
 workspace_dir: ""
+# Optional bot soul file used only for new non-work threads.
+# Empty means <workspace_dir>/SOUL.md.
+soul_path: "SOUL.md"
 # Optional: environment variables passed to LLM process (proxy, etc.)
 # Connector process sets CODEX_HOME to <alice_home>/.codex at startup.
 # LLM subprocess env uses that value by default unless env.CODEX_HOME is explicitly set.
@@ -101,6 +109,26 @@ group_scenes:
     no_reply_token: ""
     create_feishu_thread: true
 
+# Runtime and Codex permissions for this bot.
+# chat scene defaults to workspace-write; work scene defaults to danger-full-access.
+# add_dirs is useful when chat mode needs read/write access outside workspace, such as scoped
+# attachment download directories.
+permissions:
+  runtime_message: true
+  runtime_automation: true
+  runtime_campaigns: true
+  # Optional explicit skill allowlist. Empty means Alice derives a safe default from runtime_* flags.
+  allowed_skills: []
+  codex:
+    chat:
+      sandbox: "workspace-write"
+      ask_for_approval: "never"
+      add_dirs: []
+    work:
+      sandbox: "danger-full-access"
+      ask_for_approval: "never"
+      add_dirs: []
+
 # Queue and worker
 queue_capacity: 256
 worker_concurrency: 1
@@ -115,3 +143,61 @@ log_max_size_mb: 20
 log_max_backups: 5
 log_max_age_days: 7
 log_compress: false
+
+# Multi-bot mode:
+# - current single-bot state/workspace can be preserved by setting primary_bot to the existing bot.
+# - primary bot reuses root alice_home/workspace_dir/codex_home/runtime_http_addr.
+# - extra bots default to <alice_home>/bots/<bot_id>/...
+#
+# primary_bot: "work_bot"
+# bots:
+#   chat_bot:
+#     name: "Alice Chat"
+#     feishu_app_id: "cli_chat_xxx"
+#     feishu_app_secret: "chat_secret"
+#     workspace_dir: "/srv/alice/chat-workspace"
+#     soul_path: "SOUL.md"
+#     permissions:
+#       runtime_message: true
+#       runtime_automation: false
+#       runtime_campaigns: false
+#       allowed_skills: ["alice-message"]
+#       codex:
+#         chat:
+#           sandbox: "workspace-write"
+#           ask_for_approval: "never"
+#     group_scenes:
+#       chat:
+#         enabled: true
+#         session_scope: "per_chat"
+#         llm_profile: "chat"
+#       work:
+#         enabled: false
+#
+#   work_bot:
+#     name: "Alice Work"
+#     feishu_app_id: "cli_work_xxx"
+#     feishu_app_secret: "work_secret"
+#     soul_path: "SOUL.md"
+#     permissions:
+#       runtime_message: true
+#       runtime_automation: true
+#       runtime_campaigns: true
+#       allowed_skills: ["alice-message", "alice-scheduler", "alice-code-army"]
+#       codex:
+#         chat:
+#           sandbox: "workspace-write"
+#           ask_for_approval: "never"
+#         work:
+#           sandbox: "danger-full-access"
+#           ask_for_approval: "never"
+#     group_scenes:
+#       chat:
+#         enabled: true
+#         session_scope: "per_chat"
+#         llm_profile: "chat"
+#       work:
+#         enabled: true
+#         trigger_tag: "#work"
+#         session_scope: "per_thread"
+#         llm_profile: "work"

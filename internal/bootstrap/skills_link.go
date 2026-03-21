@@ -25,21 +25,36 @@ type SkillLinkReport struct {
 
 func EnsureBundledSkillsLinked(workspaceDir string) (SkillLinkReport, error) {
 	_ = workspaceDir
+	codexHome, err := resolveCodexHome()
+	if err != nil {
+		return SkillLinkReport{}, err
+	}
+	return EnsureBundledSkillsLinkedForCodexHome(codexHome, nil)
+}
 
+func EnsureBundledSkillsLinkedForCodexHome(codexHome string, allowedSkills []string) (SkillLinkReport, error) {
 	report := SkillLinkReport{}
 	entries, err := fs.ReadDir(aliceassets.SkillsFS, ".")
 	if err != nil {
 		return report, fmt.Errorf("read embedded bundled skills failed: %w", err)
 	}
 
-	codexHome, err := resolveCodexHome()
-	if err != nil {
-		return report, err
+	codexHome = strings.TrimSpace(codexHome)
+	if codexHome == "" {
+		return report, fmt.Errorf("codex home is empty")
 	}
 	report.CodexHome = codexHome
 	dstRoot := filepath.Join(codexHome, "skills")
 	if err := os.MkdirAll(dstRoot, 0o755); err != nil {
 		return report, fmt.Errorf("create codex skills dir failed: %w", err)
+	}
+	allowed := make(map[string]struct{}, len(allowedSkills))
+	for _, skill := range allowedSkills {
+		trimmed := strings.TrimSpace(skill)
+		if trimmed == "" {
+			continue
+		}
+		allowed[trimmed] = struct{}{}
 	}
 
 	for _, entry := range entries {
@@ -52,6 +67,11 @@ func EnsureBundledSkillsLinked(workspaceDir string) (SkillLinkReport, error) {
 		}
 		if !hasEmbeddedSkillManifest(name) {
 			continue
+		}
+		if len(allowed) > 0 {
+			if _, ok := allowed[name]; !ok {
+				continue
+			}
 		}
 
 		report.Discovered++

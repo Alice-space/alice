@@ -33,6 +33,7 @@ func splitMessageLines(message string) []string {
 }
 
 type llmRunOptions struct {
+	Scene           string
 	Model           string
 	Profile         string
 	ReasoningEffort string
@@ -56,6 +57,7 @@ func (p *Processor) runLLM(
 		ThreadID:        strings.TrimSpace(threadID),
 		AgentName:       "assistant",
 		UserText:        userText,
+		Scene:           strings.TrimSpace(options.Scene),
 		Model:           strings.TrimSpace(options.Model),
 		Profile:         strings.TrimSpace(options.Profile),
 		ReasoningEffort: strings.TrimSpace(options.ReasoningEffort),
@@ -82,9 +84,41 @@ func (p *Processor) buildPrompt(ctx context.Context, job Job, threadID string) s
 		)
 		return userText
 	}
+	userText = p.appendBotSoul(userText, job)
 	userText = p.appendRuntimeSkillHint(userText, job)
 	logging.Debugf("prompt assemble event_id=%s strategy=direct final_prompt=%q", job.EventID, userText)
 	return userText
+}
+
+func (p *Processor) appendBotSoul(userText string, job Job) string {
+	if strings.TrimSpace(job.Scene) == jobSceneWork {
+		return strings.TrimSpace(userText)
+	}
+	soulPath := strings.TrimSpace(job.SoulPath)
+	if soulPath == "" {
+		return strings.TrimSpace(userText)
+	}
+	raw, err := os.ReadFile(soulPath)
+	if err != nil {
+		if !os.IsNotExist(err) {
+			logging.Warnf("read bot soul failed event_id=%s path=%s: %v", job.EventID, soulPath, err)
+		}
+		return strings.TrimSpace(userText)
+	}
+	soulText := strings.TrimSpace(string(raw))
+	if soulText == "" {
+		return strings.TrimSpace(userText)
+	}
+	rendered, err := p.renderPromptFile(connectorPromptBotSoul, map[string]any{
+		"BotName":  defaultIfEmpty(job.BotName, "Alice"),
+		"SoulText": soulText,
+		"UserText": strings.TrimSpace(userText),
+	})
+	if err != nil {
+		logging.Warnf("render bot soul failed event_id=%s path=%s: %v", job.EventID, soulPath, err)
+		return strings.TrimSpace(userText)
+	}
+	return rendered
 }
 
 func (p *Processor) appendRuntimeSkillHint(userText string, job Job) string {
