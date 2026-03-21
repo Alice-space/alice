@@ -4,7 +4,7 @@
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
 [![Release On Tag](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml)
 
-A Feishu long-connection connector for Codex / Claude / Kimi.
+A Feishu long-connection connector for Codex / Claude / Gemini / Kimi.
 
 - Receives Feishu messages over WebSocket (`im.message.receive_v1`)
 - Calls the selected LLM CLI backend
@@ -34,7 +34,7 @@ Dev builds use the same layout under `~/.alice-dev` by default.
 ## Requirements
 
 - Go 1.25+ (source build only)
-- `codex` CLI (or `claude` / `kimi`) installed and logged in
+- `codex` CLI (or `claude` / `gemini` / `kimi`) installed and logged in
 - Linux host with `systemd --user` (for one-line install script)
 - Feishu app with:
   - bot capability
@@ -120,7 +120,7 @@ Required keys:
 
 Common optional keys:
 
-- `llm_provider`: `codex` (default), `claude`, `kimi`
+- `llm_provider`: `codex` (default), `claude`, `gemini`, `kimi`
 - `<provider>_command` / `<provider>_timeout_secs`
 - `runtime_http_addr` / `runtime_http_token`
 - `env`: extra env vars passed to backend process
@@ -137,6 +137,7 @@ Default process env behavior:
 
 - Alice starts the service process with `CODEX_HOME=${ALICE_HOME}/.codex`
 - Each bot injects its own subprocess `CODEX_HOME` by default: `${ALICE_HOME}/bots/<bot_id>/.codex` unless overridden in `bots.<id>.env.CODEX_HOME`
+- Gemini CLI currently depends on the `node` found in `PATH`. If Alice is launched outside an `nvm`-initialized shell, set `bots.<id>.env.PATH` so `gemini` resolves a Node >= 20 runtime.
 
 See [config.example.yaml](./config.example.yaml) for full schema.
 

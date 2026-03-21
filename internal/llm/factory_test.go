@@ -43,6 +43,25 @@ func TestNewProvider_Claude(t *testing.T) {
 	}
 }
 
+func TestNewProvider_Gemini(t *testing.T) {
+	provider, err := NewProvider(FactoryConfig{
+		Provider: ProviderGemini,
+		Gemini: GeminiConfig{
+			Command: "gemini",
+			Timeout: 30 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("new provider failed: %v", err)
+	}
+	if provider == nil {
+		t.Fatal("expected non-nil provider")
+	}
+	if provider.Backend() == nil {
+		t.Fatal("expected non-nil backend")
+	}
+}
+
 func TestNewProvider_Kimi(t *testing.T) {
 	provider, err := NewProvider(FactoryConfig{
 		Provider: ProviderKimi,
@@ -92,6 +111,22 @@ func TestNewBackend_Claude(t *testing.T) {
 		Provider: ProviderClaude,
 		Claude: ClaudeConfig{
 			Command: "claude",
+			Timeout: 30 * time.Second,
+		},
+	})
+	if err != nil {
+		t.Fatalf("new backend failed: %v", err)
+	}
+	if backend == nil {
+		t.Fatal("expected non-nil backend")
+	}
+}
+
+func TestNewBackend_Gemini(t *testing.T) {
+	backend, err := NewBackend(FactoryConfig{
+		Provider: ProviderGemini,
+		Gemini: GeminiConfig{
+			Command: "gemini",
 			Timeout: 30 * time.Second,
 		},
 	})

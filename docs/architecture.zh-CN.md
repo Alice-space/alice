@@ -19,7 +19,7 @@
 - `internal/connector`
   负责 Feishu websocket 接入、排队、按 session 串行、抢占中断、回复派发，以及 agent 运行时环境变量注入。
 - `internal/llm`
-  后端工厂与 provider 适配层，当前支持 `codex`、`claude`、`kimi`。
+  后端工厂与 provider 适配层，当前支持 `codex`、`claude`、`gemini`、`kimi`。
 - `internal/prompting`
   基于磁盘模板文件的渲染器，使用 Go template + `sprig`。
 - `internal/memory`
@@ -59,6 +59,7 @@ prompt 不再以内联大字符串散落在代码里。
 
 - `codex`
 - `claude`
+- `gemini`
 - `kimi`
 
 关键约束：
@@ -170,7 +171,7 @@ Alice 不再通过 MCP 暴露业务能力。
 1. Feishu 事件进入 `internal/connector`。
 2. Connector 按 session 串行调度，并组装本轮 agent 环境变量。
 3. 环境变量里同时带上当前会话上下文和 runtime HTTP 鉴权信息。
-4. LLM backend 从磁盘模板渲染 prompt，并调用 `codex` / `claude` / `kimi`。
+4. LLM backend 从磁盘模板渲染 prompt，并调用 `codex` / `claude` / `gemini` / `kimi`。
 5. agent 使用的外置 skill 通过 `alice runtime ...` 调用 runtime HTTP API。
 6. runtime HTTP API 复用同一份 session context 操作 memory、automation、campaign 状态和消息发送。
 7. automation task 通过 `bbolt` 持久化到 `automation.db`。

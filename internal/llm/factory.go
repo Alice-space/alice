@@ -10,6 +10,7 @@ import (
 
 const ProviderCodex = "codex"
 const ProviderClaude = "claude"
+const ProviderGemini = "gemini"
 const ProviderKimi = "kimi"
 
 type FactoryConfig struct {
@@ -17,6 +18,7 @@ type FactoryConfig struct {
 	Prompts  *prompting.Loader
 	Codex    CodexConfig
 	Claude   ClaudeConfig
+	Gemini   GeminiConfig
 	Kimi     KimiConfig
 }
 
@@ -39,6 +41,14 @@ type CodexConfig struct {
 }
 
 type ClaudeConfig struct {
+	Command      string
+	Timeout      time.Duration
+	Env          map[string]string
+	PromptPrefix string
+	WorkspaceDir string
+}
+
+type GeminiConfig struct {
 	Command      string
 	Timeout      time.Duration
 	Env          map[string]string
@@ -73,6 +83,10 @@ func NewProvider(cfg FactoryConfig) (Provider, error) {
 	case ProviderClaude:
 		return providerBundle{
 			backend: newClaudeBackend(cfg.Claude, cfg.Prompts),
+		}, nil
+	case ProviderGemini:
+		return providerBundle{
+			backend: newGeminiBackend(cfg.Gemini, cfg.Prompts),
 		}, nil
 	case ProviderKimi:
 		return providerBundle{

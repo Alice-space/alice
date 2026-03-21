@@ -167,6 +167,11 @@ func applyReloadableFields(dst *config.Config, src config.Config, changed map[st
 	applyDurationField(&dst.ClaudeTimeout, src.ClaudeTimeout, "claude_timeout", changed)
 	applyStringField(&dst.ClaudePromptPrefix, src.ClaudePromptPrefix, "claude_prompt_prefix", changed)
 
+	applyStringField(&dst.GeminiCommand, src.GeminiCommand, "gemini_command", changed)
+	applyIntField(&dst.GeminiTimeoutSecs, src.GeminiTimeoutSecs, "gemini_timeout_secs", changed)
+	applyDurationField(&dst.GeminiTimeout, src.GeminiTimeout, "gemini_timeout", changed)
+	applyStringField(&dst.GeminiPromptPrefix, src.GeminiPromptPrefix, "gemini_prompt_prefix", changed)
+
 	applyStringField(&dst.KimiCommand, src.KimiCommand, "kimi_command", changed)
 	applyIntField(&dst.KimiTimeoutSecs, src.KimiTimeoutSecs, "kimi_timeout_secs", changed)
 	applyDurationField(&dst.KimiTimeout, src.KimiTimeout, "kimi_timeout", changed)
@@ -196,6 +201,9 @@ func llmRuntimeConfigChanged(current, next config.Config) bool {
 		current.ClaudeCommand != next.ClaudeCommand ||
 		current.ClaudeTimeout != next.ClaudeTimeout ||
 		current.ClaudePromptPrefix != next.ClaudePromptPrefix ||
+		current.GeminiCommand != next.GeminiCommand ||
+		current.GeminiTimeout != next.GeminiTimeout ||
+		current.GeminiPromptPrefix != next.GeminiPromptPrefix ||
 		current.KimiCommand != next.KimiCommand ||
 		current.KimiTimeout != next.KimiTimeout ||
 		current.KimiPromptPrefix != next.KimiPromptPrefix

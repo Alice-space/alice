@@ -19,7 +19,7 @@ This document describes the current target architecture after the runtime/skills
 - `internal/connector`
   Handles Feishu websocket intake, queueing, session serialization, interruption, reply dispatch, and per-run env injection.
 - `internal/llm`
-  Backend factory plus provider adapters for `codex`, `claude`, and `kimi`.
+  Backend factory plus provider adapters for `codex`, `claude`, `gemini`, and `kimi`.
 - `internal/prompting`
   File-backed prompt/template renderer using Go templates plus `sprig`.
 - `internal/memory`
@@ -59,6 +59,7 @@ The backend factory now supports:
 
 - `codex`
 - `claude`
+- `gemini`
 - `kimi`
 
 Key behaviors:

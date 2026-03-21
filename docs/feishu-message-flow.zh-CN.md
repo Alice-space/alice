@@ -27,7 +27,7 @@ Feishu websocket event
   -> workerLoop 按 session 串行执行
   -> Processor.ProcessJobState
   -> 即时反馈 / 下载附件 / 组 prompt / 注入 env
-  -> LLM backend 运行 codex / claude / kimi
+  -> LLM backend 运行 codex / claude / gemini / kimi
   -> 流式 agent_message / file_change 回飞书
   -> 最终答案回飞书
   -> session/runtime state 周期性落盘
