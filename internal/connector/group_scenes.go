@@ -84,10 +84,21 @@ func (a *App) routeGroupSceneJob(job *Job, event *larkim.P2MessageReceiveV1, mes
 	}
 
 	if cfg.groupScenes.Chat.Enabled {
-		applyChatSceneToJob(job, cfg)
+		applyChatSceneToJob(job, cfg, a.resolveCurrentChatSceneSessionKey(job.ReceiveIDType, job.ReceiveID))
 		return true
 	}
 	return false
+}
+
+func (a *App) resolveCurrentChatSceneSessionKey(receiveIDType, receiveID string) string {
+	sessionKey := buildChatSceneSessionKey(receiveIDType, receiveID)
+	if sessionKey == "" {
+		return ""
+	}
+	if resolved := strings.TrimSpace(a.findExistingSessionKey([]string{sessionKey})); resolved != "" {
+		return resolved
+	}
+	return sessionKey
 }
 
 func (a *App) resolveExistingWorkSession(job *Job, event *larkim.P2MessageReceiveV1, message *larkim.EventMessage) string {
@@ -120,15 +131,19 @@ func buildWorkSceneLookupCandidates(receiveIDType, receiveID string, message *la
 	return candidates
 }
 
-func applyChatSceneToJob(job *Job, cfg appRuntimeConfig) {
+func applyChatSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
 	if job == nil {
 		return
+	}
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		sessionKey = buildChatSceneSessionKey(job.ReceiveIDType, job.ReceiveID)
 	}
 	job.Scene = jobSceneChat
 	job.ResponseMode = jobResponseModeReply
 	job.DisableAck = true
-	job.SessionKey = buildChatSceneSessionKey(job.ReceiveIDType, job.ReceiveID)
-	job.ResourceScopeKey = buildChatSceneResourceScopeKey(job.ReceiveIDType, job.ReceiveID)
+	job.SessionKey = sessionKey
+	job.ResourceScopeKey = sessionKey
 	job.CreateFeishuThread = cfg.groupScenes.Chat.CreateFeishuThread
 	job.NoReplyToken = strings.TrimSpace(cfg.groupScenes.Chat.NoReplyToken)
 	applyLLMProfileToJob(job, cfg.llmProvider, cfg.llmProfiles[cfg.groupScenes.Chat.LLMProfile])
@@ -165,10 +180,6 @@ func buildChatSceneSessionKey(receiveIDType, receiveID string) string {
 		return ""
 	}
 	return base + "|scene:" + jobSceneChat
-}
-
-func buildChatSceneResourceScopeKey(receiveIDType, receiveID string) string {
-	return buildChatSceneSessionKey(receiveIDType, receiveID)
 }
 
 func buildWorkSceneSessionKey(receiveIDType, receiveID, sourceMessageID string) string {

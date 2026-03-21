@@ -141,3 +141,36 @@ func TestProcessor_LoadSessionState_PreservesWorkThreadID(t *testing.T) {
 		t.Fatalf("thread alias should resolve after restart, got %q want %q", resolved, sessionKey)
 	}
 }
+
+func TestProcessor_LoadSessionState_PreservesRotatedChatSceneSession(t *testing.T) {
+	statePath := filepath.Join(t.TempDir(), "session_state.json")
+
+	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
+	if err := processor.LoadSessionState(statePath); err != nil {
+		t.Fatalf("init session state failed: %v", err)
+	}
+
+	baseSessionKey := buildChatSceneSessionKey("chat_id", "oc_chat")
+	oldThreadID := "thread_old"
+	processor.setThreadID(baseSessionKey, oldThreadID)
+	_, rotatedSessionKey := processor.resetChatSceneSession("chat_id", "oc_chat")
+	if rotatedSessionKey == "" || rotatedSessionKey == baseSessionKey {
+		t.Fatalf("expected rotated chat session key, got %q", rotatedSessionKey)
+	}
+
+	if err := processor.FlushSessionState(); err != nil {
+		t.Fatalf("flush session state failed: %v", err)
+	}
+
+	processorAfterRestart := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
+	if err := processorAfterRestart.LoadSessionState(statePath); err != nil {
+		t.Fatalf("reload session state failed: %v", err)
+	}
+
+	if resolved := processorAfterRestart.resolveCanonicalSessionKey(baseSessionKey); resolved != rotatedSessionKey {
+		t.Fatalf("base chat alias should resolve to rotated key after restart, got %q want %q", resolved, rotatedSessionKey)
+	}
+	if threadID := processorAfterRestart.getThreadID(rotatedSessionKey); threadID != "" {
+		t.Fatalf("rotated chat session should not reuse old thread id after restart, got %q", threadID)
+	}
+}

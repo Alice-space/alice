@@ -27,6 +27,7 @@ const maxSessionAliases = 32
 const workSceneSeedKeyToken = "|scene:work|seed:"
 const messageAliasToken = "|message:"
 const threadAliasToken = "|thread:"
+const chatSceneResetToken = "|reset:"
 
 func (p *Processor) getThreadID(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
@@ -284,6 +285,22 @@ func appendSessionAliasWithLimit(aliases []string, alias string, limit int) []st
 	return append([]string(nil), aliases[len(aliases)-limit:]...)
 }
 
+func removeSessionAlias(aliases []string, alias string) []string {
+	alias = strings.TrimSpace(alias)
+	if alias == "" {
+		return normalizeSessionAliases(aliases, "")
+	}
+	filtered := make([]string, 0, len(aliases))
+	for _, rawAlias := range aliases {
+		existing := strings.TrimSpace(rawAlias)
+		if existing == "" || existing == alias {
+			continue
+		}
+		filtered = append(filtered, existing)
+	}
+	return normalizeSessionAliases(filtered, "")
+}
+
 func containsSessionAlias(aliases []string, alias string) bool {
 	alias = strings.TrimSpace(alias)
 	if alias == "" {
@@ -366,6 +383,42 @@ func extractThreadIDFromAlias(alias string) string {
 		return ""
 	}
 	return strings.TrimSpace(alias[idx+len(threadAliasToken):])
+}
+
+func (p *Processor) resetChatSceneSession(receiveIDType, receiveID string) (string, string) {
+	baseKey := buildChatSceneSessionKey(receiveIDType, receiveID)
+	if baseKey == "" {
+		return "", ""
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	currentKey := p.resolveCanonicalSessionKeyLocked(baseKey)
+	if currentKey == "" {
+		currentKey = baseKey
+	}
+
+	switch {
+	case currentKey == baseKey:
+		delete(p.sessions, currentKey)
+	default:
+		state, ok := p.sessions[currentKey]
+		if ok {
+			state.Aliases = removeSessionAlias(state.Aliases, baseKey)
+			p.sessions[currentKey] = state
+		}
+	}
+
+	newKey := fmt.Sprintf("%s%s%d", baseKey, chatSceneResetToken, p.now().UnixNano())
+	if _, exists := p.sessions[newKey]; exists {
+		newKey = fmt.Sprintf("%s%s%d-%d", baseKey, chatSceneResetToken, p.now().UnixNano(), p.stateVersion+1)
+	}
+	p.sessions[newKey] = sessionState{
+		Aliases: []string{baseKey},
+	}
+	p.markStateChangedLocked()
+	return currentKey, newKey
 }
 
 func (p *Processor) FlushSessionState() error {

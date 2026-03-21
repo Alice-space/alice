@@ -114,6 +114,7 @@ Feishu websocket event
 当前内建命令有：
 
 - `/help`
+- `/clear`
 - `/codearmy status [state_key]`
 
 当前 trigger mode 有三种：
@@ -166,6 +167,7 @@ Feishu websocket event
 - 群聊普通消息不需要 `@bot`
 - 整个群共享一个 session key，例如 `chat_id:oc_xxx|scene:chat`
 - 新消息都会继续 resume 这个 session
+- 发送 `/clear` 会切换到一个新的 chat session；后续普通消息会从新的 Codex 上下文继续
 - 若模型输出 `no_reply_token`（默认 `[[NO_REPLY]]`），connector 会静默不发言
 
 ### 4.2 `work` 场景
@@ -461,6 +463,8 @@ worker 在调用 `Processor.ProcessJobState` 之前，会创建：
 
 - `/help`
   直接返回当前所有内建命令的 markdown 列表。
+- `/clear`
+  仅在群聊 `chat` 模式下可用；会把当前群聊切到新的 chat session，相当于清空当前上下文。
 - `/codearmy status [state_key]`
   直接读取当前会话的 workflow/task 状态并回飞书。
 

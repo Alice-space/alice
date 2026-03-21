@@ -557,7 +557,7 @@ func TestShouldProcessIncomingMessage_GroupPrefixModeRequiresPrefix(t *testing.T
 }
 
 func TestShouldProcessIncomingMessage_BuiltinCommandBypassesGroupTrigger(t *testing.T) {
-	for _, text := range []string{"/help"} {
+	for _, text := range []string{"/help", "/clear"} {
 		event := &larkim.P2MessageReceiveV1{
 			Event: &larkim.P2MessageReceiveV1Data{
 				Message: &larkim.EventMessage{
@@ -576,7 +576,7 @@ func TestShouldProcessIncomingMessage_BuiltinCommandBypassesGroupTrigger(t *test
 }
 
 func TestNormalizeIncomingGroupJobTextForTriggerMode_PreservesBuiltinCommand(t *testing.T) {
-	for _, text := range []string{"/help"} {
+	for _, text := range []string{"/help", "/clear"} {
 		job := &Job{
 			ChatType: "group",
 			Text:     text,

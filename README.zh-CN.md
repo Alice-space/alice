@@ -305,7 +305,7 @@ log_compress: false
 - 二进制可直接前台运行；生产部署建议使用安装脚本创建 `systemd --user` 服务做自动拉起与保活。
 - 支持接收消息类型：`text`、`image`、`sticker`、`audio`、`file`。
 - 若启用了 `group_scenes`，群聊/话题群会按场景路由：
-  - `chat`：不要求 @，整个群共享一个 Codex session；新消息统一 resume 到这条 session。若模型输出 `no_reply_token`（默认 `[[NO_REPLY]]`），连接器会静默不发言。
+  - `chat`：不要求 @，整个群默认共享一个 Codex session；新消息统一 resume 到这条 session。发送 `/clear` 后会切到新的 chat session。若模型输出 `no_reply_token`（默认 `[[NO_REPLY]]`），连接器会静默不发言。
   - `work`：仅在根消息满足 `trigger_tag + @bot` 时触发；会创建一条专属 work session，并优先以飞书 thread reply 继续该话题。后续同一 work thread 的消息也必须再次命中当前 trigger（默认仍需 `@bot`），否则直接忽略。若只启用 `work` 场景，未命中触发条件的群消息不会再回退旧的 `@bot` 触发。
 - 若 `group_scenes.chat` 与 `group_scenes.work` 都未启用，则回退到 `trigger_mode` 控制：
   - `at`：仅处理艾特机器人的消息。若 `feishu_bot_open_id` 与 `feishu_bot_user_id` 都为空，则群聊/话题群消息全部忽略。
@@ -325,7 +325,7 @@ log_compress: false
 - 每次调用 Codex 前，只会注入长期记忆；分日期记忆只提供目录位置，让 Codex 按需检索。
 - 会话复用规则：
   - 单聊（`p2p`）默认按 chat 级别复用同一个 Codex session；后续消息会在原 session 上继续 resume。
-  - 群聊/话题群若启用 `group_scenes.chat`，整个群共享 `chat` 场景的单一 session。
+  - 群聊/话题群若启用 `group_scenes.chat`，整个群默认共享 `chat` 场景的单一 session；发送 `/clear` 会切到新的 chat session。
   - 群聊/话题群若启用 `group_scenes.work`，每个 `#work + @bot` 根消息会新建一个 work session；后续同一飞书 thread 会复用该 session。
   - 未启用 `group_scenes` 时，群聊/话题群顶层消息按消息维度建 session；进入某个飞书 thread 后，后续同一 thread 会继续复用该 session。
 - 若某聊天连续空闲达到 `idle_summary_hours`（默认 8 小时），后台会异步 resume 该线程并将“空闲摘要”追加到 `daily/YYYY-MM-DD.md`，同一段空闲期仅写一次。

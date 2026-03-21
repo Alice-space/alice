@@ -10,16 +10,20 @@ import (
 )
 
 const helpCommandName = "/help"
+const clearCommandName = "/clear"
 
 func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, JobProcessState) {
 	if isHelpCommand(job.Text) {
 		return true, p.processHelpCommand(ctx, job)
 	}
+	if isClearCommand(job.Text) {
+		return true, p.processClearCommand(ctx, job)
+	}
 	return false, JobProcessCompleted
 }
 
 func isBuiltinCommandText(text string) bool {
-	return isHelpCommand(text)
+	return isHelpCommand(text) || isClearCommand(text)
 }
 
 func isHelpCommand(text string) bool {
@@ -28,6 +32,14 @@ func isHelpCommand(text string) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(fields[0]), helpCommandName)
+}
+
+func isClearCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), clearCommandName)
 }
 
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
@@ -41,12 +53,36 @@ func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessS
 	return JobProcessCompleted
 }
 
+func (p *Processor) processClearCommand(ctx context.Context, job Job) JobProcessState {
+	reply := "当前只支持在群聊的 `chat` 模式下使用 `/clear`。"
+	helpCfg := p.runtimeSnapshot().helpConfig
+	switch {
+	case !isGroupChatType(job.ChatType):
+		reply = "当前不是群聊会话，`/clear` 仅用于群聊 `chat` 模式。"
+	case !helpCfg.chatEnabled:
+		reply = "当前群未启用 `chat` 模式，`/clear` 不会切换上下文。"
+	default:
+		_, _ = p.resetChatSceneSession(job.ReceiveIDType, job.ReceiveID)
+		reply = "当前群聊的 `chat` 上下文已经清空。后续普通消息会进入新的 Codex session。"
+	}
+
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send builtin clear reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
 func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 	lines := []string{
 		"## Alice 内建命令",
 		"",
 		"- `/help`",
 		"  显示内建命令，以及普通模式 / 工作模式的当前说明。",
+		"- `/clear`",
+		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
 	}
 
 	if !helpCfg.chatEnabled && !helpCfg.workEnabled {
@@ -64,7 +100,7 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		lines = append(lines,
 			"- `普通模式`",
 			"  默认群聊模式，适合闲聊、轻量互动和非任务性交流。",
-			"  当前配置：整个群共享一个会话，模型在不需要发言时可以保持静默。",
+			"  当前配置：整个群默认共享一个会话；发送 `/clear` 后会切到新的会话。模型在不需要发言时可以保持静默。",
 		)
 	}
 	if helpCfg.workEnabled {

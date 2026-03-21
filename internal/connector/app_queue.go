@@ -82,20 +82,19 @@ func (a *App) findExistingSessionKey(candidates []string) string {
 	}
 	a.state.mu.Unlock()
 
+	if a.processor != nil {
+		for _, candidate := range normalized {
+			if resolved := strings.TrimSpace(a.processor.resolveCanonicalSessionKey(candidate)); resolved != "" {
+				return resolved
+			}
+		}
+	}
 	for _, candidate := range normalized {
 		if _, ok := latest[candidate]; ok {
 			return candidate
 		}
 		if _, ok := pending[candidate]; ok {
 			return candidate
-		}
-	}
-
-	if a.processor != nil {
-		for _, candidate := range normalized {
-			if resolved := strings.TrimSpace(a.processor.resolveCanonicalSessionKey(candidate)); resolved != "" {
-				return resolved
-			}
 		}
 	}
 	return ""

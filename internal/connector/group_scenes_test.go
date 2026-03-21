@@ -308,6 +308,53 @@ func TestApp_OnMessageReceive_WorkSceneThreadFollowupRequiresMention(t *testing.
 	}
 }
 
+func TestApp_OnMessageReceive_GroupChatSceneUsesRotatedSessionAfterClear(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
+	app := NewApp(cfg, processor)
+
+	baseSessionKey := buildChatSceneSessionKey("chat_id", "oc_chat")
+	oldThreadID := "thread_old"
+	processor.setThreadID(baseSessionKey, oldThreadID)
+	_, rotatedSessionKey := processor.resetChatSceneSession("chat_id", "oc_chat")
+	if rotatedSessionKey == "" || rotatedSessionKey == baseSessionKey {
+		t.Fatalf("expected rotated chat session key, got %q", rotatedSessionKey)
+	}
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_chat_after_clear"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_chat_after_clear"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"继续聊新的上下文"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), event); err != nil {
+		t.Fatalf("unexpected chat event error: %v", err)
+	}
+	if got := len(app.queue); got != 1 {
+		t.Fatalf("expected queue len 1, got %d", got)
+	}
+	job := <-app.queue
+	if job.Scene != jobSceneChat {
+		t.Fatalf("unexpected chat scene: %q", job.Scene)
+	}
+	if job.SessionKey != rotatedSessionKey {
+		t.Fatalf("expected rotated session key %q, got %q", rotatedSessionKey, job.SessionKey)
+	}
+	if job.ResourceScopeKey != rotatedSessionKey {
+		t.Fatalf("expected rotated resource scope key %q, got %q", rotatedSessionKey, job.ResourceScopeKey)
+	}
+	if threadID := processor.getThreadID(job.SessionKey); threadID != "" {
+		t.Fatalf("expected cleared chat session to have no thread id, got %q", threadID)
+	}
+}
+
 func TestApp_OnMessageReceive_WorkSceneParentOnlyFollowupReusesSessionWithMention(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
