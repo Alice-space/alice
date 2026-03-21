@@ -14,9 +14,11 @@ import (
 type senderStub struct {
 	mu              sync.Mutex
 	sendTextCalls   int
+	sendCardCalls   int
 	lastReceiveType string
 	lastReceiveID   string
 	lastText        string
+	lastCard        string
 }
 
 func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text string) error {
@@ -26,6 +28,16 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	s.lastReceiveType = receiveIDType
 	s.lastReceiveID = receiveID
 	s.lastText = text
+	return nil
+}
+
+func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardContent string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.sendCardCalls++
+	s.lastReceiveType = receiveIDType
+	s.lastReceiveID = receiveID
+	s.lastCard = cardContent
 	return nil
 }
 
@@ -43,6 +55,10 @@ func (s *deadlineSenderStub) SendText(ctx context.Context, _, _, _ string) error
 		s.deadline = deadline
 	}
 	return nil
+}
+
+func (s *deadlineSenderStub) SendCard(ctx context.Context, _, _, _ string) error {
+	return s.SendText(ctx, "", "", "")
 }
 
 type llmRunnerStub struct {
@@ -344,6 +360,65 @@ func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
 		t.Fatal("expected non-empty run_workflow dispatch text")
 	}
 	sender.mu.Unlock()
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.LastResult == "" {
+		t.Fatalf("expected last result to be recorded, task=%+v", stored)
+	}
+}
+
+func TestEngine_RunUserTask_RunWorkflow_WorkSceneUsesCard(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:            ActionTypeRunWorkflow,
+			Prompt:          "请推进代码军队流程",
+			Workflow:        "code_army",
+			SessionKey:      "chat_id:oc_chat|scene:work|thread:omt_alpha",
+			ReasoningEffort: "high",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{Message: "workflow 已完成"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if sender.sendCardCalls != 1 {
+		t.Fatalf("expected run_workflow task to send one card, got %d", sender.sendCardCalls)
+	}
+	if sender.sendTextCalls != 0 {
+		t.Fatalf("expected run_workflow task to avoid text send in work scene, got %d", sender.sendTextCalls)
+	}
+	if !strings.Contains(sender.lastCard, "workflow 已完成") {
+		t.Fatalf("unexpected card content: %q", sender.lastCard)
+	}
+	if sender.lastReceiveType != "chat_id" || sender.lastReceiveID != "oc_chat" {
+		t.Fatalf("unexpected route: %s %s", sender.lastReceiveType, sender.lastReceiveID)
+	}
 
 	stored, err := store.GetTask(created.ID)
 	if err != nil {

@@ -65,6 +65,9 @@ func TestBuildTaskFromRequest_UsesWorkSceneLLMProfile(t *testing.T) {
 	if task.Action.Personality != "pragmatic" {
 		t.Fatalf("unexpected personality: %q", task.Action.Personality)
 	}
+	if task.Action.SessionKey != "chat_id:oc_chat|scene:work|seed:om_1" {
+		t.Fatalf("unexpected session key: %q", task.Action.SessionKey)
+	}
 }
 
 func TestBuildTaskFromRequest_PreservesExplicitRunLLMSelectors(t *testing.T) {
@@ -188,5 +191,34 @@ func TestBuildTaskFromRequest_InferRunWorkflowAndSetSessionKey(t *testing.T) {
 	}
 	if task.Action.SessionKey != "chat_id:oc_chat|scene:work|thread:omt_1" {
 		t.Fatalf("unexpected workflow session key: %q", task.Action.SessionKey)
+	}
+}
+
+func TestApplyTaskPatch_PreservesScopedSessionKeyForRunLLM(t *testing.T) {
+	current := automation.Task{
+		ID:       "task_123",
+		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+		Route:    automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:  automation.Actor{OpenID: "ou_actor"},
+		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 3600},
+		Action: automation.Action{
+			Type:       automation.ActionTypeRunLLM,
+			Prompt:     "总结当前状态",
+			SessionKey: "chat_id:oc_chat|scene:chat",
+		},
+		Status: automation.TaskStatusActive,
+	}
+
+	next, err := applyTaskPatch(current, []byte(`{"action":{"text":"播报"}}`), "application/merge-patch+json", automationScopeContext{
+		scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+		route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		creator: automation.Actor{OpenID: "ou_actor"},
+		session: mcpbridge.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
+	})
+	if err != nil {
+		t.Fatalf("apply task patch failed: %v", err)
+	}
+	if next.Action.SessionKey != "chat_id:oc_chat|scene:work|thread:omt_1" {
+		t.Fatalf("unexpected patched session key: %q", next.Action.SessionKey)
 	}
 }
