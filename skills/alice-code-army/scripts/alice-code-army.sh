@@ -137,10 +137,43 @@ extract_mr_iid() {
   die "unable to parse merge request iid from ${ref}"
 }
 
+campaign_issue_sync_marker() {
+  local campaign_id="$1"
+  printf '<!-- alice-code-army:campaign-sync:%s -->\n' "$campaign_id"
+}
+
+campaign_issue_legacy_match() {
+  local campaign_id="$1"
+  printf '# Alice Code Army Campaign Sync\n\n- campaign: `%s`' "$campaign_id"
+}
+
+trial_sync_marker() {
+  local campaign_id="$1" trial_id="$2"
+  printf '<!-- alice-code-army:trial-sync:%s:%s -->\n' "$campaign_id" "$trial_id"
+}
+
+trial_sync_legacy_match() {
+  local campaign_id="$1" trial_id="$2"
+  printf '# Alice Code Army Trial Sync\n\n- campaign: `%s`\n- trial: `%s`' "$campaign_id" "$trial_id"
+}
+
+prepend_managed_note_marker() {
+  local marker="$1" body="$2"
+  printf '%s\n%s\n' "$marker" "$body"
+}
+
 gitlab_note_issue() {
-  local repo="$1" iid="$2" body="$3" helper=""
+  local repo="$1" iid="$2" body="$3" marker="${4:-}" legacy_match="${5:-}" helper=""
   if helper="$(resolve_ihep_gitlab_helper 2>/dev/null)"; then
-    "$helper" issue-note --host "$DEFAULT_GITLAB_HOST" --repo "$repo" --iid "$iid" --message "$body"
+    local -a cmd
+    cmd=("$helper" issue-note --host "$DEFAULT_GITLAB_HOST" --repo "$repo" --iid "$iid" --message "$body")
+    if [[ -n "$marker" ]]; then
+      cmd+=(--upsert-marker "$marker")
+    fi
+    if [[ -n "$legacy_match" ]]; then
+      cmd+=(--upsert-fallback-substring "$legacy_match")
+    fi
+    "${cmd[@]}"
     return
   fi
   require_cmd glab
@@ -148,9 +181,17 @@ gitlab_note_issue() {
 }
 
 gitlab_note_mr() {
-  local repo="$1" iid="$2" body="$3" helper=""
+  local repo="$1" iid="$2" body="$3" marker="${4:-}" legacy_match="${5:-}" helper=""
   if helper="$(resolve_ihep_gitlab_helper 2>/dev/null)"; then
-    if "$helper" mr-note --host "$DEFAULT_GITLAB_HOST" --repo "$repo" --iid "$iid" --message "$body"; then
+    local -a cmd
+    cmd=("$helper" mr-note --host "$DEFAULT_GITLAB_HOST" --repo "$repo" --iid "$iid" --message "$body")
+    if [[ -n "$marker" ]]; then
+      cmd+=(--upsert-marker "$marker")
+    fi
+    if [[ -n "$legacy_match" ]]; then
+      cmd+=(--upsert-fallback-substring "$legacy_match")
+    fi
+    if "${cmd[@]}"; then
       return
     fi
   fi
@@ -473,18 +514,21 @@ apply_command() {
 }
 
 sync_issue() {
-  local campaign_id="$1" payload repo issue_iid body
+  local campaign_id="$1" payload repo issue_iid body marker legacy_match
   payload="$(campaign_json "$campaign_id")"
   repo="$(campaign_repo "$payload")"
   issue_iid="$(campaign_issue_iid "$payload")"
   [[ -n "$repo" ]] || die "campaign repo is empty"
   [[ -n "$issue_iid" ]] || die "campaign ${campaign_id} is not GitLab-visible yet: missing issue_iid"
   body="$(render_issue_note "$campaign_id")"
-  gitlab_note_issue "$repo" "$issue_iid" "$body"
+  marker="$(campaign_issue_sync_marker "$campaign_id")"
+  legacy_match="$(campaign_issue_legacy_match "$campaign_id")"
+  body="$(prepend_managed_note_marker "$marker" "$body")"
+  gitlab_note_issue "$repo" "$issue_iid" "$body" "$marker" "$legacy_match"
 }
 
 sync_trial() {
-  local campaign_id="$1" trial_id="$2" payload repo merge_request mr_iid body
+  local campaign_id="$1" trial_id="$2" payload repo merge_request mr_iid body marker legacy_match
   payload="$(campaign_json "$campaign_id")"
   repo="$(jq -r '.campaign.repo // ""' <<<"$payload")"
   [[ -n "$repo" ]] || die "campaign repo is empty"
@@ -494,7 +538,10 @@ sync_trial() {
   [[ -n "$merge_request" ]] || die "trial ${trial_id} has no merge_request"
   mr_iid="$(extract_mr_iid "$merge_request")"
   body="$(render_trial_note "$campaign_id" "$trial_id")"
-  gitlab_note_mr "$repo" "$mr_iid" "$body"
+  marker="$(trial_sync_marker "$campaign_id" "$trial_id")"
+  legacy_match="$(trial_sync_legacy_match "$campaign_id" "$trial_id")"
+  body="$(prepend_managed_note_marker "$marker" "$body")"
+  gitlab_note_mr "$repo" "$mr_iid" "$body" "$marker" "$legacy_match"
 }
 
 sync_all() {
