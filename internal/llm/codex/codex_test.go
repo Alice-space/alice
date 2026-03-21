@@ -151,6 +151,30 @@ func TestBuildExecArgs_ResumeThread(t *testing.T) {
 	}
 }
 
+func TestBuildExecArgs_ResumeThreadUsesDangerousBypassForFullAccess(t *testing.T) {
+	args := buildExecArgs("thread_123", "hello", "", "", "", "", ExecPolicyConfig{
+		Sandbox:        "danger-full-access",
+		AskForApproval: "never",
+	})
+	resumeIndex := slices.Index(args, "resume")
+	bypassIndex := slices.Index(args, "--dangerously-bypass-approvals-and-sandbox")
+	if resumeIndex < 0 {
+		t.Fatalf("expected resume args, got: %#v", args)
+	}
+	if bypassIndex < 0 {
+		t.Fatalf("resume args should use dangerous bypass for full-access sessions, got: %#v", args)
+	}
+	if bypassIndex < resumeIndex {
+		t.Fatalf("dangerous bypass flag should be passed as a resume option, got: %#v", args)
+	}
+	if slices.Contains(args, "--sandbox") {
+		t.Fatalf("resume args should not pass sandbox flag alongside dangerous bypass, got: %#v", args)
+	}
+	if slices.Contains(args, "-a") {
+		t.Fatalf("resume args should not pass approval flag alongside dangerous bypass, got: %#v", args)
+	}
+}
+
 func TestBuildExecArgs_NewThreadUsesWorkspaceSandbox(t *testing.T) {
 	args := buildExecArgs("", "hello", "", "", "", "", ExecPolicyConfig{
 		Sandbox:        "workspace-write",
@@ -176,6 +200,22 @@ func TestBuildExecArgs_NewThreadUsesWorkspaceSandbox(t *testing.T) {
 	}
 	if !slices.Contains(args, "--") {
 		t.Fatalf("new thread args should include option terminator, got: %#v", args)
+	}
+}
+
+func TestBuildExecArgs_NewThreadKeepsFullAccessFlags(t *testing.T) {
+	args := buildExecArgs("", "hello", "", "", "", "", ExecPolicyConfig{
+		Sandbox:        "danger-full-access",
+		AskForApproval: "never",
+	})
+	if !slices.Contains(args, "--sandbox") || !slices.Contains(args, "danger-full-access") {
+		t.Fatalf("new thread args should keep full-access sandbox flag, got: %#v", args)
+	}
+	if !slices.Contains(args, "-a") || !slices.Contains(args, "never") {
+		t.Fatalf("new thread args should keep approval flag, got: %#v", args)
+	}
+	if slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Fatalf("new thread args should not use dangerous bypass, got: %#v", args)
 	}
 }
 

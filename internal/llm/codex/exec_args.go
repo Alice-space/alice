@@ -23,13 +23,14 @@ func buildExecArgs(
 	policy.Sandbox = strings.TrimSpace(policy.Sandbox)
 	policy.AskForApproval = strings.TrimSpace(policy.AskForApproval)
 	policy.AddDirs = uniqueAddDirs(policy.AddDirs)
+	resumeUsesDangerousBypass := shouldUseResumeDangerousBypass(threadID, policy)
 
 	buildRootFlags := func() []string {
 		args := make([]string, 0, 10+len(policy.AddDirs)*2)
-		if policy.AskForApproval != "" {
+		if !resumeUsesDangerousBypass && policy.AskForApproval != "" {
 			args = append(args, "-a", policy.AskForApproval)
 		}
-		if policy.Sandbox != "" {
+		if !resumeUsesDangerousBypass && policy.Sandbox != "" {
 			args = append(args, "--sandbox", policy.Sandbox)
 		}
 		for _, dir := range policy.AddDirs {
@@ -51,10 +52,16 @@ func buildExecArgs(
 	}
 
 	buildExecFlags := func() []string {
-		return []string{
+		args := []string{
 			"--json",
 			"--skip-git-repo-check",
 		}
+		if resumeUsesDangerousBypass {
+			// `codex exec resume` does not reliably honor `--sandbox danger-full-access`
+			// overrides for an existing read-only session, but it does honor bypass.
+			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
+		}
+		return args
 	}
 
 	args := buildRootFlags()
@@ -73,6 +80,12 @@ func buildExecArgs(
 	args = append(args, buildExecFlags()...)
 	args = append(args, "--", prompt)
 	return args
+}
+
+func shouldUseResumeDangerousBypass(threadID string, policy ExecPolicyConfig) bool {
+	return strings.TrimSpace(threadID) != "" &&
+		policy.Sandbox == defaultWorkSandbox &&
+		policy.AskForApproval == defaultApprovalMode
 }
 
 func mergeEnv(base []string, overrides map[string]string) []string {
