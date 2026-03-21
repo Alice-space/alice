@@ -203,19 +203,27 @@ func TestBuildExecArgs_NewThreadUsesWorkspaceSandbox(t *testing.T) {
 	}
 }
 
-func TestBuildExecArgs_NewThreadKeepsFullAccessFlags(t *testing.T) {
+func TestBuildExecArgs_NewThreadUsesDangerousBypassForFullAccess(t *testing.T) {
 	args := buildExecArgs("", "hello", "", "", "", "", ExecPolicyConfig{
 		Sandbox:        "danger-full-access",
 		AskForApproval: "never",
 	})
-	if !slices.Contains(args, "--sandbox") || !slices.Contains(args, "danger-full-access") {
-		t.Fatalf("new thread args should keep full-access sandbox flag, got: %#v", args)
+	execIndex := slices.Index(args, "exec")
+	bypassIndex := slices.Index(args, "--dangerously-bypass-approvals-and-sandbox")
+	if execIndex < 0 {
+		t.Fatalf("expected exec in args, got: %#v", args)
 	}
-	if !slices.Contains(args, "-a") || !slices.Contains(args, "never") {
-		t.Fatalf("new thread args should keep approval flag, got: %#v", args)
+	if bypassIndex < 0 {
+		t.Fatalf("new thread args should use dangerous bypass for full-access sessions, got: %#v", args)
 	}
-	if slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
-		t.Fatalf("new thread args should not use dangerous bypass, got: %#v", args)
+	if bypassIndex < execIndex {
+		t.Fatalf("dangerous bypass flag should be passed as an exec option, got: %#v", args)
+	}
+	if slices.Contains(args, "--sandbox") {
+		t.Fatalf("new thread args should not pass sandbox flag alongside dangerous bypass, got: %#v", args)
+	}
+	if slices.Contains(args, "-a") {
+		t.Fatalf("new thread args should not pass approval flag alongside dangerous bypass, got: %#v", args)
 	}
 }
 
@@ -347,6 +355,61 @@ EOF
 	}
 	if !slices.Contains(args, "-c") || !slices.Contains(args, `model_reasoning_effort="medium"`) {
 		t.Fatalf("expected default reasoning effort in args, got: %#v", args)
+	}
+}
+
+func TestRunnerRunWithThreadAndProgress_NewWorkSceneUsesDangerousBypass(t *testing.T) {
+	tempDir := t.TempDir()
+	fakeCodexPath := filepath.Join(tempDir, "fake-codex.sh")
+	argsFile := filepath.Join(tempDir, "args.txt")
+	script := `#!/bin/sh
+printf '%s\n' "$@" > "` + argsFile + `"
+cat <<'EOF'
+{"type":"item.completed","item":{"type":"agent_message","text":"ok"}}
+EOF
+`
+	if err := os.WriteFile(fakeCodexPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex script failed: %v", err)
+	}
+
+	runner := Runner{
+		Command: fakeCodexPath,
+		Timeout: 3 * time.Second,
+	}
+	reply, _, err := runner.RunWithThreadAndProgress(
+		context.Background(),
+		"",
+		"assistant",
+		"hello",
+		sceneWork,
+		"",
+		"",
+		"",
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("run failed: %v", err)
+	}
+	if reply != "ok" {
+		t.Fatalf("unexpected reply: %q", reply)
+	}
+
+	rawArgs, err := os.ReadFile(argsFile)
+	if err != nil {
+		t.Fatalf("read args failed: %v", err)
+	}
+	args := strings.Split(strings.TrimSpace(string(rawArgs)), "\n")
+	if !slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
+		t.Fatalf("expected dangerous bypass in work-scene args, got: %#v", args)
+	}
+	if slices.Contains(args, "--sandbox") {
+		t.Fatalf("work-scene new thread should not pass sandbox when bypassing, got: %#v", args)
+	}
+	if slices.Contains(args, "-a") {
+		t.Fatalf("work-scene new thread should not pass approval when bypassing, got: %#v", args)
 	}
 }
 
