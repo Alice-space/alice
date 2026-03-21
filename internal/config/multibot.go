@@ -58,7 +58,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 		cfg.KimiCommand = "kimi"
 	}
 	if cfg.RuntimeHTTPAddr == "" {
-		cfg.RuntimeHTTPAddr = "127.0.0.1:7331"
+		cfg.RuntimeHTTPAddr = DefaultRuntimeHTTPAddr
 	}
 	if cfg.AliceHome == "" {
 		cfg.AliceHome = AliceHomeDir()
@@ -171,6 +171,9 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 
 	if len(cfg.Bots) == 0 {
+		if strings.TrimSpace(cfg.BotID) == "" {
+			return Config{}, errors.New("bots is required")
+		}
 		if err := validateSceneConfig(cfg); err != nil {
 			return Config{}, err
 		}
@@ -380,29 +383,19 @@ func validateCodexExecPolicy(policy CodexExecPolicyConfig, field string) error {
 
 func (cfg Config) RuntimeConfigs() ([]Config, error) {
 	if len(cfg.Bots) == 0 {
-		single := cfg
-		single.Bots = nil
-		single.PrimaryBotID = ""
-		if strings.TrimSpace(single.BotID) == "" {
-			single.BotID = "default"
+		if strings.TrimSpace(cfg.BotID) == "" {
+			return nil, errors.New("bots is required")
 		}
-		if strings.TrimSpace(single.BotName) == "" {
-			single.BotName = "Alice"
-		}
-		if err := validateSceneConfig(single); err != nil {
+		if err := validateSceneConfig(cfg); err != nil {
 			return nil, err
 		}
-		return []Config{single}, nil
+		return []Config{cfg}, nil
 	}
 
-	primaryBotID, err := cfg.resolvePrimaryBotID()
-	if err != nil {
-		return nil, err
-	}
-	ordered := orderBotIDs(cfg.Bots, primaryBotID)
+	ordered := orderBotIDs(cfg.Bots)
 	runtimes := make([]Config, 0, len(ordered))
 	for idx, botID := range ordered {
-		runtime, err := cfg.deriveBotRuntimeConfig(botID, cfg.Bots[botID], idx, primaryBotID)
+		runtime, err := cfg.deriveBotRuntimeConfig(botID, cfg.Bots[botID], idx)
 		if err != nil {
 			return nil, err
 		}
@@ -411,186 +404,99 @@ func (cfg Config) RuntimeConfigs() ([]Config, error) {
 	return runtimes, nil
 }
 
-func (cfg Config) resolvePrimaryBotID() (string, error) {
+func (cfg Config) RuntimeConfigForBot(botID string) (Config, error) {
+	botID = strings.ToLower(strings.TrimSpace(botID))
+	if botID == "" {
+		return Config{}, errors.New("bot id is empty")
+	}
 	if len(cfg.Bots) == 0 {
-		return "", nil
+		if strings.EqualFold(strings.TrimSpace(cfg.BotID), botID) {
+			return cfg, nil
+		}
+		return Config{}, fmt.Errorf("bot %q is undefined", botID)
 	}
-	if id := strings.ToLower(strings.TrimSpace(cfg.PrimaryBotID)); id != "" {
-		if _, ok := cfg.Bots[id]; !ok {
-			return "", fmt.Errorf("primary_bot %q is undefined", id)
-		}
-		return id, nil
+	bot, ok := cfg.Bots[botID]
+	if !ok {
+		return Config{}, fmt.Errorf("bot %q is undefined", botID)
 	}
-	if len(cfg.Bots) == 1 {
-		for id := range cfg.Bots {
-			return id, nil
+	ordered := orderBotIDs(cfg.Bots)
+	for idx, orderedID := range ordered {
+		if orderedID != botID {
+			continue
 		}
+		return cfg.deriveBotRuntimeConfig(botID, bot, idx)
 	}
-
-	rootAppID := strings.TrimSpace(cfg.FeishuAppID)
-	rootBotOpenID := strings.TrimSpace(cfg.FeishuBotOpenID)
-	rootBotUserID := strings.TrimSpace(cfg.FeishuBotUserID)
-	for id, bot := range cfg.Bots {
-		appID := bot.FeishuAppID
-		if appID == "" {
-			appID = rootAppID
-		}
-		openID := bot.FeishuBotOpenID
-		if openID == "" {
-			openID = rootBotOpenID
-		}
-		userID := bot.FeishuBotUserID
-		if userID == "" {
-			userID = rootBotUserID
-		}
-		if rootAppID != "" && appID == rootAppID {
-			if rootBotOpenID != "" && openID == rootBotOpenID {
-				return id, nil
-			}
-			if rootBotUserID != "" && userID == rootBotUserID {
-				return id, nil
-			}
-		}
-	}
-
-	ids := make([]string, 0, len(cfg.Bots))
-	for id := range cfg.Bots {
-		ids = append(ids, id)
-	}
-	sort.Strings(ids)
-	return ids[0], nil
+	return Config{}, fmt.Errorf("bot %q is undefined", botID)
 }
 
-func orderBotIDs(bots map[string]BotConfig, primaryBotID string) []string {
+func orderBotIDs(bots map[string]BotConfig) []string {
 	ids := make([]string, 0, len(bots))
 	for id := range bots {
 		ids = append(ids, id)
 	}
 	sort.Strings(ids)
-	if primaryBotID == "" {
-		return ids
-	}
-	ordered := make([]string, 0, len(ids))
-	ordered = append(ordered, primaryBotID)
-	for _, id := range ids {
-		if id == primaryBotID {
-			continue
-		}
-		ordered = append(ordered, id)
-	}
-	return ordered
+	return ids
 }
 
-func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int, primaryBotID string) (Config, error) {
-	runtime := cfg
-	runtime.Bots = nil
-	runtime.PrimaryBotID = ""
-	runtime.BotID = strings.TrimSpace(botID)
-
+func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int) (Config, error) {
+	runtime := Config{
+		BotID:           strings.TrimSpace(botID),
+		LogLevel:        cfg.LogLevel,
+		LogFile:         cfg.LogFile,
+		LogMaxSizeMB:    cfg.LogMaxSizeMB,
+		LogMaxBackups:   cfg.LogMaxBackups,
+		LogMaxAgeDays:   cfg.LogMaxAgeDays,
+		LogCompress:     cfg.LogCompress,
+		CodexEnv:        map[string]string{},
+		LLMProfiles:     map[string]LLMProfileConfig{},
+		Permissions:     normalizeBotPermissions(BotPermissionsConfig{}),
+		RuntimeHTTPAddr: "",
+	}
 	if bot.Name != "" {
 		runtime.BotName = bot.Name
-	}
-	if runtime.BotName == "" {
+	} else {
 		runtime.BotName = runtime.BotID
 	}
 
-	if bot.FeishuAppID != "" {
-		runtime.FeishuAppID = bot.FeishuAppID
-	}
-	if bot.FeishuAppSecret != "" {
-		runtime.FeishuAppSecret = bot.FeishuAppSecret
-	}
-	if bot.FeishuBaseURL != "" {
-		runtime.FeishuBaseURL = bot.FeishuBaseURL
-	}
-	if bot.FeishuBotOpenID != "" {
-		runtime.FeishuBotOpenID = bot.FeishuBotOpenID
-	}
-	if bot.FeishuBotUserID != "" {
-		runtime.FeishuBotUserID = bot.FeishuBotUserID
-	}
-	if bot.TriggerMode != "" {
-		runtime.TriggerMode = bot.TriggerMode
-	}
-	if bot.TriggerPrefix != "" {
-		runtime.TriggerPrefix = bot.TriggerPrefix
-	}
-	if bot.ImmediateFeedbackMode != "" {
-		runtime.ImmediateFeedbackMode = bot.ImmediateFeedbackMode
-	}
-	if bot.ImmediateFeedbackReaction != "" {
-		runtime.ImmediateFeedbackReaction = bot.ImmediateFeedbackReaction
-	}
-	if bot.LLMProvider != "" {
-		runtime.LLMProvider = bot.LLMProvider
-	}
-	runtime.LLMProfiles = mergeLLMProfiles(runtime.LLMProfiles, bot.LLMProfiles)
+	runtime.FeishuAppID = bot.FeishuAppID
+	runtime.FeishuAppSecret = bot.FeishuAppSecret
+	runtime.FeishuBaseURL = bot.FeishuBaseURL
+	runtime.FeishuBotOpenID = bot.FeishuBotOpenID
+	runtime.FeishuBotUserID = bot.FeishuBotUserID
+	runtime.TriggerMode = bot.TriggerMode
+	runtime.TriggerPrefix = bot.TriggerPrefix
+	runtime.ImmediateFeedbackMode = bot.ImmediateFeedbackMode
+	runtime.ImmediateFeedbackReaction = bot.ImmediateFeedbackReaction
+	runtime.LLMProvider = bot.LLMProvider
+	runtime.LLMProfiles = mergeLLMProfiles(nil, bot.LLMProfiles)
 	if bot.GroupScenes != nil {
 		runtime.GroupScenes = *bot.GroupScenes
 	}
-	if bot.CodexCommand != "" {
-		runtime.CodexCommand = bot.CodexCommand
-	}
-	if bot.CodexTimeoutSecs > 0 {
-		runtime.CodexTimeoutSecs = bot.CodexTimeoutSecs
-	}
-	if bot.CodexModel != "" {
-		runtime.CodexModel = bot.CodexModel
-	}
-	if bot.CodexReasoningEffort != "" {
-		runtime.CodexReasoningEffort = bot.CodexReasoningEffort
-	}
-	if bot.CodexPromptPrefix != "" {
-		runtime.CodexPromptPrefix = bot.CodexPromptPrefix
-	}
-	if bot.ClaudeCommand != "" {
-		runtime.ClaudeCommand = bot.ClaudeCommand
-	}
-	if bot.ClaudeTimeoutSecs > 0 {
-		runtime.ClaudeTimeoutSecs = bot.ClaudeTimeoutSecs
-	}
-	if bot.ClaudePromptPrefix != "" {
-		runtime.ClaudePromptPrefix = bot.ClaudePromptPrefix
-	}
-	if bot.KimiCommand != "" {
-		runtime.KimiCommand = bot.KimiCommand
-	}
-	if bot.KimiTimeoutSecs > 0 {
-		runtime.KimiTimeoutSecs = bot.KimiTimeoutSecs
-	}
-	if bot.KimiPromptPrefix != "" {
-		runtime.KimiPromptPrefix = bot.KimiPromptPrefix
-	}
-	if bot.FailureMessage != "" {
-		runtime.FailureMessage = bot.FailureMessage
-	}
-	if bot.ThinkingMessage != "" {
-		runtime.ThinkingMessage = bot.ThinkingMessage
-	}
-	if bot.QueueCapacity > 0 {
-		runtime.QueueCapacity = bot.QueueCapacity
-	}
-	if bot.WorkerConcurrency > 0 {
-		runtime.WorkerConcurrency = bot.WorkerConcurrency
-	}
-	if bot.AutomationTaskTimeoutSecs > 0 {
-		runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs
-	}
-	runtime.CodexEnv = mergeStringMap(runtime.CodexEnv, bot.CodexEnv)
-	runtime.Permissions = mergeBotPermissions(runtime.Permissions, bot.Permissions)
-
-	isPrimary := runtime.BotID == primaryBotID
-	runtime.AliceHome = deriveBotAliceHome(cfg, bot, runtime.BotID, isPrimary)
-	runtime.WorkspaceDir = deriveBotWorkspaceDir(cfg, bot, runtime.AliceHome, isPrimary)
-	runtime.PromptDir = deriveBotPromptDir(cfg, bot, runtime.AliceHome, isPrimary)
-	runtime.CodexHome = deriveBotCodexHome(cfg, bot, runtime.AliceHome, isPrimary)
-	runtime.SoulPath = deriveBotSoulPath(cfg, bot, runtime.WorkspaceDir, isPrimary)
-	runtime.RuntimeHTTPAddr = deriveBotRuntimeHTTPAddr(cfg, bot, index, isPrimary)
-	if bot.RuntimeHTTPToken != "" {
-		runtime.RuntimeHTTPToken = bot.RuntimeHTTPToken
-	} else if !isPrimary {
-		runtime.RuntimeHTTPToken = ""
-	}
+	runtime.CodexCommand = bot.CodexCommand
+	runtime.CodexTimeoutSecs = bot.CodexTimeoutSecs
+	runtime.CodexModel = bot.CodexModel
+	runtime.CodexReasoningEffort = bot.CodexReasoningEffort
+	runtime.CodexPromptPrefix = bot.CodexPromptPrefix
+	runtime.ClaudeCommand = bot.ClaudeCommand
+	runtime.ClaudeTimeoutSecs = bot.ClaudeTimeoutSecs
+	runtime.ClaudePromptPrefix = bot.ClaudePromptPrefix
+	runtime.KimiCommand = bot.KimiCommand
+	runtime.KimiTimeoutSecs = bot.KimiTimeoutSecs
+	runtime.KimiPromptPrefix = bot.KimiPromptPrefix
+	runtime.RuntimeHTTPAddr = deriveBotRuntimeHTTPAddr(bot, index)
+	runtime.RuntimeHTTPToken = bot.RuntimeHTTPToken
+	runtime.FailureMessage = bot.FailureMessage
+	runtime.ThinkingMessage = bot.ThinkingMessage
+	runtime.AliceHome = deriveBotAliceHome(bot, runtime.BotID)
+	runtime.WorkspaceDir = deriveBotWorkspaceDir(bot, runtime.AliceHome)
+	runtime.PromptDir = deriveBotPromptDir(bot, runtime.AliceHome)
+	runtime.CodexHome = deriveBotCodexHome(bot, runtime.AliceHome)
+	runtime.SoulPath = deriveBotSoulPath(bot, runtime.WorkspaceDir)
+	runtime.CodexEnv = mergeStringMap(nil, bot.CodexEnv)
+	runtime.QueueCapacity = bot.QueueCapacity
+	runtime.WorkerConcurrency = bot.WorkerConcurrency
+	runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs
+	runtime.Permissions = mergeBotPermissions(BotPermissionsConfig{}, bot.Permissions)
 
 	runtime, err := finalizeConfig(runtime, true)
 	if err != nil {
@@ -602,66 +508,48 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int,
 	return runtime, nil
 }
 
-func deriveBotAliceHome(root Config, bot BotConfig, botID string, isPrimary bool) string {
+func deriveBotAliceHome(bot BotConfig, botID string) string {
 	if bot.AliceHome != "" {
 		return bot.AliceHome
 	}
-	if isPrimary {
-		return root.AliceHome
-	}
-	return filepath.Join(root.AliceHome, "bots", botID)
+	return filepath.Join(AliceHomeDir(), "bots", botID)
 }
 
-func deriveBotWorkspaceDir(root Config, bot BotConfig, aliceHome string, isPrimary bool) string {
+func deriveBotWorkspaceDir(bot BotConfig, aliceHome string) string {
 	if bot.WorkspaceDir != "" {
 		return bot.WorkspaceDir
-	}
-	if isPrimary {
-		return root.WorkspaceDir
 	}
 	return WorkspaceDirForAliceHome(aliceHome)
 }
 
-func deriveBotPromptDir(root Config, bot BotConfig, aliceHome string, isPrimary bool) string {
+func deriveBotPromptDir(bot BotConfig, aliceHome string) string {
 	if bot.PromptDir != "" {
 		return bot.PromptDir
-	}
-	if isPrimary {
-		return root.PromptDir
 	}
 	return PromptDirForAliceHome(aliceHome)
 }
 
-func deriveBotCodexHome(root Config, bot BotConfig, aliceHome string, isPrimary bool) string {
+func deriveBotCodexHome(bot BotConfig, aliceHome string) string {
 	if bot.CodexHome != "" {
 		return bot.CodexHome
-	}
-	if isPrimary && root.CodexHome != "" {
-		return root.CodexHome
 	}
 	return CodexHomeForAliceHome(aliceHome)
 }
 
-func deriveBotSoulPath(root Config, bot BotConfig, workspaceDir string, isPrimary bool) string {
+func deriveBotSoulPath(bot BotConfig, workspaceDir string) string {
 	if bot.SoulPath != "" {
 		return bot.SoulPath
-	}
-	if isPrimary && root.SoulPath != "" {
-		return root.SoulPath
 	}
 	return filepath.Join(workspaceDir, "SOUL.md")
 }
 
-func deriveBotRuntimeHTTPAddr(root Config, bot BotConfig, index int, isPrimary bool) string {
+func deriveBotRuntimeHTTPAddr(bot BotConfig, index int) string {
 	if bot.RuntimeHTTPAddr != "" {
 		return bot.RuntimeHTTPAddr
 	}
-	if isPrimary {
-		return root.RuntimeHTTPAddr
-	}
-	addr, err := incrementHostPort(root.RuntimeHTTPAddr, index)
+	addr, err := incrementHostPort(DefaultRuntimeHTTPAddr, index)
 	if err != nil {
-		return root.RuntimeHTTPAddr
+		return DefaultRuntimeHTTPAddr
 	}
 	return addr
 }

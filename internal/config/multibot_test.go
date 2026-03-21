@@ -6,64 +6,103 @@ import (
 	"testing"
 )
 
-func TestFinalizeConfig_MultiBotPrimaryPreservesLegacyPaths(t *testing.T) {
+func TestRuntimeConfigs_MultiBotUsesIsolatedDefaults(t *testing.T) {
 	base := t.TempDir()
-	rootAliceHome := filepath.Join(base, "alice-home")
-	rootWorkspace := filepath.Join(base, "workspace")
-	rootPromptDir := filepath.Join(base, "prompts")
-	rootCodexHome := filepath.Join(base, "codex-home")
-	cfg := Config{
-		FeishuAppID:     "cli_primary",
-		FeishuAppSecret: "secret_primary",
-		AliceHome:       rootAliceHome,
-		WorkspaceDir:    rootWorkspace,
-		PromptDir:       rootPromptDir,
-		CodexHome:       rootCodexHome,
-		PrimaryBotID:    "primary",
-		RuntimeHTTPAddr: "127.0.0.1:7331",
-		Bots: normalizeBots(map[string]BotConfig{
-			"primary": {
-				Name:            "Alice Primary",
-				FeishuAppID:     "cli_primary",
-				FeishuAppSecret: "secret_primary",
-			},
-			"helper": {
-				Name:            "Alice Helper",
-				FeishuAppID:     "cli_helper",
-				FeishuAppSecret: "secret_helper",
-			},
-		}),
-	}
-
-	primaryBotID, err := cfg.resolvePrimaryBotID()
+	t.Setenv(EnvAliceHome, base)
+	cfgPath := writeConfigFile(t, `
+bots:
+  work:
+    name: "Alice Work"
+    feishu_app_id: "cli_work"
+    feishu_app_secret: "secret_work"
+  chat:
+    name: "Alice Chat"
+    feishu_app_id: "cli_chat"
+    feishu_app_secret: "secret_chat"
+`)
+	cfg, err := LoadFromFile(cfgPath)
 	if err != nil {
-		t.Fatalf("resolve primary bot failed: %v", err)
-	}
-	if primaryBotID != "primary" {
-		t.Fatalf("unexpected primary bot id: %q", primaryBotID)
+		t.Fatalf("load config failed: %v", err)
 	}
 
-	primaryBot := cfg.Bots["primary"]
-	if got := deriveBotAliceHome(cfg, primaryBot, "primary", true); got != rootAliceHome {
-		t.Fatalf("primary bot should preserve alice_home: got=%q want=%q", got, rootAliceHome)
+	runtimes, err := cfg.RuntimeConfigs()
+	if err != nil {
+		t.Fatalf("build runtime configs failed: %v", err)
 	}
-	if got := deriveBotWorkspaceDir(cfg, primaryBot, rootAliceHome, true); got != rootWorkspace {
-		t.Fatalf("primary bot should preserve workspace_dir: got=%q want=%q", got, rootWorkspace)
-	}
-	if got := deriveBotCodexHome(cfg, primaryBot, rootAliceHome, true); got != rootCodexHome {
-		t.Fatalf("primary bot should preserve codex_home: got=%q want=%q", got, rootCodexHome)
+	if len(runtimes) != 2 {
+		t.Fatalf("unexpected runtime count: %d", len(runtimes))
 	}
 
-	helperBot := cfg.Bots["helper"]
-	helperAliceHome := deriveBotAliceHome(cfg, helperBot, "helper", false)
-	if helperAliceHome != filepath.Join(rootAliceHome, "bots", "helper") {
-		t.Fatalf("unexpected helper alice_home: %q", helperAliceHome)
+	chat, err := cfg.RuntimeConfigForBot("chat")
+	if err != nil {
+		t.Fatalf("resolve chat runtime failed: %v", err)
 	}
-	if got := deriveBotWorkspaceDir(cfg, helperBot, helperAliceHome, false); got != WorkspaceDirForAliceHome(helperAliceHome) {
-		t.Fatalf("unexpected helper workspace_dir: %q", got)
+	if chat.AliceHome != filepath.Join(base, "bots", "chat") {
+		t.Fatalf("unexpected chat alice_home: %q", chat.AliceHome)
 	}
-	if got := deriveBotRuntimeHTTPAddr(cfg, helperBot, 1, false); got != "127.0.0.1:7332" {
-		t.Fatalf("unexpected helper runtime_http_addr: %q", got)
+	if chat.WorkspaceDir != WorkspaceDirForAliceHome(chat.AliceHome) {
+		t.Fatalf("unexpected chat workspace_dir: %q", chat.WorkspaceDir)
+	}
+	if chat.CodexHome != CodexHomeForAliceHome(chat.AliceHome) {
+		t.Fatalf("unexpected chat codex_home: %q", chat.CodexHome)
+	}
+	if chat.RuntimeHTTPAddr != "127.0.0.1:7331" {
+		t.Fatalf("unexpected chat runtime_http_addr: %q", chat.RuntimeHTTPAddr)
+	}
+
+	work, err := cfg.RuntimeConfigForBot("work")
+	if err != nil {
+		t.Fatalf("resolve work runtime failed: %v", err)
+	}
+	if work.AliceHome != filepath.Join(base, "bots", "work") {
+		t.Fatalf("unexpected work alice_home: %q", work.AliceHome)
+	}
+	if work.RuntimeHTTPAddr != "127.0.0.1:7332" {
+		t.Fatalf("unexpected work runtime_http_addr: %q", work.RuntimeHTTPAddr)
+	}
+}
+
+func TestRuntimeConfigForBot_UsesExplicitBotPaths(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv(EnvAliceHome, base)
+	cfgPath := writeConfigFile(t, `
+bots:
+  chat:
+    feishu_app_id: "cli_chat"
+    feishu_app_secret: "secret_chat"
+    alice_home: "`+filepath.Join(base, "custom-home")+`"
+    workspace_dir: "`+filepath.Join(base, "custom-workspace")+`"
+    prompt_dir: "`+filepath.Join(base, "custom-prompts")+`"
+    codex_home: "`+filepath.Join(base, "custom-codex")+`"
+    soul_path: "souls/chat.md"
+    runtime_http_addr: "127.0.0.1:7441"
+`)
+	cfg, err := LoadFromFile(cfgPath)
+	if err != nil {
+		t.Fatalf("load config failed: %v", err)
+	}
+
+	runtime, err := cfg.RuntimeConfigForBot("chat")
+	if err != nil {
+		t.Fatalf("resolve runtime failed: %v", err)
+	}
+	if runtime.AliceHome != filepath.Join(base, "custom-home") {
+		t.Fatalf("unexpected alice_home: %q", runtime.AliceHome)
+	}
+	if runtime.WorkspaceDir != filepath.Join(base, "custom-workspace") {
+		t.Fatalf("unexpected workspace_dir: %q", runtime.WorkspaceDir)
+	}
+	if runtime.PromptDir != filepath.Join(base, "custom-prompts") {
+		t.Fatalf("unexpected prompt_dir: %q", runtime.PromptDir)
+	}
+	if runtime.CodexHome != filepath.Join(base, "custom-codex") {
+		t.Fatalf("unexpected codex_home: %q", runtime.CodexHome)
+	}
+	if runtime.SoulPath != filepath.Join(runtime.WorkspaceDir, "souls/chat.md") {
+		t.Fatalf("unexpected soul_path: %q", runtime.SoulPath)
+	}
+	if runtime.RuntimeHTTPAddr != "127.0.0.1:7441" {
+		t.Fatalf("unexpected runtime_http_addr: %q", runtime.RuntimeHTTPAddr)
 	}
 }
 

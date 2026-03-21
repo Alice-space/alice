@@ -23,7 +23,7 @@ func TestEnsureConfigFileExists_WritesEmbeddedTemplate(t *testing.T) {
 		t.Fatalf("read created config failed: %v", err)
 	}
 	content := string(raw)
-	if !strings.Contains(content, "feishu_app_id:") {
+	if !strings.Contains(content, "bots:") {
 		t.Fatalf("created config missing expected template keys, got: %q", content)
 	}
 
@@ -38,7 +38,7 @@ func TestEnsureConfigFileExists_WritesEmbeddedTemplate(t *testing.T) {
 
 func TestConfigHasRequiredCredentials(t *testing.T) {
 	configPath := filepath.Join(t.TempDir(), "config.yaml")
-	if err := os.WriteFile(configPath, []byte("feishu_app_id: \"\"\nfeishu_app_secret: \"\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("bots:\n  main:\n    feishu_app_id: \"\"\n    feishu_app_secret: \"\"\n"), 0o600); err != nil {
 		t.Fatalf("write config failed: %v", err)
 	}
 
@@ -50,7 +50,7 @@ func TestConfigHasRequiredCredentials(t *testing.T) {
 		t.Fatal("expected empty credentials to be not ready")
 	}
 
-	if err := os.WriteFile(configPath, []byte("feishu_app_id: \"cli_x\"\nfeishu_app_secret: \"sec\"\n"), 0o600); err != nil {
+	if err := os.WriteFile(configPath, []byte("bots:\n  main:\n    feishu_app_id: \"cli_x\"\n    feishu_app_secret: \"sec\"\n"), 0o600); err != nil {
 		t.Fatalf("write config failed: %v", err)
 	}
 	ready, err = configHasRequiredCredentials(configPath)

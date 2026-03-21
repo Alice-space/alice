@@ -8,96 +8,108 @@ import (
 	"time"
 )
 
-func TestLoadFromFile_WithDefaults(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := "feishu_app_id: cli_xxx\nfeishu_app_secret: sss\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+func TestLoadFromFile_BotsAreRequired(t *testing.T) {
+	path := writeConfigFile(t, "log_level: info\n")
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
+	if !strings.Contains(err.Error(), "bots is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_LegacyRootBotKeysRejected(t *testing.T) {
+	path := writeConfigFile(t, "feishu_app_id: cli_old\nfeishu_app_secret: secret_old\n")
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "root bot keys are no longer supported") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_WithDefaults(t *testing.T) {
+	base := t.TempDir()
+	t.Setenv(EnvAliceHome, base)
+
+	cfg, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+`)
 
 	if cfg.FeishuBaseURL != "https://open.feishu.cn" {
 		t.Fatalf("unexpected feishu_base_url: %s", cfg.FeishuBaseURL)
 	}
-	if cfg.TriggerMode != TriggerModeAt {
-		t.Fatalf("unexpected trigger_mode: %s", cfg.TriggerMode)
+	if runtime.FeishuBaseURL != "https://open.feishu.cn" {
+		t.Fatalf("unexpected runtime feishu_base_url: %s", runtime.FeishuBaseURL)
 	}
-	if cfg.TriggerPrefix != "" {
-		t.Fatalf("unexpected trigger_prefix: %q", cfg.TriggerPrefix)
+	if runtime.TriggerMode != TriggerModeAt {
+		t.Fatalf("unexpected trigger_mode: %s", runtime.TriggerMode)
 	}
-	if cfg.ImmediateFeedbackMode != ImmediateFeedbackModeReply {
-		t.Fatalf("unexpected immediate_feedback_mode: %q", cfg.ImmediateFeedbackMode)
+	if runtime.TriggerPrefix != "" {
+		t.Fatalf("unexpected trigger_prefix: %q", runtime.TriggerPrefix)
 	}
-	if cfg.ImmediateFeedbackReaction != DefaultImmediateFeedbackReaction {
-		t.Fatalf("unexpected immediate_feedback_reaction: %q", cfg.ImmediateFeedbackReaction)
+	if runtime.ImmediateFeedbackMode != ImmediateFeedbackModeReply {
+		t.Fatalf("unexpected immediate_feedback_mode: %q", runtime.ImmediateFeedbackMode)
 	}
-	if cfg.LLMProvider != DefaultLLMProvider {
-		t.Fatalf("unexpected llm_provider: %s", cfg.LLMProvider)
+	if runtime.ImmediateFeedbackReaction != DefaultImmediateFeedbackReaction {
+		t.Fatalf("unexpected immediate_feedback_reaction: %q", runtime.ImmediateFeedbackReaction)
 	}
-	if cfg.CodexCommand != "codex" {
-		t.Fatalf("unexpected codex_command: %s", cfg.CodexCommand)
+	if runtime.LLMProvider != DefaultLLMProvider {
+		t.Fatalf("unexpected llm_provider: %s", runtime.LLMProvider)
 	}
-	if cfg.CodexTimeout != 172800*time.Second {
-		t.Fatalf("unexpected codex_timeout: %s", cfg.CodexTimeout)
+	if runtime.CodexCommand != "codex" {
+		t.Fatalf("unexpected codex_command: %s", runtime.CodexCommand)
 	}
-	if cfg.CodexModel != "" {
-		t.Fatalf("unexpected codex_model: %q", cfg.CodexModel)
+	if runtime.CodexTimeout != 172800*time.Second {
+		t.Fatalf("unexpected codex_timeout: %s", runtime.CodexTimeout)
 	}
-	if cfg.CodexReasoningEffort != "" {
-		t.Fatalf("unexpected codex_model_reasoning_effort: %q", cfg.CodexReasoningEffort)
+	if runtime.ClaudeCommand != "claude" {
+		t.Fatalf("unexpected claude_command: %s", runtime.ClaudeCommand)
 	}
-	if cfg.ClaudeCommand != "claude" {
-		t.Fatalf("unexpected claude_command: %s", cfg.ClaudeCommand)
+	if runtime.ClaudeTimeout != 172800*time.Second {
+		t.Fatalf("unexpected claude_timeout: %s", runtime.ClaudeTimeout)
 	}
-	if cfg.ClaudeTimeout != 172800*time.Second {
-		t.Fatalf("unexpected claude_timeout: %s", cfg.ClaudeTimeout)
+	if runtime.QueueCapacity != 256 {
+		t.Fatalf("unexpected queue_capacity: %d", runtime.QueueCapacity)
 	}
-	if cfg.ClaudePromptPrefix != "" {
-		t.Fatalf("unexpected claude_prompt_prefix: %q", cfg.ClaudePromptPrefix)
+	if runtime.AutomationTaskTimeoutSecs != 6000 {
+		t.Fatalf("unexpected automation_task_timeout_secs: %d", runtime.AutomationTaskTimeoutSecs)
 	}
-	if cfg.QueueCapacity != 256 {
-		t.Fatalf("unexpected queue_capacity: %d", cfg.QueueCapacity)
+	if runtime.AutomationTaskTimeout != 100*time.Minute {
+		t.Fatalf("unexpected automation_task_timeout: %s", runtime.AutomationTaskTimeout)
 	}
-	if cfg.AutomationTaskTimeoutSecs != 6000 {
-		t.Fatalf("unexpected automation_task_timeout_secs: %d", cfg.AutomationTaskTimeoutSecs)
+	if runtime.ThinkingMessage != "正在思考中..." {
+		t.Fatalf("unexpected thinking_message: %s", runtime.ThinkingMessage)
 	}
-	if cfg.AutomationTaskTimeout != 100*time.Minute {
-		t.Fatalf("unexpected automation_task_timeout: %s", cfg.AutomationTaskTimeout)
+	if len(runtime.LLMProfiles) != 0 {
+		t.Fatalf("unexpected llm_profiles: %#v", runtime.LLMProfiles)
 	}
-	if cfg.ThinkingMessage != "正在思考中..." {
-		t.Fatalf("unexpected thinking_message: %s", cfg.ThinkingMessage)
-	}
-	if len(cfg.LLMProfiles) != 0 {
-		t.Fatalf("unexpected llm_profiles: %#v", cfg.LLMProfiles)
-	}
-	if cfg.GroupScenes.Chat.Enabled {
+	if runtime.GroupScenes.Chat.Enabled {
 		t.Fatal("chat scene should default to disabled")
 	}
-	if cfg.GroupScenes.Work.Enabled {
+	if runtime.GroupScenes.Work.Enabled {
 		t.Fatal("work scene should default to disabled")
 	}
-	if cfg.AliceHome != AliceHomeDir() {
-		t.Fatalf("unexpected alice_home: %s", cfg.AliceHome)
+	wantAliceHome := filepath.Join(base, "bots", "main")
+	if runtime.AliceHome != wantAliceHome {
+		t.Fatalf("unexpected alice_home: %s", runtime.AliceHome)
 	}
-	if cfg.WorkspaceDir != DefaultWorkspaceDir() {
-		t.Fatalf("unexpected workspace_dir: %s", cfg.WorkspaceDir)
+	if runtime.WorkspaceDir != filepath.Join(wantAliceHome, "workspace") {
+		t.Fatalf("unexpected workspace_dir: %s", runtime.WorkspaceDir)
 	}
-	if cfg.PromptDir != DefaultPromptDir() {
-		t.Fatalf("unexpected prompt_dir: %s", cfg.PromptDir)
+	if runtime.PromptDir != filepath.Join(wantAliceHome, "prompts") {
+		t.Fatalf("unexpected prompt_dir: %s", runtime.PromptDir)
 	}
-	if cfg.CodexPromptPrefix != "" {
-		t.Fatalf("unexpected codex_prompt_prefix: %q", cfg.CodexPromptPrefix)
+	if runtime.CodexHome != filepath.Join(wantAliceHome, ".codex") {
+		t.Fatalf("unexpected codex_home: %s", runtime.CodexHome)
 	}
-	if len(cfg.CodexEnv) != 0 {
-		t.Fatalf("unexpected codex_env: %#v", cfg.CodexEnv)
-	}
-	if cfg.LogLevel != "info" {
-		t.Fatalf("unexpected log_level: %q", cfg.LogLevel)
+	if runtime.SoulPath != filepath.Join(runtime.WorkspaceDir, "SOUL.md") {
+		t.Fatalf("unexpected soul_path: %s", runtime.SoulPath)
 	}
 	if got, want := filepath.Dir(cfg.LogFile), LogDirForAliceHome(cfg.AliceHome); got != want {
 		t.Fatalf("unexpected log_file dir: got=%q want=%q", got, want)
@@ -105,65 +117,34 @@ func TestLoadFromFile_WithDefaults(t *testing.T) {
 	if _, err := time.ParseInLocation("2006-01-02.log", filepath.Base(cfg.LogFile), time.Local); err != nil {
 		t.Fatalf("unexpected log_file basename: %q err=%v", filepath.Base(cfg.LogFile), err)
 	}
-	if cfg.LogMaxSizeMB != 20 {
-		t.Fatalf("unexpected log_max_size_mb: %d", cfg.LogMaxSizeMB)
-	}
-	if cfg.LogMaxBackups != 5 {
-		t.Fatalf("unexpected log_max_backups: %d", cfg.LogMaxBackups)
-	}
-	if cfg.LogMaxAgeDays != 7 {
-		t.Fatalf("unexpected log_max_age_days: %d", cfg.LogMaxAgeDays)
-	}
-	if cfg.LogCompress {
-		t.Fatal("log_compress should default to false")
-	}
 }
 
 func TestLoadFromFile_AliceHomeDrivesDefaultDirs(t *testing.T) {
-	dir := t.TempDir()
 	home := t.TempDir()
 	t.Setenv("HOME", home)
-	t.Setenv(EnvAliceHome, "")
 
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 alice_home: "~/.alice-custom"
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
-	}
 	wantAliceHome := filepath.Join(home, ".alice-custom")
-	if cfg.AliceHome != wantAliceHome {
-		t.Fatalf("unexpected alice_home got=%q want=%q", cfg.AliceHome, wantAliceHome)
+	if runtime.AliceHome != wantAliceHome {
+		t.Fatalf("unexpected alice_home got=%q want=%q", runtime.AliceHome, wantAliceHome)
 	}
-	if cfg.WorkspaceDir != filepath.Join(wantAliceHome, "workspace") {
-		t.Fatalf("unexpected workspace_dir: %s", cfg.WorkspaceDir)
+	if runtime.WorkspaceDir != filepath.Join(wantAliceHome, "workspace") {
+		t.Fatalf("unexpected workspace_dir: %s", runtime.WorkspaceDir)
 	}
-	if cfg.PromptDir != filepath.Join(wantAliceHome, "prompts") {
-		t.Fatalf("unexpected prompt_dir: %s", cfg.PromptDir)
-	}
-	if got, want := filepath.Dir(cfg.LogFile), filepath.Join(wantAliceHome, "log"); got != want {
-		t.Fatalf("unexpected log_file dir: got=%q want=%q", got, want)
-	}
-	if _, err := time.ParseInLocation("2006-01-02.log", filepath.Base(cfg.LogFile), time.Local); err != nil {
-		t.Fatalf("unexpected log_file basename: %q err=%v", filepath.Base(cfg.LogFile), err)
+	if runtime.PromptDir != filepath.Join(wantAliceHome, "prompts") {
+		t.Fatalf("unexpected prompt_dir: %s", runtime.PromptDir)
 	}
 }
 
 func TestLoadFromFile_RequiredKeys(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := "feishu_app_id: cli_xxx\n"
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+	path := writeSingleBotConfig(t, `
+feishu_app_id: cli_xxx
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -175,68 +156,45 @@ func TestLoadFromFile_RequiredKeys(t *testing.T) {
 }
 
 func TestLoadFromFile_Env(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 env:
   HTTPS_PROXY: "  http://127.0.0.1:7890  "
   ALL_PROXY: "socks5://127.0.0.1:7891"
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	if runtime.CodexEnv["HTTPS_PROXY"] != "http://127.0.0.1:7890" {
+		t.Fatalf("unexpected HTTPS_PROXY: %q", runtime.CodexEnv["HTTPS_PROXY"])
 	}
-	if cfg.CodexEnv["HTTPS_PROXY"] != "http://127.0.0.1:7890" {
-		t.Fatalf("unexpected HTTPS_PROXY: %q", cfg.CodexEnv["HTTPS_PROXY"])
-	}
-	if cfg.CodexEnv["ALL_PROXY"] != "socks5://127.0.0.1:7891" {
-		t.Fatalf("unexpected ALL_PROXY: %q", cfg.CodexEnv["ALL_PROXY"])
+	if runtime.CodexEnv["ALL_PROXY"] != "socks5://127.0.0.1:7891" {
+		t.Fatalf("unexpected ALL_PROXY: %q", runtime.CodexEnv["ALL_PROXY"])
 	}
 }
 
 func TestLoadFromFile_CodexModelConfigTrimmed(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 codex_model: "  gpt-5.4  "
 codex_model_reasoning_effort: "  HIGH  "
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	if runtime.CodexModel != "gpt-5.4" {
+		t.Fatalf("unexpected codex_model: %q", runtime.CodexModel)
 	}
-	if cfg.CodexModel != "gpt-5.4" {
-		t.Fatalf("unexpected codex_model: %q", cfg.CodexModel)
-	}
-	if cfg.CodexReasoningEffort != "high" {
-		t.Fatalf("unexpected codex_model_reasoning_effort: %q", cfg.CodexReasoningEffort)
+	if runtime.CodexReasoningEffort != "high" {
+		t.Fatalf("unexpected codex_model_reasoning_effort: %q", runtime.CodexReasoningEffort)
 	}
 }
 
 func TestLoadFromFile_EnvInvalidKey(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 env:
   "BAD=KEY": "v"
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -248,26 +206,18 @@ env:
 }
 
 func TestLoadFromFile_LogConfigTrimmed(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	cfg, _ := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
+`, `
 log_level: "  DEBUG  "
 log_file: "  logs/alice.log  "
 log_max_size_mb: 0
 log_max_backups: -1
 log_max_age_days: 0
 log_compress: true
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
-	}
 	if cfg.LogLevel != "debug" {
 		t.Fatalf("unexpected log_level: %q", cfg.LogLevel)
 	}
@@ -289,9 +239,7 @@ log_compress: true
 }
 
 func TestLoadFromFile_GroupScenesConfig(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_profiles:
@@ -312,40 +260,28 @@ group_scenes:
   work:
     enabled: true
     llm_profile: work
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	if !runtime.GroupScenes.Chat.Enabled || runtime.GroupScenes.Chat.LLMProfile != "chat" {
+		t.Fatalf("unexpected chat scene: %#v", runtime.GroupScenes.Chat)
 	}
-	if !cfg.GroupScenes.Chat.Enabled || cfg.GroupScenes.Chat.LLMProfile != "chat" {
-		t.Fatalf("unexpected chat scene: %#v", cfg.GroupScenes.Chat)
+	if !runtime.GroupScenes.Work.Enabled || runtime.GroupScenes.Work.LLMProfile != "work" {
+		t.Fatalf("unexpected work scene: %#v", runtime.GroupScenes.Work)
 	}
-	if !cfg.GroupScenes.Work.Enabled || cfg.GroupScenes.Work.LLMProfile != "work" {
-		t.Fatalf("unexpected work scene: %#v", cfg.GroupScenes.Work)
+	if runtime.LLMProfiles["chat"].Personality != "friendly" {
+		t.Fatalf("unexpected chat personality: %#v", runtime.LLMProfiles["chat"])
 	}
-	if cfg.LLMProfiles["chat"].Personality != "friendly" {
-		t.Fatalf("unexpected chat personality: %#v", cfg.LLMProfiles["chat"])
-	}
-	if cfg.LLMProfiles["work"].ReasoningEffort != "xhigh" {
-		t.Fatalf("unexpected work profile: %#v", cfg.LLMProfiles["work"])
+	if runtime.LLMProfiles["work"].ReasoningEffort != "xhigh" {
+		t.Fatalf("unexpected work profile: %#v", runtime.LLMProfiles["work"])
 	}
 }
 
 func TestLoadFromFile_AutomationTaskTimeoutSecsInvalid(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 automation_task_timeout_secs: 0
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -357,66 +293,43 @@ automation_task_timeout_secs: 0
 }
 
 func TestLoadFromFile_FeishuBotIDsTrimmed(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 feishu_bot_open_id: "  ou_bot  "
 feishu_bot_user_id: "  123456  "
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	if runtime.FeishuBotOpenID != "ou_bot" {
+		t.Fatalf("unexpected feishu_bot_open_id: %q", runtime.FeishuBotOpenID)
 	}
-	if cfg.FeishuBotOpenID != "ou_bot" {
-		t.Fatalf("unexpected feishu_bot_open_id: %q", cfg.FeishuBotOpenID)
-	}
-	if cfg.FeishuBotUserID != "123456" {
-		t.Fatalf("unexpected feishu_bot_user_id: %q", cfg.FeishuBotUserID)
+	if runtime.FeishuBotUserID != "123456" {
+		t.Fatalf("unexpected feishu_bot_user_id: %q", runtime.FeishuBotUserID)
 	}
 }
 
 func TestLoadFromFile_TriggerModeTrimmedLowercase(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 trigger_mode: "  PrEfIx  "
 trigger_prefix: "  !alice  "
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	if runtime.TriggerMode != TriggerModePrefix {
+		t.Fatalf("unexpected trigger_mode: %q", runtime.TriggerMode)
 	}
-	if cfg.TriggerMode != TriggerModePrefix {
-		t.Fatalf("unexpected trigger_mode: %q", cfg.TriggerMode)
-	}
-	if cfg.TriggerPrefix != "!alice" {
-		t.Fatalf("unexpected trigger_prefix: %q", cfg.TriggerPrefix)
+	if runtime.TriggerPrefix != "!alice" {
+		t.Fatalf("unexpected trigger_prefix: %q", runtime.TriggerPrefix)
 	}
 }
 
 func TestLoadFromFile_TriggerModeInvalid(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 trigger_mode: "all"
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -428,41 +341,27 @@ trigger_mode: "all"
 }
 
 func TestLoadFromFile_ImmediateFeedbackModeTrimmedLowercase(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 immediate_feedback_mode: "  ReAcTiOn  "
 immediate_feedback_reaction: "  smile  "
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	if runtime.ImmediateFeedbackMode != ImmediateFeedbackModeReaction {
+		t.Fatalf("unexpected immediate_feedback_mode: %q", runtime.ImmediateFeedbackMode)
 	}
-	if cfg.ImmediateFeedbackMode != ImmediateFeedbackModeReaction {
-		t.Fatalf("unexpected immediate_feedback_mode: %q", cfg.ImmediateFeedbackMode)
-	}
-	if cfg.ImmediateFeedbackReaction != "SMILE" {
-		t.Fatalf("unexpected immediate_feedback_reaction: %q", cfg.ImmediateFeedbackReaction)
+	if runtime.ImmediateFeedbackReaction != "SMILE" {
+		t.Fatalf("unexpected immediate_feedback_reaction: %q", runtime.ImmediateFeedbackReaction)
 	}
 }
 
 func TestLoadFromFile_ImmediateFeedbackModeInvalid(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 immediate_feedback_mode: "wave"
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -474,16 +373,11 @@ immediate_feedback_mode: "wave"
 }
 
 func TestLoadFromFile_TriggerModePrefixRequiresPrefix(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 trigger_mode: "prefix"
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -495,16 +389,11 @@ trigger_mode: "prefix"
 }
 
 func TestLoadFromFile_LLMProviderInvalid(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_provider: openai
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -516,71 +405,48 @@ llm_provider: openai
 }
 
 func TestLoadFromFile_LLMProviderTrimmedLowercase(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_provider: "  CoDeX  "
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
-	}
-	if cfg.LLMProvider != DefaultLLMProvider {
-		t.Fatalf("unexpected llm_provider: %q", cfg.LLMProvider)
+	if runtime.LLMProvider != DefaultLLMProvider {
+		t.Fatalf("unexpected llm_provider: %q", runtime.LLMProvider)
 	}
 }
 
 func TestLoadFromFile_LLMProviderClaude(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_provider: "  ClAuDe  "
 claude_command: "  claude-custom  "
 claude_timeout_secs: 233
 claude_prompt_prefix: "  你是Claude助手  "
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
-	cfg, err := LoadFromFile(path)
-	if err != nil {
-		t.Fatalf("load config failed: %v", err)
+	if runtime.LLMProvider != LLMProviderClaude {
+		t.Fatalf("unexpected llm_provider: %q", runtime.LLMProvider)
 	}
-	if cfg.LLMProvider != LLMProviderClaude {
-		t.Fatalf("unexpected llm_provider: %q", cfg.LLMProvider)
+	if runtime.ClaudeCommand != "claude-custom" {
+		t.Fatalf("unexpected claude_command: %q", runtime.ClaudeCommand)
 	}
-	if cfg.ClaudeCommand != "claude-custom" {
-		t.Fatalf("unexpected claude_command: %q", cfg.ClaudeCommand)
+	if runtime.ClaudeTimeout != 233*time.Second {
+		t.Fatalf("unexpected claude_timeout: %s", runtime.ClaudeTimeout)
 	}
-	if cfg.ClaudeTimeout != 233*time.Second {
-		t.Fatalf("unexpected claude_timeout: %s", cfg.ClaudeTimeout)
-	}
-	if cfg.ClaudePromptPrefix != "你是Claude助手" {
-		t.Fatalf("unexpected claude_prompt_prefix: %q", cfg.ClaudePromptPrefix)
+	if runtime.ClaudePromptPrefix != "你是Claude助手" {
+		t.Fatalf("unexpected claude_prompt_prefix: %q", runtime.ClaudePromptPrefix)
 	}
 }
 
 func TestLoadFromFile_ClaudeTimeoutInvalid(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_provider: claude
 claude_timeout_secs: 0
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
@@ -592,27 +458,75 @@ claude_timeout_secs: 0
 }
 
 func TestLoadFromFile_CodexTimeoutIgnoredWhenClaudeProvider(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.yaml")
-	content := `
+	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_provider: claude
 codex_timeout_secs: 0
 claude_timeout_secs: 60
-`
-	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
-		t.Fatalf("write config failed: %v", err)
-	}
+`)
 
+	if runtime.CodexTimeout != 172800*time.Second {
+		t.Fatalf("unexpected codex_timeout fallback: %s", runtime.CodexTimeout)
+	}
+	if runtime.ClaudeTimeout != 60*time.Second {
+		t.Fatalf("unexpected claude_timeout: %s", runtime.ClaudeTimeout)
+	}
+}
+
+func loadSingleBotRuntime(t *testing.T, botBody string, rootBody ...string) (Config, Config) {
+	t.Helper()
+	path := writeSingleBotConfig(t, botBody, rootBody...)
 	cfg, err := LoadFromFile(path)
 	if err != nil {
 		t.Fatalf("load config failed: %v", err)
 	}
-	if cfg.CodexTimeout != 172800*time.Second {
-		t.Fatalf("unexpected codex_timeout fallback: %s", cfg.CodexTimeout)
+	runtime, err := cfg.RuntimeConfigForBot("main")
+	if err != nil {
+		t.Fatalf("resolve runtime failed: %v", err)
 	}
-	if cfg.ClaudeTimeout != 60*time.Second {
-		t.Fatalf("unexpected claude_timeout: %s", cfg.ClaudeTimeout)
+	return cfg, runtime
+}
+
+func writeSingleBotConfig(t *testing.T, botBody string, rootBody ...string) string {
+	t.Helper()
+	builder := strings.Builder{}
+	for _, block := range rootBody {
+		trimmed := strings.TrimSpace(block)
+		if trimmed == "" {
+			continue
+		}
+		builder.WriteString(trimmed)
+		builder.WriteString("\n")
 	}
+	builder.WriteString("bots:\n")
+	builder.WriteString("  main:\n")
+	builder.WriteString(indentYAML(strings.TrimSpace(botBody), "    "))
+	builder.WriteString("\n")
+	return writeConfigFile(t, builder.String())
+}
+
+func writeConfigFile(t *testing.T, content string) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write config failed: %v", err)
+	}
+	return path
+}
+
+func indentYAML(content, prefix string) string {
+	if content == "" {
+		return ""
+	}
+	lines := strings.Split(content, "\n")
+	for idx, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			lines[idx] = prefix
+			continue
+		}
+		lines[idx] = prefix + line
+	}
+	return strings.Join(lines, "\n")
 }

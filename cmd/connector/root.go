@@ -88,7 +88,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	}
 	if created {
 		fmt.Printf("[alice] created initial config at %s from embedded template\n", configPath)
-		fmt.Printf("[alice] please edit feishu_app_id/feishu_app_secret, then restart service\n")
+		fmt.Printf("[alice] please edit bots.*.feishu_app_id/bots.*.feishu_app_secret, then restart service\n")
 		return nil
 	}
 	ready, err := configHasRequiredCredentials(configPath)
@@ -96,7 +96,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		return err
 	}
 	if !ready {
-		fmt.Printf("[alice] config found but feishu_app_id/feishu_app_secret are empty: %s\n", configPath)
+		fmt.Printf("[alice] config found but bots.*.feishu_app_id/feishu_app_secret are empty: %s\n", configPath)
 		fmt.Printf("[alice] please edit config and restart service\n")
 		return nil
 	}
@@ -108,7 +108,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	if strings.TrimSpace(cfg.AliceHome) != "" {
 		_ = os.Setenv(config.EnvAliceHome, cfg.AliceHome)
 	}
-	codexHome := ensureIsolatedCodexHomeEnv(cfg.CodexHome)
+	codexHome := ensureIsolatedCodexHomeEnv("")
 	if !pidFileExplicit {
 		pidFilePath = config.PIDFilePathForAliceHome(cfg.AliceHome)
 	}
@@ -117,9 +117,6 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		return err
 	}
 	defer pidCleanup()
-	if err := ensureWorkspaceDir(cfg.WorkspaceDir); err != nil {
-		return err
-	}
 	if err := logging.Configure(logging.Options{
 		Level:      cfg.LogLevel,
 		FilePath:   cfg.LogFile,
@@ -226,11 +223,6 @@ func configHasRequiredCredentials(configPath string) (bool, error) {
 	if err := v.ReadInConfig(); err != nil {
 		return false, fmt.Errorf("read config yaml failed: %w", err)
 	}
-	appID := strings.TrimSpace(v.GetString("feishu_app_id"))
-	appSecret := strings.TrimSpace(v.GetString("feishu_app_secret"))
-	if appID != "" && appSecret != "" {
-		return true, nil
-	}
 	for _, rawBot := range v.GetStringMap("bots") {
 		botMap, ok := rawBot.(map[string]any)
 		if !ok {
@@ -300,7 +292,12 @@ func reloadConfigFromDisk(configPath string, runtime *bootstrap.ConnectorRuntime
 		logging.Warnf("config hot reload skipped: reload config failed path=%s err=%v", configPath, err)
 		return
 	}
-	report, err := runtime.ApplyConfigReload(cfg)
+	next, err := cfg.RuntimeConfigForBot(runtime.Config.BotID)
+	if err != nil {
+		logging.Warnf("config hot reload skipped: resolve bot runtime failed path=%s bot=%s err=%v", configPath, runtime.Config.BotID, err)
+		return
+	}
+	report, err := runtime.ApplyConfigReload(next)
 	if err != nil {
 		logging.Warnf("config hot reload failed path=%s err=%v", configPath, err)
 		return

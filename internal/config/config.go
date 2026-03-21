@@ -3,6 +3,7 @@ package config
 import (
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -18,6 +19,7 @@ const TriggerModePrefix = "prefix"
 const ImmediateFeedbackModeReply = "reply"
 const ImmediateFeedbackModeReaction = "reaction"
 const DefaultImmediateFeedbackReaction = "SMILE"
+const DefaultRuntimeHTTPAddr = "127.0.0.1:7331"
 
 var configValidator = validator.New()
 
@@ -150,7 +152,6 @@ type Config struct {
 	CodexHome            string               `mapstructure:"codex_home"`
 	SoulPath             string               `mapstructure:"soul_path"`
 	Permissions          BotPermissionsConfig `mapstructure:"permissions"`
-	PrimaryBotID         string               `mapstructure:"primary_bot"`
 	Bots                 map[string]BotConfig `mapstructure:"bots"`
 
 	QueueCapacity             int           `mapstructure:"queue_capacity"`
@@ -184,7 +185,7 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("claude_timeout_secs", 172800)
 	v.SetDefault("kimi_command", "kimi")
 	v.SetDefault("kimi_timeout_secs", 172800)
-	v.SetDefault("runtime_http_addr", "127.0.0.1:7331")
+	v.SetDefault("runtime_http_addr", DefaultRuntimeHTTPAddr)
 	v.SetDefault("runtime_http_token", "")
 	v.SetDefault("failure_message", "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault("thinking_message", "正在思考中...")
@@ -194,7 +195,6 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("codex_home", "")
 	v.SetDefault("soul_path", "")
 	v.SetDefault("bot_name", "")
-	v.SetDefault("primary_bot", "")
 	v.SetDefault("permissions.runtime_message", true)
 	v.SetDefault("permissions.runtime_automation", true)
 	v.SetDefault("permissions.runtime_campaigns", true)
@@ -226,6 +226,10 @@ func LoadFromFile(path string) (Config, error) {
 	if err := v.ReadInConfig(); err != nil {
 		return Config{}, fmt.Errorf("read config file %q failed: %w", path, err)
 	}
+	if err := validatePureMultiBotRootConfig(v); err != nil {
+		return Config{}, err
+	}
+	setBotDefaults(v)
 
 	var cfg Config
 	if err := v.Unmarshal(&cfg); err != nil {
@@ -263,13 +267,119 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.CodexHome = strings.TrimSpace(cfg.CodexHome)
 	cfg.SoulPath = strings.TrimSpace(cfg.SoulPath)
 	cfg.BotName = strings.TrimSpace(cfg.BotName)
-	cfg.PrimaryBotID = strings.TrimSpace(cfg.PrimaryBotID)
 	cfg.Permissions = normalizeBotPermissions(cfg.Permissions)
 	cfg.Bots = normalizeBots(cfg.Bots)
 	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
 	cfg.LogFile = strings.TrimSpace(cfg.LogFile)
 
-	return finalizeConfig(cfg, len(cfg.Bots) == 0)
+	return finalizeConfig(cfg, false)
+}
+
+func setBotDefaults(v *viper.Viper) {
+	if v == nil {
+		return
+	}
+	for rawBotID := range v.GetStringMap("bots") {
+		prefix := "bots." + rawBotID + "."
+		v.SetDefault(prefix+"feishu_base_url", "https://open.feishu.cn")
+		v.SetDefault(prefix+"trigger_mode", TriggerModeAt)
+		v.SetDefault(prefix+"trigger_prefix", "")
+		v.SetDefault(prefix+"immediate_feedback_mode", ImmediateFeedbackModeReply)
+		v.SetDefault(prefix+"immediate_feedback_reaction", DefaultImmediateFeedbackReaction)
+		v.SetDefault(prefix+"llm_provider", DefaultLLMProvider)
+		v.SetDefault(prefix+"codex_command", "codex")
+		v.SetDefault(prefix+"codex_timeout_secs", 172800)
+		v.SetDefault(prefix+"codex_model", "")
+		v.SetDefault(prefix+"codex_model_reasoning_effort", "")
+		v.SetDefault(prefix+"claude_command", "claude")
+		v.SetDefault(prefix+"claude_timeout_secs", 172800)
+		v.SetDefault(prefix+"kimi_command", "kimi")
+		v.SetDefault(prefix+"kimi_timeout_secs", 172800)
+		v.SetDefault(prefix+"runtime_http_token", "")
+		v.SetDefault(prefix+"failure_message", "Codex 暂时不可用，请稍后重试。")
+		v.SetDefault(prefix+"thinking_message", "正在思考中...")
+		v.SetDefault(prefix+"queue_capacity", 256)
+		v.SetDefault(prefix+"worker_concurrency", 1)
+		v.SetDefault(prefix+"automation_task_timeout_secs", 6000)
+		v.SetDefault(prefix+"permissions.runtime_message", true)
+		v.SetDefault(prefix+"permissions.runtime_automation", true)
+		v.SetDefault(prefix+"permissions.runtime_campaigns", true)
+		v.SetDefault(prefix+"permissions.codex.chat.sandbox", "workspace-write")
+		v.SetDefault(prefix+"permissions.codex.chat.ask_for_approval", "never")
+		v.SetDefault(prefix+"permissions.codex.work.sandbox", "danger-full-access")
+		v.SetDefault(prefix+"permissions.codex.work.ask_for_approval", "never")
+		v.SetDefault(prefix+"group_scenes.chat.enabled", false)
+		v.SetDefault(prefix+"group_scenes.chat.session_scope", GroupSceneSessionPerChat)
+		v.SetDefault(prefix+"group_scenes.chat.llm_profile", "")
+		v.SetDefault(prefix+"group_scenes.chat.no_reply_token", "[[NO_REPLY]]")
+		v.SetDefault(prefix+"group_scenes.chat.create_feishu_thread", false)
+		v.SetDefault(prefix+"group_scenes.work.enabled", false)
+		v.SetDefault(prefix+"group_scenes.work.trigger_tag", "#work")
+		v.SetDefault(prefix+"group_scenes.work.session_scope", GroupSceneSessionPerThread)
+		v.SetDefault(prefix+"group_scenes.work.llm_profile", "")
+		v.SetDefault(prefix+"group_scenes.work.no_reply_token", "")
+		v.SetDefault(prefix+"group_scenes.work.create_feishu_thread", true)
+	}
+}
+
+func validatePureMultiBotRootConfig(v *viper.Viper) error {
+	if v == nil {
+		return nil
+	}
+	legacyKeys := []string{
+		"bot_name",
+		"feishu_app_id",
+		"feishu_app_secret",
+		"feishu_base_url",
+		"feishu_bot_open_id",
+		"feishu_bot_user_id",
+		"trigger_mode",
+		"trigger_prefix",
+		"immediate_feedback_mode",
+		"immediate_feedback_reaction",
+		"llm_provider",
+		"llm_profiles",
+		"group_scenes",
+		"codex_command",
+		"codex_timeout_secs",
+		"codex_model",
+		"codex_model_reasoning_effort",
+		"codex_prompt_prefix",
+		"claude_command",
+		"claude_timeout_secs",
+		"claude_prompt_prefix",
+		"kimi_command",
+		"kimi_timeout_secs",
+		"kimi_prompt_prefix",
+		"runtime_http_addr",
+		"runtime_http_token",
+		"failure_message",
+		"thinking_message",
+		"alice_home",
+		"workspace_dir",
+		"prompt_dir",
+		"codex_home",
+		"soul_path",
+		"env",
+		"permissions",
+		"queue_capacity",
+		"worker_concurrency",
+		"automation_task_timeout_secs",
+	}
+	setKeys := make([]string, 0, len(legacyKeys))
+	for _, key := range legacyKeys {
+		if v.InConfig(key) {
+			setKeys = append(setKeys, key)
+		}
+	}
+	if len(setKeys) == 0 {
+		return nil
+	}
+	sort.Strings(setKeys)
+	return fmt.Errorf(
+		"root bot keys are no longer supported: %s; move them under bots.<id>",
+		strings.Join(setKeys, ", "),
+	)
 }
 
 func normalizeEnvMap(in map[string]string) map[string]string {
@@ -325,11 +435,9 @@ func normalizeGroupScenes(in GroupScenesConfig) GroupScenesConfig {
 }
 
 type baseConfigValidation struct {
-	FeishuAppID               string `validate:"required"`
-	FeishuAppSecret           string `validate:"required"`
-	QueueCapacity             int    `validate:"gt=0"`
-	WorkerConcurrency         int    `validate:"gt=0"`
-	AutomationTaskTimeoutSecs int    `validate:"gt=0"`
+	QueueCapacity             int `validate:"gt=0"`
+	WorkerConcurrency         int `validate:"gt=0"`
+	AutomationTaskTimeoutSecs int `validate:"gt=0"`
 }
 
 func validateBaseConfig(cfg Config, requireCredentials bool) error {
@@ -339,8 +447,12 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 		AutomationTaskTimeoutSecs: cfg.AutomationTaskTimeoutSecs,
 	}
 	if requireCredentials {
-		base.FeishuAppID = cfg.FeishuAppID
-		base.FeishuAppSecret = cfg.FeishuAppSecret
+		if strings.TrimSpace(cfg.FeishuAppID) == "" {
+			return errors.New("feishu_app_id is required")
+		}
+		if strings.TrimSpace(cfg.FeishuAppSecret) == "" {
+			return errors.New("feishu_app_secret is required")
+		}
 	}
 	if err := configValidator.Struct(base); err != nil {
 		var validationErrs validator.ValidationErrors
@@ -349,10 +461,6 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 		}
 		for _, validationErr := range validationErrs {
 			switch validationErr.Field() {
-			case "FeishuAppID":
-				return errors.New("feishu_app_id is required")
-			case "FeishuAppSecret":
-				return errors.New("feishu_app_secret is required")
 			case "QueueCapacity":
 				return errors.New("queue_capacity must be > 0")
 			case "WorkerConcurrency":
