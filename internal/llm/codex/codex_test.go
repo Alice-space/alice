@@ -122,6 +122,8 @@ func TestBuildExecArgs_ResumeThread(t *testing.T) {
 		Sandbox:        "workspace-write",
 		AskForApproval: "never",
 	})
+	approvalFlagIndex := slices.Index(args, "-a")
+	execIndex := slices.Index(args, "exec")
 	if !slices.Contains(args, "resume") {
 		t.Fatalf("expected resume args, got: %#v", args)
 	}
@@ -131,8 +133,11 @@ func TestBuildExecArgs_ResumeThread(t *testing.T) {
 	if !slices.Contains(args, "--sandbox") || !slices.Contains(args, "workspace-write") {
 		t.Fatalf("resume args should include workspace sandbox flag, got: %#v", args)
 	}
-	if !slices.Contains(args, "-a") || !slices.Contains(args, "never") {
+	if approvalFlagIndex < 0 || !slices.Contains(args, "never") {
 		t.Fatalf("resume args should include approval mode, got: %#v", args)
+	}
+	if execIndex < 0 || approvalFlagIndex > execIndex {
+		t.Fatalf("approval mode must be passed before exec to satisfy current codex CLI parsing, got: %#v", args)
 	}
 	if slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Fatalf("resume args should not include dangerous bypass flag, got: %#v", args)
@@ -147,11 +152,16 @@ func TestBuildExecArgs_NewThreadUsesWorkspaceSandbox(t *testing.T) {
 		Sandbox:        "workspace-write",
 		AskForApproval: "never",
 	})
+	approvalFlagIndex := slices.Index(args, "-a")
+	execIndex := slices.Index(args, "exec")
 	if !slices.Contains(args, "--sandbox") || !slices.Contains(args, "workspace-write") {
 		t.Fatalf("new thread args should include workspace sandbox flag, got: %#v", args)
 	}
-	if !slices.Contains(args, "-a") || !slices.Contains(args, "never") {
+	if approvalFlagIndex < 0 || !slices.Contains(args, "never") {
 		t.Fatalf("new thread args should include approval mode, got: %#v", args)
+	}
+	if execIndex < 0 || approvalFlagIndex > execIndex {
+		t.Fatalf("approval mode must be passed before exec to satisfy current codex CLI parsing, got: %#v", args)
 	}
 	if slices.Contains(args, "--dangerously-bypass-approvals-and-sandbox") {
 		t.Fatalf("new thread args should not include dangerous bypass flag, got: %#v", args)

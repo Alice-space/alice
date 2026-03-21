@@ -24,16 +24,21 @@ func buildExecArgs(
 	policy.AskForApproval = strings.TrimSpace(policy.AskForApproval)
 	policy.AddDirs = uniqueAddDirs(policy.AddDirs)
 
-	buildFlags := func() []string {
+	buildRootFlags := func() []string {
+		args := make([]string, 0, 2)
+		if policy.AskForApproval != "" {
+			args = append(args, "-a", policy.AskForApproval)
+		}
+		return args
+	}
+
+	buildExecFlags := func() []string {
 		args := []string{
 			"--json",
 			"--skip-git-repo-check",
 		}
 		if policy.Sandbox != "" {
 			args = append(args, "--sandbox", policy.Sandbox)
-		}
-		if policy.AskForApproval != "" {
-			args = append(args, "-a", policy.AskForApproval)
 		}
 		for _, dir := range policy.AddDirs {
 			args = append(args, "--add-dir", dir)
@@ -53,19 +58,20 @@ func buildExecArgs(
 		return args
 	}
 
+	args := buildRootFlags()
 	if threadID != "" {
-		args := []string{
+		args = append(args, []string{
 			"exec",
 			"resume",
-		}
-		args = append(args, buildFlags()...)
+		}...)
+		args = append(args, buildExecFlags()...)
 		args = append(args, "--", threadID, prompt)
 		return args
 	}
-	args := []string{
+	args = append(args, []string{
 		"exec",
-	}
-	args = append(args, buildFlags()...)
+	}...)
+	args = append(args, buildExecFlags()...)
 	args = append(args, "--", prompt)
 	return args
 }
