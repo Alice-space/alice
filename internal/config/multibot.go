@@ -55,6 +55,9 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	if cfg.ClaudeCommand == "" {
 		cfg.ClaudeCommand = "claude"
 	}
+	if cfg.GeminiCommand == "" {
+		cfg.GeminiCommand = "gemini"
+	}
 	if cfg.KimiCommand == "" {
 		cfg.KimiCommand = "kimi"
 	}
@@ -109,7 +112,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	}
 
 	switch cfg.LLMProvider {
-	case DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi:
+	case DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
 	default:
 		return Config{}, fmt.Errorf("unsupported llm_provider %q", cfg.LLMProvider)
 	}
@@ -138,6 +141,12 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 			return Config{}, errors.New("claude_timeout_secs must be > 0")
 		}
 		cfg.ClaudeTimeoutSecs = 172800
+	}
+	if cfg.GeminiTimeoutSecs <= 0 {
+		if cfg.LLMProvider == LLMProviderGemini {
+			return Config{}, errors.New("gemini_timeout_secs must be > 0")
+		}
+		cfg.GeminiTimeoutSecs = 172800
 	}
 	if cfg.KimiTimeoutSecs <= 0 {
 		if cfg.LLMProvider == LLMProviderKimi {
@@ -168,6 +177,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	}
 	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
 	cfg.ClaudeTimeout = time.Duration(cfg.ClaudeTimeoutSecs) * time.Second
+	cfg.GeminiTimeout = time.Duration(cfg.GeminiTimeoutSecs) * time.Second
 	cfg.KimiTimeout = time.Duration(cfg.KimiTimeoutSecs) * time.Second
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 
@@ -189,7 +199,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 func validateSceneConfig(cfg Config) error {
 	for name, profile := range cfg.LLMProfiles {
 		switch profile.Provider {
-		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi:
+		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
 		}
@@ -262,6 +272,8 @@ func normalizeBots(in map[string]BotConfig) map[string]BotConfig {
 		bot.CodexPromptPrefix = strings.TrimSpace(bot.CodexPromptPrefix)
 		bot.ClaudeCommand = strings.TrimSpace(bot.ClaudeCommand)
 		bot.ClaudePromptPrefix = strings.TrimSpace(bot.ClaudePromptPrefix)
+		bot.GeminiCommand = strings.TrimSpace(bot.GeminiCommand)
+		bot.GeminiPromptPrefix = strings.TrimSpace(bot.GeminiPromptPrefix)
 		bot.KimiCommand = strings.TrimSpace(bot.KimiCommand)
 		bot.KimiPromptPrefix = strings.TrimSpace(bot.KimiPromptPrefix)
 		bot.RuntimeHTTPAddr = strings.TrimSpace(bot.RuntimeHTTPAddr)
@@ -481,6 +493,9 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.ClaudeCommand = bot.ClaudeCommand
 	runtime.ClaudeTimeoutSecs = bot.ClaudeTimeoutSecs
 	runtime.ClaudePromptPrefix = bot.ClaudePromptPrefix
+	runtime.GeminiCommand = bot.GeminiCommand
+	runtime.GeminiTimeoutSecs = bot.GeminiTimeoutSecs
+	runtime.GeminiPromptPrefix = bot.GeminiPromptPrefix
 	runtime.KimiCommand = bot.KimiCommand
 	runtime.KimiTimeoutSecs = bot.KimiTimeoutSecs
 	runtime.KimiPromptPrefix = bot.KimiPromptPrefix

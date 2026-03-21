@@ -1,4 +1,4 @@
-# 飞书 -> LLM 连接器（Codex / Claude / Kimi，Go，长连接）
+# 飞书 -> LLM 连接器（Codex / Claude / Gemini / Kimi，Go，长连接）
 
 [English](./README.md)
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
@@ -9,7 +9,7 @@
 
 1. 使用 **飞书官方 Go SDK**（`github.com/larksuite/oapi-sdk-go/v3`）的长连接（`ws`）模式。
 2. 接收 `im.message.receive_v1` 文本消息事件。
-3. 每条消息调用当前 `llm_provider` 对应 CLI（`codex` / `claude` / `kimi`）。
+3. 每条消息调用当前 `llm_provider` 对应 CLI（`codex` / `claude` / `gemini` / `kimi`）。
 4. 将回复发送回飞书。
 
 该模式**不需要公网 IP**，因为它走的是飞书长连接（WebSocket），不是公网 webhook 回调。
@@ -21,7 +21,7 @@
 ## 运行要求
 
 - Go 1.25+（源码构建，需与 `go.mod` 一致）
-- 已安装并登录所选后端 CLI（`codex` / `claude` / `kimi`）
+- 已安装并登录所选后端 CLI（`codex` / `claude` / `gemini` / `kimi`）
 - Linux 主机且可用 `systemd --user`（用于一键安装脚本）
 - 飞书应用侧需要：
   - 开启机器人能力
@@ -216,6 +216,8 @@ llm_profiles:
     personality: "pragmatic"
 claude_command: "claude"
 claude_timeout_secs: 172800
+gemini_command: "gemini"
+gemini_timeout_secs: 172800
 kimi_command: "kimi"
 kimi_timeout_secs: 172800
 runtime_http_addr: "127.0.0.1:7331"
@@ -230,6 +232,7 @@ prompt_dir: ""
 
 codex_prompt_prefix: ""
 claude_prompt_prefix: ""
+gemini_prompt_prefix: ""
 kimi_prompt_prefix: ""
 failure_message: "Codex 暂时不可用，请稍后重试。"
 thinking_message: "正在思考中..."
@@ -273,8 +276,8 @@ log_compress: false
 
 可选项：
 
-- `llm_provider`：LLM 后端类型选择。支持 `codex`（默认）、`claude`、`kimi`。
-- `codex_command` / `codex_timeout_secs`、`claude_command` / `claude_timeout_secs`、`kimi_command` / `kimi_timeout_secs`：对应后端 CLI 命令路径与超时秒数。
+- `llm_provider`：LLM 后端类型选择。支持 `codex`（默认）、`claude`、`gemini`、`kimi`。
+- `codex_command` / `codex_timeout_secs`、`claude_command` / `claude_timeout_secs`、`gemini_command` / `gemini_timeout_secs`、`kimi_command` / `kimi_timeout_secs`：对应后端 CLI 命令路径与超时秒数。
 - `codex_model`：可选，显式指定 Codex CLI 使用的模型；为空时沿用 Codex 自身配置。当前本机可见模型示例包括 `gpt-5.4`、`gpt-5.4-mini`、`gpt-5.3-codex`、`gpt-5.2-codex`、`gpt-5.2`、`gpt-5.1-codex-max`、`gpt-5.1-codex`、`gpt-5.1`、`gpt-5-codex`、`gpt-5`；实际可用集取决于 Codex 版本和账号权限。
 - `codex_model_reasoning_effort`：可选，显式指定 Codex CLI 的思考强度；为空时沿用 Codex 自身配置。常见取值有 `low`、`medium`、`high`、`xhigh`；少数模型还支持 `minimal` 或只支持其中一部分。Alice 会把它映射到 `codex exec -c model_reasoning_effort=...`。
 - `llm_profiles`：命名的 LLM 档位配置。可为不同场景分别指定 `model`、`profile`、`reasoning_effort`、`personality`；`provider` 若设置，必须与当前 `llm_provider` 一致。
@@ -282,8 +285,8 @@ log_compress: false
 - `alice_home`：运行时根目录（release 默认 `~/.alice`；dev 预发布二进制默认 `~/.alice-dev`）。
 - `workspace_dir` / `memory_dir` / `prompt_dir`：运行时目录。默认在 `alice_home` 下，分别是 `workspace/`、`memory/`、`prompts/`。
 - `CODEX_HOME`：Alice 服务进程启动时会设置为 `${ALICE_HOME}/.codex`；每个 bot 的 LLM 子进程默认使用各自的 `${ALICE_HOME}/bots/<bot_id>/.codex`（若在 `env` 里显式设置则以显式值为准）。
-- `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
-- `codex_prompt_prefix` / `claude_prompt_prefix` / `kimi_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
+- `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。若使用 `gemini` 且 Alice 不是从已初始化 `nvm` 的 shell 启动，建议在这里显式补 `PATH`，确保 `gemini` 解析到 Node 20+。
+- `codex_prompt_prefix` / `claude_prompt_prefix` / `gemini_prompt_prefix` / `kimi_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
 - `group_scenes`：群聊/话题群的场景路由配置。只要 `chat` 或 `work` 任一场景启用，就优先于 `trigger_mode` / `trigger_prefix`。常见做法是让 `chat` 场景按群共享一个 session，让 `work` 场景由 `#work + @bot` 新开 thread/session。
 - `immediate_feedback_mode`：收到引用回复消息后给用户的即时反馈方式。支持 `reply` 和 `reaction`（默认，优先给原消息加表情，失败再回退 `收到！`）。
 - `immediate_feedback_reaction`：`immediate_feedback_mode=reaction` 时使用的飞书 reaction 类型，默认 `OK`。

@@ -53,6 +53,13 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 			PromptPrefix: cfg.ClaudePromptPrefix,
 			WorkspaceDir: cfg.WorkspaceDir,
 		},
+		Gemini: llm.GeminiConfig{
+			Command:      cfg.GeminiCommand,
+			Timeout:      cfg.GeminiTimeout,
+			Env:          defaultEnv,
+			PromptPrefix: cfg.GeminiPromptPrefix,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 		Kimi: llm.KimiConfig{
 			Command:      cfg.KimiCommand,
 			Timeout:      cfg.KimiTimeout,

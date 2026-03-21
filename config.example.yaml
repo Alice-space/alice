@@ -37,7 +37,7 @@ bots:
     trigger_mode: "at"
     trigger_prefix: ""
 
-    # LLM runtime (supported providers: codex, claude, kimi)
+    # LLM runtime (supported providers: codex, claude, gemini, kimi)
     llm_provider: "codex"
     codex_command: "codex"
     codex_timeout_secs: 172800
@@ -47,6 +47,8 @@ bots:
     codex_model_reasoning_effort: ""
     claude_command: "claude"
     claude_timeout_secs: 172800
+    gemini_command: "gemini"
+    gemini_timeout_secs: 172800
     kimi_command: "kimi"
     kimi_timeout_secs: 172800
 
@@ -62,12 +64,16 @@ bots:
 
     # Optional: environment variables passed to LLM subprocesses.
     env:
+      # If Alice is launched outside an nvm-initialized shell, ensure PATH points
+      # to a Node >= 20 installation so `gemini` resolves the correct runtime.
+      PATH: "/home/you/.nvm/versions/node/v24.14.0/bin:/usr/local/bin:/usr/bin:/bin"
       HTTPS_PROXY: "http://127.0.0.1:8080"
       ALL_PROXY: "http://127.0.0.1:8080"
 
     # Prompt and fallback
     codex_prompt_prefix: ""
     claude_prompt_prefix: ""
+    gemini_prompt_prefix: ""
     kimi_prompt_prefix: ""
     failure_message: "Codex 暂时不可用，请稍后重试。"
     thinking_message: "正在思考中..."

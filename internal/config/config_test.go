@@ -74,6 +74,12 @@ feishu_app_secret: sss
 	if runtime.ClaudeTimeout != 172800*time.Second {
 		t.Fatalf("unexpected claude_timeout: %s", runtime.ClaudeTimeout)
 	}
+	if runtime.GeminiCommand != "gemini" {
+		t.Fatalf("unexpected gemini_command: %s", runtime.GeminiCommand)
+	}
+	if runtime.GeminiTimeout != 172800*time.Second {
+		t.Fatalf("unexpected gemini_timeout: %s", runtime.GeminiTimeout)
+	}
 	if runtime.QueueCapacity != 256 {
 		t.Fatalf("unexpected queue_capacity: %d", runtime.QueueCapacity)
 	}
@@ -446,6 +452,64 @@ claude_prompt_prefix: "  你是Claude助手  "
 	}
 	if runtime.ClaudePromptPrefix != "你是Claude助手" {
 		t.Fatalf("unexpected claude_prompt_prefix: %q", runtime.ClaudePromptPrefix)
+	}
+}
+
+func TestLoadFromFile_LLMProviderGemini(t *testing.T) {
+	_, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_provider: "  GeMiNi  "
+gemini_command: "  gemini-custom  "
+gemini_timeout_secs: 321
+gemini_prompt_prefix: "  你是Gemini助手  "
+`)
+
+	if runtime.LLMProvider != LLMProviderGemini {
+		t.Fatalf("unexpected llm_provider: %q", runtime.LLMProvider)
+	}
+	if runtime.GeminiCommand != "gemini-custom" {
+		t.Fatalf("unexpected gemini_command: %q", runtime.GeminiCommand)
+	}
+	if runtime.GeminiTimeout != 321*time.Second {
+		t.Fatalf("unexpected gemini_timeout: %s", runtime.GeminiTimeout)
+	}
+	if runtime.GeminiPromptPrefix != "你是Gemini助手" {
+		t.Fatalf("unexpected gemini_prompt_prefix: %q", runtime.GeminiPromptPrefix)
+	}
+}
+
+func TestLoadFromFile_GeminiTimeoutInvalid(t *testing.T) {
+	path := writeSingleBotConfig(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_provider: gemini
+gemini_timeout_secs: 0
+`)
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "gemini_timeout_secs must be > 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_CodexTimeoutIgnoredWhenGeminiProvider(t *testing.T) {
+	_, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_provider: gemini
+codex_timeout_secs: 0
+gemini_timeout_secs: 60
+`)
+
+	if runtime.CodexTimeout != 172800*time.Second {
+		t.Fatalf("unexpected codex_timeout fallback: %s", runtime.CodexTimeout)
+	}
+	if runtime.GeminiTimeout != 60*time.Second {
+		t.Fatalf("unexpected gemini_timeout: %s", runtime.GeminiTimeout)
 	}
 }
 

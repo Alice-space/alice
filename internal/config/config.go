@@ -13,6 +13,7 @@ import (
 
 const DefaultLLMProvider = "codex"
 const LLMProviderClaude = "claude"
+const LLMProviderGemini = "gemini"
 const LLMProviderKimi = "kimi"
 const TriggerModeAt = "at"
 const TriggerModePrefix = "prefix"
@@ -95,6 +96,9 @@ type BotConfig struct {
 	ClaudeCommand             string                      `mapstructure:"claude_command"`
 	ClaudeTimeoutSecs         int                         `mapstructure:"claude_timeout_secs"`
 	ClaudePromptPrefix        string                      `mapstructure:"claude_prompt_prefix"`
+	GeminiCommand             string                      `mapstructure:"gemini_command"`
+	GeminiTimeoutSecs         int                         `mapstructure:"gemini_timeout_secs"`
+	GeminiPromptPrefix        string                      `mapstructure:"gemini_prompt_prefix"`
 	KimiCommand               string                      `mapstructure:"kimi_command"`
 	KimiTimeoutSecs           int                         `mapstructure:"kimi_timeout_secs"`
 	KimiPromptPrefix          string                      `mapstructure:"kimi_prompt_prefix"`
@@ -142,6 +146,10 @@ type Config struct {
 	ClaudeTimeout        time.Duration        `mapstructure:"-"`
 	ClaudeTimeoutSecs    int                  `mapstructure:"claude_timeout_secs"`
 	ClaudePromptPrefix   string               `mapstructure:"claude_prompt_prefix"`
+	GeminiCommand        string               `mapstructure:"gemini_command"`
+	GeminiTimeout        time.Duration        `mapstructure:"-"`
+	GeminiTimeoutSecs    int                  `mapstructure:"gemini_timeout_secs"`
+	GeminiPromptPrefix   string               `mapstructure:"gemini_prompt_prefix"`
 	KimiCommand          string               `mapstructure:"kimi_command"`
 	KimiTimeout          time.Duration        `mapstructure:"-"`
 	KimiTimeoutSecs      int                  `mapstructure:"kimi_timeout_secs"`
@@ -187,6 +195,8 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("codex_model_reasoning_effort", "")
 	v.SetDefault("claude_command", "claude")
 	v.SetDefault("claude_timeout_secs", 172800)
+	v.SetDefault("gemini_command", "gemini")
+	v.SetDefault("gemini_timeout_secs", 172800)
 	v.SetDefault("kimi_command", "kimi")
 	v.SetDefault("kimi_timeout_secs", 172800)
 	v.SetDefault("runtime_http_addr", DefaultRuntimeHTTPAddr)
@@ -261,6 +271,8 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.CodexPromptPrefix = strings.TrimSpace(cfg.CodexPromptPrefix)
 	cfg.ClaudeCommand = strings.TrimSpace(cfg.ClaudeCommand)
 	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
+	cfg.GeminiCommand = strings.TrimSpace(cfg.GeminiCommand)
+	cfg.GeminiPromptPrefix = strings.TrimSpace(cfg.GeminiPromptPrefix)
 	cfg.KimiCommand = strings.TrimSpace(cfg.KimiCommand)
 	cfg.KimiPromptPrefix = strings.TrimSpace(cfg.KimiPromptPrefix)
 	cfg.RuntimeHTTPAddr = strings.TrimSpace(cfg.RuntimeHTTPAddr)
@@ -299,6 +311,8 @@ func setBotDefaults(v *viper.Viper) {
 		v.SetDefault(prefix+"codex_model_reasoning_effort", "")
 		v.SetDefault(prefix+"claude_command", "claude")
 		v.SetDefault(prefix+"claude_timeout_secs", 172800)
+		v.SetDefault(prefix+"gemini_command", "gemini")
+		v.SetDefault(prefix+"gemini_timeout_secs", 172800)
 		v.SetDefault(prefix+"kimi_command", "kimi")
 		v.SetDefault(prefix+"kimi_timeout_secs", 172800)
 		v.SetDefault(prefix+"runtime_http_token", "")
@@ -356,6 +370,9 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"claude_command",
 		"claude_timeout_secs",
 		"claude_prompt_prefix",
+		"gemini_command",
+		"gemini_timeout_secs",
+		"gemini_prompt_prefix",
 		"kimi_command",
 		"kimi_timeout_secs",
 		"kimi_prompt_prefix",
@@ -492,7 +509,7 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 	}
 	for name, profile := range cfg.LLMProfiles {
 		switch profile.Provider {
-		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi:
+		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
 		}
