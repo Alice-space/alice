@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strconv"
@@ -16,8 +17,9 @@ import (
 	"github.com/go-co-op/gocron/v2"
 )
 
-type TextSender interface {
+type Sender interface {
 	SendText(ctx context.Context, receiveIDType, receiveID, text string) error
+	SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error
 }
 
 type LLMRunner interface {
@@ -30,7 +32,7 @@ const defaultUserTaskTimeout = 10 * time.Minute
 
 type Engine struct {
 	store           *Store
-	sender          TextSender
+	sender          Sender
 	runtimeMu       sync.RWMutex
 	llmRunner       LLMRunner
 	workflowRunner  WorkflowRunner
@@ -54,7 +56,7 @@ type systemTaskRuntime struct {
 
 var actionTemplateRenderer = prompting.NewLoader(".")
 
-func NewEngine(store *Store, sender TextSender) *Engine {
+func NewEngine(store *Store, sender Sender) *Engine {
 	return &Engine{
 		store:           store,
 		sender:          sender,
@@ -332,6 +334,9 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) error {
 	if err != nil {
 		return err
 	}
+	if taskPrefersCard(task) {
+		return e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, buildTaskCardContent(dispatch))
+	}
 	return e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch)
 }
 
@@ -467,6 +472,35 @@ func (e *Engine) nowTime() time.Time {
 		return time.Now().Local()
 	}
 	return now.Local()
+}
+
+func taskPrefersCard(task Task) bool {
+	task = NormalizeTask(task)
+	return strings.Contains(task.Action.SessionKey, "|scene:work")
+}
+
+func buildTaskCardContent(markdown string) string {
+	reply := strings.TrimSpace(markdown)
+	if reply == "" {
+		reply = " "
+	}
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"enable_forward": true,
+			"update_multi":   true,
+		},
+		"body": map[string]any{
+			"elements": []any{
+				map[string]any{
+					"tag":     "markdown",
+					"content": "**回复**\n" + reply,
+				},
+			},
+		},
+	}
+	raw, _ := json.Marshal(card)
+	return string(raw)
 }
 
 func renderActionTemplate(raw string, now time.Time) (string, error) {

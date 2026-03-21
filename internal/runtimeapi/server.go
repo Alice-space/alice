@@ -579,11 +579,7 @@ func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automation
 		}
 	}
 	applySceneLLMProfileDefaults(&task, scopeCtx, s.runtimeConfig())
-	if task.Action.Type == automation.ActionTypeRunWorkflow {
-		task.Action.SessionKey = scopeSessionKey(scopeCtx.session)
-	} else {
-		task.Action.SessionKey = ""
-	}
+	task.Action.SessionKey = scopeSessionKey(scopeCtx.session)
 	if err := validateMentionPermission(scopeCtx, task.Action.MentionUserIDs); err != nil {
 		return automation.Task{}, err
 	}
@@ -678,11 +674,7 @@ func applyTaskPatch(current automation.Task, patchBytes []byte, contentType stri
 	next.ConsecutiveFailures = current.ConsecutiveFailures
 	next.Running = current.Running
 	next.Revision = current.Revision
-	if next.Action.Type == automation.ActionTypeRunWorkflow {
-		next.Action.SessionKey = scopeSessionKey(scopeCtx.session)
-	} else {
-		next.Action.SessionKey = ""
-	}
+	next.Action.SessionKey = scopeSessionKey(scopeCtx.session)
 	if err := validateMentionPermission(scopeCtx, next.Action.MentionUserIDs); err != nil {
 		return automation.Task{}, err
 	}
