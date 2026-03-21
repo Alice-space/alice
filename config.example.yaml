@@ -1,203 +1,158 @@
-# Feishu app credentials (required)
-feishu_app_id: "cli_xxxxx"
-feishu_app_secret: "xxxxxx"
+# Alice now uses a pure multi-bot config model.
+# There is no root single-bot compatibility layer anymore.
+# Each bot owns its own credentials, runtime state, workspace and CODEX_HOME.
+#
+# Default bot directories:
+# - alice_home:   <ALICE_HOME>/bots/<bot_id>
+# - workspace:    <alice_home>/workspace
+# - prompts:      <alice_home>/prompts
+# - codex_home:   <alice_home>/.codex
+# - soul_path:    <workspace>/SOUL.md
+#
+# Process-level base home is still controlled by:
+# - CLI flag: `alice --alice-home /path/to/home`
+# - env var: `ALICE_HOME=/path/to/home`
 
-# Optional, default is https://open.feishu.cn
-feishu_base_url: "https://open.feishu.cn"
-# Optional bot display name injected into chat-scene SOUL prompt.
-# Empty means use Alice / bot_id.
-bot_name: "Alice"
-# Optional but recommended for group chats: strict bot mention filtering
-# Alice uses these IDs to recognize @bot when trigger_mode=at.
-# Empty means Alice will not use a preconfigured bot identity for mention matching.
-feishu_bot_open_id: ""
-feishu_bot_user_id: ""
-# Group work-scene trigger mode:
-# - at: only messages that @bot can enter / continue a work session (default)
-# - prefix: only messages starting with trigger_prefix can enter / continue a work session
-trigger_mode: "at"
-# Prefix used when trigger_mode=prefix.
-# Matching messages will strip this prefix before LLM input.
-# Empty means invalid config when trigger_mode=prefix.
-trigger_prefix: ""
+bots:
+  chat_bot:
+    name: "Alice Chat"
+    feishu_app_id: "cli_chat_xxxxx"
+    feishu_app_secret: "chat_secret"
+    # Optional but recommended for group chats: strict bot mention filtering.
+    feishu_bot_open_id: ""
+    feishu_bot_user_id: ""
 
-# LLM runtime (supported providers: codex, claude, kimi)
-llm_provider: "codex"
-codex_command: "codex"
-codex_timeout_secs: 172800
-# Optional. Empty means inherit Codex CLI default model from ~/.codex/config.toml.
-# Current local examples on 2026-03-19: gpt-5.4, gpt-5.4-mini, gpt-5.3-codex, gpt-5.2-codex,
-# gpt-5.2, gpt-5.1-codex-max, gpt-5.1-codex, gpt-5.1, gpt-5-codex, gpt-5.
-codex_model: ""
-# Optional. Empty means inherit Codex CLI default reasoning effort.
-# Common values: low, medium, high, xhigh. Some models only support a subset; e.g. a few mini
-# models only allow medium/high, and some non-codex GPT-5 models also support minimal.
-codex_model_reasoning_effort: ""
-# Optional named LLM profiles for scene routing.
-# provider must match llm_provider when set.
-# personality loads prompts/llm/personalities/<name>.md.tmpl on new Codex threads.
-llm_profiles:
-  chat:
-    provider: "codex"
-    model: "gpt-5.4-mini"
-    profile: ""
-    reasoning_effort: "low"
-    personality: "friendly"
-  work:
-    provider: "codex"
-    model: "gpt-5.4"
-    profile: ""
-    reasoning_effort: "xhigh"
-    personality: "pragmatic"
-claude_command: "claude"
-claude_timeout_secs: 172800
-kimi_command: "kimi"
-kimi_timeout_secs: 172800
-runtime_http_addr: "127.0.0.1:7331"
-# Optional. Empty means Alice auto-generates a runtime API token on each startup.
-runtime_http_token: ""
-# Optional runtime home (release default: ~/.alice; dev build default: ~/.alice-dev).
-# Empty means use the build-channel default. You can also override with CLI flag --alice-home.
-alice_home: ""
-# Optional dedicated Codex home. Empty means <alice_home>/.codex.
-codex_home: ""
-# Runtime directories (leave empty to use defaults under alice_home)
-# workspace_dir default: <alice_home>/workspace
-# prompt_dir default: <alice_home>/prompts
-# Empty means use the default path under alice_home.
-workspace_dir: ""
-# Optional bot soul file used only for new non-work threads.
-# Empty means <workspace_dir>/SOUL.md.
-soul_path: "SOUL.md"
-# Optional: environment variables passed to LLM process (proxy, etc.)
-# Connector process sets CODEX_HOME to <alice_home>/.codex at startup.
-# LLM subprocess env uses that value by default unless env.CODEX_HOME is explicitly set.
-env:
-  HTTPS_PROXY: "http://127.0.0.1:7890"
-  ALL_PROXY: "socks5://127.0.0.1:7891"
-# Empty means use <alice_home>/prompts.
-prompt_dir: ""
+    # Optional runtime directories. Empty means use defaults under <ALICE_HOME>/bots/chat_bot.
+    alice_home: ""
+    workspace_dir: ""
+    prompt_dir: ""
+    codex_home: ""
+    soul_path: "SOUL.md"
 
-# Prompt and fallback
-# Optional. Empty means disabled. Set this only if you want a global instruction prefix.
-codex_prompt_prefix: ""
-claude_prompt_prefix: ""
-kimi_prompt_prefix: ""
-failure_message: "Codex 暂时不可用，请稍后重试。"
-thinking_message: "正在思考中..."
-# Immediate feedback after receiving a reply-style message:
-# - reply: send an explicit `收到！` reply
-# - reaction: add a message reaction first, then fallback to `收到！` if reaction fails
-immediate_feedback_mode: "reply"
-# Feishu reaction type when immediate_feedback_mode is reaction.
-immediate_feedback_reaction: "SMILE"
-# Scene router for group/topic-group chats.
-# chat: default group conversation mode, no trigger required.
-# work: starter message must satisfy `trigger_mode`/`trigger_prefix` and contain trigger_tag.
-group_scenes:
-  chat:
-    enabled: true
-    session_scope: "per_chat"
-    llm_profile: "chat"
-    no_reply_token: "[[NO_REPLY]]"
-    create_feishu_thread: false
-  work:
-    enabled: true
-    trigger_tag: "#work"
-    session_scope: "per_thread"
-    llm_profile: "work"
-    no_reply_token: ""
-    create_feishu_thread: true
+    # Group work-scene trigger mode:
+    # - at: only messages that @bot can enter / continue a work session (default)
+    # - prefix: only messages starting with trigger_prefix can enter / continue a work session
+    trigger_mode: "at"
+    trigger_prefix: ""
 
-# Runtime and Codex permissions for this bot.
-# chat scene defaults to workspace-write; work scene defaults to danger-full-access.
-# add_dirs is useful when chat mode needs read/write access outside workspace, such as scoped
-# attachment download directories.
-permissions:
-  runtime_message: true
-  runtime_automation: true
-  runtime_campaigns: true
-  # Optional explicit skill allowlist. Empty means Alice derives a safe default from runtime_* flags.
-  allowed_skills: []
-  codex:
-    chat:
-      sandbox: "workspace-write"
-      ask_for_approval: "never"
-      add_dirs: []
-    work:
-      sandbox: "danger-full-access"
-      ask_for_approval: "never"
-      add_dirs: []
+    # LLM runtime (supported providers: codex, claude, kimi)
+    llm_provider: "codex"
+    codex_command: "codex"
+    codex_timeout_secs: 172800
+    # Optional. Empty means inherit Codex CLI default model from ~/.codex/config.toml.
+    codex_model: ""
+    # Optional. Empty means inherit Codex CLI default reasoning effort.
+    codex_model_reasoning_effort: ""
+    claude_command: "claude"
+    claude_timeout_secs: 172800
+    kimi_command: "kimi"
+    kimi_timeout_secs: 172800
 
-# Queue and worker
-queue_capacity: 256
-worker_concurrency: 1
-# Timeout (seconds) for one automation user task execution (run_llm/send_text)
-automation_task_timeout_secs: 6000
+    # Optional named LLM profiles for scene routing.
+    # provider must match llm_provider when set.
+    llm_profiles:
+      chat:
+        provider: "codex"
+        model: "gpt-5.4-mini"
+        profile: ""
+        reasoning_effort: "low"
+        personality: "friendly"
+
+    # Optional: environment variables passed to LLM subprocesses.
+    env:
+      HTTPS_PROXY: "http://127.0.0.1:7890"
+      ALL_PROXY: "socks5://127.0.0.1:7891"
+
+    # Prompt and fallback
+    codex_prompt_prefix: ""
+    claude_prompt_prefix: ""
+    kimi_prompt_prefix: ""
+    failure_message: "Codex 暂时不可用，请稍后重试。"
+    thinking_message: "正在思考中..."
+
+    # Immediate feedback after receiving a reply-style message:
+    # - reply: send an explicit `收到！` reply
+    # - reaction: add a message reaction first, then fallback to `收到！` if reaction fails
+    immediate_feedback_mode: "reply"
+    immediate_feedback_reaction: "SMILE"
+
+    # Scene router for group/topic-group chats.
+    group_scenes:
+      chat:
+        enabled: true
+        session_scope: "per_chat"
+        llm_profile: "chat"
+        no_reply_token: "[[NO_REPLY]]"
+        create_feishu_thread: false
+      work:
+        enabled: false
+
+    # Runtime and Codex permissions for this bot.
+    # chat scene defaults to workspace-write; work scene defaults to danger-full-access.
+    permissions:
+      runtime_message: true
+      runtime_automation: false
+      runtime_campaigns: false
+      allowed_skills: ["alice-message"]
+      codex:
+        chat:
+          sandbox: "workspace-write"
+          ask_for_approval: "never"
+          add_dirs: []
+        work:
+          sandbox: "danger-full-access"
+          ask_for_approval: "never"
+          add_dirs: []
+
+    queue_capacity: 256
+    worker_concurrency: 1
+    automation_task_timeout_secs: 6000
+
+  work_bot:
+    name: "Alice Work"
+    feishu_app_id: "cli_work_xxxxx"
+    feishu_app_secret: "work_secret"
+    soul_path: "SOUL.md"
+    llm_provider: "codex"
+    llm_profiles:
+      chat:
+        provider: "codex"
+        model: "gpt-5.4-mini"
+        reasoning_effort: "low"
+        personality: "friendly"
+      work:
+        provider: "codex"
+        model: "gpt-5.4"
+        reasoning_effort: "xhigh"
+        personality: "pragmatic"
+    group_scenes:
+      chat:
+        enabled: true
+        session_scope: "per_chat"
+        llm_profile: "chat"
+      work:
+        enabled: true
+        trigger_tag: "#work"
+        session_scope: "per_thread"
+        llm_profile: "work"
+    permissions:
+      runtime_message: true
+      runtime_automation: true
+      runtime_campaigns: true
+      allowed_skills: ["alice-message", "alice-scheduler", "alice-code-army"]
+      codex:
+        chat:
+          sandbox: "workspace-write"
+          ask_for_approval: "never"
+        work:
+          sandbox: "danger-full-access"
+          ask_for_approval: "never"
 
 # debug | info | warn | error
 log_level: "info"
-# Optional rotating log file. Empty means auto default: <alice_home>/log/YYYY-MM-DD.log
+# Optional rotating log file. Empty means auto default: <ALICE_HOME>/log/YYYY-MM-DD.log
 log_file: ""
 log_max_size_mb: 20
 log_max_backups: 5
 log_max_age_days: 7
 log_compress: false
-
-# Multi-bot mode:
-# - current single-bot state/workspace can be preserved by setting primary_bot to the existing bot.
-# - primary bot reuses root alice_home/workspace_dir/codex_home/runtime_http_addr.
-# - extra bots default to <alice_home>/bots/<bot_id>/...
-#
-# primary_bot: "work_bot"
-# bots:
-#   chat_bot:
-#     name: "Alice Chat"
-#     feishu_app_id: "cli_chat_xxx"
-#     feishu_app_secret: "chat_secret"
-#     workspace_dir: "/srv/alice/chat-workspace"
-#     soul_path: "SOUL.md"
-#     permissions:
-#       runtime_message: true
-#       runtime_automation: false
-#       runtime_campaigns: false
-#       allowed_skills: ["alice-message"]
-#       codex:
-#         chat:
-#           sandbox: "workspace-write"
-#           ask_for_approval: "never"
-#     group_scenes:
-#       chat:
-#         enabled: true
-#         session_scope: "per_chat"
-#         llm_profile: "chat"
-#       work:
-#         enabled: false
-#
-#   work_bot:
-#     name: "Alice Work"
-#     feishu_app_id: "cli_work_xxx"
-#     feishu_app_secret: "work_secret"
-#     soul_path: "SOUL.md"
-#     permissions:
-#       runtime_message: true
-#       runtime_automation: true
-#       runtime_campaigns: true
-#       allowed_skills: ["alice-message", "alice-scheduler", "alice-code-army"]
-#       codex:
-#         chat:
-#           sandbox: "workspace-write"
-#           ask_for_approval: "never"
-#         work:
-#           sandbox: "danger-full-access"
-#           ask_for_approval: "never"
-#     group_scenes:
-#       chat:
-#         enabled: true
-#         session_scope: "per_chat"
-#         llm_profile: "chat"
-#       work:
-#         enabled: true
-#         trigger_tag: "#work"
-#         session_scope: "per_thread"
-#         llm_profile: "work"
