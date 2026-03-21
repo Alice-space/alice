@@ -10,7 +10,7 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-func TestApp_OnMessageReceive_WorkSceneRestoresSeedRouteAfterRestart(t *testing.T) {
+func TestApp_OnMessageReceive_WorkSceneRestoresSeedRouteAfterRestartWithMention(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	statePath := filepath.Join(t.TempDir(), "session_state.json")
 
@@ -81,9 +81,14 @@ func TestApp_OnMessageReceive_WorkSceneRestoresSeedRouteAfterRestart(t *testing.
 				RootId:      strPtr("om_work_seed_root"),
 				ParentId:    strPtr("om_work_seed_root"),
 				MessageType: strPtr("text"),
-				Content:     strPtr(`{"text":"重启后继续在原 thread 里回复"}`),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> 重启后继续在原 thread 里回复"}`),
 				ChatId:      strPtr("oc_chat"),
 				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
 			},
 		},
 	}

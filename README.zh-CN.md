@@ -284,14 +284,14 @@ log_compress: false
 - `CODEX_HOME`：Alice 服务进程启动时会设置为 `${ALICE_HOME}/.codex`；每个 bot 的 LLM 子进程默认使用各自的 `${ALICE_HOME}/bots/<bot_id>/.codex`（若在 `env` 里显式设置则以显式值为准）。
 - `env`：注入到所选 LLM 子进程的环境变量键值（例如 HTTP/HTTPS/SOCKS 代理配置）。
 - `codex_prompt_prefix` / `claude_prompt_prefix` / `kimi_prompt_prefix`：仅在新线程中追加的全局指令前缀，默认为空。
-- `group_scenes`：群聊/话题群的场景路由配置。启用后优先于 `trigger_mode` / `trigger_prefix`。常见做法是让 `chat` 场景按群共享一个 session，让 `work` 场景由 `#work + @bot` 新开 thread/session。
+- `group_scenes`：群聊/话题群的场景路由配置。只要 `chat` 或 `work` 任一场景启用，就优先于 `trigger_mode` / `trigger_prefix`。常见做法是让 `chat` 场景按群共享一个 session，让 `work` 场景由 `#work + @bot` 新开 thread/session。
 - `immediate_feedback_mode`：收到引用回复消息后给用户的即时反馈方式。支持 `reply` 和 `reaction`（默认，优先给原消息加表情，失败再回退 `收到！`）。
 - `immediate_feedback_reaction`：`immediate_feedback_mode=reaction` 时使用的飞书 reaction 类型，默认 `OK`。
 - 自动化 cron 调度使用运行机器的操作系统时区（`time.Local`）。
 - `automation_task_timeout_secs`：单次自动化用户任务（`send_text`/`run_llm`）的执行超时秒数，默认 `6000`。
 - `idle_summary_hours`：触发后台分日期摘要落盘的空闲阈值（小时，默认 `8`）。
 - `log_file` / `log_max_size_mb` / `log_max_backups` / `log_max_age_days` / `log_compress`：滚动日志配置；`log_file` 为空时默认写入 `alice_home/log/YYYY-MM-DD.log`，底层使用 `zerolog + lumberjack`。
-- `trigger_mode` / `trigger_prefix`：旧的群聊触发策略。仅在未启用 `group_scenes` 时使用，兼容 `at` / `active` / `prefix` 三种模式。
+- `trigger_mode` / `trigger_prefix`：旧的群聊触发策略。仅在 `group_scenes.chat` 与 `group_scenes.work` 都未启用时使用，兼容 `at` / `active` / `prefix` 三种模式。
 - `feishu_bot_open_id` / `feishu_bot_user_id`：群聊/话题群中用于匹配机器人艾特的 ID；若 `group_scenes.work.require_mention=true`，也依赖这里的 bot 身份。
 
 ## 隔离运行（独立用户）
@@ -306,8 +306,8 @@ log_compress: false
 - 支持接收消息类型：`text`、`image`、`sticker`、`audio`、`file`。
 - 若启用了 `group_scenes`，群聊/话题群会按场景路由：
   - `chat`：不要求 @，整个群共享一个 Codex session；新消息统一 resume 到这条 session。若模型输出 `no_reply_token`（默认 `[[NO_REPLY]]`），连接器会静默不发言。
-  - `work`：仅在根消息满足 `trigger_tag + @bot` 时触发；会创建一条专属 work session，并优先以飞书 thread reply 继续该话题。
-- 若未启用 `group_scenes`，则回退到 `trigger_mode` 控制：
+  - `work`：仅在根消息满足 `trigger_tag + @bot` 时触发；会创建一条专属 work session，并优先以飞书 thread reply 继续该话题。后续同一 work thread 的消息也必须再次命中当前 trigger（默认仍需 `@bot`），否则直接忽略。若只启用 `work` 场景，未命中触发条件的群消息不会再回退旧的 `@bot` 触发。
+- 若 `group_scenes.chat` 与 `group_scenes.work` 都未启用，则回退到 `trigger_mode` 控制：
   - `at`：仅处理艾特机器人的消息。若 `feishu_bot_open_id` 与 `feishu_bot_user_id` 都为空，则群聊/话题群消息全部忽略。
   - `active`：默认处理所有消息，但命中 `trigger_prefix` 的消息会忽略；若同时艾特机器人，仍会处理。
   - `prefix`：命中 `trigger_prefix` 或艾特机器人的消息会处理。

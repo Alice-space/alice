@@ -174,12 +174,13 @@ Feishu websocket event
 
 - 只有满足 `trigger_tag + @bot` 的群根消息才会触发，例如 `#work @bot ...`
 - 这条根消息会新建一个独立 work session，例如 `chat_id:oc_xxx|scene:work|seed:om_xxx`
-- 随后的同一 Feishu thread 消息会继续复用这个 work session
+- 随后的同一 Feishu thread 消息只有在再次命中当前 trigger（默认仍需 `@bot`）时，才会继续复用这个 work session
 - work 场景默认走 reply-in-thread 链路
+- 若当前只启用了 `work` 场景，未命中 `trigger_tag + @bot` 的群消息会直接忽略，不会再落回旧的 `trigger_mode`
 
 ### 4.3 legacy fallback
 
-如果 `group_scenes` 没启用，才会回退到旧的 `trigger_mode` / `trigger_prefix` 逻辑：
+如果 `group_scenes.chat` 与 `group_scenes.work` 都没启用，才会回退到旧的 `trigger_mode` / `trigger_prefix` 逻辑：
 
 - `at`
 - `active`

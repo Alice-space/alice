@@ -12,6 +12,7 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 	if job == nil {
 		return false
 	}
+	cfg := a.runtimeConfig()
 	var message *larkim.EventMessage
 	if event != nil && event.Event != nil {
 		message = event.Event.Message
@@ -23,21 +24,21 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 		return true
 	}
 
-	if a.routeGroupSceneJob(job, event, message) {
-		return true
+	if cfg.groupScenes.Chat.Enabled || cfg.groupScenes.Work.Enabled {
+		return a.routeGroupSceneJob(job, event, message)
 	}
 
 	accepted := shouldProcessIncomingMessage(
 		event,
-		a.runtimeConfig().triggerMode,
-		a.runtimeConfig().triggerPrefix,
-		a.runtimeConfig().feishuBotOpenID,
-		a.runtimeConfig().feishuBotUserID,
+		cfg.triggerMode,
+		cfg.triggerPrefix,
+		cfg.feishuBotOpenID,
+		cfg.feishuBotUserID,
 	)
 	if !accepted {
 		return false
 	}
-	normalizeIncomingGroupJobTextForTriggerMode(job, a.runtimeConfig().triggerMode, a.runtimeConfig().triggerPrefix)
+	normalizeIncomingGroupJobTextForTriggerMode(job, cfg.triggerMode, cfg.triggerPrefix)
 	if message != nil {
 		a.resolveJobSessionKey(job, message)
 	}
@@ -50,32 +51,36 @@ func (a *App) routeGroupSceneJob(job *Job, event *larkim.P2MessageReceiveV1, mes
 		return false
 	}
 
-	if sessionKey := a.resolveExistingWorkSession(job, event, message); sessionKey != "" {
-		applyWorkSceneToJob(job, cfg, sessionKey)
-		normalizeIncomingGroupJobTextForTriggerMode(job, cfg.triggerMode, cfg.triggerPrefix)
-		if a.processor != nil && message != nil {
-			a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
-		}
-		return true
-	}
-
-	if cfg.groupScenes.Work.Enabled &&
-		shouldProcessIncomingMessage(
+	if cfg.groupScenes.Work.Enabled {
+		workTriggerMatched := shouldProcessIncomingMessage(
 			event,
 			cfg.triggerMode,
 			cfg.triggerPrefix,
 			cfg.feishuBotOpenID,
 			cfg.feishuBotUserID,
-		) &&
-		hasSceneTriggerTag(job.Text, cfg.groupScenes.Work.TriggerTag) {
-		sessionKey := buildWorkSceneSessionKey(job.ReceiveIDType, job.ReceiveID, job.SourceMessageID)
-		applyWorkSceneToJob(job, cfg, sessionKey)
-		normalizeIncomingGroupJobTextForTriggerMode(job, cfg.triggerMode, cfg.triggerPrefix)
-		job.Text = trimSceneTriggerTag(job.Text, cfg.groupScenes.Work.TriggerTag)
-		if a.processor != nil && message != nil {
-			a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
+		)
+		if sessionKey := a.resolveExistingWorkSession(job, event, message); sessionKey != "" {
+			if !workTriggerMatched {
+				return false
+			}
+			applyWorkSceneToJob(job, cfg, sessionKey)
+			normalizeIncomingGroupJobTextForTriggerMode(job, cfg.triggerMode, cfg.triggerPrefix)
+			if a.processor != nil && message != nil {
+				a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
+			}
+			return true
 		}
-		return true
+
+		if workTriggerMatched && hasSceneTriggerTag(job.Text, cfg.groupScenes.Work.TriggerTag) {
+			sessionKey := buildWorkSceneSessionKey(job.ReceiveIDType, job.ReceiveID, job.SourceMessageID)
+			applyWorkSceneToJob(job, cfg, sessionKey)
+			normalizeIncomingGroupJobTextForTriggerMode(job, cfg.triggerMode, cfg.triggerPrefix)
+			job.Text = trimSceneTriggerTag(job.Text, cfg.groupScenes.Work.TriggerTag)
+			if a.processor != nil && message != nil {
+				a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
+			}
+			return true
+		}
 	}
 
 	if cfg.groupScenes.Chat.Enabled {

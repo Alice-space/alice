@@ -46,6 +46,12 @@ func configForGroupScenesTest() config.Config {
 	return cfg
 }
 
+func configForWorkOnlyGroupScenesTest() config.Config {
+	cfg := configForGroupScenesTest()
+	cfg.GroupScenes.Chat.Enabled = false
+	return cfg
+}
+
 func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	app := NewApp(cfg, nil)
@@ -215,16 +221,46 @@ func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) 
 	}
 }
 
-func TestApp_OnMessageReceive_WorkSceneParentOnlyFollowupReusesSessionWithoutMention(t *testing.T) {
+func TestApp_OnMessageReceive_WorkOnlySceneIgnoresMentionWithoutTriggerTag(t *testing.T) {
+	cfg := configForWorkOnlyGroupScenesTest()
+	app := NewApp(cfg, nil)
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_only_without_tag"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_only_without_tag"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> 只艾特，不带标签"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), event); err != nil {
+		t.Fatalf("unexpected work-only event error: %v", err)
+	}
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected queue len 0, got %d", got)
+	}
+}
+
+func TestApp_OnMessageReceive_WorkSceneThreadFollowupRequiresMention(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
 	app := NewApp(cfg, processor)
 
 	start := &larkim.P2MessageReceiveV1{
-		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_parent_only_start"}},
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_followup_requires_mention_start"}},
 		Event: &larkim.P2MessageReceiveV1Data{
 			Message: &larkim.EventMessage{
-				MessageId:   strPtr("om_work_parent_only_root"),
+				MessageId:   strPtr("om_work_followup_requires_mention_root"),
 				MessageType: strPtr("text"),
 				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> #work 帮我继续这个任务"}`),
 				ChatId:      strPtr("oc_chat"),
@@ -238,15 +274,77 @@ func TestApp_OnMessageReceive_WorkSceneParentOnlyFollowupReusesSessionWithoutMen
 		},
 	}
 	followup := &larkim.P2MessageReceiveV1{
-		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_parent_only_followup"}},
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_followup_requires_mention_followup"}},
 		Event: &larkim.P2MessageReceiveV1Data{
 			Message: &larkim.EventMessage{
-				MessageId:   strPtr("om_work_parent_only_followup"),
-				ParentId:    strPtr("om_work_parent_only_root"),
+				MessageId:   strPtr("om_work_followup_requires_mention_followup"),
+				ThreadId:    strPtr("omt_work_requires_mention"),
+				RootId:      strPtr("om_work_followup_requires_mention_root"),
+				ParentId:    strPtr("om_work_followup_requires_mention_root"),
 				MessageType: strPtr("text"),
-				Content:     strPtr(`{"text":"这里继续，不再重复 @ 和 #work"}`),
+				Content:     strPtr(`{"text":"这里继续，但不再艾特"}`),
 				ChatId:      strPtr("oc_chat"),
 				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), start); err != nil {
+		t.Fatalf("unexpected work start error: %v", err)
+	}
+	if err := app.onMessageReceive(context.Background(), followup); err != nil {
+		t.Fatalf("unexpected work followup error: %v", err)
+	}
+
+	if got := len(app.queue); got != 1 {
+		t.Fatalf("expected queue len 1, got %d", got)
+	}
+	job := <-app.queue
+	if job.Scene != jobSceneWork {
+		t.Fatalf("unexpected work start scene: %q", job.Scene)
+	}
+	if job.SessionKey != "chat_id:oc_chat|scene:work|seed:om_work_followup_requires_mention_root" {
+		t.Fatalf("unexpected work start session key: %q", job.SessionKey)
+	}
+}
+
+func TestApp_OnMessageReceive_WorkSceneParentOnlyFollowupReusesSessionWithMention(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
+	app := NewApp(cfg, processor)
+
+	start := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_parent_only_with_mention_start"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_parent_only_with_mention_root"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> #work 帮我继续这个任务"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
+			},
+		},
+	}
+	followup := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_parent_only_with_mention_followup"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_parent_only_with_mention_followup"),
+				ParentId:    strPtr("om_work_parent_only_with_mention_root"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> 这里继续，不再重复 #work"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
 			},
 		},
 	}
@@ -268,12 +366,12 @@ func TestApp_OnMessageReceive_WorkSceneParentOnlyFollowupReusesSessionWithoutMen
 		t.Fatalf("unexpected work scenes: %q %q", job1.Scene, job2.Scene)
 	}
 	if job2.SessionKey != job1.SessionKey {
-		t.Fatalf("parent-only followup should reuse session key, got %q want %q", job2.SessionKey, job1.SessionKey)
+		t.Fatalf("parent-only followup with mention should reuse session key, got %q want %q", job2.SessionKey, job1.SessionKey)
 	}
 	if job2.ResourceScopeKey != job1.ResourceScopeKey {
-		t.Fatalf("parent-only followup should reuse resource scope key, got %q want %q", job2.ResourceScopeKey, job1.ResourceScopeKey)
+		t.Fatalf("parent-only followup with mention should reuse resource scope key, got %q want %q", job2.ResourceScopeKey, job1.ResourceScopeKey)
 	}
-	if job2.Text != "这里继续，不再重复 @ 和 #work" {
+	if job2.Text != "这里继续，不再重复 #work" {
 		t.Fatalf("unexpected work followup text: %q", job2.Text)
 	}
 	if job2.SessionVersion != 2 {
