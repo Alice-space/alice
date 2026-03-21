@@ -53,3 +53,25 @@ func TestNormalizeOutgoingReplyWithMentions_SkipsEmailAndBot(t *testing.T) {
 		t.Fatalf("unexpected converted text:\nwant: %s\ngot : %s", want, converted)
 	}
 }
+
+func TestNormalizeOutgoingReplyWithMentions_StripsReplyWillBlock(t *testing.T) {
+	converted, changed := normalizeOutgoingReplyWithMentions(
+		"<reply_will>72%</reply_will>\n@Bob 需要你看看。",
+		Job{
+			MentionedUsers: []MentionedUser{
+				{
+					Name:   "Bob",
+					OpenID: "ou_bob",
+				},
+			},
+		},
+	)
+
+	if !changed {
+		t.Fatal("expected mention replacement after stripping reply_will block")
+	}
+	want := `<at user_id="ou_bob">Bob</at> 需要你看看。`
+	if converted != want {
+		t.Fatalf("unexpected converted text:\nwant: %s\ngot : %s", want, converted)
+	}
+}

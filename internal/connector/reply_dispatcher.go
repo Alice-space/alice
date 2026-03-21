@@ -43,7 +43,7 @@ func (d *replyDispatcher) reply(
 		if messageID, textErr := d.replyText(ctx, sourceMessageID, normalized, preferThread); textErr == nil {
 			return messageID, nil
 		}
-		normalized = strings.TrimSpace(markdown)
+		normalized = stripHiddenReplyMetadata(markdown)
 		if normalized == "" {
 			return "", nil
 		}
@@ -75,7 +75,7 @@ func (d *replyDispatcher) send(
 		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, normalized); textErr == nil {
 			return nil
 		}
-		normalized = strings.TrimSpace(markdown)
+		normalized = stripHiddenReplyMetadata(markdown)
 		if normalized == "" {
 			return nil
 		}
@@ -99,7 +99,7 @@ func (d *replyDispatcher) replyMarkdownPost(
 		return "", errors.New("reply dispatcher sender is nil")
 	}
 
-	normalized := strings.TrimSpace(markdown)
+	normalized := stripHiddenReplyMetadata(markdown)
 	if normalized == "" {
 		return "", nil
 	}

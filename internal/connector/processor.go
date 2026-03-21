@@ -394,7 +394,7 @@ func shouldSuppressReply(job Job, reply string) bool {
 	if token == "" {
 		return false
 	}
-	return strings.TrimSpace(reply) == token
+	return stripHiddenReplyMetadata(reply) == token
 }
 
 func (p *Processor) sendImmediateFeedback(ctx context.Context, job Job) bool {

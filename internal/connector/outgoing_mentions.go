@@ -14,7 +14,7 @@ type outgoingMentionCandidate struct {
 }
 
 func normalizeOutgoingReplyWithMentions(reply string, job Job) (string, bool) {
-	normalized := strings.TrimSpace(reply)
+	normalized := stripHiddenReplyMetadata(reply)
 	if normalized == "" || !strings.Contains(normalized, "@") {
 		return normalized, false
 	}

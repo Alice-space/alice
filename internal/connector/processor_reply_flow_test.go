@@ -581,6 +581,58 @@ func TestProcessor_SendModeSuppressesNoReplyToken(t *testing.T) {
 	}
 }
 
+func TestProcessor_SendModeSuppressesNoReplyToken_WithReplyWillBlock(t *testing.T) {
+	fakeCodex := codexStub{resp: "<reply_will>32%</reply_will>\n[[NO_REPLY]]"}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		ResponseMode:  jobResponseModeSend,
+		NoReplyToken:  "[[NO_REPLY]]",
+		Text:          "hello",
+	})
+
+	if sender.sendCardCalls != 0 {
+		t.Fatalf("expected no card sends, got %d", sender.sendCardCalls)
+	}
+	if sender.sendCalls != 0 {
+		t.Fatalf("expected no text sends, got %d", sender.sendCalls)
+	}
+}
+
+func TestProcessor_ChatSceneStripsReplyWillBlockBeforeSending(t *testing.T) {
+	fakeCodex := codexStub{resp: "<reply_will>88%</reply_will>\n【轻轻晃了晃尾巴】\n咱在这儿看着你喵。"}
+	sender := &senderStub{}
+	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+
+	processor.ProcessJob(context.Background(), Job{
+		ReceiveID:          "oc_chat",
+		ReceiveIDType:      "chat_id",
+		SourceMessageID:    "om_src",
+		Scene:              jobSceneChat,
+		ResponseMode:       jobResponseModeReply,
+		CreateFeishuThread: false,
+		DisableAck:         true,
+		Text:               "hello",
+	})
+
+	if sender.replyRichMarkdownCalls != 1 {
+		t.Fatalf("expected one markdown reply, got %d", sender.replyRichMarkdownCalls)
+	}
+	if len(sender.replyMarkdownTexts) != 1 {
+		t.Fatalf("unexpected markdown reply history: %#v", sender.replyMarkdownTexts)
+	}
+	if strings.Contains(sender.replyMarkdownTexts[0], "<reply_will>") {
+		t.Fatalf("reply_will block should be stripped before sending, got %q", sender.replyMarkdownTexts[0])
+	}
+	want := "【轻轻晃了晃尾巴】\n咱在这儿看着你喵。"
+	if sender.replyMarkdownTexts[0] != want {
+		t.Fatalf("unexpected markdown reply:\nwant: %q\ngot : %q", want, sender.replyMarkdownTexts[0])
+	}
+}
+
 func TestProcessor_PassesJobLLMRunOptionsToBackend(t *testing.T) {
 	fakeCodex := &codexCaptureStub{resp: "[[NO_REPLY]]"}
 	sender := &senderStub{}
