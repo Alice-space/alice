@@ -23,14 +23,14 @@ func buildExecArgs(
 	policy.Sandbox = strings.TrimSpace(policy.Sandbox)
 	policy.AskForApproval = strings.TrimSpace(policy.AskForApproval)
 	policy.AddDirs = uniqueAddDirs(policy.AddDirs)
-	resumeUsesDangerousBypass := shouldUseResumeDangerousBypass(threadID, policy)
+	usesDangerousBypass := shouldUseDangerousBypass(policy)
 
 	buildRootFlags := func() []string {
 		args := make([]string, 0, 10+len(policy.AddDirs)*2)
-		if !resumeUsesDangerousBypass && policy.AskForApproval != "" {
+		if !usesDangerousBypass && policy.AskForApproval != "" {
 			args = append(args, "-a", policy.AskForApproval)
 		}
-		if !resumeUsesDangerousBypass && policy.Sandbox != "" {
+		if !usesDangerousBypass && policy.Sandbox != "" {
 			args = append(args, "--sandbox", policy.Sandbox)
 		}
 		for _, dir := range policy.AddDirs {
@@ -56,9 +56,10 @@ func buildExecArgs(
 			"--json",
 			"--skip-git-repo-check",
 		}
-		if resumeUsesDangerousBypass {
-			// `codex exec resume` does not reliably honor `--sandbox danger-full-access`
-			// overrides for an existing read-only session, but it does honor bypass.
+		if usesDangerousBypass {
+			// When Alice wants a full-access, no-approval run, use Codex's explicit
+			// bypass mode so the initial work-thread turn sees the same permissions
+			// as later resume turns.
 			args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 		}
 		return args
@@ -82,9 +83,8 @@ func buildExecArgs(
 	return args
 }
 
-func shouldUseResumeDangerousBypass(threadID string, policy ExecPolicyConfig) bool {
-	return strings.TrimSpace(threadID) != "" &&
-		policy.Sandbox == defaultWorkSandbox &&
+func shouldUseDangerousBypass(policy ExecPolicyConfig) bool {
+	return policy.Sandbox == defaultWorkSandbox &&
 		policy.AskForApproval == defaultApprovalMode
 }
 
