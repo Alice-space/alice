@@ -24,10 +24,26 @@ type Runner struct {
 	Env                    map[string]string
 	PromptPrefix           string
 	WorkspaceDir           string
+	ChatExecPolicy         ExecPolicyConfig
+	WorkExecPolicy         ExecPolicyConfig
 	Prompts                *prompting.Loader
 }
 
 const fileChangeCallbackPrefix = "[file_change] "
+
+const (
+	sceneWork            = "work"
+	defaultChatSandbox   = "workspace-write"
+	defaultWorkSandbox   = "danger-full-access"
+	defaultApprovalMode  = "never"
+	envAliceResourceRoot = "ALICE_MCP_RESOURCE_ROOT"
+)
+
+type ExecPolicyConfig struct {
+	Sandbox        string
+	AskForApproval string
+	AddDirs        []string
+}
 
 type fileDiffStat struct {
 	Additions int
@@ -37,7 +53,7 @@ type fileDiffStat struct {
 type repoDiffSnapshot map[string]fileDiffStat
 
 func (r Runner) Run(ctx context.Context, userText string) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", nil, nil)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", "", nil, nil)
 	return reply, err
 }
 
@@ -46,7 +62,7 @@ func (r Runner) RunWithProgress(
 	userText string,
 	onThinking func(step string),
 ) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", nil, onThinking)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", "", nil, onThinking)
 	return reply, err
 }
 
@@ -55,7 +71,7 @@ func (r Runner) RunWithThread(
 	threadID string,
 	userText string,
 ) (string, string, error) {
-	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", "", "", "", nil, nil)
+	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", "", "", "", "", nil, nil)
 }
 
 func (r Runner) RunWithThreadAndProgress(
@@ -63,6 +79,7 @@ func (r Runner) RunWithThreadAndProgress(
 	threadID string,
 	agentName string,
 	userText string,
+	scene string,
 	model string,
 	profile string,
 	reasoningEffort string,
@@ -106,7 +123,15 @@ func (r Runner) RunWithThreadAndProgress(
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
 
-	cmdArgs := buildExecArgs(threadID, prompt, model, profile, reasoningEffort, personality)
+	cmdArgs := buildExecArgs(
+		threadID,
+		prompt,
+		model,
+		profile,
+		reasoningEffort,
+		personality,
+		r.execPolicy(scene, env),
+	)
 	cmd := exec.CommandContext(tctx, r.Command, cmdArgs...)
 	configureInterruptibleCommand(cmd, "codex")
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
@@ -305,6 +330,52 @@ func (r Runner) RunWithThreadAndProgress(
 	)
 	emitTrace(nil)
 	return finalMessage, activeThreadID, nil
+}
+
+func (r Runner) execPolicy(scene string, env map[string]string) ExecPolicyConfig {
+	policy := r.ChatExecPolicy
+	defaultSandbox := defaultChatSandbox
+	if strings.ToLower(strings.TrimSpace(scene)) == sceneWork {
+		policy = r.WorkExecPolicy
+		defaultSandbox = defaultWorkSandbox
+	}
+	policy.Sandbox = strings.TrimSpace(policy.Sandbox)
+	if policy.Sandbox == "" {
+		policy.Sandbox = defaultSandbox
+	}
+	policy.AskForApproval = strings.TrimSpace(policy.AskForApproval)
+	if policy.AskForApproval == "" {
+		policy.AskForApproval = defaultApprovalMode
+	}
+	policy.AddDirs = uniqueAddDirs(policy.AddDirs)
+	if resourceRoot := strings.TrimSpace(env[envAliceResourceRoot]); resourceRoot != "" {
+		policy.AddDirs = appendUniqueAddDir(policy.AddDirs, resourceRoot)
+	}
+	return policy
+}
+
+func uniqueAddDirs(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, raw := range in {
+		out = appendUniqueAddDir(out, raw)
+	}
+	return out
+}
+
+func appendUniqueAddDir(out []string, raw string) []string {
+	trimmed := strings.TrimSpace(raw)
+	if trimmed == "" {
+		return out
+	}
+	for _, existing := range out {
+		if strings.TrimSpace(existing) == trimmed {
+			return out
+		}
+	}
+	return append(out, trimmed)
 }
 
 func (r Runner) renderPrompt(threadID string, userText string, personality string, noReplyToken string) (string, error) {

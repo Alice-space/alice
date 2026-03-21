@@ -6,18 +6,37 @@ import (
 	"strings"
 )
 
-func buildExecArgs(threadID string, prompt string, model string, profile string, reasoningEffort string, personality string) []string {
+func buildExecArgs(
+	threadID string,
+	prompt string,
+	model string,
+	profile string,
+	reasoningEffort string,
+	personality string,
+	policy ExecPolicyConfig,
+) []string {
 	threadID = strings.TrimSpace(threadID)
 	model = strings.TrimSpace(model)
 	profile = strings.TrimSpace(profile)
 	reasoningEffort = strings.TrimSpace(reasoningEffort)
 	personality = strings.TrimSpace(personality)
+	policy.Sandbox = strings.TrimSpace(policy.Sandbox)
+	policy.AskForApproval = strings.TrimSpace(policy.AskForApproval)
+	policy.AddDirs = uniqueAddDirs(policy.AddDirs)
 
 	buildFlags := func() []string {
 		args := []string{
 			"--json",
 			"--skip-git-repo-check",
-			"--dangerously-bypass-approvals-and-sandbox",
+		}
+		if policy.Sandbox != "" {
+			args = append(args, "--sandbox", policy.Sandbox)
+		}
+		if policy.AskForApproval != "" {
+			args = append(args, "-a", policy.AskForApproval)
+		}
+		for _, dir := range policy.AddDirs {
+			args = append(args, "--add-dir", dir)
 		}
 		if model != "" {
 			args = append(args, "-m", model)

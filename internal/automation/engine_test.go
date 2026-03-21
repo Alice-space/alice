@@ -229,6 +229,10 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm personality: %q", runner.lastReq.Personality)
 	}
+	if runner.lastReq.Scene != "chat" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm scene: %q", runner.lastReq.Scene)
+	}
 	if got := runner.lastReq.Env["ALICE_MCP_RECEIVE_ID"]; got != "ou_actor" {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm env receive id: %q", got)
@@ -344,6 +348,10 @@ func TestEngine_RunUserTask_RunWorkflow(t *testing.T) {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected workflow personality: %q", runner.lastReq.Personality)
 	}
+	if runner.lastReq.Scene != "chat" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow scene: %q", runner.lastReq.Scene)
+	}
 	if got := runner.lastReq.Env["ALICE_MCP_SESSION_KEY"]; got != "chat_id:oc_chat|thread:omt_alpha" {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected workflow session key env: %q", got)
@@ -404,6 +412,13 @@ func TestEngine_RunUserTask_RunWorkflow_WorkSceneUsesCard(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
 	defer cancel()
 	engine.Run(ctx)
+
+	runner.mu.Lock()
+	if runner.lastReq.Scene != "work" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected workflow scene: %q", runner.lastReq.Scene)
+	}
+	runner.mu.Unlock()
 
 	sender.mu.Lock()
 	defer sender.mu.Unlock()

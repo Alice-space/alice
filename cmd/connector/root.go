@@ -108,7 +108,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	if strings.TrimSpace(cfg.AliceHome) != "" {
 		_ = os.Setenv(config.EnvAliceHome, cfg.AliceHome)
 	}
-	codexHome := ensureIsolatedCodexHomeEnv(cfg.AliceHome)
+	codexHome := ensureIsolatedCodexHomeEnv(cfg.CodexHome)
 	if !pidFileExplicit {
 		pidFilePath = config.PIDFilePathForAliceHome(cfg.AliceHome)
 	}
@@ -137,43 +137,66 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		logging.Infof("pid file enabled path=%s", pidFilePath)
 	}
 
-	llmProvider, err := bootstrap.NewLLMProvider(cfg)
+	runtimeConfigs, err := cfg.RuntimeConfigs()
 	if err != nil {
 		return err
 	}
-
-	skillReport, err := bootstrap.EnsureBundledSkillsLinked(cfg.WorkspaceDir)
-	if err != nil {
-		logging.Warnf("sync bundled skills failed: %v", err)
-	} else if skillReport.Discovered > 0 {
-		logging.Infof(
-			"bundled skills synced codex_home=%s discovered=%d linked=%d updated=%d unchanged=%d failed=%d",
-			skillReport.CodexHome,
-			skillReport.Discovered,
-			skillReport.Linked,
-			skillReport.Updated,
-			skillReport.Unchanged,
-			skillReport.Failed,
-		)
+	for _, runtimeCfg := range runtimeConfigs {
+		if err := ensureWorkspaceDir(runtimeCfg.WorkspaceDir); err != nil {
+			return err
+		}
+		skillReport, skillErr := bootstrap.EnsureBundledSkillsLinkedForCodexHome(runtimeCfg.CodexHome, runtimeCfg.AllowedBundledSkills())
+		if skillErr != nil {
+			logging.Warnf("sync bundled skills failed bot=%s: %v", runtimeCfg.BotID, skillErr)
+			continue
+		}
+		if skillReport.Discovered > 0 {
+			logging.Infof(
+				"bundled skills synced bot=%s codex_home=%s discovered=%d linked=%d updated=%d unchanged=%d failed=%d",
+				runtimeCfg.BotID,
+				skillReport.CodexHome,
+				skillReport.Discovered,
+				skillReport.Linked,
+				skillReport.Updated,
+				skillReport.Unchanged,
+				skillReport.Failed,
+			)
+		}
 	}
 
-	runtime, err := bootstrap.BuildConnectorRuntime(cfg, llmProvider)
+	manager, err := bootstrap.BuildRuntimeManager(cfg)
 	if err != nil {
 		return err
+	}
+	if len(manager.Runtimes) == 0 {
+		return fmt.Errorf("no connector runtime built")
+	}
+	var runtime *bootstrap.ConnectorRuntime
+	if len(manager.Runtimes) == 1 {
+		runtime = manager.Runtimes[0]
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	if err := startConfigHotReload(ctx, configPath, runtime); err != nil {
-		logging.Warnf("config hot reload disabled: %v", err)
+	if runtime != nil {
+		if err := startConfigHotReload(ctx, configPath, runtime); err != nil {
+			logging.Warnf("config hot reload disabled: %v", err)
+		}
+	} else {
+		logging.Warnf("config hot reload disabled for multi-bot mode; restart service after config changes")
 	}
 
 	logging.Infof("feishu-codex connector started (long connection mode)")
-	logging.Infof("automation engine enabled state_file=%s", runtime.AutomationStatePath)
-	if runtime.RuntimeAPI != nil {
-		logging.Infof("runtime http api enabled addr=%s", runtime.RuntimeAPIBaseURL)
+	for _, built := range manager.Runtimes {
+		if built == nil {
+			continue
+		}
+		logging.Infof("automation engine enabled bot=%s state_file=%s", built.Config.BotID, built.AutomationStatePath)
+		if built.RuntimeAPI != nil {
+			logging.Infof("runtime http api enabled bot=%s addr=%s", built.Config.BotID, built.RuntimeAPIBaseURL)
+		}
 	}
-	if err := runtime.Run(ctx); err != nil {
+	if err := manager.Run(ctx); err != nil {
 		return err
 	}
 
@@ -205,7 +228,21 @@ func configHasRequiredCredentials(configPath string) (bool, error) {
 	}
 	appID := strings.TrimSpace(v.GetString("feishu_app_id"))
 	appSecret := strings.TrimSpace(v.GetString("feishu_app_secret"))
-	return appID != "" && appSecret != "", nil
+	if appID != "" && appSecret != "" {
+		return true, nil
+	}
+	for _, rawBot := range v.GetStringMap("bots") {
+		botMap, ok := rawBot.(map[string]any)
+		if !ok {
+			continue
+		}
+		botAppID := strings.TrimSpace(stringValue(botMap["feishu_app_id"]))
+		botSecret := strings.TrimSpace(stringValue(botMap["feishu_app_secret"]))
+		if botAppID != "" && botSecret != "" {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func startConfigHotReload(ctx context.Context, configPath string, runtime *bootstrap.ConnectorRuntime) error {
@@ -366,8 +403,22 @@ func ensureWorkspaceDir(path string) error {
 	return nil
 }
 
-func ensureIsolatedCodexHomeEnv(aliceHome string) string {
-	target := config.CodexHomeForAliceHome(aliceHome)
+func ensureIsolatedCodexHomeEnv(codexHome string) string {
+	target := strings.TrimSpace(codexHome)
+	if target == "" {
+		target = config.DefaultCodexHome()
+	}
 	_ = os.Setenv(config.EnvCodexHome, target)
 	return target
+}
+
+func stringValue(value any) string {
+	switch typed := value.(type) {
+	case string:
+		return typed
+	case fmt.Stringer:
+		return typed.String()
+	default:
+		return fmt.Sprintf("%v", value)
+	}
 }

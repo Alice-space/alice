@@ -380,6 +380,7 @@ func effectiveJobResponseMode(job Job) string {
 
 func jobLLMRunOptions(job Job) llmRunOptions {
 	return llmRunOptions{
+		Scene:           job.Scene,
 		Model:           job.LLMModel,
 		Profile:         job.LLMProfile,
 		ReasoningEffort: job.LLMReasoningEffort,

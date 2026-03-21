@@ -8,6 +8,7 @@ type RunRequest struct {
 	ThreadID        string
 	AgentName       string
 	UserText        string
+	Scene           string
 	Model           string
 	Profile         string
 	ReasoningEffort string

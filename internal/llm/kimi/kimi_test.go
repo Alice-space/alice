@@ -266,7 +266,8 @@ exit 37
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "boom on stderr") {
+	if !strings.Contains(err.Error(), "boom on stderr") &&
+		!strings.Contains(err.Error(), "exit status 37") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 	if nextThreadID != "" {

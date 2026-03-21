@@ -48,7 +48,69 @@ type GroupScenesConfig struct {
 	Work GroupSceneConfig `mapstructure:"work"`
 }
 
+type CodexExecPolicyConfig struct {
+	Sandbox        string   `mapstructure:"sandbox"`
+	AskForApproval string   `mapstructure:"ask_for_approval"`
+	AddDirs        []string `mapstructure:"add_dirs"`
+}
+
+type SceneCodexPoliciesConfig struct {
+	Chat CodexExecPolicyConfig `mapstructure:"chat"`
+	Work CodexExecPolicyConfig `mapstructure:"work"`
+}
+
+type BotPermissionsConfig struct {
+	RuntimeMessage    *bool                    `mapstructure:"runtime_message"`
+	RuntimeAutomation *bool                    `mapstructure:"runtime_automation"`
+	RuntimeCampaigns  *bool                    `mapstructure:"runtime_campaigns"`
+	AllowedSkills     []string                 `mapstructure:"allowed_skills"`
+	Codex             SceneCodexPoliciesConfig `mapstructure:"codex"`
+}
+
+type BotConfig struct {
+	Name                      string                      `mapstructure:"name"`
+	FeishuAppID               string                      `mapstructure:"feishu_app_id"`
+	FeishuAppSecret           string                      `mapstructure:"feishu_app_secret"`
+	FeishuBaseURL             string                      `mapstructure:"feishu_base_url"`
+	FeishuBotOpenID           string                      `mapstructure:"feishu_bot_open_id"`
+	FeishuBotUserID           string                      `mapstructure:"feishu_bot_user_id"`
+	TriggerMode               string                      `mapstructure:"trigger_mode"`
+	TriggerPrefix             string                      `mapstructure:"trigger_prefix"`
+	ImmediateFeedbackMode     string                      `mapstructure:"immediate_feedback_mode"`
+	ImmediateFeedbackReaction string                      `mapstructure:"immediate_feedback_reaction"`
+	LLMProvider               string                      `mapstructure:"llm_provider"`
+	LLMProfiles               map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
+	GroupScenes               *GroupScenesConfig          `mapstructure:"group_scenes"`
+	CodexCommand              string                      `mapstructure:"codex_command"`
+	CodexTimeoutSecs          int                         `mapstructure:"codex_timeout_secs"`
+	CodexModel                string                      `mapstructure:"codex_model"`
+	CodexReasoningEffort      string                      `mapstructure:"codex_model_reasoning_effort"`
+	CodexPromptPrefix         string                      `mapstructure:"codex_prompt_prefix"`
+	ClaudeCommand             string                      `mapstructure:"claude_command"`
+	ClaudeTimeoutSecs         int                         `mapstructure:"claude_timeout_secs"`
+	ClaudePromptPrefix        string                      `mapstructure:"claude_prompt_prefix"`
+	KimiCommand               string                      `mapstructure:"kimi_command"`
+	KimiTimeoutSecs           int                         `mapstructure:"kimi_timeout_secs"`
+	KimiPromptPrefix          string                      `mapstructure:"kimi_prompt_prefix"`
+	RuntimeHTTPAddr           string                      `mapstructure:"runtime_http_addr"`
+	RuntimeHTTPToken          string                      `mapstructure:"runtime_http_token"`
+	FailureMessage            string                      `mapstructure:"failure_message"`
+	ThinkingMessage           string                      `mapstructure:"thinking_message"`
+	AliceHome                 string                      `mapstructure:"alice_home"`
+	WorkspaceDir              string                      `mapstructure:"workspace_dir"`
+	PromptDir                 string                      `mapstructure:"prompt_dir"`
+	CodexHome                 string                      `mapstructure:"codex_home"`
+	SoulPath                  string                      `mapstructure:"soul_path"`
+	CodexEnv                  map[string]string           `mapstructure:"env"`
+	QueueCapacity             int                         `mapstructure:"queue_capacity"`
+	WorkerConcurrency         int                         `mapstructure:"worker_concurrency"`
+	AutomationTaskTimeoutSecs int                         `mapstructure:"automation_task_timeout_secs"`
+	Permissions               *BotPermissionsConfig       `mapstructure:"permissions"`
+}
+
 type Config struct {
+	BotID                     string `mapstructure:"-"`
+	BotName                   string `mapstructure:"bot_name"`
 	FeishuAppID               string `mapstructure:"feishu_app_id"`
 	FeishuAppSecret           string `mapstructure:"feishu_app_secret"`
 	FeishuBaseURL             string `mapstructure:"feishu_base_url"`
@@ -63,28 +125,33 @@ type Config struct {
 	LLMProfiles map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
 	GroupScenes GroupScenesConfig           `mapstructure:"group_scenes"`
 
-	CodexCommand         string            `mapstructure:"codex_command"`
-	CodexTimeout         time.Duration     `mapstructure:"-"`
-	CodexTimeoutSecs     int               `mapstructure:"codex_timeout_secs"`
-	CodexModel           string            `mapstructure:"codex_model"`
-	CodexReasoningEffort string            `mapstructure:"codex_model_reasoning_effort"`
-	CodexEnv             map[string]string `mapstructure:"env"`
-	CodexPromptPrefix    string            `mapstructure:"codex_prompt_prefix"`
-	ClaudeCommand        string            `mapstructure:"claude_command"`
-	ClaudeTimeout        time.Duration     `mapstructure:"-"`
-	ClaudeTimeoutSecs    int               `mapstructure:"claude_timeout_secs"`
-	ClaudePromptPrefix   string            `mapstructure:"claude_prompt_prefix"`
-	KimiCommand          string            `mapstructure:"kimi_command"`
-	KimiTimeout          time.Duration     `mapstructure:"-"`
-	KimiTimeoutSecs      int               `mapstructure:"kimi_timeout_secs"`
-	KimiPromptPrefix     string            `mapstructure:"kimi_prompt_prefix"`
-	RuntimeHTTPAddr      string            `mapstructure:"runtime_http_addr"`
-	RuntimeHTTPToken     string            `mapstructure:"runtime_http_token"`
-	FailureMessage       string            `mapstructure:"failure_message"`
-	ThinkingMessage      string            `mapstructure:"thinking_message"`
-	AliceHome            string            `mapstructure:"alice_home"`
-	WorkspaceDir         string            `mapstructure:"workspace_dir"`
-	PromptDir            string            `mapstructure:"prompt_dir"`
+	CodexCommand         string               `mapstructure:"codex_command"`
+	CodexTimeout         time.Duration        `mapstructure:"-"`
+	CodexTimeoutSecs     int                  `mapstructure:"codex_timeout_secs"`
+	CodexModel           string               `mapstructure:"codex_model"`
+	CodexReasoningEffort string               `mapstructure:"codex_model_reasoning_effort"`
+	CodexEnv             map[string]string    `mapstructure:"env"`
+	CodexPromptPrefix    string               `mapstructure:"codex_prompt_prefix"`
+	ClaudeCommand        string               `mapstructure:"claude_command"`
+	ClaudeTimeout        time.Duration        `mapstructure:"-"`
+	ClaudeTimeoutSecs    int                  `mapstructure:"claude_timeout_secs"`
+	ClaudePromptPrefix   string               `mapstructure:"claude_prompt_prefix"`
+	KimiCommand          string               `mapstructure:"kimi_command"`
+	KimiTimeout          time.Duration        `mapstructure:"-"`
+	KimiTimeoutSecs      int                  `mapstructure:"kimi_timeout_secs"`
+	KimiPromptPrefix     string               `mapstructure:"kimi_prompt_prefix"`
+	RuntimeHTTPAddr      string               `mapstructure:"runtime_http_addr"`
+	RuntimeHTTPToken     string               `mapstructure:"runtime_http_token"`
+	FailureMessage       string               `mapstructure:"failure_message"`
+	ThinkingMessage      string               `mapstructure:"thinking_message"`
+	AliceHome            string               `mapstructure:"alice_home"`
+	WorkspaceDir         string               `mapstructure:"workspace_dir"`
+	PromptDir            string               `mapstructure:"prompt_dir"`
+	CodexHome            string               `mapstructure:"codex_home"`
+	SoulPath             string               `mapstructure:"soul_path"`
+	Permissions          BotPermissionsConfig `mapstructure:"permissions"`
+	PrimaryBotID         string               `mapstructure:"primary_bot"`
+	Bots                 map[string]BotConfig `mapstructure:"bots"`
 
 	QueueCapacity             int           `mapstructure:"queue_capacity"`
 	WorkerConcurrency         int           `mapstructure:"worker_concurrency"`
@@ -124,6 +191,17 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("alice_home", AliceHomeDir())
 	v.SetDefault("workspace_dir", "")
 	v.SetDefault("prompt_dir", "")
+	v.SetDefault("codex_home", "")
+	v.SetDefault("soul_path", "")
+	v.SetDefault("bot_name", "")
+	v.SetDefault("primary_bot", "")
+	v.SetDefault("permissions.runtime_message", true)
+	v.SetDefault("permissions.runtime_automation", true)
+	v.SetDefault("permissions.runtime_campaigns", true)
+	v.SetDefault("permissions.codex.chat.sandbox", "workspace-write")
+	v.SetDefault("permissions.codex.chat.ask_for_approval", "never")
+	v.SetDefault("permissions.codex.work.sandbox", "danger-full-access")
+	v.SetDefault("permissions.codex.work.ask_for_approval", "never")
 	v.SetDefault("queue_capacity", 256)
 	v.SetDefault("worker_concurrency", 1)
 	v.SetDefault("automation_task_timeout_secs", 6000)
@@ -182,122 +260,16 @@ func LoadFromFile(path string) (Config, error) {
 	cfg.AliceHome = strings.TrimSpace(cfg.AliceHome)
 	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
 	cfg.PromptDir = strings.TrimSpace(cfg.PromptDir)
+	cfg.CodexHome = strings.TrimSpace(cfg.CodexHome)
+	cfg.SoulPath = strings.TrimSpace(cfg.SoulPath)
+	cfg.BotName = strings.TrimSpace(cfg.BotName)
+	cfg.PrimaryBotID = strings.TrimSpace(cfg.PrimaryBotID)
+	cfg.Permissions = normalizeBotPermissions(cfg.Permissions)
+	cfg.Bots = normalizeBots(cfg.Bots)
 	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
 	cfg.LogFile = strings.TrimSpace(cfg.LogFile)
 
-	if err := validateBaseConfig(cfg); err != nil {
-		return Config{}, err
-	}
-	if cfg.FeishuBaseURL == "" {
-		cfg.FeishuBaseURL = "https://open.feishu.cn"
-	}
-	if cfg.LLMProvider == "" {
-		cfg.LLMProvider = DefaultLLMProvider
-	}
-	if cfg.TriggerMode == "" {
-		cfg.TriggerMode = TriggerModeAt
-	}
-	if cfg.ImmediateFeedbackMode == "" {
-		cfg.ImmediateFeedbackMode = ImmediateFeedbackModeReply
-	}
-	if cfg.ImmediateFeedbackReaction == "" {
-		cfg.ImmediateFeedbackReaction = DefaultImmediateFeedbackReaction
-	}
-	if cfg.CodexCommand == "" {
-		cfg.CodexCommand = "codex"
-	}
-	if cfg.ClaudeCommand == "" {
-		cfg.ClaudeCommand = "claude"
-	}
-	if cfg.KimiCommand == "" {
-		cfg.KimiCommand = "kimi"
-	}
-	if cfg.RuntimeHTTPAddr == "" {
-		cfg.RuntimeHTTPAddr = "127.0.0.1:7331"
-	}
-	if cfg.AliceHome == "" {
-		cfg.AliceHome = AliceHomeDir()
-	} else {
-		cfg.AliceHome = ResolveAliceHomeDir(cfg.AliceHome)
-	}
-	if cfg.WorkspaceDir == "" {
-		cfg.WorkspaceDir = WorkspaceDirForAliceHome(cfg.AliceHome)
-	}
-	if cfg.PromptDir == "" {
-		cfg.PromptDir = PromptDirForAliceHome(cfg.AliceHome)
-	}
-	if cfg.LogFile == "" {
-		cfg.LogFile = LogFilePathForAliceHome(cfg.AliceHome)
-	}
-	if cfg.LogLevel == "" {
-		cfg.LogLevel = "info"
-	}
-	if cfg.FailureMessage == "" {
-		cfg.FailureMessage = "Codex 暂时不可用，请稍后重试。"
-	}
-	if cfg.ThinkingMessage == "" {
-		cfg.ThinkingMessage = "正在思考中..."
-	}
-	switch cfg.LLMProvider {
-	case DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi:
-	default:
-		return Config{}, fmt.Errorf("unsupported llm_provider %q", cfg.LLMProvider)
-	}
-	switch cfg.TriggerMode {
-	case TriggerModeAt, TriggerModePrefix:
-	default:
-		return Config{}, fmt.Errorf("unsupported trigger_mode %q", cfg.TriggerMode)
-	}
-	switch cfg.ImmediateFeedbackMode {
-	case ImmediateFeedbackModeReply, ImmediateFeedbackModeReaction:
-	default:
-		return Config{}, fmt.Errorf("unsupported immediate_feedback_mode %q", cfg.ImmediateFeedbackMode)
-	}
-	if cfg.TriggerMode == TriggerModePrefix && cfg.TriggerPrefix == "" {
-		return Config{}, errors.New("trigger_prefix is required when trigger_mode is prefix")
-	}
-
-	if cfg.CodexTimeoutSecs <= 0 {
-		if cfg.LLMProvider == DefaultLLMProvider {
-			return Config{}, errors.New("codex_timeout_secs must be > 0")
-		}
-		cfg.CodexTimeoutSecs = 172800
-	}
-	if cfg.ClaudeTimeoutSecs <= 0 {
-		if cfg.LLMProvider == LLMProviderClaude {
-			return Config{}, errors.New("claude_timeout_secs must be > 0")
-		}
-		cfg.ClaudeTimeoutSecs = 172800
-	}
-	if cfg.KimiTimeoutSecs <= 0 {
-		if cfg.LLMProvider == LLMProviderKimi {
-			return Config{}, errors.New("kimi_timeout_secs must be > 0")
-		}
-		cfg.KimiTimeoutSecs = 172800
-	}
-	for key := range cfg.CodexEnv {
-		if key == "" {
-			return Config{}, errors.New("env key must not be empty")
-		}
-		if strings.ContainsRune(key, '=') {
-			return Config{}, fmt.Errorf("env key %q must not contain '='", key)
-		}
-	}
-	if cfg.LogMaxSizeMB <= 0 {
-		cfg.LogMaxSizeMB = 20
-	}
-	if cfg.LogMaxBackups <= 0 {
-		cfg.LogMaxBackups = 5
-	}
-	if cfg.LogMaxAgeDays <= 0 {
-		cfg.LogMaxAgeDays = 7
-	}
-	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
-	cfg.ClaudeTimeout = time.Duration(cfg.ClaudeTimeoutSecs) * time.Second
-	cfg.KimiTimeout = time.Duration(cfg.KimiTimeoutSecs) * time.Second
-	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
-
-	return cfg, nil
+	return finalizeConfig(cfg, len(cfg.Bots) == 0)
 }
 
 func normalizeEnvMap(in map[string]string) map[string]string {
@@ -360,13 +332,15 @@ type baseConfigValidation struct {
 	AutomationTaskTimeoutSecs int    `validate:"gt=0"`
 }
 
-func validateBaseConfig(cfg Config) error {
+func validateBaseConfig(cfg Config, requireCredentials bool) error {
 	base := baseConfigValidation{
-		FeishuAppID:               cfg.FeishuAppID,
-		FeishuAppSecret:           cfg.FeishuAppSecret,
 		QueueCapacity:             cfg.QueueCapacity,
 		WorkerConcurrency:         cfg.WorkerConcurrency,
 		AutomationTaskTimeoutSecs: cfg.AutomationTaskTimeoutSecs,
+	}
+	if requireCredentials {
+		base.FeishuAppID = cfg.FeishuAppID
+		base.FeishuAppSecret = cfg.FeishuAppSecret
 	}
 	if err := configValidator.Struct(base); err != nil {
 		var validationErrs validator.ValidationErrors

@@ -33,6 +33,9 @@ type App struct {
 }
 
 type appRuntimeConfig struct {
+	botID           string
+	botName         string
+	soulPath        string
 	triggerMode     string
 	triggerPrefix   string
 	llmProvider     string
@@ -64,6 +67,9 @@ func NewApp(cfg config.Config, processor *Processor) *App {
 
 func newAppRuntimeConfig(cfg config.Config) appRuntimeConfig {
 	return appRuntimeConfig{
+		botID:           strings.TrimSpace(cfg.BotID),
+		botName:         strings.TrimSpace(cfg.BotName),
+		soulPath:        strings.TrimSpace(cfg.SoulPath),
 		triggerMode:     cfg.TriggerMode,
 		triggerPrefix:   cfg.TriggerPrefix,
 		llmProvider:     cfg.LLMProvider,
@@ -320,6 +326,9 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 	}
 	job.BotOpenID = strings.TrimSpace(runtimeCfg.feishuBotOpenID)
 	job.BotUserID = strings.TrimSpace(runtimeCfg.feishuBotUserID)
+	job.BotID = strings.TrimSpace(runtimeCfg.botID)
+	job.BotName = strings.TrimSpace(runtimeCfg.botName)
+	job.SoulPath = strings.TrimSpace(runtimeCfg.soulPath)
 
 	queued, cancelActive, canceledEventID := a.enqueueJob(job)
 	if !queued {

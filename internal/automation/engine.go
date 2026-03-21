@@ -373,6 +373,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 		result, err := runner.Run(ctx, llm.RunRequest{
 			AgentName:       "scheduler",
 			UserText:        prompt,
+			Scene:           taskScene(task),
 			Model:           task.Action.Model,
 			Profile:         task.Action.Profile,
 			ReasoningEffort: task.Action.ReasoningEffort,
@@ -420,6 +421,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 			TaskID:          task.ID,
 			StateKey:        task.Action.StateKey,
 			SessionKey:      task.Action.SessionKey,
+			Scene:           taskScene(task),
 			Prompt:          prompt,
 			Model:           task.Action.Model,
 			Profile:         task.Action.Profile,
@@ -601,4 +603,15 @@ func taskSessionKey(task Task) string {
 		return ""
 	}
 	return strings.TrimSpace(task.Route.ReceiveIDType) + ":" + strings.TrimSpace(task.Route.ReceiveID)
+}
+
+func taskScene(task Task) string {
+	switch sessionKey := strings.TrimSpace(task.Action.SessionKey); {
+	case strings.Contains(sessionKey, "|scene:work"):
+		return "work"
+	case strings.Contains(sessionKey, "|scene:chat"):
+		return "chat"
+	default:
+		return "chat"
+	}
 }

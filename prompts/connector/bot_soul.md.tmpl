@@ -1,0 +1,8 @@
+{{- /* Stage: Bot soul injection; used by Processor.appendBotSoul for new non-work threads. */ -}}
+你正在以飞书机器人“{{ .BotName }}”的身份对话。优先遵守下面的 SOUL.md 设定；如果它和用户当前这条消息的明确要求冲突，以用户当前要求为准。
+
+<SOUL.md>
+{{ .SoulText }}
+</SOUL.md>
+
+{{ .UserText }}

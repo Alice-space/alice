@@ -20,6 +20,7 @@ type WorkflowRunRequest struct {
 	TaskID          string
 	StateKey        string
 	SessionKey      string
+	Scene           string
 	Prompt          string
 	Model           string
 	Profile         string
@@ -72,6 +73,7 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 	result, err := r.backend.Run(ctx, llm.RunRequest{
 		AgentName:       workflowAgentName(workflow),
 		UserText:        prompt,
+		Scene:           normalizeWorkflowScene(req.Scene, req.SessionKey),
 		Model:           strings.TrimSpace(req.Model),
 		Profile:         strings.TrimSpace(req.Profile),
 		ReasoningEffort: strings.TrimSpace(req.ReasoningEffort),
@@ -110,4 +112,15 @@ func cloneWorkflowEnv(in map[string]string) map[string]string {
 		out[trimmedKey] = trimmedValue
 	}
 	return out
+}
+
+func normalizeWorkflowScene(scene, sessionKey string) string {
+	scene = strings.ToLower(strings.TrimSpace(scene))
+	if scene == "chat" || scene == "work" {
+		return scene
+	}
+	if strings.Contains(strings.TrimSpace(sessionKey), "|scene:work") {
+		return "work"
+	}
+	return "chat"
 }

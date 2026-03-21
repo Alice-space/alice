@@ -22,6 +22,10 @@ type campaignScopeContext struct {
 }
 
 func (s *Server) handleCampaignList(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return
@@ -47,6 +51,10 @@ func (s *Server) handleCampaignList(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignCreate(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return
@@ -75,6 +83,10 @@ func (s *Server) handleCampaignCreate(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignGet(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return
@@ -101,6 +113,10 @@ func (s *Server) handleCampaignGet(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignPatch(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return
@@ -150,6 +166,10 @@ func (s *Server) handleCampaignPatch(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignTrialUpsert(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return
@@ -191,6 +211,10 @@ func (s *Server) handleCampaignTrialUpsert(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignGuidanceAdd(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return
@@ -232,6 +256,10 @@ func (s *Server) handleCampaignGuidanceAdd(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignReviewAdd(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return
@@ -273,6 +301,10 @@ func (s *Server) handleCampaignReviewAdd(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignPitfallAdd(c *gin.Context) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return
+	}
 	if s.campaigns == nil {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
 		return

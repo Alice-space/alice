@@ -72,8 +72,11 @@ type Job struct {
 	ReceiveID            string
 	ReceiveIDType        string
 	ChatType             string
+	BotID                string
+	BotName              string
 	BotOpenID            string
 	BotUserID            string
+	SoulPath             string
 	SenderName           string
 	SenderOpenID         string
 	SenderUserID         string
