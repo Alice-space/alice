@@ -183,7 +183,6 @@ func (p *openAIProvider) editImage(ctx context.Context, req Request, references 
 		Model:         p.model,
 		Size:          openai.ImageEditParamsSize(p.size),
 		Quality:       openai.ImageEditParamsQuality(p.quality),
-		Background:    openai.ImageEditParamsBackground(p.background),
 		OutputFormat:  openai.ImageEditParamsOutputFormat(p.outputFormat),
 		InputFidelity: openai.ImageEditParamsInputFidelity(p.inputFidelity),
 	}
