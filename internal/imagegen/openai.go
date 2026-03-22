@@ -178,13 +178,9 @@ func (p *openAIProvider) editImage(ctx context.Context, req Request, references 
 	}()
 
 	params := openai.ImageEditParams{
-		Image:         openai.ImageEditParamsImageUnion{OfFileArray: readers},
-		Prompt:        req.Prompt,
-		Model:         p.model,
-		Size:          openai.ImageEditParamsSize(p.size),
-		Quality:       openai.ImageEditParamsQuality(p.quality),
-		OutputFormat:  openai.ImageEditParamsOutputFormat(p.outputFormat),
-		InputFidelity: openai.ImageEditParamsInputFidelity(p.inputFidelity),
+		Image:  openai.ImageEditParamsImageUnion{OfFileArray: readers},
+		Prompt: req.Prompt,
+		Model:  p.model,
 	}
 	if strings.TrimSpace(req.UserID) != "" {
 		params.User = openai.String(strings.TrimSpace(req.UserID))

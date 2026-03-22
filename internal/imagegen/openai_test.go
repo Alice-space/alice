@@ -91,7 +91,7 @@ func TestOpenAIFileWrapperCarriesImageMetadata(t *testing.T) {
 	}
 }
 
-func TestOpenAIProviderEditImage_OmitsBackgroundAndSendsTypedReferenceImages(t *testing.T) {
+func TestOpenAIProviderEditImage_UsesMinimalCompatibleParams(t *testing.T) {
 	t.Parallel()
 
 	type uploadedImage struct {
@@ -162,11 +162,10 @@ func TestOpenAIProviderEditImage_OmitsBackgroundAndSendsTypedReferenceImages(t *
 	if captured.Path != "/images/edits" {
 		t.Fatalf("unexpected path: %q", captured.Path)
 	}
-	if got := firstField(captured.Fields, "background"); got != "" {
-		t.Fatalf("background should be omitted for edit requests, got %q", got)
-	}
-	if got := firstField(captured.Fields, "input_fidelity"); got != "high" {
-		t.Fatalf("unexpected input_fidelity: %q", got)
+	for _, field := range []string{"background", "size", "quality", "output_format", "input_fidelity"} {
+		if got := firstField(captured.Fields, field); got != "" {
+			t.Fatalf("%s should be omitted for edit requests, got %q", field, got)
+		}
 	}
 	if len(captured.Images) != 1 {
 		t.Fatalf("unexpected image count: %d", len(captured.Images))
