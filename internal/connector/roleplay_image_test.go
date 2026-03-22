@@ -111,6 +111,74 @@ func TestProcessor_GeneratesImageFromRoleplayReply(t *testing.T) {
 	}
 }
 
+func TestProcessor_SetImageGenerationPreservesOpenAIParams(t *testing.T) {
+	sender := &senderStub{resourceRoot: t.TempDir()}
+	processor := NewProcessor(codexStub{}, sender, "failed", "thinking")
+
+	var captured config.ImageGenerationConfig
+	processor.newImageProvider = func(cfg config.ImageGenerationConfig, _ map[string]string) (imagegen.Provider, error) {
+		captured = cfg
+		return &fakeImageProvider{}, nil
+	}
+
+	if err := processor.SetImageGeneration(config.ImageGenerationConfig{
+		Enabled:               true,
+		Provider:              " openai ",
+		Model:                 " gpt-image-1-mini ",
+		BaseURL:               " https://example.invalid/v1 ",
+		TimeoutSecs:           60,
+		Moderation:            " low ",
+		N:                     1,
+		OutputCompression:     100,
+		ResponseFormat:        " b64_json ",
+		Size:                  " 1024x1024 ",
+		Quality:               " low ",
+		Background:            " auto ",
+		OutputFormat:          " png ",
+		PartialImages:         2,
+		Stream:                true,
+		Style:                 " vivid ",
+		InputFidelity:         " low ",
+		MaskPath:              " /tmp/mask.png ",
+		UseCurrentAttachments: false,
+	}, map[string]string{"OPENAI_API_KEY": "test-key"}); err != nil {
+		t.Fatalf("set image generation failed: %v", err)
+	}
+
+	if captured.Moderation != "low" {
+		t.Fatalf("unexpected moderation: %q", captured.Moderation)
+	}
+	if captured.N != 1 {
+		t.Fatalf("unexpected n: %d", captured.N)
+	}
+	if captured.OutputCompression != 100 {
+		t.Fatalf("unexpected output_compression: %d", captured.OutputCompression)
+	}
+	if captured.ResponseFormat != "b64_json" {
+		t.Fatalf("unexpected response_format: %q", captured.ResponseFormat)
+	}
+	if captured.PartialImages != 2 {
+		t.Fatalf("unexpected partial_images: %d", captured.PartialImages)
+	}
+	if !captured.Stream {
+		t.Fatalf("expected stream to stay enabled")
+	}
+	if captured.Style != "vivid" {
+		t.Fatalf("unexpected style: %q", captured.Style)
+	}
+	if captured.MaskPath != "/tmp/mask.png" {
+		t.Fatalf("unexpected mask_path: %q", captured.MaskPath)
+	}
+
+	snapshot := processor.runtimeSnapshot()
+	if snapshot.imageGeneration.OutputCompression != 100 {
+		t.Fatalf("unexpected runtime output_compression: %d", snapshot.imageGeneration.OutputCompression)
+	}
+	if snapshot.imageGeneration.Moderation != "low" {
+		t.Fatalf("unexpected runtime moderation: %q", snapshot.imageGeneration.Moderation)
+	}
+}
+
 func TestProcessor_GeneratedImageRepliesDirectlyInChatScene(t *testing.T) {
 	sender := &senderStub{resourceRoot: t.TempDir()}
 	provider := &fakeImageProvider{}
