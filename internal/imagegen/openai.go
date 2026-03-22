@@ -160,8 +160,16 @@ func (p *openAIProvider) editImage(ctx context.Context, req Request, references 
 			}
 			return openai.ImagesResponse{}, fmt.Errorf("open reference image %s failed: %w", path, err)
 		}
+		contentType, err := imageContentTypeForPath(path)
+		if err != nil {
+			_ = file.Close()
+			for _, opened := range files {
+				_ = opened.Close()
+			}
+			return openai.ImagesResponse{}, err
+		}
 		files = append(files, file)
-		readers = append(readers, file)
+		readers = append(readers, openai.File(file, filepath.Base(path), contentType))
 	}
 	defer func() {
 		for _, file := range files {
@@ -190,6 +198,19 @@ func (p *openAIProvider) editImage(ctx context.Context, req Request, references 
 		return openai.ImagesResponse{}, errors.New("openai image response is nil")
 	}
 	return *resp, nil
+}
+
+func imageContentTypeForPath(path string) (string, error) {
+	switch strings.ToLower(filepath.Ext(strings.TrimSpace(path))) {
+	case ".jpg", ".jpeg":
+		return "image/jpeg", nil
+	case ".png":
+		return "image/png", nil
+	case ".webp":
+		return "image/webp", nil
+	default:
+		return "", fmt.Errorf("unsupported reference image format for %s", path)
+	}
 }
 
 func newHTTPClient(proxyCfg openAIProxyConfig, timeout time.Duration) (*http.Client, error) {
