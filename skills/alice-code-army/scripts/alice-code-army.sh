@@ -88,6 +88,73 @@ campaign_json() {
   run_campaigns get "$campaign_id"
 }
 
+# Keep campaign sync idempotent by collapsing exact duplicate log entries.
+campaign_exact_dedupe_patch_json() {
+  local payload="$1"
+  jq -c '
+    def dedupe_guidance($arr):
+      reduce ($arr // [])[] as $item ([]; 
+        if any(.[]; (.source // "") == ($item.source // "") and (.command // "") == ($item.command // "") and (.summary // "") == ($item.summary // ""))
+        then .
+        else . + [$item]
+        end
+      );
+    def dedupe_reviews($arr):
+      reduce ($arr // [])[] as $item ([]; 
+        if any(.[]; (.reviewer_id // "") == ($item.reviewer_id // "") and (.verdict // "") == ($item.verdict // "") and (.summary // "") == ($item.summary // ""))
+        then .
+        else . + [$item]
+        end
+      );
+    def dedupe_pitfalls($arr):
+      reduce ($arr // [])[] as $item ([]; 
+        if any(.[]; (.summary // "") == ($item.summary // "") and (.reason // "") == ($item.reason // "") and (.related_trial_id // "") == ($item.related_trial_id // ""))
+        then .
+        else . + [$item]
+        end
+      );
+    .campaign | {
+      guidance: dedupe_guidance(.guidance),
+      reviews: dedupe_reviews(.reviews),
+      pitfalls: dedupe_pitfalls(.pitfalls)
+    }
+  ' <<<"$payload"
+}
+
+apply_campaign_exact_dedupe_patch() {
+  local payload="$1" patch_json="$2"
+  jq -c --argjson patch "$patch_json" '
+    .campaign.guidance = $patch.guidance
+    | .campaign.reviews = $patch.reviews
+    | .campaign.pitfalls = $patch.pitfalls
+  ' <<<"$payload"
+}
+
+normalized_campaign_json() {
+  local campaign_id="$1" payload patch_json
+  payload="$(campaign_json "$campaign_id")"
+  patch_json="$(campaign_exact_dedupe_patch_json "$payload")"
+  apply_campaign_exact_dedupe_patch "$payload" "$patch_json"
+}
+
+ensure_campaign_exact_entries_deduped() {
+  local campaign_id="$1" payload current_patch wanted_patch
+  payload="$(campaign_json "$campaign_id")"
+  current_patch="$(jq -c '
+    .campaign | {
+      guidance: (.guidance // []),
+      reviews: (.reviews // []),
+      pitfalls: (.pitfalls // [])
+    }
+  ' <<<"$payload")"
+  wanted_patch="$(campaign_exact_dedupe_patch_json "$payload")"
+  if [[ "$current_patch" != "$wanted_patch" ]]; then
+    patch_campaign "$campaign_id" "$wanted_patch"
+    payload="$(campaign_json "$campaign_id")"
+  fi
+  printf '%s\n' "$payload"
+}
+
 campaign_exists() {
   local campaign_id="$1"
   campaign_json "$campaign_id" >/dev/null
@@ -216,7 +283,7 @@ gitlab_note_mr() {
 render_issue_note() {
   local campaign_id="$1"
   local payload
-  payload="$(campaign_json "$campaign_id")"
+  payload="$(normalized_campaign_json "$campaign_id")"
   jq -r '
     def blank($value): if ($value // "") == "" then "-" else $value end;
     def bullet_metrics($items):
@@ -335,7 +402,7 @@ render_issue_note() {
 render_trial_note() {
   local campaign_id="$1" trial_id="$2"
   local payload
-  payload="$(campaign_json "$campaign_id")"
+  payload="$(normalized_campaign_json "$campaign_id")"
   jq -r --arg trial_id "$trial_id" '
     def blank($value): if ($value // "") == "" then "-" else $value end;
     def metric_rows($items):
@@ -529,7 +596,7 @@ apply_command() {
 
 sync_issue() {
   local campaign_id="$1" payload repo issue_iid body marker legacy_match
-  payload="$(campaign_json "$campaign_id")"
+  payload="$(ensure_campaign_exact_entries_deduped "$campaign_id")"
   repo="$(campaign_repo "$payload")"
   issue_iid="$(campaign_issue_iid "$payload")"
   [[ -n "$repo" ]] || die "campaign repo is empty"
@@ -543,7 +610,7 @@ sync_issue() {
 
 sync_trial() {
   local campaign_id="$1" trial_id="$2" payload repo merge_request mr_iid body marker legacy_match
-  payload="$(campaign_json "$campaign_id")"
+  payload="$(ensure_campaign_exact_entries_deduped "$campaign_id")"
   repo="$(jq -r '.campaign.repo // ""' <<<"$payload")"
   [[ -n "$repo" ]] || die "campaign repo is empty"
   merge_request="$(jq -r --arg trial_id "$trial_id" '
