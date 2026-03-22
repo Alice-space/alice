@@ -37,8 +37,6 @@ bots:
     trigger_mode: "at"
     trigger_prefix: ""
 
-    # LLM runtime (supported providers: codex, claude, gemini, kimi)
-    llm_provider: "codex"
     codex_command: "codex"
     codex_timeout_secs: 172800
     # Optional. Empty means inherit Codex CLI default model from ~/.codex/config.toml.
@@ -53,7 +51,10 @@ bots:
     kimi_timeout_secs: 172800
 
     # Optional named LLM profiles for scene routing.
-    # provider must match llm_provider when set.
+    # Use these to select different models, reasoning effort, personalities or
+    # provider-side profiles in different scenes.
+    # chat / work can use different providers. If provider is omitted on a
+    # profile, Alice falls back to the inferred/default provider.
     llm_profiles:
       chat:
         provider: "codex"
@@ -191,7 +192,6 @@ bots:
     feishu_app_secret: "work_secret"
     # If the file does not exist yet, Alice writes the embedded SOUL.md.example here on startup.
     soul_path: "SOUL.md"
-    llm_provider: "codex"
     llm_profiles:
       chat:
         provider: "codex"
@@ -199,9 +199,9 @@ bots:
         reasoning_effort: "low"
         personality: "friendly"
       work:
-        provider: "codex"
-        model: "gpt-5.4"
-        reasoning_effort: "xhigh"
+        provider: "claude"
+        model: "claude-sonnet-4-20250514"
+        reasoning_effort: "high"
         personality: "pragmatic"
     group_scenes:
       chat:

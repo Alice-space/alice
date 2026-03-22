@@ -24,11 +24,11 @@ func BuildRuntimeManager(cfg config.Config) (*RuntimeManager, error) {
 		Runtimes: make([]*ConnectorRuntime, 0, len(runtimeConfigs)),
 	}
 	for _, runtimeCfg := range runtimeConfigs {
-		provider, err := NewLLMProvider(runtimeCfg)
+		backend, err := NewLLMBackend(runtimeCfg)
 		if err != nil {
 			return nil, fmt.Errorf("build llm provider for bot %q failed: %w", runtimeCfg.BotID, err)
 		}
-		runtime, err := BuildConnectorRuntime(runtimeCfg, provider)
+		runtime, err := BuildConnectorRuntime(runtimeCfg, backend)
 		if err != nil {
 			return nil, fmt.Errorf("build runtime for bot %q failed: %w", runtimeCfg.BotID, err)
 		}

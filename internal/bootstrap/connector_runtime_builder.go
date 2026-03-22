@@ -46,11 +46,7 @@ type connectorRuntimeBuilder struct {
 	apiToken         string
 }
 
-func newConnectorRuntimeBuilder(cfg config.Config, provider llm.Provider) (*connectorRuntimeBuilder, error) {
-	if provider == nil {
-		return nil, errors.New("llm provider is nil")
-	}
-	backend := provider.Backend()
+func newConnectorRuntimeBuilder(cfg config.Config, backend llm.Backend) (*connectorRuntimeBuilder, error) {
 	if backend == nil {
 		return nil, errors.New("llm backend is nil")
 	}

@@ -133,9 +133,9 @@ llm_profiles:
     model: "gpt-5.4-mini"
     reasoning_effort: "low"
   work:
-    provider: "codex"
-    model: "gpt-5.4"
-    reasoning_effort: "xhigh"
+    provider: "claude"
+    model: "claude-sonnet-4-20250514"
+    reasoning_effort: "high"
 
 group_scenes:
   chat:
@@ -150,6 +150,8 @@ group_scenes:
     llm_profile: "work"
     create_feishu_thread: true
 ```
+
+不同 scene 可以使用不同 provider；如果某个 profile 没写 `provider`，Alice 会回退到默认 provider。
 
 ## `SOUL.md`
 

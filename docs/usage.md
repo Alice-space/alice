@@ -133,9 +133,9 @@ llm_profiles:
     model: "gpt-5.4-mini"
     reasoning_effort: "low"
   work:
-    provider: "codex"
-    model: "gpt-5.4"
-    reasoning_effort: "xhigh"
+    provider: "claude"
+    model: "claude-sonnet-4-20250514"
+    reasoning_effort: "high"
 
 group_scenes:
   chat:
@@ -150,6 +150,8 @@ group_scenes:
     llm_profile: "work"
     create_feishu_thread: true
 ```
+
+Different scenes can use different providers. If a profile omits `provider`, Alice falls back to the default provider.
 
 ## `SOUL.md`
 

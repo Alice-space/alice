@@ -30,14 +30,17 @@ var defaultBundledSkills = []string{
 }
 
 func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
+	resolvedProvider, err := resolveLLMProvider(cfg)
+	if err != nil {
+		return Config{}, err
+	}
+	cfg.LLMProvider = resolvedProvider
+
 	if err := validateBaseConfig(cfg, requireCredentials); err != nil {
 		return Config{}, err
 	}
 	if cfg.FeishuBaseURL == "" {
 		cfg.FeishuBaseURL = "https://open.feishu.cn"
-	}
-	if cfg.LLMProvider == "" {
-		cfg.LLMProvider = DefaultLLMProvider
 	}
 	if cfg.TriggerMode == "" {
 		cfg.TriggerMode = TriggerModeAt
@@ -136,11 +139,6 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 		}
 	}
 
-	switch cfg.LLMProvider {
-	case DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
-	default:
-		return Config{}, fmt.Errorf("unsupported llm_provider %q", cfg.LLMProvider)
-	}
 	switch cfg.TriggerMode {
 	case TriggerModeAt, TriggerModePrefix:
 	default:
@@ -233,12 +231,8 @@ func validateSceneConfig(cfg Config) error {
 		if cfg.GroupScenes.Chat.LLMProfile == "" {
 			return errors.New("group_scenes.chat.llm_profile is required when chat scene is enabled")
 		}
-		profile, ok := cfg.LLMProfiles[cfg.GroupScenes.Chat.LLMProfile]
-		if !ok {
+		if _, ok := cfg.LLMProfiles[cfg.GroupScenes.Chat.LLMProfile]; !ok {
 			return fmt.Errorf("group_scenes.chat.llm_profile %q is undefined", cfg.GroupScenes.Chat.LLMProfile)
-		}
-		if profile.Provider != "" && profile.Provider != cfg.LLMProvider {
-			return fmt.Errorf("group_scenes.chat.llm_profile %q provider %q does not match current llm_provider %q", cfg.GroupScenes.Chat.LLMProfile, profile.Provider, cfg.LLMProvider)
 		}
 		if cfg.GroupScenes.Chat.SessionScope != GroupSceneSessionPerChat {
 			return fmt.Errorf("group_scenes.chat.session_scope must be %q", GroupSceneSessionPerChat)
@@ -251,12 +245,8 @@ func validateSceneConfig(cfg Config) error {
 		if cfg.GroupScenes.Work.TriggerTag == "" {
 			return errors.New("group_scenes.work.trigger_tag is required when work scene is enabled")
 		}
-		profile, ok := cfg.LLMProfiles[cfg.GroupScenes.Work.LLMProfile]
-		if !ok {
+		if _, ok := cfg.LLMProfiles[cfg.GroupScenes.Work.LLMProfile]; !ok {
 			return fmt.Errorf("group_scenes.work.llm_profile %q is undefined", cfg.GroupScenes.Work.LLMProfile)
-		}
-		if profile.Provider != "" && profile.Provider != cfg.LLMProvider {
-			return fmt.Errorf("group_scenes.work.llm_profile %q provider %q does not match current llm_provider %q", cfg.GroupScenes.Work.LLMProfile, profile.Provider, cfg.LLMProvider)
 		}
 		if cfg.GroupScenes.Work.SessionScope != GroupSceneSessionPerThread {
 			return fmt.Errorf("group_scenes.work.session_scope must be %q", GroupSceneSessionPerThread)

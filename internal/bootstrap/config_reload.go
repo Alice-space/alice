@@ -43,7 +43,7 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 	var backend llm.Backend
 	var err error
 	if llmChanged {
-		backend, err = llm.NewBackend(buildFactoryConfig(merged, promptLoader))
+		backend, err = buildLLMBackend(merged, promptLoader)
 		if err != nil {
 			return report, fmt.Errorf("rebuild llm backend failed: %w", err)
 		}

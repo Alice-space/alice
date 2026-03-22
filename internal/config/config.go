@@ -212,7 +212,6 @@ func LoadFromFile(path string) (Config, error) {
 	v.SetDefault("trigger_prefix", "")
 	v.SetDefault("immediate_feedback_mode", DefaultImmediateFeedbackMode)
 	v.SetDefault("immediate_feedback_reaction", DefaultImmediateFeedbackReaction)
-	v.SetDefault("llm_provider", DefaultLLMProvider)
 	v.SetDefault("codex_command", "codex")
 	v.SetDefault("codex_timeout_secs", 172800)
 	v.SetDefault("codex_model", "")
@@ -351,7 +350,6 @@ func setBotDefaults(v *viper.Viper) {
 		v.SetDefault(prefix+"trigger_prefix", "")
 		v.SetDefault(prefix+"immediate_feedback_mode", DefaultImmediateFeedbackMode)
 		v.SetDefault(prefix+"immediate_feedback_reaction", DefaultImmediateFeedbackReaction)
-		v.SetDefault(prefix+"llm_provider", DefaultLLMProvider)
 		v.SetDefault(prefix+"codex_command", "codex")
 		v.SetDefault(prefix+"codex_timeout_secs", 172800)
 		v.SetDefault(prefix+"codex_model", "")
@@ -549,6 +547,103 @@ func normalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileC
 	return out
 }
 
+func normalizeLLMProvider(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func isSupportedLLMProvider(provider string) bool {
+	switch normalizeLLMProvider(provider) {
+	case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
+		return true
+	default:
+		return false
+	}
+}
+
+func collectResolvedSceneProfileProviders(cfg Config) []string {
+	names := make([]string, 0, 2)
+	if cfg.GroupScenes.Chat.Enabled {
+		names = append(names, strings.TrimSpace(cfg.GroupScenes.Chat.LLMProfile))
+	}
+	if cfg.GroupScenes.Work.Enabled {
+		names = append(names, strings.TrimSpace(cfg.GroupScenes.Work.LLMProfile))
+	}
+	if len(names) == 0 {
+		for name := range cfg.LLMProfiles {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+	}
+
+	providers := make([]string, 0, len(names))
+	seenProviders := map[string]struct{}{}
+	for _, name := range names {
+		if name == "" {
+			continue
+		}
+		profile, ok := cfg.LLMProfiles[name]
+		if !ok {
+			continue
+		}
+		provider := normalizeLLMProvider(profile.Provider)
+		if provider == "" {
+			continue
+		}
+		if _, exists := seenProviders[provider]; exists {
+			continue
+		}
+		seenProviders[provider] = struct{}{}
+		providers = append(providers, provider)
+	}
+	sort.Strings(providers)
+	return providers
+}
+
+func resolveLLMProvider(cfg Config) (string, error) {
+	explicit := normalizeLLMProvider(cfg.LLMProvider)
+	if explicit != "" && !isSupportedLLMProvider(explicit) {
+		return "", fmt.Errorf("unsupported llm_provider %q", explicit)
+	}
+
+	for name, profile := range cfg.LLMProfiles {
+		if !isSupportedLLMProvider(profile.Provider) {
+			return "", fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
+		}
+	}
+
+	if explicit != "" {
+		return explicit, nil
+	}
+	providers := collectResolvedSceneProfileProviders(cfg)
+	if len(providers) == 1 {
+		return providers[0], nil
+	}
+	return DefaultLLMProvider, nil
+}
+
+func (cfg Config) ResolvedLLMProviders() []string {
+	defaultProvider := normalizeLLMProvider(cfg.LLMProvider)
+	if defaultProvider == "" {
+		defaultProvider = DefaultLLMProvider
+	}
+	set := map[string]struct{}{
+		defaultProvider: {},
+	}
+	for _, profile := range cfg.LLMProfiles {
+		provider := normalizeLLMProvider(profile.Provider)
+		if provider == "" {
+			continue
+		}
+		set[provider] = struct{}{}
+	}
+	out := make([]string, 0, len(set))
+	for provider := range set {
+		out = append(out, provider)
+	}
+	sort.Strings(out)
+	return out
+}
+
 func normalizeGroupScenes(in GroupScenesConfig) GroupScenesConfig {
 	in.Chat.TriggerTag = strings.TrimSpace(in.Chat.TriggerTag)
 	in.Chat.SessionScope = strings.ToLower(strings.TrimSpace(in.Chat.SessionScope))
@@ -633,12 +728,8 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 		if cfg.GroupScenes.Chat.LLMProfile == "" {
 			return errors.New("group_scenes.chat.llm_profile is required when chat scene is enabled")
 		}
-		profile, ok := cfg.LLMProfiles[cfg.GroupScenes.Chat.LLMProfile]
-		if !ok {
+		if _, ok := cfg.LLMProfiles[cfg.GroupScenes.Chat.LLMProfile]; !ok {
 			return fmt.Errorf("group_scenes.chat.llm_profile %q is undefined", cfg.GroupScenes.Chat.LLMProfile)
-		}
-		if profile.Provider != "" && profile.Provider != cfg.LLMProvider {
-			return fmt.Errorf("group_scenes.chat.llm_profile %q provider %q does not match current llm_provider %q", cfg.GroupScenes.Chat.LLMProfile, profile.Provider, cfg.LLMProvider)
 		}
 		if cfg.GroupScenes.Chat.SessionScope != GroupSceneSessionPerChat {
 			return fmt.Errorf("group_scenes.chat.session_scope must be %q", GroupSceneSessionPerChat)
@@ -651,12 +742,8 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 		if cfg.GroupScenes.Work.TriggerTag == "" {
 			return errors.New("group_scenes.work.trigger_tag is required when work scene is enabled")
 		}
-		profile, ok := cfg.LLMProfiles[cfg.GroupScenes.Work.LLMProfile]
-		if !ok {
+		if _, ok := cfg.LLMProfiles[cfg.GroupScenes.Work.LLMProfile]; !ok {
 			return fmt.Errorf("group_scenes.work.llm_profile %q is undefined", cfg.GroupScenes.Work.LLMProfile)
-		}
-		if profile.Provider != "" && profile.Provider != cfg.LLMProvider {
-			return fmt.Errorf("group_scenes.work.llm_profile %q provider %q does not match current llm_provider %q", cfg.GroupScenes.Work.LLMProfile, profile.Provider, cfg.LLMProvider)
 		}
 		if cfg.GroupScenes.Work.SessionScope != GroupSceneSessionPerThread {
 			return fmt.Errorf("group_scenes.work.session_scope must be %q", GroupSceneSessionPerThread)

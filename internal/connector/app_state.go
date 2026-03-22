@@ -313,6 +313,7 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	job.SessionKey = strings.TrimSpace(job.SessionKey)
 	job.Scene = strings.ToLower(strings.TrimSpace(job.Scene))
 	job.ResponseMode = strings.ToLower(strings.TrimSpace(job.ResponseMode))
+	job.LLMProvider = strings.ToLower(strings.TrimSpace(job.LLMProvider))
 	job.LLMModel = strings.TrimSpace(job.LLMModel)
 	job.LLMProfile = strings.TrimSpace(job.LLMProfile)
 	job.LLMReasoningEffort = strings.ToLower(strings.TrimSpace(job.LLMReasoningEffort))

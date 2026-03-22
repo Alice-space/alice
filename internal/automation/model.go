@@ -77,6 +77,7 @@ type Action struct {
 	Type            ActionType `json:"type"`
 	Text            string     `json:"text"`
 	Prompt          string     `json:"prompt,omitempty"`
+	Provider        string     `json:"provider,omitempty"`
 	Model           string     `json:"model,omitempty"`
 	Profile         string     `json:"profile,omitempty"`
 	Workflow        string     `json:"workflow,omitempty"`
@@ -130,6 +131,7 @@ func NormalizeTask(task Task) Task {
 	task.Action.Type = ActionType(strings.ToLower(strings.TrimSpace(string(task.Action.Type))))
 	task.Action.Text = strings.TrimSpace(task.Action.Text)
 	task.Action.Prompt = strings.TrimSpace(task.Action.Prompt)
+	task.Action.Provider = strings.ToLower(strings.TrimSpace(task.Action.Provider))
 	task.Action.Model = strings.TrimSpace(task.Action.Model)
 	task.Action.Profile = strings.TrimSpace(task.Action.Profile)
 	task.Action.Workflow = normalizeWorkflowName(task.Action.Workflow)

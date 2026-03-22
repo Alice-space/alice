@@ -16,6 +16,7 @@ func TestBuildTaskFromRequest_UsesWorkSceneLLMProfile(t *testing.T) {
 		nil,
 		nil,
 		config.Config{
+			LLMProvider: "codex",
 			LLMProfiles: map[string]config.LLMProfileConfig{
 				"work": {
 					Provider:        "codex",
@@ -56,6 +57,9 @@ func TestBuildTaskFromRequest_UsesWorkSceneLLMProfile(t *testing.T) {
 	if task.Action.Type != automation.ActionTypeRunLLM {
 		t.Fatalf("unexpected action type: %q", task.Action.Type)
 	}
+	if task.Action.Provider != "codex" {
+		t.Fatalf("unexpected provider: %q", task.Action.Provider)
+	}
 	if task.Action.Model != "gpt-5.4" {
 		t.Fatalf("unexpected model: %q", task.Action.Model)
 	}
@@ -78,6 +82,7 @@ func TestBuildTaskFromRequest_PreservesExplicitRunLLMSelectors(t *testing.T) {
 		nil,
 		nil,
 		config.Config{
+			LLMProvider: "codex",
 			LLMProfiles: map[string]config.LLMProfileConfig{
 				"work": {
 					Provider:        "codex",

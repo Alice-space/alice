@@ -22,6 +22,7 @@ type WorkflowRunRequest struct {
 	SessionKey      string
 	Scene           string
 	Prompt          string
+	Provider        string
 	Model           string
 	Profile         string
 	ReasoningEffort string
@@ -74,6 +75,7 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 		AgentName:       workflowAgentName(workflow),
 		UserText:        prompt,
 		Scene:           normalizeWorkflowScene(req.Scene, req.SessionKey),
+		Provider:        strings.TrimSpace(req.Provider),
 		Model:           strings.TrimSpace(req.Model),
 		Profile:         strings.TrimSpace(req.Profile),
 		ReasoningEffort: strings.TrimSpace(req.ReasoningEffort),

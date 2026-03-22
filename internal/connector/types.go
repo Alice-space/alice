@@ -98,6 +98,7 @@ type Job struct {
 	Scene                string
 	ResponseMode         string
 	CreateFeishuThread   bool
+	LLMProvider          string
 	LLMModel             string
 	LLMProfile           string
 	LLMReasoningEffort   string

@@ -394,6 +394,74 @@ group_scenes:
 	}
 }
 
+func TestLoadFromFile_LLMProviderDerivedFromSceneProfiles(t *testing.T) {
+	_, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_profiles:
+  chat:
+    provider: claude
+    model: claude-sonnet-4-20250514
+  work:
+    provider: claude
+    model: claude-opus-4-20250514
+group_scenes:
+  chat:
+    enabled: true
+    llm_profile: chat
+  work:
+    enabled: true
+    llm_profile: work
+`)
+
+	if runtime.LLMProvider != LLMProviderClaude {
+		t.Fatalf("unexpected derived llm_provider: %q", runtime.LLMProvider)
+	}
+}
+
+func TestLoadFromFile_LLMProviderDerivedDefaultsToCodexWhenProfilesOmitProvider(t *testing.T) {
+	_, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_profiles:
+  chat:
+    model: gpt-5.4-mini
+group_scenes:
+  chat:
+    enabled: true
+    llm_profile: chat
+`)
+
+	if runtime.LLMProvider != DefaultLLMProvider {
+		t.Fatalf("unexpected default llm_provider: %q", runtime.LLMProvider)
+	}
+}
+
+func TestLoadFromFile_LLMProviderAllowsMixedActiveSceneProviders(t *testing.T) {
+	_, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+llm_profiles:
+  chat:
+    provider: codex
+    model: gpt-5.4-mini
+  work:
+    provider: claude
+    model: claude-sonnet-4-20250514
+group_scenes:
+  chat:
+    enabled: true
+    llm_profile: chat
+  work:
+    enabled: true
+    llm_profile: work
+`)
+
+	if runtime.LLMProvider != DefaultLLMProvider {
+		t.Fatalf("unexpected fallback llm_provider: %q", runtime.LLMProvider)
+	}
+}
+
 func TestLoadFromFile_AutomationTaskTimeoutSecsInvalid(t *testing.T) {
 	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx

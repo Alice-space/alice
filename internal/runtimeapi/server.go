@@ -67,6 +67,7 @@ type Server struct {
 }
 
 type automationRuntimeConfig struct {
+	llmProvider string
 	llmProfiles map[string]config.LLMProfileConfig
 	groupScenes config.GroupScenesConfig
 	permissions config.BotPermissionsConfig
@@ -117,6 +118,7 @@ func NewServer(
 
 func newAutomationRuntimeConfig(cfg config.Config) automationRuntimeConfig {
 	return automationRuntimeConfig{
+		llmProvider: cfg.LLMProvider,
 		llmProfiles: cloneLLMProfiles(cfg.LLMProfiles),
 		groupScenes: cfg.GroupScenes,
 		permissions: cfg.Permissions,
@@ -171,6 +173,7 @@ func (s *Server) runtimeConfig() automationRuntimeConfig {
 	s.runtimeMu.RLock()
 	defer s.runtimeMu.RUnlock()
 	return automationRuntimeConfig{
+		llmProvider: s.runtime.llmProvider,
 		llmProfiles: cloneLLMProfiles(s.runtime.llmProfiles),
 		groupScenes: s.runtime.groupScenes,
 		permissions: s.runtime.permissions,
@@ -661,6 +664,12 @@ func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScop
 	}
 	if strings.TrimSpace(task.Action.Model) == "" {
 		task.Action.Model = strings.TrimSpace(profile.Model)
+	}
+	if strings.TrimSpace(task.Action.Provider) == "" {
+		task.Action.Provider = strings.TrimSpace(profile.Provider)
+		if task.Action.Provider == "" {
+			task.Action.Provider = strings.TrimSpace(runtime.llmProvider)
+		}
 	}
 	if strings.TrimSpace(task.Action.Profile) == "" {
 		task.Action.Profile = strings.TrimSpace(profile.Profile)

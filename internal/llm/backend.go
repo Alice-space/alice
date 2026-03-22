@@ -9,6 +9,7 @@ type RunRequest struct {
 	AgentName       string
 	UserText        string
 	Scene           string
+	Provider        string
 	Model           string
 	Profile         string
 	ReasoningEffort string

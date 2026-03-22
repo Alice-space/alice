@@ -112,6 +112,9 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 		if job.LLMModel != "gpt-5.4-mini" || job.LLMReasoningEffort != "low" || job.LLMPersonality != "friendly" {
 			t.Fatalf("job %d unexpected llm profile: model=%q reasoning=%q personality=%q", idx+1, job.LLMModel, job.LLMReasoningEffort, job.LLMPersonality)
 		}
+		if job.LLMProvider != "codex" {
+			t.Fatalf("job %d unexpected llm provider: %q", idx+1, job.LLMProvider)
+		}
 		if job.NoReplyToken != "[[NO_REPLY]]" {
 			t.Fatalf("job %d unexpected no-reply token: %q", idx+1, job.NoReplyToken)
 		}
@@ -216,8 +219,77 @@ func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) 
 	if job1.LLMModel != "gpt-5.4" || job1.LLMReasoningEffort != "xhigh" || job1.LLMPersonality != "pragmatic" {
 		t.Fatalf("unexpected work llm profile: model=%q reasoning=%q personality=%q", job1.LLMModel, job1.LLMReasoningEffort, job1.LLMPersonality)
 	}
+	if job1.LLMProvider != "codex" || job2.LLMProvider != "codex" {
+		t.Fatalf("unexpected work llm providers: %q %q", job1.LLMProvider, job2.LLMProvider)
+	}
 	if job2.SessionVersion != 2 {
 		t.Fatalf("unexpected followup session version: %d", job2.SessionVersion)
+	}
+}
+
+func TestApp_OnMessageReceive_GroupScenesUseDifferentProvidersPerScene(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	cfg.LLMProvider = config.DefaultLLMProvider
+	cfg.LLMProfiles["chat"] = config.LLMProfileConfig{
+		Provider:        "codex",
+		Model:           "gpt-5.4-mini",
+		ReasoningEffort: "low",
+		Personality:     "friendly",
+	}
+	cfg.LLMProfiles["work"] = config.LLMProfileConfig{
+		Provider:        "claude",
+		Model:           "claude-sonnet-4-20250514",
+		ReasoningEffort: "high",
+		Personality:     "pragmatic",
+	}
+
+	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
+	app := NewApp(cfg, processor)
+
+	chatEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_chat_provider"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_chat_provider"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"大家先随便聊聊"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+	workEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_provider"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_provider"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> #work 帮我排查一下"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), chatEvent); err != nil {
+		t.Fatalf("unexpected chat event error: %v", err)
+	}
+	if err := app.onMessageReceive(context.Background(), workEvent); err != nil {
+		t.Fatalf("unexpected work event error: %v", err)
+	}
+
+	chatJob := <-app.queue
+	workJob := <-app.queue
+	if chatJob.LLMProvider != "codex" {
+		t.Fatalf("unexpected chat provider: %q", chatJob.LLMProvider)
+	}
+	if workJob.LLMProvider != "claude" {
+		t.Fatalf("unexpected work provider: %q", workJob.LLMProvider)
 	}
 }
 

@@ -70,6 +70,22 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 	}
 }
 
+func buildLLMBackend(cfg config.Config, prompts *prompting.Loader) (llm.Backend, error) {
+	factoryCfg := buildFactoryConfig(cfg, prompts)
+	providers := cfg.ResolvedLLMProviders()
+	backends := make(map[string]llm.Backend, len(providers))
+	for _, provider := range providers {
+		providerCfg := factoryCfg
+		providerCfg.Provider = provider
+		backend, err := llm.NewBackend(providerCfg)
+		if err != nil {
+			return nil, err
+		}
+		backends[provider] = backend
+	}
+	return llm.NewMultiBackend(cfg.LLMProvider, backends)
+}
+
 func buildCodexExecPolicy(policy config.CodexExecPolicyConfig) llm.ExecPolicyConfig {
 	return llm.ExecPolicyConfig{
 		Sandbox:        strings.TrimSpace(policy.Sandbox),
@@ -98,13 +114,13 @@ func applyLLMProcessEnvDefaults(raw map[string]string, codexHome string) map[str
 	return out
 }
 
-func NewLLMProvider(cfg config.Config) (llm.Provider, error) {
+func NewLLMBackend(cfg config.Config) (llm.Backend, error) {
 	promptDir := ResolvePromptDir(cfg.WorkspaceDir, cfg.PromptDir)
-	return llm.NewProvider(buildFactoryConfig(cfg, prompting.NewLoader(promptDir)))
+	return buildLLMBackend(cfg, prompting.NewLoader(promptDir))
 }
 
-func BuildConnectorRuntime(cfg config.Config, provider llm.Provider) (*ConnectorRuntime, error) {
-	builder, err := newConnectorRuntimeBuilder(cfg, provider)
+func BuildConnectorRuntime(cfg config.Config, backend llm.Backend) (*ConnectorRuntime, error) {
+	builder, err := newConnectorRuntimeBuilder(cfg, backend)
 	if err != nil {
 		return nil, err
 	}

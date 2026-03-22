@@ -167,7 +167,11 @@ func applyLLMProfileToJob(job *Job, defaultProvider string, profile config.LLMPr
 	if job == nil {
 		return
 	}
-	_ = defaultProvider
+	provider := strings.TrimSpace(profile.Provider)
+	if provider == "" {
+		provider = strings.TrimSpace(defaultProvider)
+	}
+	job.LLMProvider = provider
 	job.LLMModel = strings.TrimSpace(profile.Model)
 	job.LLMProfile = strings.TrimSpace(profile.Profile)
 	job.LLMReasoningEffort = strings.TrimSpace(profile.ReasoningEffort)

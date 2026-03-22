@@ -34,6 +34,7 @@ func splitMessageLines(message string) []string {
 
 type llmRunOptions struct {
 	Scene           string
+	Provider        string
 	Model           string
 	Profile         string
 	ReasoningEffort string
@@ -58,6 +59,7 @@ func (p *Processor) runLLM(
 		AgentName:       "assistant",
 		UserText:        userText,
 		Scene:           strings.TrimSpace(options.Scene),
+		Provider:        strings.TrimSpace(options.Provider),
 		Model:           strings.TrimSpace(options.Model),
 		Profile:         strings.TrimSpace(options.Profile),
 		ReasoningEffort: strings.TrimSpace(options.ReasoningEffort),

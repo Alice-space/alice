@@ -665,6 +665,7 @@ func TestProcessor_PassesJobLLMRunOptionsToBackend(t *testing.T) {
 		ReceiveIDType:      "chat_id",
 		ResponseMode:       jobResponseModeSend,
 		NoReplyToken:       "[[NO_REPLY]]",
+		LLMProvider:        "claude",
 		LLMModel:           "gpt-5.4-mini",
 		LLMProfile:         "balanced",
 		LLMReasoningEffort: "low",
@@ -674,6 +675,9 @@ func TestProcessor_PassesJobLLMRunOptionsToBackend(t *testing.T) {
 
 	if fakeCodex.lastReq.Model != "gpt-5.4-mini" {
 		t.Fatalf("unexpected model passed to llm: %q", fakeCodex.lastReq.Model)
+	}
+	if fakeCodex.lastReq.Provider != "claude" {
+		t.Fatalf("unexpected provider passed to llm: %q", fakeCodex.lastReq.Provider)
 	}
 	if fakeCodex.lastReq.Profile != "balanced" {
 		t.Fatalf("unexpected profile passed to llm: %q", fakeCodex.lastReq.Profile)
