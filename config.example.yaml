@@ -103,11 +103,6 @@ bots:
       # input_fidelity: low | high; only applies when reference images are provided
       input_fidelity: "high"
       use_current_attachments: true
-      proxy:
-        http_proxy: ""
-        https_proxy: "http://127.0.0.1:7890"
-        all_proxy: ""
-        no_proxy: "open.feishu.cn"
 
     # Immediate feedback after receiving a reply-style message:
     # - reply: send an explicit `收到！` reply
