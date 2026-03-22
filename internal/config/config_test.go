@@ -219,10 +219,6 @@ image_generation:
   output_format: "  PNG  "
   input_fidelity: "  HIGH  "
   use_current_attachments: false
-  proxy:
-    https_proxy: "  http://127.0.0.1:7890  "
-    all_proxy: "  socks5://127.0.0.1:7891  "
-    no_proxy: "  open.feishu.cn,.example.com  "
 `)
 
 	if !runtime.ImageGeneration.Enabled {
@@ -258,14 +254,23 @@ image_generation:
 	if runtime.ImageGeneration.UseCurrentAttachments {
 		t.Fatal("expected use_current_attachments to be false")
 	}
-	if runtime.ImageGeneration.Proxy.HTTPSProxy != "http://127.0.0.1:7890" {
-		t.Fatalf("unexpected image_generation.proxy.https_proxy: %q", runtime.ImageGeneration.Proxy.HTTPSProxy)
+}
+
+func TestLoadFromFile_ImageGenerationProxyRejected(t *testing.T) {
+	path := writeSingleBotConfig(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+image_generation:
+  proxy:
+    https_proxy: "http://127.0.0.1:7890"
+`)
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
 	}
-	if runtime.ImageGeneration.Proxy.ALLProxy != "socks5://127.0.0.1:7891" {
-		t.Fatalf("unexpected image_generation.proxy.all_proxy: %q", runtime.ImageGeneration.Proxy.ALLProxy)
-	}
-	if runtime.ImageGeneration.Proxy.NoProxy != "open.feishu.cn,.example.com" {
-		t.Fatalf("unexpected image_generation.proxy.no_proxy: %q", runtime.ImageGeneration.Proxy.NoProxy)
+	if !strings.Contains(err.Error(), "image_generation.proxy has been removed") {
+		t.Fatalf("unexpected error: %v", err)
 	}
 }
 

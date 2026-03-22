@@ -31,7 +31,7 @@ type openAIProvider struct {
 }
 
 func newOpenAIProvider(cfg config.ImageGenerationConfig, env map[string]string) (Provider, error) {
-	httpClient, err := newHTTPClient(resolveOpenAIProxyConfig(cfg.Proxy, env), time.Duration(cfg.TimeoutSecs)*time.Second)
+	httpClient, err := newHTTPClient(resolveOpenAIProxyConfig(env), time.Duration(cfg.TimeoutSecs)*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -64,20 +64,20 @@ func newOpenAIProvider(cfg config.ImageGenerationConfig, env map[string]string) 
 	}, nil
 }
 
-func resolveOpenAIProxyConfig(proxyCfg config.ProxyConfig, env map[string]string) config.ProxyConfig {
-	if value := lookupEnv(env, "OPENAI_HTTP_PROXY"); value != "" {
-		proxyCfg.HTTPProxy = value
+type openAIProxyConfig struct {
+	HTTPProxy  string
+	HTTPSProxy string
+	ALLProxy   string
+	NoProxy    string
+}
+
+func resolveOpenAIProxyConfig(env map[string]string) openAIProxyConfig {
+	return openAIProxyConfig{
+		HTTPProxy:  lookupEnv(env, "OPENAI_HTTP_PROXY"),
+		HTTPSProxy: lookupEnv(env, "OPENAI_HTTPS_PROXY"),
+		ALLProxy:   lookupEnv(env, "OPENAI_ALL_PROXY"),
+		NoProxy:    lookupEnv(env, "OPENAI_NO_PROXY"),
 	}
-	if value := lookupEnv(env, "OPENAI_HTTPS_PROXY"); value != "" {
-		proxyCfg.HTTPSProxy = value
-	}
-	if value := lookupEnv(env, "OPENAI_ALL_PROXY"); value != "" {
-		proxyCfg.ALLProxy = value
-	}
-	if value := lookupEnv(env, "OPENAI_NO_PROXY"); value != "" {
-		proxyCfg.NoProxy = value
-	}
-	return proxyCfg
 }
 
 func (p *openAIProvider) Generate(ctx context.Context, req Request) (Result, error) {
@@ -192,7 +192,7 @@ func (p *openAIProvider) editImage(ctx context.Context, req Request, references 
 	return *resp, nil
 }
 
-func newHTTPClient(proxyCfg config.ProxyConfig, timeout time.Duration) (*http.Client, error) {
+func newHTTPClient(proxyCfg openAIProxyConfig, timeout time.Duration) (*http.Client, error) {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	proxyFunc, err := buildProxyFunc(proxyCfg)
 	if err != nil {
@@ -206,8 +206,8 @@ func newHTTPClient(proxyCfg config.ProxyConfig, timeout time.Duration) (*http.Cl
 	}, nil
 }
 
-func buildProxyFunc(proxyCfg config.ProxyConfig) (func(*http.Request) (*url.URL, error), error) {
-	proxyCfg = config.ProxyConfig{
+func buildProxyFunc(proxyCfg openAIProxyConfig) (func(*http.Request) (*url.URL, error), error) {
+	proxyCfg = openAIProxyConfig{
 		HTTPProxy:  strings.TrimSpace(proxyCfg.HTTPProxy),
 		HTTPSProxy: strings.TrimSpace(proxyCfg.HTTPSProxy),
 		ALLProxy:   strings.TrimSpace(proxyCfg.ALLProxy),

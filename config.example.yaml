@@ -84,8 +84,8 @@ bots:
     thinking_message: "正在思考中..."
 
     # Optional roleplay image generation. This runs inside Alice after a text
-    # reply is produced. Dedicated OPENAI_*_PROXY env vars take precedence over
-    # the static proxy block below and still do not affect Feishu traffic.
+    # reply is produced. Proxy for this client must come from env.OPENAI_*_PROXY
+    # and still does not affect Feishu traffic.
     image_generation:
       enabled: false
       provider: "openai"

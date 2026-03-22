@@ -55,26 +55,18 @@ type GroupScenesConfig struct {
 	Work GroupSceneConfig `mapstructure:"work"`
 }
 
-type ProxyConfig struct {
-	HTTPProxy  string `mapstructure:"http_proxy"`
-	HTTPSProxy string `mapstructure:"https_proxy"`
-	ALLProxy   string `mapstructure:"all_proxy"`
-	NoProxy    string `mapstructure:"no_proxy"`
-}
-
 type ImageGenerationConfig struct {
-	Enabled               bool        `mapstructure:"enabled"`
-	Provider              string      `mapstructure:"provider"`
-	Model                 string      `mapstructure:"model"`
-	BaseURL               string      `mapstructure:"base_url"`
-	TimeoutSecs           int         `mapstructure:"timeout_secs"`
-	Size                  string      `mapstructure:"size"`
-	Quality               string      `mapstructure:"quality"`
-	Background            string      `mapstructure:"background"`
-	OutputFormat          string      `mapstructure:"output_format"`
-	InputFidelity         string      `mapstructure:"input_fidelity"`
-	UseCurrentAttachments bool        `mapstructure:"use_current_attachments"`
-	Proxy                 ProxyConfig `mapstructure:"proxy"`
+	Enabled               bool   `mapstructure:"enabled"`
+	Provider              string `mapstructure:"provider"`
+	Model                 string `mapstructure:"model"`
+	BaseURL               string `mapstructure:"base_url"`
+	TimeoutSecs           int    `mapstructure:"timeout_secs"`
+	Size                  string `mapstructure:"size"`
+	Quality               string `mapstructure:"quality"`
+	Background            string `mapstructure:"background"`
+	OutputFormat          string `mapstructure:"output_format"`
+	InputFidelity         string `mapstructure:"input_fidelity"`
+	UseCurrentAttachments bool   `mapstructure:"use_current_attachments"`
 }
 
 type CodexExecPolicyConfig struct {
@@ -280,6 +272,9 @@ func LoadFromFile(path string) (Config, error) {
 	if err := validatePureMultiBotRootConfig(v); err != nil {
 		return Config{}, err
 	}
+	if err := rejectRemovedImageProxyConfig(v); err != nil {
+		return Config{}, err
+	}
 	setBotDefaults(v)
 
 	var cfg Config
@@ -468,14 +463,6 @@ func normalizeEnvMap(in map[string]string) map[string]string {
 	return out
 }
 
-func normalizeProxyConfig(in ProxyConfig) ProxyConfig {
-	in.HTTPProxy = strings.TrimSpace(in.HTTPProxy)
-	in.HTTPSProxy = strings.TrimSpace(in.HTTPSProxy)
-	in.ALLProxy = strings.TrimSpace(in.ALLProxy)
-	in.NoProxy = strings.TrimSpace(in.NoProxy)
-	return in
-}
-
 func normalizeImageGenerationConfig(in ImageGenerationConfig) ImageGenerationConfig {
 	in.Provider = strings.ToLower(strings.TrimSpace(in.Provider))
 	in.Model = strings.TrimSpace(in.Model)
@@ -485,8 +472,22 @@ func normalizeImageGenerationConfig(in ImageGenerationConfig) ImageGenerationCon
 	in.Background = strings.ToLower(strings.TrimSpace(in.Background))
 	in.OutputFormat = strings.ToLower(strings.TrimSpace(in.OutputFormat))
 	in.InputFidelity = strings.ToLower(strings.TrimSpace(in.InputFidelity))
-	in.Proxy = normalizeProxyConfig(in.Proxy)
 	return in
+}
+
+func rejectRemovedImageProxyConfig(v *viper.Viper) error {
+	if v == nil {
+		return nil
+	}
+	if v.IsSet("image_generation.proxy") {
+		return errors.New("image_generation.proxy has been removed; use env.OPENAI_*_PROXY instead")
+	}
+	for botID := range v.GetStringMap("bots") {
+		if v.IsSet(fmt.Sprintf("bots.%s.image_generation.proxy", botID)) {
+			return fmt.Errorf("bots.%s.image_generation.proxy has been removed; use bots.%s.env.OPENAI_*_PROXY instead", botID, botID)
+		}
+	}
+	return nil
 }
 
 func applyDefaultCodexEnv(in map[string]string) map[string]string {

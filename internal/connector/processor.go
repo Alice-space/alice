@@ -129,7 +129,6 @@ func (p *Processor) SetImageGeneration(cfg config.ImageGenerationConfig, env map
 		OutputFormat:          strings.TrimSpace(cfg.OutputFormat),
 		InputFidelity:         strings.TrimSpace(cfg.InputFidelity),
 		UseCurrentAttachments: cfg.UseCurrentAttachments,
-		Proxy:                 cfg.Proxy,
 	}
 	var provider imagegen.Provider
 	if cfg.Enabled {
