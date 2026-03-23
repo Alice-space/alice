@@ -7,6 +7,8 @@ description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化
 
 使用 `scripts/alice-scheduler.sh` 管理当前会话自动化任务。脚本会自动使用本地 runtime HTTP API 与当前会话上下文。
 
+维护约束：当前会话里 `.codex/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
+
 ## 常用命令
 
 - 列出当前作用域任务：
@@ -17,7 +19,7 @@ description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化
   `JSON`
 - 用 JSON 创建 workflow 任务：
   `scripts/alice-scheduler.sh create <<'JSON'`
-  `{ "title": "fm16 reconcile", "schedule": { "type": "interval", "every_seconds": 900 }, "action": { "type": "run_workflow", "workflow": "code_army", "prompt": "/alice reconcile campaign camp_xxx；能安全修复的失败就继续推进，否则明确写 needs_human。", "reasoning_effort": "high", "personality": "pragmatic" } }`
+  `{ "title": "fm16 reconcile", "schedule": { "type": "interval", "every_seconds": 900 }, "action": { "type": "run_workflow", "workflow": "code_army", "prompt": "/alice reconcile campaign camp_xxx；尽可能利用所有允许且可用的资源并行推进；若有清晰且安全的下一步就直接动手，并在必要时实际调整；只有确实做不了时才写 needs_human。", "reasoning_effort": "high", "personality": "pragmatic" } }`
   `JSON`
 - 查看单个任务：
   `scripts/alice-scheduler.sh get task_xxx`
@@ -43,6 +45,7 @@ description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化
 3. 一次性执行推荐：`interval + every_seconds: 60 + max_runs: 1`。
 4. `run_llm` 适合纯汇报；`run_workflow` 适合真正推进任务，例如 reconcile、triage、resubmit 这类会调用工具并产生状态变化的流程。
 5. 创建 workflow 定时任务时，优先把 `workflow` 写死，把可变部分放进 `prompt` / `state_key`；不要让 agent 每次自由改 workflow 名。
+6. 创建 `heartbeat` / `reconcile` 一类周期 `run_workflow` 任务时，`prompt` 应明确两点：尽可能利用所有允许资源并行推进；若已经识别出清晰且安全的下一步，就在同一轮实际动手，并在必要时实际调整任务、试验或资源分配，不能只看不动。
 
 ## 回复模式
 
