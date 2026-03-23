@@ -64,6 +64,18 @@ func buildReplyCardContent(markdown string) string {
 	if reply == "" {
 		reply = " "
 	}
+	return buildMarkdownCardContent("", "**回复**\n"+reply)
+}
+
+func buildTitledReplyCardContent(title, markdown string) string {
+	reply := strings.TrimSpace(markdown)
+	if reply == "" {
+		reply = " "
+	}
+	return buildMarkdownCardContent(title, reply)
+}
+
+func buildMarkdownCardContent(title, markdown string) string {
 	card := map[string]any{
 		"schema": "2.0",
 		"config": map[string]any{
@@ -72,9 +84,18 @@ func buildReplyCardContent(markdown string) string {
 		},
 		"body": map[string]any{
 			"elements": []any{
-				cardMarkdown("**回复**\n" + reply),
+				cardMarkdown(markdown),
 			},
 		},
+	}
+	if strings.TrimSpace(title) != "" {
+		card["header"] = map[string]any{
+			"title": map[string]any{
+				"tag":     "plain_text",
+				"content": strings.TrimSpace(title),
+			},
+			"template": "blue",
+		}
 	}
 	raw, _ := json.Marshal(card)
 	return string(raw)

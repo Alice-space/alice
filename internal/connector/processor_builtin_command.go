@@ -17,6 +17,8 @@ const statusCommandName = "/status"
 const codeArmyCommandName = "/codearmy"
 const codeArmyStatusSubcommand = "status"
 const clearCommandName = "/clear"
+const builtinHelpCardTitle = "Alice 帮助"
+const builtinStatusCardTitle = "Alice 当前状态"
 
 func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, JobProcessState) {
 	if isHelpCommand(job.Text) {
@@ -73,7 +75,7 @@ func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessS
 	replyJob := job
 	replyJob.Scene = jobSceneChat
 	replyJob.CreateFeishuThread = false
-	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+	if err := p.replies.respondCardWithTitle(ctx, replyJob, builtinHelpCardTitle, reply); err != nil {
 		logging.Errorf("send builtin help reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted
@@ -84,7 +86,7 @@ func (p *Processor) processStatusCommand(ctx context.Context, job Job) JobProces
 	replyJob := job
 	replyJob.Scene = jobSceneChat
 	replyJob.CreateFeishuThread = false
-	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+	if err := p.replies.respondCardWithTitle(ctx, replyJob, builtinStatusCardTitle, reply); err != nil {
 		logging.Errorf("send builtin status reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted

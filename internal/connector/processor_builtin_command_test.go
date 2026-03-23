@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -40,13 +41,17 @@ func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
 	if llmStub.calls != 0 {
 		t.Fatalf("expected builtin command to bypass llm, got %d llm calls", llmStub.calls)
 	}
-	if sender.replyCardCalls != 0 {
-		t.Fatalf("expected help command not to use card reply, got %d", sender.replyCardCalls)
+	if sender.replyCardCalls != 1 || sender.replyCardDirectCalls != 1 {
+		t.Fatalf("expected one direct help card reply, got card=%d direct=%d", sender.replyCardCalls, sender.replyCardDirectCalls)
 	}
-	if sender.replyRichMarkdownCalls != 1 || sender.replyRichMarkdownDirectCalls != 1 {
-		t.Fatalf("expected one direct rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
+	if sender.replyRichMarkdownCalls != 0 || sender.replyRichMarkdownDirectCalls != 0 {
+		t.Fatalf("expected help command not to use rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
 	}
-	reply := sender.replyMarkdownTexts[0]
+	card := parseReplyCard(t, sender.replyCards[0])
+	if got := card.Header.Title.Content; got != builtinHelpCardTitle {
+		t.Fatalf("unexpected help card title: %q", got)
+	}
+	reply := card.Body.Elements[0].Content
 	for _, want := range []string{
 		"## Alice 内建命令",
 		"`/help`",
@@ -192,11 +197,18 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testi
 	if llmStub.calls != 0 {
 		t.Fatalf("expected status command to bypass llm, got %d llm calls", llmStub.calls)
 	}
-	if sender.replyRichMarkdownCalls != 1 || sender.replyRichMarkdownDirectCalls != 1 {
-		t.Fatalf("expected one direct rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
+	if sender.replyCardCalls != 1 || sender.replyCardDirectCalls != 1 {
+		t.Fatalf("expected one direct status card reply, got card=%d direct=%d", sender.replyCardCalls, sender.replyCardDirectCalls)
+	}
+	if sender.replyRichMarkdownCalls != 0 || sender.replyRichMarkdownDirectCalls != 0 {
+		t.Fatalf("expected status command not to use rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
 	}
 
-	reply := sender.replyMarkdownTexts[0]
+	card := parseReplyCard(t, sender.replyCards[0])
+	if got := card.Header.Title.Content; got != builtinStatusCardTitle {
+		t.Fatalf("unexpected status card title: %q", got)
+	}
+	reply := card.Body.Elements[0].Content
 	for _, want := range []string{
 		"## Alice 当前状态",
 		"活跃自动化任务：`1`",
@@ -221,6 +233,32 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testi
 			t.Fatalf("expected status reply not to contain %q, got %q", unwanted, reply)
 		}
 	}
+}
+
+type replyCardPayload struct {
+	Header struct {
+		Title struct {
+			Content string `json:"content"`
+		} `json:"title"`
+	} `json:"header"`
+	Body struct {
+		Elements []struct {
+			Tag     string `json:"tag"`
+			Content string `json:"content"`
+		} `json:"elements"`
+	} `json:"body"`
+}
+
+func parseReplyCard(t *testing.T, raw string) replyCardPayload {
+	t.Helper()
+	var payload replyCardPayload
+	if err := json.Unmarshal([]byte(raw), &payload); err != nil {
+		t.Fatalf("unmarshal reply card failed: %v", err)
+	}
+	if len(payload.Body.Elements) == 0 {
+		t.Fatalf("reply card missing body elements: %q", raw)
+	}
+	return payload
 }
 
 func TestIsHelpCommand(t *testing.T) {

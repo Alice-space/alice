@@ -24,6 +24,14 @@ func (d *replyDispatcher) respond(ctx context.Context, job Job, markdown string)
 	return d.send(ctx, job, job.ReceiveIDType, job.ReceiveID, markdown)
 }
 
+func (d *replyDispatcher) respondCardWithTitle(ctx context.Context, job Job, title, markdown string) error {
+	if strings.TrimSpace(job.SourceMessageID) != "" {
+		_, err := d.replyCardWithTitle(ctx, job, job.SourceMessageID, title, markdown)
+		return err
+	}
+	return d.sendCardWithTitle(ctx, job, job.ReceiveIDType, job.ReceiveID, title, markdown)
+}
+
 func (d *replyDispatcher) reply(
 	ctx context.Context,
 	job Job,
@@ -84,6 +92,68 @@ func (d *replyDispatcher) send(
 		if cardErr := d.sender.SendCard(ctx, receiveIDType, receiveID, buildReplyCardContent(normalized)); cardErr == nil {
 			return nil
 		}
+	}
+	return d.sender.SendText(ctx, receiveIDType, receiveID, normalized)
+}
+
+func (d *replyDispatcher) replyCardWithTitle(
+	ctx context.Context,
+	job Job,
+	sourceMessageID,
+	title,
+	markdown string,
+) (string, error) {
+	if d == nil || d.sender == nil {
+		return "", errors.New("reply dispatcher sender is nil")
+	}
+
+	normalized, forceText := normalizeOutgoingReplyWithMentions(markdown, job)
+	if normalized == "" {
+		return "", nil
+	}
+	preferThread := jobPrefersThreadReply(job)
+	if forceText {
+		if messageID, textErr := d.replyText(ctx, sourceMessageID, normalized, preferThread); textErr == nil {
+			return messageID, nil
+		}
+		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
+		if normalized == "" {
+			return "", nil
+		}
+	}
+	if messageID, cardErr := d.replyCard(ctx, sourceMessageID, buildTitledReplyCardContent(title, normalized), preferThread); cardErr == nil {
+		return messageID, nil
+	}
+	return d.replyMarkdownPost(ctx, job, sourceMessageID, normalized, false, preferThread)
+}
+
+func (d *replyDispatcher) sendCardWithTitle(
+	ctx context.Context,
+	job Job,
+	receiveIDType,
+	receiveID,
+	title,
+	markdown string,
+) error {
+	if d == nil || d.sender == nil {
+		return errors.New("reply dispatcher sender is nil")
+	}
+
+	normalized, forceText := normalizeOutgoingReplyWithMentions(markdown, job)
+	if normalized == "" {
+		return nil
+	}
+	if forceText {
+		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, normalized); textErr == nil {
+			return nil
+		}
+		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
+		if normalized == "" {
+			return nil
+		}
+	}
+	if cardErr := d.sender.SendCard(ctx, receiveIDType, receiveID, buildTitledReplyCardContent(title, normalized)); cardErr == nil {
+		return nil
 	}
 	return d.sender.SendText(ctx, receiveIDType, receiveID, normalized)
 }
