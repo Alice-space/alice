@@ -117,6 +117,50 @@ func TestStore_ClaimCronTask(t *testing.T) {
 	}
 }
 
+func TestStore_RecordTaskSignal_PausesTask(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title: "等待人工确认",
+		Scope: Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route: Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator: Actor{
+			UserID: "ou_actor",
+		},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeSendText, Text: "hello"},
+	})
+	if err != nil {
+		t.Fatalf("create task failed: %v", err)
+	}
+
+	if _, err := store.ClaimDueTasks(base.Add(2*time.Minute), 10); err != nil {
+		t.Fatalf("claim due tasks failed: %v", err)
+	}
+	if err := store.RecordTaskSignal(created.ID, base.Add(2*time.Minute), "needs_human", "waiting for approval", true); err != nil {
+		t.Fatalf("record signal failed: %v", err)
+	}
+
+	updated, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if updated.Status != TaskStatusPaused {
+		t.Fatalf("expected paused task, got %s", updated.Status)
+	}
+	if updated.Running {
+		t.Fatalf("expected running flag cleared, task=%+v", updated)
+	}
+	if !updated.NextRunAt.IsZero() {
+		t.Fatalf("expected cleared next_run_at, got %s", updated.NextRunAt.Format(time.RFC3339))
+	}
+	if updated.LastResult != "needs_human: waiting for approval" {
+		t.Fatalf("unexpected last_result: %q", updated.LastResult)
+	}
+}
+
 func TestStore_ClaimDueTasks_MaxRunsPausesTask(t *testing.T) {
 	base := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))

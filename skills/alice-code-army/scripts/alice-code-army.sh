@@ -544,6 +544,14 @@ apply_command() {
     summary="Campaign put on hold by guidance"
     patch_json="$(jq -cn --arg status "hold" --arg summary "$summary" '{status:$status, summary:$summary}')"
     patch_campaign "$campaign_id" "$patch_json"
+  elif [[ "$command_text" =~ ^/alice[[:space:]]+(needs-human|needs_human|needshuman|needs[[:space:]]+human)([[:space:]]+(.+))?$ ]]; then
+    summary="${BASH_REMATCH[3]:-Needs human intervention requested}"
+    patch_json="$(jq -cn \
+      --arg status "hold" \
+      --arg summary "Needs human intervention: ${summary}" \
+      '{status:$status, summary:$summary}')"
+    patch_campaign "$campaign_id" "$patch_json"
+    summary="Needs human intervention: ${summary}"
   elif [[ "$command_text" =~ ^/alice[[:space:]]+cancel[[:space:]]+([^[:space:]]+)$ ]]; then
     trial_id="${BASH_REMATCH[1]}"
     trial_json="$(find_trial_json "$payload" "$trial_id")" || die "trial ${trial_id} not found"

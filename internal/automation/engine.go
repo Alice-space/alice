@@ -30,6 +30,8 @@ type SystemTaskFunc func(ctx context.Context)
 
 const defaultUserTaskTimeout = 10 * time.Minute
 
+const taskSignalNeedsHuman = "needs_human"
+
 type Engine struct {
 	store           *Store
 	sender          Sender
@@ -45,6 +47,19 @@ type Engine struct {
 	systemTasks     map[string]*systemTaskRuntime
 	schedulerMu     sync.Mutex
 	scheduler       gocron.Scheduler
+}
+
+type taskSignal struct {
+	kind    string
+	message string
+	pause   bool
+}
+
+type taskDispatch struct {
+	text        string
+	cardContent string
+	forceCard   bool
+	signal      *taskSignal
 }
 
 type systemTaskRuntime struct {
@@ -291,12 +306,28 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 	runCtx, cancel := e.userTaskContext(ctx, task)
 	defer cancel()
 
-	err := e.executeUserTask(runCtx, task)
+	dispatch, err := e.executeUserTask(runCtx, task)
 	if err != nil {
 		logging.Errorf("run automation task failed id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, err)
 	}
 	if e.store != nil {
-		if recordErr := e.store.RecordTaskResult(task.ID, e.nowTime(), err); recordErr != nil {
+		now := e.nowTime()
+		var recordErr error
+		switch {
+		case err != nil:
+			recordErr = e.store.RecordTaskResult(task.ID, now, err)
+		case dispatch.signal != nil:
+			recordErr = e.store.RecordTaskSignal(
+				task.ID,
+				now,
+				dispatch.signal.kind,
+				dispatch.signal.message,
+				dispatch.signal.pause,
+			)
+		default:
+			recordErr = e.store.RecordTaskResult(task.ID, now, nil)
+		}
+		if recordErr != nil {
 			logging.Errorf("record automation result failed id=%s err=%v", task.ID, recordErr)
 		}
 	}
@@ -322,32 +353,41 @@ func (e *Engine) userTaskTimeoutDuration() time.Duration {
 	return e.userTaskTimeout
 }
 
-func (e *Engine) executeUserTask(ctx context.Context, task Task) error {
+func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, error) {
 	if e.sender == nil {
-		return errors.New("automation sender is nil")
+		return taskDispatch{}, errors.New("automation sender is nil")
 	}
 	task = NormalizeTask(task)
 	if strings.TrimSpace(task.Route.ReceiveIDType) == "" || strings.TrimSpace(task.Route.ReceiveID) == "" {
-		return errors.New("task route is incomplete")
+		return taskDispatch{}, errors.New("task route is incomplete")
 	}
 	dispatch, err := e.buildTaskDispatch(ctx, task)
 	if err != nil {
-		return err
+		return taskDispatch{}, err
+	}
+	if dispatch.forceCard {
+		if err := e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.cardContent); err == nil {
+			return dispatch, nil
+		}
+		if strings.TrimSpace(dispatch.text) == "" {
+			return dispatch, errors.New("warning card send failed and no text fallback is available")
+		}
+		return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
 	}
 	if taskPrefersCard(task) {
-		return e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, buildTaskCardContent(dispatch))
+		return dispatch, e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, buildTaskCardContent(dispatch.text))
 	}
-	return e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch)
+	return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
 }
 
-func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, error) {
+func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch, error) {
 	task = NormalizeTask(task)
 	runAt := e.nowTime()
 	switch task.Action.Type {
 	case ActionTypeSendText:
 		rendered, err := renderActionTemplate(task.Action.Text, runAt)
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		text, err := BuildDispatchText(Action{
 			Type:           ActionTypeSendText,
@@ -355,20 +395,20 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 			MentionUserIDs: task.Action.MentionUserIDs,
 		})
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
-		return text, nil
+		return taskDispatch{text: text}, nil
 	case ActionTypeRunLLM:
 		runner := e.llmRunnerValue()
 		if runner == nil {
-			return "", errors.New("automation llm runner is nil")
+			return taskDispatch{}, errors.New("automation llm runner is nil")
 		}
 		prompt, err := renderActionTemplate(task.Action.Prompt, runAt)
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		if prompt == "" {
-			return "", errors.New("action prompt is empty for run_llm")
+			return taskDispatch{}, errors.New("action prompt is empty for run_llm")
 		}
 		result, err := runner.Run(ctx, llm.RunRequest{
 			AgentName:       "scheduler",
@@ -382,15 +422,15 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 			Env:             e.buildTaskRunEnv(task),
 		})
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		reply := strings.TrimSpace(result.Reply)
 		if reply == "" {
-			return "", errors.New("llm reply is empty")
+			return taskDispatch{}, errors.New("llm reply is empty")
 		}
 		prefix, err := renderActionTemplate(task.Action.Text, runAt)
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		message := reply
 		if prefix != "" {
@@ -402,20 +442,20 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 			MentionUserIDs: task.Action.MentionUserIDs,
 		})
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
-		return text, nil
+		return taskDispatch{text: text}, nil
 	case ActionTypeRunWorkflow:
 		runner := e.workflowRunnerValue()
 		if runner == nil {
-			return "", errors.New("automation workflow runner is nil")
+			return taskDispatch{}, errors.New("automation workflow runner is nil")
 		}
 		prompt, err := renderActionTemplate(task.Action.Prompt, runAt)
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		if prompt == "" {
-			return "", errors.New("action prompt is empty for run_workflow")
+			return taskDispatch{}, errors.New("action prompt is empty for run_workflow")
 		}
 		result, err := runner.Run(ctx, WorkflowRunRequest{
 			Workflow:        task.Action.Workflow,
@@ -432,15 +472,19 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 			Env:             e.buildTaskRunEnv(task),
 		})
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
+		signal := detectWorkflowSignal(result.Commands)
 		reply := strings.TrimSpace(result.Message)
 		if reply == "" {
-			return "", errors.New("workflow reply is empty")
+			reply = fallbackWorkflowReply(signal)
+		}
+		if reply == "" {
+			return taskDispatch{}, errors.New("workflow reply is empty")
 		}
 		prefix, err := renderActionTemplate(task.Action.Text, runAt)
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
 		message := reply
 		if prefix != "" {
@@ -452,11 +496,19 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (string, erro
 			MentionUserIDs: task.Action.MentionUserIDs,
 		})
 		if err != nil {
-			return "", err
+			return taskDispatch{}, err
 		}
-		return text, nil
+		dispatch := taskDispatch{
+			text:   text,
+			signal: signal,
+		}
+		if signal != nil && signal.kind == taskSignalNeedsHuman {
+			dispatch.forceCard = true
+			dispatch.cardContent = buildTaskWarningCardContent(task, text, signal.message)
+		}
+		return dispatch, nil
 	default:
-		return "", fmt.Errorf("unsupported action type %q", task.Action.Type)
+		return taskDispatch{}, fmt.Errorf("unsupported action type %q", task.Action.Type)
 	}
 }
 
@@ -505,6 +557,104 @@ func buildTaskCardContent(markdown string) string {
 	}
 	raw, _ := json.Marshal(card)
 	return string(raw)
+}
+
+func buildTaskWarningCardContent(task Task, markdown string, reason string) string {
+	reply := strings.TrimSpace(markdown)
+	if reply == "" {
+		reply = "自动任务已暂停，等待人工介入。"
+	}
+	title := strings.TrimSpace(task.Title)
+	if title == "" {
+		title = strings.TrimSpace(task.ID)
+	}
+	if title == "" {
+		title = "自动任务"
+	}
+	elements := []any{
+		taskCardMarkdown("**状态**\n自动任务已暂停，等待人工介入。"),
+		taskCardMarkdown("**任务**\n" + title),
+	}
+	if trimmedReason := strings.TrimSpace(reason); trimmedReason != "" {
+		elements = append(elements, taskCardMarkdown("**原因**\n"+trimmedReason))
+	}
+	elements = append(elements, taskCardMarkdown("**上下文**\n"+reply))
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"enable_forward": true,
+			"update_multi":   true,
+		},
+		"header": map[string]any{
+			"title": map[string]any{
+				"tag":     "plain_text",
+				"content": "需要人工介入",
+			},
+			"template": "orange",
+		},
+		"body": map[string]any{
+			"elements": elements,
+		},
+	}
+	raw, _ := json.Marshal(card)
+	return string(raw)
+}
+
+func taskCardMarkdown(content string) map[string]any {
+	return map[string]any{
+		"tag":     "markdown",
+		"content": content,
+	}
+}
+
+func detectWorkflowSignal(commands []WorkflowCommand) *taskSignal {
+	for _, command := range commands {
+		if reason, ok := parseNeedsHumanCommand(command.Text); ok {
+			return &taskSignal{
+				kind:    taskSignalNeedsHuman,
+				message: reason,
+				pause:   true,
+			}
+		}
+	}
+	return nil
+}
+
+func parseNeedsHumanCommand(command string) (string, bool) {
+	fields := strings.Fields(strings.TrimSpace(command))
+	if len(fields) < 2 || fields[0] != "/alice" {
+		return "", false
+	}
+	keyword := strings.ToLower(strings.ReplaceAll(fields[1], "_", "-"))
+	switch {
+	case keyword == "needs-human" || keyword == "needshuman":
+		reason := strings.TrimSpace(strings.Join(fields[2:], " "))
+		if reason == "" {
+			reason = "workflow requested human intervention"
+		}
+		return reason, true
+	case keyword == "needs" && len(fields) >= 3 && strings.EqualFold(fields[2], "human"):
+		reason := strings.TrimSpace(strings.Join(fields[3:], " "))
+		if reason == "" {
+			reason = "workflow requested human intervention"
+		}
+		return reason, true
+	default:
+		return "", false
+	}
+}
+
+func fallbackWorkflowReply(signal *taskSignal) string {
+	if signal == nil {
+		return ""
+	}
+	if signal.kind != taskSignalNeedsHuman {
+		return ""
+	}
+	if strings.TrimSpace(signal.message) == "" {
+		return "需要人工介入，自动任务已暂停。"
+	}
+	return "需要人工介入，自动任务已暂停。\n\n原因：" + signal.message
 }
 
 func renderActionTemplate(raw string, now time.Time) (string, error) {
