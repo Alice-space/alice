@@ -12,6 +12,9 @@ Usage:
   $PROGRAM apply-command CAMPAIGN_ID COMMAND [SOURCE]
   $PROGRAM render-issue-note CAMPAIGN_ID
   $PROGRAM render-trial-note CAMPAIGN_ID TRIAL_ID
+  $PROGRAM time-stats CAMPAIGN_ID
+  $PROGRAM time-estimate CAMPAIGN_ID DURATION
+  $PROGRAM time-spend CAMPAIGN_ID DURATION [SUMMARY]
   $PROGRAM sync-issue CAMPAIGN_ID
   $PROGRAM sync-trial CAMPAIGN_ID TRIAL_ID
   $PROGRAM sync-all CAMPAIGN_ID
@@ -22,7 +25,7 @@ Environment:
   ALICE_CODE_ARMY_GITLAB_HOST  Default GitLab host for sync commands (default: code.ihep.ac.cn).
 
 Visibility contract:
-  create requires a visible GitLab issue (`issue_iid`) in the payload.
+  create requires a visible GitLab issue (issue_iid) in the payload.
   patch / upsert-trial / add-guidance / add-review / add-pitfall / apply-command
   auto-sync the issue (and MR when available) after mutating campaign state.
 EOF
@@ -170,6 +173,20 @@ campaign_issue_iid() {
   jq -r '.campaign.issue_iid | if . == null then "" else tostring end' <<<"$payload"
 }
 
+repo_api_path() {
+  printf '%s' "${1//\//%2F}"
+}
+
+campaign_gitlab_target() {
+  local campaign_id="$1" payload repo issue_iid
+  payload="$(campaign_json "$campaign_id")"
+  repo="$(campaign_repo "$payload")"
+  issue_iid="$(campaign_issue_iid "$payload")"
+  [[ -n "$repo" ]] || die "campaign repo is empty"
+  [[ -n "$issue_iid" ]] || die "campaign ${campaign_id} is not GitLab-visible yet: missing issue_iid"
+  printf '%s\t%s\n' "$repo" "$issue_iid"
+}
+
 require_visible_create_payload() {
   local create_json="$1" repo issue_iid
   repo="$(jq -r '.repo | if . == null then "" else tostring end' <<<"$create_json")"
@@ -278,6 +295,46 @@ gitlab_note_mr() {
   fi
   require_cmd glab
   GITLAB_HOST="$DEFAULT_GITLAB_HOST" glab mr note "$iid" -R "$repo" -m "$body"
+}
+
+gitlab_issue_time_api() {
+  local repo="$1" iid="$2" suffix="$3"
+  shift 3
+
+  local helper="" endpoint
+  endpoint="projects/$(repo_api_path "$repo")/issues/${iid}/${suffix}"
+  if helper="$(resolve_ihep_gitlab_helper 2>/dev/null)"; then
+    "$helper" api --host "$DEFAULT_GITLAB_HOST" "$endpoint" "$@"
+    return
+  fi
+  require_cmd glab
+  glab api --hostname "$DEFAULT_GITLAB_HOST" "$endpoint" "$@"
+}
+
+time_stats() {
+  local campaign_id="$1" repo issue_iid
+  IFS=$'\t' read -r repo issue_iid <<<"$(campaign_gitlab_target "$campaign_id")"
+  gitlab_issue_time_api "$repo" "$issue_iid" "time_stats"
+}
+
+time_estimate() {
+  local campaign_id="$1" duration="$2" repo issue_iid
+  [[ -n "$duration" ]] || die "duration is empty"
+  IFS=$'\t' read -r repo issue_iid <<<"$(campaign_gitlab_target "$campaign_id")"
+  gitlab_issue_time_api "$repo" "$issue_iid" "time_estimate" --method POST -F duration="$duration"
+}
+
+time_spend() {
+  local campaign_id="$1" duration="$2" summary="${3:-}" repo issue_iid
+  [[ -n "$duration" ]] || die "duration is empty"
+  IFS=$'\t' read -r repo issue_iid <<<"$(campaign_gitlab_target "$campaign_id")"
+
+  local -a cmd
+  cmd=(gitlab_issue_time_api "$repo" "$issue_iid" "add_spent_time" --method POST -F duration="$duration")
+  if [[ -n "$summary" ]]; then
+    cmd+=(-F summary="$summary")
+  fi
+  "${cmd[@]}"
 }
 
 render_issue_note() {
@@ -688,6 +745,18 @@ main() {
     render-trial-note)
       [[ $# -eq 3 ]] || die "usage: $PROGRAM render-trial-note CAMPAIGN_ID TRIAL_ID"
       render_trial_note "$2" "$3"
+      ;;
+    time-stats)
+      [[ $# -eq 2 ]] || die "usage: $PROGRAM time-stats CAMPAIGN_ID"
+      time_stats "$2"
+      ;;
+    time-estimate)
+      [[ $# -eq 3 ]] || die "usage: $PROGRAM time-estimate CAMPAIGN_ID DURATION"
+      time_estimate "$2" "$3"
+      ;;
+    time-spend)
+      [[ $# -ge 3 && $# -le 4 ]] || die "usage: $PROGRAM time-spend CAMPAIGN_ID DURATION [SUMMARY]"
+      time_spend "$2" "$3" "${4:-}"
       ;;
     sync-issue)
       [[ $# -eq 2 ]] || die "usage: $PROGRAM sync-issue CAMPAIGN_ID"
