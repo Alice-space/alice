@@ -1,0 +1,227 @@
+package config
+
+import (
+	"errors"
+	"fmt"
+	"net"
+	"path/filepath"
+	"sort"
+	"strings"
+)
+
+func (cfg Config) RuntimeConfigs() ([]Config, error) {
+	if len(cfg.Bots) == 0 {
+		if strings.TrimSpace(cfg.BotID) == "" {
+			return nil, errors.New("bots is required")
+		}
+		if err := validateSceneConfig(cfg); err != nil {
+			return nil, err
+		}
+		return []Config{cfg}, nil
+	}
+
+	ordered := orderBotIDs(cfg.Bots)
+	runtimes := make([]Config, 0, len(ordered))
+	for idx, botID := range ordered {
+		runtime, err := cfg.deriveBotRuntimeConfig(botID, cfg.Bots[botID], idx)
+		if err != nil {
+			return nil, err
+		}
+		runtimes = append(runtimes, runtime)
+	}
+	return runtimes, nil
+}
+
+func (cfg Config) RuntimeConfigForBot(botID string) (Config, error) {
+	botID = strings.ToLower(strings.TrimSpace(botID))
+	if botID == "" {
+		return Config{}, errors.New("bot id is empty")
+	}
+	if len(cfg.Bots) == 0 {
+		if strings.EqualFold(strings.TrimSpace(cfg.BotID), botID) {
+			return cfg, nil
+		}
+		return Config{}, fmt.Errorf("bot %q is undefined", botID)
+	}
+	bot, ok := cfg.Bots[botID]
+	if !ok {
+		return Config{}, fmt.Errorf("bot %q is undefined", botID)
+	}
+	ordered := orderBotIDs(cfg.Bots)
+	for idx, orderedID := range ordered {
+		if orderedID != botID {
+			continue
+		}
+		return cfg.deriveBotRuntimeConfig(botID, bot, idx)
+	}
+	return Config{}, fmt.Errorf("bot %q is undefined", botID)
+}
+
+func orderBotIDs(bots map[string]BotConfig) []string {
+	ids := make([]string, 0, len(bots))
+	for id := range bots {
+		ids = append(ids, id)
+	}
+	sort.Strings(ids)
+	return ids
+}
+
+func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int) (Config, error) {
+	runtime := Config{
+		BotID:           strings.TrimSpace(botID),
+		LogLevel:        cfg.LogLevel,
+		LogFile:         cfg.LogFile,
+		LogMaxSizeMB:    cfg.LogMaxSizeMB,
+		LogMaxBackups:   cfg.LogMaxBackups,
+		LogMaxAgeDays:   cfg.LogMaxAgeDays,
+		LogCompress:     cfg.LogCompress,
+		CodexEnv:        map[string]string{},
+		LLMProfiles:     map[string]LLMProfileConfig{},
+		Permissions:     normalizeBotPermissions(BotPermissionsConfig{}),
+		RuntimeHTTPAddr: "",
+	}
+	if bot.Name != "" {
+		runtime.BotName = bot.Name
+	} else {
+		runtime.BotName = runtime.BotID
+	}
+
+	runtime.FeishuAppID = bot.FeishuAppID
+	runtime.FeishuAppSecret = bot.FeishuAppSecret
+	runtime.FeishuBaseURL = bot.FeishuBaseURL
+	runtime.FeishuBotOpenID = bot.FeishuBotOpenID
+	runtime.FeishuBotUserID = bot.FeishuBotUserID
+	runtime.TriggerMode = bot.TriggerMode
+	runtime.TriggerPrefix = bot.TriggerPrefix
+	runtime.ImmediateFeedbackMode = bot.ImmediateFeedbackMode
+	runtime.ImmediateFeedbackReaction = bot.ImmediateFeedbackReaction
+	runtime.LLMProvider = bot.LLMProvider
+	runtime.LLMProfiles = mergeLLMProfiles(nil, bot.LLMProfiles)
+	if bot.GroupScenes != nil {
+		runtime.GroupScenes = *bot.GroupScenes
+	}
+	runtime.CodexCommand = bot.CodexCommand
+	runtime.CodexTimeoutSecs = bot.CodexTimeoutSecs
+	runtime.CodexModel = bot.CodexModel
+	runtime.CodexReasoningEffort = bot.CodexReasoningEffort
+	runtime.CodexPromptPrefix = bot.CodexPromptPrefix
+	runtime.ClaudeCommand = bot.ClaudeCommand
+	runtime.ClaudeTimeoutSecs = bot.ClaudeTimeoutSecs
+	runtime.ClaudePromptPrefix = bot.ClaudePromptPrefix
+	runtime.GeminiCommand = bot.GeminiCommand
+	runtime.GeminiTimeoutSecs = bot.GeminiTimeoutSecs
+	runtime.GeminiPromptPrefix = bot.GeminiPromptPrefix
+	runtime.KimiCommand = bot.KimiCommand
+	runtime.KimiTimeoutSecs = bot.KimiTimeoutSecs
+	runtime.KimiPromptPrefix = bot.KimiPromptPrefix
+	runtime.RuntimeHTTPAddr = deriveBotRuntimeHTTPAddr(bot, index)
+	runtime.RuntimeHTTPToken = bot.RuntimeHTTPToken
+	runtime.FailureMessage = bot.FailureMessage
+	runtime.ThinkingMessage = bot.ThinkingMessage
+	runtime.ImageGeneration = bot.ImageGeneration
+	runtime.AliceHome = deriveBotAliceHome(bot, runtime.BotID)
+	runtime.WorkspaceDir = deriveBotWorkspaceDir(bot, runtime.AliceHome)
+	runtime.PromptDir = deriveBotPromptDir(bot, runtime.AliceHome)
+	runtime.CodexHome = deriveBotCodexHome(bot, runtime.AliceHome)
+	runtime.SoulPath = deriveBotSoulPath(bot, runtime.WorkspaceDir)
+	runtime.CodexEnv = mergeStringMap(nil, bot.CodexEnv)
+	runtime.QueueCapacity = bot.QueueCapacity
+	runtime.WorkerConcurrency = bot.WorkerConcurrency
+	runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs
+	runtime.Permissions = mergeBotPermissions(BotPermissionsConfig{}, bot.Permissions)
+
+	runtime, err := finalizeConfig(runtime, true)
+	if err != nil {
+		return Config{}, fmt.Errorf("bots.%s: %w", runtime.BotID, err)
+	}
+	if err := validateSceneConfig(runtime); err != nil {
+		return Config{}, fmt.Errorf("bots.%s: %w", runtime.BotID, err)
+	}
+	return runtime, nil
+}
+
+func deriveBotAliceHome(bot BotConfig, botID string) string {
+	if bot.AliceHome != "" {
+		return bot.AliceHome
+	}
+	return filepath.Join(AliceHomeDir(), "bots", botID)
+}
+
+func deriveBotWorkspaceDir(bot BotConfig, aliceHome string) string {
+	if bot.WorkspaceDir != "" {
+		return bot.WorkspaceDir
+	}
+	return WorkspaceDirForAliceHome(aliceHome)
+}
+
+func deriveBotPromptDir(bot BotConfig, aliceHome string) string {
+	if bot.PromptDir != "" {
+		return bot.PromptDir
+	}
+	return PromptDirForAliceHome(aliceHome)
+}
+
+func deriveBotCodexHome(bot BotConfig, aliceHome string) string {
+	if bot.CodexHome != "" {
+		return bot.CodexHome
+	}
+	return CodexHomeForAliceHome(aliceHome)
+}
+
+func deriveBotSoulPath(bot BotConfig, workspaceDir string) string {
+	if bot.SoulPath != "" {
+		return bot.SoulPath
+	}
+	return filepath.Join(workspaceDir, "SOUL.md")
+}
+
+func deriveBotRuntimeHTTPAddr(bot BotConfig, index int) string {
+	if bot.RuntimeHTTPAddr != "" {
+		return bot.RuntimeHTTPAddr
+	}
+	addr, err := incrementHostPort(DefaultRuntimeHTTPAddr, index)
+	if err != nil {
+		return DefaultRuntimeHTTPAddr
+	}
+	return addr
+}
+
+func incrementHostPort(addr string, delta int) (string, error) {
+	host, portStr, err := net.SplitHostPort(strings.TrimSpace(addr))
+	if err != nil {
+		return "", err
+	}
+	basePort := 0
+	if _, err := fmt.Sscanf(portStr, "%d", &basePort); err != nil {
+		return "", err
+	}
+	return net.JoinHostPort(host, fmt.Sprintf("%d", basePort+delta)), nil
+}
+
+func mergeLLMProfiles(base, override map[string]LLMProfileConfig) map[string]LLMProfileConfig {
+	if len(base) == 0 && len(override) == 0 {
+		return map[string]LLMProfileConfig{}
+	}
+	out := make(map[string]LLMProfileConfig, len(base)+len(override))
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range override {
+		out[key] = value
+	}
+	return normalizeLLMProfiles(out)
+}
+
+func mergeStringMap(base, override map[string]string) map[string]string {
+	if len(base) == 0 && len(override) == 0 {
+		return map[string]string{}
+	}
+	out := make(map[string]string, len(base)+len(override))
+	for key, value := range base {
+		out[key] = value
+	}
+	for key, value := range override {
+		out[key] = value
+	}
+	return normalizeEnvMap(out)
+}

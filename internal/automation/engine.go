@@ -7,14 +7,12 @@ import (
 
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/messaging"
 	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/go-co-op/gocron/v2"
 )
 
-type Sender interface {
-	SendText(ctx context.Context, receiveIDType, receiveID, text string) error
-	SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error
-}
+type Sender = messaging.AutomationSender
 
 type LLMRunner interface {
 	Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error)

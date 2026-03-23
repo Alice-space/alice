@@ -14,6 +14,7 @@ import (
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/imagegen"
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/messaging"
 )
 
 type roleplayEnvelope struct {
@@ -25,21 +26,10 @@ type roleplayEnvelope struct {
 	Suppressed   bool
 }
 
-type imageUploader interface {
-	UploadImage(ctx context.Context, localPath string) (string, error)
-}
-
-type imageReplySender interface {
-	ReplyImage(ctx context.Context, sourceMessageID, imageKey string) (string, error)
-}
-
-type imageDirectReplySender interface {
-	ReplyImageDirect(ctx context.Context, sourceMessageID, imageKey string) (string, error)
-}
-
-type imageSendSender interface {
-	SendImage(ctx context.Context, receiveIDType, receiveID, imageKey string) error
-}
+type imageUploader = messaging.ImageUploader
+type imageReplySender = messaging.ReplyImageSender
+type imageDirectReplySender = messaging.ReplyImageDirectSender
+type imageSendSender = messaging.ImageSender
 
 type imageResourceRootProvider interface {
 	ResourceRootForScope(resourceScopeKey string) string

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
+	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/prompting"
@@ -70,12 +71,15 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 		r.RuntimeAPI.UpdateRuntimeConfig(merged)
 	}
 	if r.Processor != nil {
-		if llmChanged && backend != nil {
-			r.Processor.SetLLMBackend(backend)
-		}
-		r.Processor.SetReplyMessages(merged.FailureMessage, merged.ThinkingMessage)
-		r.Processor.SetImmediateFeedback(merged.ImmediateFeedbackMode, merged.ImmediateFeedbackReaction)
-		if err := r.Processor.SetImageGeneration(merged.ImageGeneration, merged.CodexEnv); err != nil {
+		if err := r.Processor.UpdateRuntimeConfig(connector.ProcessorRuntimeUpdate{
+			Backend:                backend,
+			FailureMessage:         merged.FailureMessage,
+			ThinkingMessage:        merged.ThinkingMessage,
+			ImmediateFeedbackMode:  merged.ImmediateFeedbackMode,
+			ImmediateFeedbackEmoji: merged.ImmediateFeedbackReaction,
+			ImageGeneration:        merged.ImageGeneration,
+			ImageEnv:               merged.CodexEnv,
+		}); err != nil {
 			return report, fmt.Errorf("reconfigure image generation failed: %w", err)
 		}
 	}

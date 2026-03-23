@@ -6,6 +6,8 @@ import (
 	"regexp"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/messaging"
 )
 
 var mentionPattern = regexp.MustCompile(`<at[^>]*>.*?</at>`)
@@ -21,18 +23,7 @@ func wasInterruptedByNewMessage(ctx context.Context) bool {
 	return errors.Is(context.Cause(ctx), errSessionInterrupted)
 }
 
-type Sender interface {
-	SendText(ctx context.Context, receiveIDType, receiveID, text string) error
-	SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error
-	AddReaction(ctx context.Context, messageID, emojiType string) error
-	ReplyText(ctx context.Context, sourceMessageID, text string) (string, error)
-	ReplyTextDirect(ctx context.Context, sourceMessageID, text string) (string, error)
-	ReplyRichText(ctx context.Context, sourceMessageID string, lines []string) (string, error)
-	ReplyRichTextMarkdown(ctx context.Context, sourceMessageID, markdown string) (string, error)
-	ReplyRichTextMarkdownDirect(ctx context.Context, sourceMessageID, markdown string) (string, error)
-	ReplyCard(ctx context.Context, sourceMessageID, cardContent string) (string, error)
-	ReplyCardDirect(ctx context.Context, sourceMessageID, cardContent string) (string, error)
-}
+type Sender = messaging.ConversationSender
 
 type ReplyContextProvider interface {
 	GetMessageText(ctx context.Context, messageID string) (string, error)

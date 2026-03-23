@@ -13,39 +13,16 @@ import (
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
+	"github.com/Alice-space/alice/internal/messaging"
 )
 
-type Sender interface {
-	SendText(ctx context.Context, receiveIDType, receiveID, text string) error
-	SendImage(ctx context.Context, receiveIDType, receiveID, imageKey string) error
-	SendFile(ctx context.Context, receiveIDType, receiveID, fileKey string) error
-	UploadImage(ctx context.Context, localPath string) (string, error)
-	UploadFile(ctx context.Context, localPath, fileName string) (string, error)
-}
-
-type replyTextSender interface {
-	ReplyText(ctx context.Context, sourceMessageID, text string) (string, error)
-}
-
-type replyTextDirectSender interface {
-	ReplyTextDirect(ctx context.Context, sourceMessageID, text string) (string, error)
-}
-
-type replyImageSender interface {
-	ReplyImage(ctx context.Context, sourceMessageID, imageKey string) (string, error)
-}
-
-type replyImageDirectSender interface {
-	ReplyImageDirect(ctx context.Context, sourceMessageID, imageKey string) (string, error)
-}
-
-type replyFileSender interface {
-	ReplyFile(ctx context.Context, sourceMessageID, fileKey string) (string, error)
-}
-
-type replyFileDirectSender interface {
-	ReplyFileDirect(ctx context.Context, sourceMessageID, fileKey string) (string, error)
-}
+type Sender = messaging.RuntimeSender
+type replyTextSender = messaging.ReplyTextSender
+type replyTextDirectSender = messaging.ReplyTextDirectSender
+type replyImageSender = messaging.ReplyImageSender
+type replyImageDirectSender = messaging.ReplyImageDirectSender
+type replyFileSender = messaging.ReplyFileSender
+type replyFileDirectSender = messaging.ReplyFileDirectSender
 
 type Server struct {
 	addr       string

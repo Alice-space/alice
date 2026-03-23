@@ -1,0 +1,128 @@
+package config
+
+import "strings"
+
+func normalizeLoadedConfig(cfg Config, rootEnv map[string]string) Config {
+	cfg.FeishuAppID = strings.TrimSpace(cfg.FeishuAppID)
+	cfg.FeishuAppSecret = strings.TrimSpace(cfg.FeishuAppSecret)
+	cfg.FeishuBaseURL = strings.TrimSpace(cfg.FeishuBaseURL)
+	cfg.FeishuBotOpenID = strings.TrimSpace(cfg.FeishuBotOpenID)
+	cfg.FeishuBotUserID = strings.TrimSpace(cfg.FeishuBotUserID)
+	cfg.TriggerMode = strings.ToLower(strings.TrimSpace(cfg.TriggerMode))
+	cfg.TriggerPrefix = strings.TrimSpace(cfg.TriggerPrefix)
+	cfg.ImmediateFeedbackMode = strings.ToLower(strings.TrimSpace(cfg.ImmediateFeedbackMode))
+	cfg.ImmediateFeedbackReaction = strings.ToUpper(strings.TrimSpace(cfg.ImmediateFeedbackReaction))
+	cfg.LLMProvider = strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
+	cfg.LLMProfiles = normalizeLLMProfiles(cfg.LLMProfiles)
+	cfg.GroupScenes = normalizeGroupScenes(cfg.GroupScenes)
+	cfg.CodexCommand = strings.TrimSpace(cfg.CodexCommand)
+	cfg.CodexModel = strings.TrimSpace(cfg.CodexModel)
+	cfg.CodexReasoningEffort = strings.ToLower(strings.TrimSpace(cfg.CodexReasoningEffort))
+	cfg.CodexEnv = normalizeEnvMap(rootEnv)
+	cfg.CodexPromptPrefix = strings.TrimSpace(cfg.CodexPromptPrefix)
+	cfg.ClaudeCommand = strings.TrimSpace(cfg.ClaudeCommand)
+	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
+	cfg.GeminiCommand = strings.TrimSpace(cfg.GeminiCommand)
+	cfg.GeminiPromptPrefix = strings.TrimSpace(cfg.GeminiPromptPrefix)
+	cfg.KimiCommand = strings.TrimSpace(cfg.KimiCommand)
+	cfg.KimiPromptPrefix = strings.TrimSpace(cfg.KimiPromptPrefix)
+	cfg.RuntimeHTTPAddr = strings.TrimSpace(cfg.RuntimeHTTPAddr)
+	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
+	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
+	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)
+	cfg.ImageGeneration = normalizeImageGenerationConfig(cfg.ImageGeneration)
+	cfg.AliceHome = strings.TrimSpace(cfg.AliceHome)
+	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
+	cfg.PromptDir = strings.TrimSpace(cfg.PromptDir)
+	cfg.CodexHome = strings.TrimSpace(cfg.CodexHome)
+	cfg.SoulPath = strings.TrimSpace(cfg.SoulPath)
+	cfg.BotName = strings.TrimSpace(cfg.BotName)
+	cfg.Permissions = normalizeBotPermissions(cfg.Permissions)
+	cfg.Bots = normalizeBots(cfg.Bots)
+	cfg.LogLevel = strings.ToLower(strings.TrimSpace(cfg.LogLevel))
+	cfg.LogFile = strings.TrimSpace(cfg.LogFile)
+	return cfg
+}
+
+func normalizeEnvMap(in map[string]string) map[string]string {
+	if len(in) == 0 {
+		return map[string]string{}
+	}
+
+	out := make(map[string]string, len(in))
+	for key, value := range in {
+		normalizedKey := strings.ToUpper(strings.TrimSpace(key))
+		out[normalizedKey] = strings.TrimSpace(value)
+	}
+	return out
+}
+
+func normalizeImageGenerationConfig(in ImageGenerationConfig) ImageGenerationConfig {
+	in.Provider = strings.ToLower(strings.TrimSpace(in.Provider))
+	in.Model = strings.TrimSpace(in.Model)
+	in.BaseURL = strings.TrimSpace(in.BaseURL)
+	in.Moderation = strings.ToLower(strings.TrimSpace(in.Moderation))
+	in.ResponseFormat = strings.ToLower(strings.TrimSpace(in.ResponseFormat))
+	in.Size = strings.ToLower(strings.TrimSpace(in.Size))
+	in.Quality = strings.ToLower(strings.TrimSpace(in.Quality))
+	in.Background = strings.ToLower(strings.TrimSpace(in.Background))
+	in.OutputFormat = strings.ToLower(strings.TrimSpace(in.OutputFormat))
+	in.Style = strings.ToLower(strings.TrimSpace(in.Style))
+	in.InputFidelity = strings.ToLower(strings.TrimSpace(in.InputFidelity))
+	in.MaskPath = strings.TrimSpace(in.MaskPath)
+	return in
+}
+
+func applyDefaultCodexEnv(in map[string]string) map[string]string {
+	out := normalizeEnvMap(in)
+	if _, ok := out["HTTPS_PROXY"]; !ok {
+		out["HTTPS_PROXY"] = DefaultHTTPSProxy
+	}
+	if _, ok := out["ALL_PROXY"]; !ok {
+		out["ALL_PROXY"] = DefaultALLProxy
+	}
+	return out
+}
+
+func normalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileConfig {
+	if len(in) == 0 {
+		return map[string]LLMProfileConfig{}
+	}
+	out := make(map[string]LLMProfileConfig, len(in))
+	for rawName, profile := range in {
+		name := strings.ToLower(strings.TrimSpace(rawName))
+		if name == "" {
+			continue
+		}
+		profile.Provider = strings.ToLower(strings.TrimSpace(profile.Provider))
+		profile.Model = strings.TrimSpace(profile.Model)
+		profile.Profile = strings.TrimSpace(profile.Profile)
+		profile.ReasoningEffort = strings.ToLower(strings.TrimSpace(profile.ReasoningEffort))
+		profile.Personality = strings.ToLower(strings.TrimSpace(profile.Personality))
+		out[name] = profile
+	}
+	return out
+}
+
+func normalizeLLMProvider(raw string) string {
+	return strings.ToLower(strings.TrimSpace(raw))
+}
+
+func normalizeGroupScenes(in GroupScenesConfig) GroupScenesConfig {
+	in.Chat.TriggerTag = strings.TrimSpace(in.Chat.TriggerTag)
+	in.Chat.SessionScope = strings.ToLower(strings.TrimSpace(in.Chat.SessionScope))
+	in.Chat.LLMProfile = strings.ToLower(strings.TrimSpace(in.Chat.LLMProfile))
+	in.Chat.NoReplyToken = strings.TrimSpace(in.Chat.NoReplyToken)
+	if in.Chat.SessionScope == "" {
+		in.Chat.SessionScope = GroupSceneSessionPerChat
+	}
+
+	in.Work.TriggerTag = strings.TrimSpace(in.Work.TriggerTag)
+	in.Work.SessionScope = strings.ToLower(strings.TrimSpace(in.Work.SessionScope))
+	in.Work.LLMProfile = strings.ToLower(strings.TrimSpace(in.Work.LLMProfile))
+	in.Work.NoReplyToken = strings.TrimSpace(in.Work.NoReplyToken)
+	if in.Work.SessionScope == "" {
+		in.Work.SessionScope = GroupSceneSessionPerThread
+	}
+	return in
+}
