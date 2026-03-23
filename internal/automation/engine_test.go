@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -39,6 +40,21 @@ func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardC
 	s.lastReceiveID = receiveID
 	s.lastCard = cardContent
 	return nil
+}
+
+func cardTitleFromJSON(t *testing.T, raw string) string {
+	t.Helper()
+	var card struct {
+		Header struct {
+			Title struct {
+				Content string `json:"content"`
+			} `json:"title"`
+		} `json:"header"`
+	}
+	if err := json.Unmarshal([]byte(raw), &card); err != nil {
+		t.Fatalf("unmarshal card failed: %v, raw=%q", err, raw)
+	}
+	return card.Header.Title.Content
 }
 
 type deadlineSenderStub struct {
@@ -265,6 +281,7 @@ func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 	store.now = func() time.Time { return base }
 
 	created, err := store.CreateTask(Task{
+		Title:    "daily summary",
 		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
 		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:  Actor{UserID: "ou_actor"},
@@ -317,6 +334,9 @@ func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 	}
 	if !strings.Contains(sender.lastCard, "work 已完成") {
 		t.Fatalf("unexpected card content: %q", sender.lastCard)
+	}
+	if got := cardTitleFromJSON(t, sender.lastCard); got != "daily summary" {
+		t.Fatalf("unexpected card title: %q", got)
 	}
 
 	stored, err := store.GetTask(created.ID)
@@ -453,6 +473,7 @@ func TestEngine_RunUserTask_RunWorkflow_WorkSceneUsesCard(t *testing.T) {
 	store.now = func() time.Time { return base }
 
 	created, err := store.CreateTask(Task{
+		Title:    "issue8 reconcile",
 		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
 		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:  Actor{UserID: "ou_actor"},
@@ -499,6 +520,9 @@ func TestEngine_RunUserTask_RunWorkflow_WorkSceneUsesCard(t *testing.T) {
 	}
 	if !strings.Contains(sender.lastCard, "workflow 已完成") {
 		t.Fatalf("unexpected card content: %q", sender.lastCard)
+	}
+	if got := cardTitleFromJSON(t, sender.lastCard); got != "issue8 reconcile" {
+		t.Fatalf("unexpected card title: %q", got)
 	}
 	if sender.lastReceiveType != "chat_id" || sender.lastReceiveID != "oc_chat" {
 		t.Fatalf("unexpected route: %s %s", sender.lastReceiveType, sender.lastReceiveID)

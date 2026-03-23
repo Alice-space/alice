@@ -375,7 +375,7 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 		return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
 	}
 	if taskPrefersCard(task) {
-		return dispatch, e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, buildTaskCardContent(dispatch.text))
+		return dispatch, e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, buildTaskCardContent(task, dispatch.text))
 	}
 	return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
 }
@@ -535,7 +535,8 @@ func taskPrefersCard(task Task) bool {
 	return strings.Contains(task.Action.SessionKey, "|scene:work")
 }
 
-func buildTaskCardContent(markdown string) string {
+func buildTaskCardContent(task Task, markdown string) string {
+	task = NormalizeTask(task)
 	reply := strings.TrimSpace(markdown)
 	if reply == "" {
 		reply = " "
@@ -546,11 +547,18 @@ func buildTaskCardContent(markdown string) string {
 			"enable_forward": true,
 			"update_multi":   true,
 		},
+		"header": map[string]any{
+			"title": map[string]any{
+				"tag":     "plain_text",
+				"content": taskCardTitle(task),
+			},
+			"template": "blue",
+		},
 		"body": map[string]any{
 			"elements": []any{
 				map[string]any{
 					"tag":     "markdown",
-					"content": "**回复**\n" + reply,
+					"content": reply,
 				},
 			},
 		},
@@ -564,16 +572,9 @@ func buildTaskWarningCardContent(task Task, markdown string, reason string) stri
 	if reply == "" {
 		reply = "自动任务已暂停，等待人工介入。"
 	}
-	title := strings.TrimSpace(task.Title)
-	if title == "" {
-		title = strings.TrimSpace(task.ID)
-	}
-	if title == "" {
-		title = "自动任务"
-	}
 	elements := []any{
 		taskCardMarkdown("**状态**\n自动任务已暂停，等待人工介入。"),
-		taskCardMarkdown("**任务**\n" + title),
+		taskCardMarkdown("**任务**\n" + taskCardTitle(task)),
 	}
 	if trimmedReason := strings.TrimSpace(reason); trimmedReason != "" {
 		elements = append(elements, taskCardMarkdown("**原因**\n"+trimmedReason))
@@ -605,6 +606,17 @@ func taskCardMarkdown(content string) map[string]any {
 		"tag":     "markdown",
 		"content": content,
 	}
+}
+
+func taskCardTitle(task Task) string {
+	task = NormalizeTask(task)
+	if task.Title != "" {
+		return task.Title
+	}
+	if task.ID != "" {
+		return task.ID
+	}
+	return "自动任务"
 }
 
 func detectWorkflowSignal(commands []WorkflowCommand) *taskSignal {
