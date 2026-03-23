@@ -15,6 +15,7 @@ import (
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/prompting"
+	"github.com/Alice-space/alice/internal/runtimecfg"
 )
 
 type App struct {
@@ -73,7 +74,7 @@ func newAppRuntimeConfig(cfg config.Config) appRuntimeConfig {
 		triggerMode:     cfg.TriggerMode,
 		triggerPrefix:   cfg.TriggerPrefix,
 		llmProvider:     cfg.LLMProvider,
-		llmProfiles:     cloneLLMProfiles(cfg.LLMProfiles),
+		llmProfiles:     runtimecfg.CloneLLMProfiles(cfg.LLMProfiles),
 		groupScenes:     cfg.GroupScenes,
 		feishuBotOpenID: cfg.FeishuBotOpenID,
 		feishuBotUserID: cfg.FeishuBotUserID,
@@ -99,17 +100,6 @@ func (a *App) UpdateRuntimeConfig(cfg config.Config) {
 	if a.processor != nil {
 		a.processor.SetBuiltinHelpConfig(cfg)
 	}
-}
-
-func cloneLLMProfiles(in map[string]config.LLMProfileConfig) map[string]config.LLMProfileConfig {
-	if len(in) == 0 {
-		return map[string]config.LLMProfileConfig{}
-	}
-	out := make(map[string]config.LLMProfileConfig, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
-	return out
 }
 
 func (a *App) SetPromptLoader(loader *prompting.Loader) {

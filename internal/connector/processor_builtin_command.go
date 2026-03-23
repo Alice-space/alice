@@ -10,6 +10,7 @@ import (
 	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
+	"github.com/Alice-space/alice/internal/statusview"
 )
 
 const helpCommandName = "/help"
@@ -174,160 +175,71 @@ func formatWorkModeTrigger(helpCfg builtinHelpConfig) string {
 
 func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
 	snapshot := p.runtimeSnapshot()
-	if snapshot.automationStore == nil && snapshot.campaignStore == nil {
+	if snapshot.statusService == nil || !snapshot.statusService.IsAvailable() {
 		return "当前还没有挂载 automation / code-army 状态存储，暂时无法执行 `/status`。"
 	}
 
-	tasks, taskErr := activeAutomationTasksForJob(snapshot.automationStore, job, 20)
-	campaigns, campaignErr := activeCampaignsForJob(snapshot.campaignStore, job, 20)
-	totalUsage, botUsages, usageErr := p.builtinStatusUsage(job)
+	result := snapshot.statusService.Query(job)
 
 	lines := []string{
 		"## Alice 当前状态",
 		"",
-		fmt.Sprintf("- scope: `%s`", builtinStatusScopeLabel(job)),
-		fmt.Sprintf("- 总 token：`%s`", formatBuiltinStatusTokenCount(totalUsage.TotalTokens())),
+		fmt.Sprintf("- scope: `%s`", result.ScopeLabel),
+		fmt.Sprintf("- 总 token：`%s`", formatBuiltinStatusTokenCount(result.TotalUsage.TotalTokens())),
 		fmt.Sprintf(
 			"- token 明细：input `%s` | cached `%s` | output `%s` | turns `%s`",
-			formatBuiltinStatusTokenCount(totalUsage.InputTokens),
-			formatBuiltinStatusTokenCount(totalUsage.CachedInputTokens),
-			formatBuiltinStatusTokenCount(totalUsage.OutputTokens),
-			formatBuiltinStatusTokenCount(totalUsage.Turns),
+			formatBuiltinStatusTokenCount(result.TotalUsage.InputTokens),
+			formatBuiltinStatusTokenCount(result.TotalUsage.CachedInputTokens),
+			formatBuiltinStatusTokenCount(result.TotalUsage.OutputTokens),
+			formatBuiltinStatusTokenCount(result.TotalUsage.Turns),
 		),
-		fmt.Sprintf("- 活跃自动化任务：`%d`", len(tasks)),
-		fmt.Sprintf("- 活跃 Code Army：`%d`", len(campaigns)),
+		fmt.Sprintf("- 活跃自动化任务：`%d`", len(result.Tasks)),
+		fmt.Sprintf("- 活跃 Code Army：`%d`", len(result.Campaigns)),
 	}
-	if updatedAt := formatBuiltinStatusTime(newestUsageUpdate(botUsages)); updatedAt != "" {
+	if updatedAt := formatBuiltinStatusTime(statusview.NewestUsageUpdate(result.BotUsages)); updatedAt != "" {
 		lines = append(lines, fmt.Sprintf("- token 统计更新：`%s`", updatedAt))
 	}
-	if taskErr != nil || campaignErr != nil || usageErr != nil {
+	if result.TaskError != nil || result.CampaignError != nil || result.UsageError != nil {
 		lines = append(lines, "")
-		if taskErr != nil {
-			lines = append(lines, fmt.Sprintf("- 自动化任务查询失败：`%s`", sanitizeInlineCode(taskErr.Error())))
+		if result.TaskError != nil {
+			lines = append(lines, fmt.Sprintf("- 自动化任务查询失败：`%s`", sanitizeInlineCode(result.TaskError.Error())))
 		}
-		if campaignErr != nil {
-			lines = append(lines, fmt.Sprintf("- Code Army 查询失败：`%s`", sanitizeInlineCode(campaignErr.Error())))
+		if result.CampaignError != nil {
+			lines = append(lines, fmt.Sprintf("- Code Army 查询失败：`%s`", sanitizeInlineCode(result.CampaignError.Error())))
 		}
-		if usageErr != nil {
-			lines = append(lines, fmt.Sprintf("- token 统计查询失败：`%s`", sanitizeInlineCode(usageErr.Error())))
+		if result.UsageError != nil {
+			lines = append(lines, fmt.Sprintf("- token 统计查询失败：`%s`", sanitizeInlineCode(result.UsageError.Error())))
 		}
 		return strings.Join(lines, "\n")
 	}
 
 	lines = append(lines, "", "### Bot Token 统计", "")
-	if len(botUsages) == 0 {
+	if len(result.BotUsages) == 0 {
 		lines = append(lines, "- none")
 	} else {
-		for _, item := range botUsages {
+		for _, item := range result.BotUsages {
 			lines = append(lines, formatBuiltinStatusUsageLine(item))
 		}
 	}
 
 	lines = append(lines, "", "### 活跃自动化任务", "")
-	if len(tasks) == 0 {
+	if len(result.Tasks) == 0 {
 		lines = append(lines, "- none")
 	} else {
-		for _, task := range tasks {
+		for _, task := range result.Tasks {
 			lines = append(lines, formatBuiltinStatusTaskLine(task))
 		}
 	}
 
 	lines = append(lines, "", "### 活跃 Code Army", "")
-	if len(campaigns) == 0 {
+	if len(result.Campaigns) == 0 {
 		lines = append(lines, "- none")
 	} else {
-		for _, item := range campaigns {
+		for _, item := range result.Campaigns {
 			lines = append(lines, formatBuiltinStatusCampaignLine(item))
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-func activeAutomationTasksForJob(store *automation.Store, job Job, limit int) ([]automation.Task, error) {
-	if store == nil {
-		return nil, nil
-	}
-	scope, err := builtinStatusAutomationScope(job)
-	if err != nil {
-		return nil, err
-	}
-	return store.ListTasks(scope, string(automation.TaskStatusActive), limit)
-}
-
-func activeCampaignsForJob(store *campaign.Store, job Job, limit int) ([]campaign.Campaign, error) {
-	if store == nil {
-		return nil, nil
-	}
-	visibilityKey := builtinStatusVisibilityKey(job)
-	if visibilityKey == "" {
-		return nil, fmt.Errorf("missing scope session key")
-	}
-	items, err := store.ListCampaigns(visibilityKey, "", limit)
-	if err != nil {
-		return nil, err
-	}
-	filtered := make([]campaign.Campaign, 0, len(items))
-	for _, item := range items {
-		if !isBuiltinStatusActiveCampaign(item.Status) {
-			continue
-		}
-		filtered = append(filtered, item)
-	}
-	return filtered, nil
-}
-
-func builtinStatusAutomationScope(job Job) (automation.Scope, error) {
-	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
-	if isGroupChatType(chatType) {
-		receiveID := strings.TrimSpace(job.ReceiveID)
-		if receiveID == "" {
-			return automation.Scope{}, fmt.Errorf("missing chat_id for group scope")
-		}
-		return automation.Scope{Kind: automation.ScopeKindChat, ID: receiveID}, nil
-	}
-	actorID := strings.TrimSpace(job.SenderUserID)
-	if actorID == "" {
-		actorID = strings.TrimSpace(job.SenderOpenID)
-	}
-	if actorID == "" {
-		return automation.Scope{}, fmt.Errorf("missing actor id")
-	}
-	return automation.Scope{Kind: automation.ScopeKindUser, ID: actorID}, nil
-}
-
-func builtinStatusVisibilityKey(job Job) string {
-	receiveIDType := strings.TrimSpace(job.ReceiveIDType)
-	receiveID := strings.TrimSpace(job.ReceiveID)
-	if receiveIDType != "" && receiveID != "" {
-		return receiveIDType + ":" + receiveID
-	}
-	sessionKey := strings.TrimSpace(job.SessionKey)
-	if sessionKey != "" {
-		if idx := strings.Index(sessionKey, "|"); idx >= 0 {
-			sessionKey = strings.TrimSpace(sessionKey[:idx])
-		}
-		return sessionKey
-	}
-	return ""
-}
-
-func builtinStatusScopeLabel(job Job) string {
-	if scope := builtinStatusVisibilityKey(job); scope != "" {
-		return scope
-	}
-	if receiveIDType := strings.TrimSpace(job.ReceiveIDType); receiveIDType != "" && strings.TrimSpace(job.ReceiveID) != "" {
-		return receiveIDType + ":" + strings.TrimSpace(job.ReceiveID)
-	}
-	return "unknown"
-}
-
-func isBuiltinStatusActiveCampaign(status campaign.CampaignStatus) bool {
-	switch status {
-	case campaign.StatusPlanned, campaign.StatusRunning, campaign.StatusHold:
-		return true
-	default:
-		return false
-	}
 }
 
 func isBuiltinStatusActiveTrial(status campaign.TrialStatus) bool {

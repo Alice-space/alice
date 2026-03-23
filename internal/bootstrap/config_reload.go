@@ -10,6 +10,7 @@ import (
 	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/prompting"
+	"github.com/Alice-space/alice/internal/runtimecfg"
 )
 
 type ConfigReloadReport struct {
@@ -302,12 +303,5 @@ func llmProfileMapEqual(left, right map[string]config.LLMProfileConfig) bool {
 }
 
 func cloneLLMProfileMap(in map[string]config.LLMProfileConfig) map[string]config.LLMProfileConfig {
-	if len(in) == 0 {
-		return map[string]config.LLMProfileConfig{}
-	}
-	out := make(map[string]config.LLMProfileConfig, len(in))
-	for key, value := range in {
-		out[key] = value
-	}
-	return out
+	return runtimecfg.CloneLLMProfiles(in)
 }
