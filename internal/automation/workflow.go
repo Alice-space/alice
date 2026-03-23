@@ -3,6 +3,7 @@ package automation
 import (
 	"context"
 	"errors"
+	"regexp"
 	"strings"
 
 	"github.com/Alice-space/alice/internal/llm"
@@ -13,6 +14,7 @@ const (
 	EnvWorkflowStateKey   = "ALICE_AUTOMATION_STATE_KEY"
 	EnvWorkflowTaskID     = "ALICE_AUTOMATION_TASK_ID"
 	EnvWorkflowSessionKey = "ALICE_AUTOMATION_SESSION_KEY"
+	workflowCommandTag    = "alice_command"
 )
 
 type WorkflowRunRequest struct {
@@ -31,7 +33,12 @@ type WorkflowRunRequest struct {
 }
 
 type WorkflowRunResult struct {
-	Message string
+	Message  string
+	Commands []WorkflowCommand
+}
+
+type WorkflowCommand struct {
+	Text string
 }
 
 type WorkflowRunner interface {
@@ -85,7 +92,11 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 	if err != nil {
 		return WorkflowRunResult{}, err
 	}
-	return WorkflowRunResult{Message: strings.TrimSpace(result.Reply)}, nil
+	reply := strings.TrimSpace(result.Reply)
+	return WorkflowRunResult{
+		Message:  stripWorkflowCommandBlocks(reply),
+		Commands: extractWorkflowCommands(reply),
+	}, nil
 }
 
 func normalizeWorkflowName(raw string) string {
@@ -125,4 +136,38 @@ func normalizeWorkflowScene(scene, sessionKey string) string {
 		return "work"
 	}
 	return "chat"
+}
+
+var workflowCommandBlockPattern = regexp.MustCompile(`(?is)<` + workflowCommandTag + `\b[^>]*>(.*?)</` + workflowCommandTag + `>`)
+
+func extractWorkflowCommands(reply string) []WorkflowCommand {
+	if strings.TrimSpace(reply) == "" {
+		return nil
+	}
+	matches := workflowCommandBlockPattern.FindAllStringSubmatch(reply, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	commands := make([]WorkflowCommand, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		text := strings.TrimSpace(match[1])
+		if text == "" {
+			continue
+		}
+		commands = append(commands, WorkflowCommand{Text: text})
+	}
+	if len(commands) == 0 {
+		return nil
+	}
+	return commands
+}
+
+func stripWorkflowCommandBlocks(reply string) string {
+	if strings.TrimSpace(reply) == "" {
+		return ""
+	}
+	return strings.TrimSpace(workflowCommandBlockPattern.ReplaceAllString(reply, ""))
 }

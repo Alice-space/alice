@@ -513,6 +513,75 @@ func TestEngine_RunUserTask_RunWorkflow_WorkSceneUsesCard(t *testing.T) {
 	}
 }
 
+func TestEngine_RunUserTask_RunWorkflow_NeedsHumanPausesTaskAndWarns(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title:    "issue8 reconcile",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:       ActionTypeRunWorkflow,
+			Prompt:     "请推进代码军队流程",
+			Workflow:   "code_army",
+			SessionKey: "chat_id:oc_chat|scene:work|thread:omt_alpha",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{
+			Commands: []WorkflowCommand{
+				{Text: "/alice needs-human waiting for user confirmation"},
+			},
+		},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if sender.sendCardCalls != 1 {
+		t.Fatalf("expected warning card, got %d cards", sender.sendCardCalls)
+	}
+	if sender.sendTextCalls != 0 {
+		t.Fatalf("expected no text fallback, got %d texts", sender.sendTextCalls)
+	}
+	if !strings.Contains(sender.lastCard, "需要人工介入") {
+		t.Fatalf("unexpected warning card content: %q", sender.lastCard)
+	}
+	if !strings.Contains(sender.lastCard, "waiting for user confirmation") {
+		t.Fatalf("warning card missing reason: %q", sender.lastCard)
+	}
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.Status != TaskStatusPaused {
+		t.Fatalf("expected paused task, got %s", stored.Status)
+	}
+	if !stored.NextRunAt.IsZero() {
+		t.Fatalf("expected cleared next_run_at, got %s", stored.NextRunAt.Format(time.RFC3339))
+	}
+	if stored.LastResult != "needs_human: waiting for user confirmation" {
+		t.Fatalf("unexpected last result: %q", stored.LastResult)
+	}
+}
+
 func TestEngine_RunUserTask_RunWorkflow_SkipsAutomationTimeout(t *testing.T) {
 	sender := &senderStub{}
 	runner := &workflowRunnerStub{

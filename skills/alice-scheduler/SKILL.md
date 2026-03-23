@@ -19,7 +19,7 @@ description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化
   `JSON`
 - 用 JSON 创建 workflow 任务：
   `scripts/alice-scheduler.sh create <<'JSON'`
-  `{ "title": "fm16 reconcile", "schedule": { "type": "interval", "every_seconds": 900 }, "action": { "type": "run_workflow", "workflow": "code_army", "prompt": "/alice reconcile campaign camp_xxx；尽可能利用所有允许且可用的资源并行推进；若有清晰且安全的下一步就直接动手，并在必要时实际调整；只有确实做不了时才写 needs_human。", "reasoning_effort": "high", "personality": "pragmatic" } }`
+  `{ "title": "fm16 reconcile", "schedule": { "type": "interval", "every_seconds": 900 }, "action": { "type": "run_workflow", "workflow": "code_army", "prompt": "/alice reconcile campaign camp_xxx；尽可能利用所有允许且可用的资源并行推进；若有清晰且安全的下一步就直接动手，并在必要时实际调整；只有确实做不了或继续做不安全时，才允许发 `/alice needs-human ...`，并在最终回复中追加 `<alice_command>/alice needs-human ...</alice_command>`。", "reasoning_effort": "high", "personality": "pragmatic" } }`
   `JSON`
 - 查看单个任务：
   `scripts/alice-scheduler.sh get task_xxx`
@@ -45,7 +45,7 @@ description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化
 3. 一次性执行推荐：`interval + every_seconds: 60 + max_runs: 1`。
 4. `run_llm` 适合纯汇报；`run_workflow` 适合真正推进任务，例如 reconcile、triage、resubmit 这类会调用工具并产生状态变化的流程。
 5. 创建 workflow 定时任务时，优先把 `workflow` 写死，把可变部分放进 `prompt` / `state_key`；不要让 agent 每次自由改 workflow 名。
-6. 创建 `heartbeat` / `reconcile` 一类周期 `run_workflow` 任务时，`prompt` 应明确两点：尽可能利用所有允许资源并行推进；若已经识别出清晰且安全的下一步，就在同一轮实际动手，并在必要时实际调整任务、试验或资源分配，不能只看不动。
+6. 创建 `heartbeat` / `reconcile` 一类周期 `run_workflow` 任务时，`prompt` 应明确两点：尽可能利用所有允许资源并行推进；若已经识别出清晰且安全的下一步，就在同一轮实际动手，并在必要时实际调整任务、试验或资源分配，不能只看不动。若确实需要人工介入，应要求 workflow 明确发出 `/alice needs-human ...`，并带上隐藏指令块 `<alice_command>...</alice_command>`，让 runtime 自动暂停任务并发警告卡。
 
 ## 回复模式
 

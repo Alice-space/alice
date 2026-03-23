@@ -338,6 +338,39 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 	return err
 }
 
+func (s *Store) RecordTaskSignal(taskID string, at time.Time, kind, message string, pause bool) error {
+	if s == nil {
+		return errors.New("store is nil")
+	}
+	kind = strings.ToLower(strings.TrimSpace(kind))
+	if kind == "" {
+		kind = "signal"
+	}
+	_, err := s.PatchTask(taskID, func(task *Task) error {
+		if at.IsZero() {
+			at = s.nowLocal()
+		}
+		at = at.Local()
+		task.Running = false
+		task.ConsecutiveFailures = 0
+		message = strings.TrimSpace(message)
+		if message == "" {
+			task.LastResult = kind + ": " + at.Format(time.RFC3339)
+		} else {
+			task.LastResult = kind + ": " + message
+		}
+		if pause {
+			task.Status = TaskStatusPaused
+			task.NextRunAt = time.Time{}
+		}
+		return nil
+	})
+	if errors.Is(err, ErrTaskNotFound) {
+		return nil
+	}
+	return err
+}
+
 func (s *Store) dbOrOpen() (*bolt.DB, error) {
 	if s == nil {
 		return nil, errors.New("store is nil")
