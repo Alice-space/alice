@@ -4,17 +4,26 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/Alice-space/alice/internal/automation"
+	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
 )
 
 const helpCommandName = "/help"
+const statusCommandName = "/status"
+const codeArmyCommandName = "/codearmy"
+const codeArmyStatusSubcommand = "status"
 const clearCommandName = "/clear"
 
 func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, JobProcessState) {
 	if isHelpCommand(job.Text) {
 		return true, p.processHelpCommand(ctx, job)
+	}
+	if isStatusCommand(job.Text) || isCodeArmyStatusCommand(job.Text) {
+		return true, p.processStatusCommand(ctx, job)
 	}
 	if isClearCommand(job.Text) {
 		return true, p.processClearCommand(ctx, job)
@@ -23,7 +32,7 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 }
 
 func isBuiltinCommandText(text string) bool {
-	return isHelpCommand(text) || isClearCommand(text)
+	return isHelpCommand(text) || isStatusCommand(text) || isCodeArmyStatusCommand(text) || isClearCommand(text)
 }
 
 func isHelpCommand(text string) bool {
@@ -42,6 +51,23 @@ func isClearCommand(text string) bool {
 	return strings.EqualFold(strings.TrimSpace(fields[0]), clearCommandName)
 }
 
+func isStatusCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), statusCommandName)
+}
+
+func isCodeArmyStatusCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) < 2 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), codeArmyCommandName) &&
+		strings.EqualFold(strings.TrimSpace(fields[1]), codeArmyStatusSubcommand)
+}
+
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
 	reply := buildBuiltinHelpMarkdown(p.runtimeSnapshot().helpConfig)
 	replyJob := job
@@ -49,6 +75,17 @@ func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessS
 	replyJob.CreateFeishuThread = false
 	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
 		logging.Errorf("send builtin help reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
+func (p *Processor) processStatusCommand(ctx context.Context, job Job) JobProcessState {
+	reply := p.buildBuiltinStatusMarkdown(job)
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send builtin status reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted
 }
@@ -81,6 +118,8 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		"",
 		"- `/help`",
 		"  显示内建命令，以及普通模式 / 工作模式的当前说明。",
+		"- `/status`",
+		"  显示当前会话 scope 下的活跃自动化任务，以及非终态的 code-army campaigns。",
 		"- `/clear`",
 		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
 	}
@@ -129,4 +168,232 @@ func formatWorkModeTrigger(helpCfg builtinHelpConfig) string {
 		return trigger
 	}
 	return trigger + " + `" + tag + "`"
+}
+
+func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
+	snapshot := p.runtimeSnapshot()
+	if snapshot.automationStore == nil && snapshot.campaignStore == nil {
+		return "当前还没有挂载 automation / code-army 状态存储，暂时无法执行 `/status`。"
+	}
+
+	tasks, taskErr := activeAutomationTasksForJob(snapshot.automationStore, job, 20)
+	campaigns, campaignErr := activeCampaignsForJob(snapshot.campaignStore, job, 20)
+
+	lines := []string{
+		"## Alice 当前状态",
+		"",
+		fmt.Sprintf("- scope: `%s`", builtinStatusScopeLabel(job)),
+		fmt.Sprintf("- 活跃自动化任务：`%d`", len(tasks)),
+		fmt.Sprintf("- 活跃 Code Army：`%d`", len(campaigns)),
+	}
+	if taskErr != nil || campaignErr != nil {
+		lines = append(lines, "")
+		if taskErr != nil {
+			lines = append(lines, fmt.Sprintf("- 自动化任务查询失败：`%s`", sanitizeInlineCode(taskErr.Error())))
+		}
+		if campaignErr != nil {
+			lines = append(lines, fmt.Sprintf("- Code Army 查询失败：`%s`", sanitizeInlineCode(campaignErr.Error())))
+		}
+		return strings.Join(lines, "\n")
+	}
+
+	lines = append(lines, "", "### 活跃自动化任务", "")
+	if len(tasks) == 0 {
+		lines = append(lines, "- none")
+	} else {
+		for _, task := range tasks {
+			lines = append(lines, formatBuiltinStatusTaskLine(task))
+		}
+	}
+
+	lines = append(lines, "", "### 活跃 Code Army", "")
+	if len(campaigns) == 0 {
+		lines = append(lines, "- none")
+	} else {
+		for _, item := range campaigns {
+			lines = append(lines, formatBuiltinStatusCampaignLine(item))
+		}
+	}
+	return strings.Join(lines, "\n")
+}
+
+func activeAutomationTasksForJob(store *automation.Store, job Job, limit int) ([]automation.Task, error) {
+	if store == nil {
+		return nil, nil
+	}
+	scope, err := builtinStatusAutomationScope(job)
+	if err != nil {
+		return nil, err
+	}
+	return store.ListTasks(scope, string(automation.TaskStatusActive), limit)
+}
+
+func activeCampaignsForJob(store *campaign.Store, job Job, limit int) ([]campaign.Campaign, error) {
+	if store == nil {
+		return nil, nil
+	}
+	visibilityKey := builtinStatusVisibilityKey(job)
+	if visibilityKey == "" {
+		return nil, fmt.Errorf("missing scope session key")
+	}
+	items, err := store.ListCampaigns(visibilityKey, "", limit)
+	if err != nil {
+		return nil, err
+	}
+	filtered := make([]campaign.Campaign, 0, len(items))
+	for _, item := range items {
+		if !isBuiltinStatusActiveCampaign(item.Status) {
+			continue
+		}
+		filtered = append(filtered, item)
+	}
+	return filtered, nil
+}
+
+func builtinStatusAutomationScope(job Job) (automation.Scope, error) {
+	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
+	if isGroupChatType(chatType) {
+		receiveID := strings.TrimSpace(job.ReceiveID)
+		if receiveID == "" {
+			return automation.Scope{}, fmt.Errorf("missing chat_id for group scope")
+		}
+		return automation.Scope{Kind: automation.ScopeKindChat, ID: receiveID}, nil
+	}
+	actorID := strings.TrimSpace(job.SenderUserID)
+	if actorID == "" {
+		actorID = strings.TrimSpace(job.SenderOpenID)
+	}
+	if actorID == "" {
+		return automation.Scope{}, fmt.Errorf("missing actor id")
+	}
+	return automation.Scope{Kind: automation.ScopeKindUser, ID: actorID}, nil
+}
+
+func builtinStatusVisibilityKey(job Job) string {
+	receiveIDType := strings.TrimSpace(job.ReceiveIDType)
+	receiveID := strings.TrimSpace(job.ReceiveID)
+	if receiveIDType != "" && receiveID != "" {
+		return receiveIDType + ":" + receiveID
+	}
+	sessionKey := strings.TrimSpace(job.SessionKey)
+	if sessionKey != "" {
+		if idx := strings.Index(sessionKey, "|"); idx >= 0 {
+			sessionKey = strings.TrimSpace(sessionKey[:idx])
+		}
+		return sessionKey
+	}
+	return ""
+}
+
+func builtinStatusScopeLabel(job Job) string {
+	if scope := builtinStatusVisibilityKey(job); scope != "" {
+		return scope
+	}
+	if receiveIDType := strings.TrimSpace(job.ReceiveIDType); receiveIDType != "" && strings.TrimSpace(job.ReceiveID) != "" {
+		return receiveIDType + ":" + strings.TrimSpace(job.ReceiveID)
+	}
+	return "unknown"
+}
+
+func isBuiltinStatusActiveCampaign(status campaign.CampaignStatus) bool {
+	switch status {
+	case campaign.StatusPlanned, campaign.StatusRunning, campaign.StatusHold:
+		return true
+	default:
+		return false
+	}
+}
+
+func isBuiltinStatusActiveTrial(status campaign.TrialStatus) bool {
+	switch status {
+	case campaign.TrialStatusPlanned, campaign.TrialStatusRunning, campaign.TrialStatusCandidate, campaign.TrialStatusHold:
+		return true
+	default:
+		return false
+	}
+}
+
+func formatBuiltinStatusTaskLine(task automation.Task) string {
+	parts := []string{fmt.Sprintf("- `%s`", sanitizeInlineCode(task.ID))}
+	if title := strings.TrimSpace(task.Title); title != "" {
+		parts = append(parts, title)
+	}
+	parts = append(parts, fmt.Sprintf("`%s`", sanitizeInlineCode(formatBuiltinStatusTaskAction(task.Action))))
+	if !task.NextRunAt.IsZero() {
+		parts = append(parts, fmt.Sprintf("next `%s`", task.NextRunAt.Local().Format("2006-01-02 15:04:05")))
+	}
+	if stateKey := strings.TrimSpace(task.Action.StateKey); stateKey != "" {
+		parts = append(parts, fmt.Sprintf("state_key `%s`", sanitizeInlineCode(stateKey)))
+	}
+	if task.MaxRuns > 0 {
+		parts = append(parts, fmt.Sprintf("runs `%d/%d`", task.RunCount, task.MaxRuns))
+	} else if task.RunCount > 0 {
+		parts = append(parts, fmt.Sprintf("runs `%d`", task.RunCount))
+	}
+	if task.Running {
+		parts = append(parts, "`running-now`")
+	}
+	return strings.Join(parts, " | ")
+}
+
+func formatBuiltinStatusTaskAction(action automation.Action) string {
+	label := strings.TrimSpace(string(action.Type))
+	if label == "" {
+		label = "unknown"
+	}
+	if action.Type == automation.ActionTypeRunWorkflow && strings.TrimSpace(action.Workflow) != "" {
+		return label + "/" + strings.TrimSpace(action.Workflow)
+	}
+	return label
+}
+
+func formatBuiltinStatusCampaignLine(item campaign.Campaign) string {
+	parts := []string{fmt.Sprintf("- `%s`", sanitizeInlineCode(item.ID))}
+	if title := strings.TrimSpace(item.Title); title != "" {
+		parts = append(parts, title)
+	}
+	parts = append(parts, fmt.Sprintf("status `%s`", sanitizeInlineCode(string(item.Status))))
+	if repo := strings.TrimSpace(item.Repo); repo != "" {
+		parts = append(parts, fmt.Sprintf("repo `%s`", sanitizeInlineCode(repo)))
+	}
+	if issueIID := strings.TrimSpace(item.IssueIID); issueIID != "" {
+		parts = append(parts, fmt.Sprintf("issue `#%s`", sanitizeInlineCode(issueIID)))
+	}
+	if winner := strings.TrimSpace(item.CurrentWinnerTrialID); winner != "" {
+		parts = append(parts, fmt.Sprintf("winner `%s`", sanitizeInlineCode(winner)))
+	}
+	if activeTrials := builtinStatusActiveTrialIDs(item.Trials); len(activeTrials) > 0 {
+		parts = append(parts, fmt.Sprintf("active trials `%s`", sanitizeInlineCode(strings.Join(activeTrials, ", "))))
+	}
+	if updatedAt := formatBuiltinStatusTime(item.UpdatedAt); updatedAt != "" {
+		parts = append(parts, fmt.Sprintf("updated `%s`", updatedAt))
+	}
+	return strings.Join(parts, " | ")
+}
+
+func builtinStatusActiveTrialIDs(trials []campaign.Trial) []string {
+	if len(trials) == 0 {
+		return nil
+	}
+	active := make([]string, 0, len(trials))
+	for _, trial := range trials {
+		if !isBuiltinStatusActiveTrial(trial.Status) {
+			continue
+		}
+		if id := strings.TrimSpace(trial.ID); id != "" {
+			active = append(active, id)
+		}
+	}
+	return active
+}
+
+func formatBuiltinStatusTime(ts time.Time) string {
+	if ts.IsZero() {
+		return ""
+	}
+	return ts.Local().Format("2006-01-02 15:04:05")
+}
+
+func sanitizeInlineCode(value string) string {
+	return strings.ReplaceAll(strings.TrimSpace(value), "`", "'")
 }

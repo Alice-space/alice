@@ -134,6 +134,7 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 		b.resolveRuntimeAPIToken(),
 		ResolveRuntimeBinary(b.cfg.WorkspaceDir),
 	)
+	processor.SetStatusStores(b.automationStore, b.campaignStore)
 	if err := processor.SetImageGeneration(b.cfg.ImageGeneration, b.cfg.CodexEnv); err != nil {
 		return err
 	}
