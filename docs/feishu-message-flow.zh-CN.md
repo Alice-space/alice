@@ -114,8 +114,8 @@ Feishu websocket event
 当前内建命令有：
 
 - `/help`
+- `/status`
 - `/clear`
-- `/codearmy status [state_key]`
 
 当前 trigger mode 有三种：
 
@@ -463,10 +463,10 @@ worker 在调用 `Processor.ProcessJobState` 之前，会创建：
 
 - `/help`
   直接返回当前所有内建命令的 markdown 列表。
+- `/status`
+  直接返回当前会话 scope 下的活跃自动化任务，以及非终态的 code-army campaigns。
 - `/clear`
   仅在群聊 `chat` 模式下可用；会把当前群聊切到新的 chat session，相当于清空当前上下文。
-- `/codearmy status [state_key]`
-  直接读取当前会话的 workflow/task 状态并回飞书。
 
 同时，群聊下这些 builtin slash command 会先于普通 trigger 规则放行，不会被 `trigger_prefix` 改写或拦截。
 

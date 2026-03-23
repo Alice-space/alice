@@ -7,6 +7,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/Alice-space/alice/internal/automation"
+	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/imagegen"
 	"github.com/Alice-space/alice/internal/llm"
@@ -35,6 +37,8 @@ type Processor struct {
 	runtimeAPIBase   string
 	runtimeAPIToken  string
 	runtimeAPIBin    string
+	automationStore  *automation.Store
+	campaignStore    *campaign.Store
 	helpConfig       builtinHelpConfig
 	prompts          *prompting.Loader
 }
@@ -111,6 +115,16 @@ func (p *Processor) SetRuntimeAPI(baseURL, token, runtimeBin string) {
 	p.runtimeAPIBase = strings.TrimSpace(baseURL)
 	p.runtimeAPIToken = strings.TrimSpace(token)
 	p.runtimeAPIBin = strings.TrimSpace(runtimeBin)
+}
+
+func (p *Processor) SetStatusStores(automationStore *automation.Store, campaignStore *campaign.Store) {
+	if p == nil {
+		return
+	}
+	p.runtimeMu.Lock()
+	defer p.runtimeMu.Unlock()
+	p.automationStore = automationStore
+	p.campaignStore = campaignStore
 }
 
 func (p *Processor) SetImageGeneration(cfg config.ImageGenerationConfig, env map[string]string) error {
@@ -193,6 +207,8 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 		runtimeAPIBase:  p.runtimeAPIBase,
 		runtimeAPIToken: p.runtimeAPIToken,
 		runtimeAPIBin:   p.runtimeAPIBin,
+		automationStore: p.automationStore,
+		campaignStore:   p.campaignStore,
 		helpConfig:      p.helpConfig,
 	}
 }
@@ -208,6 +224,8 @@ type processorRuntimeSnapshot struct {
 	runtimeAPIBase  string
 	runtimeAPIToken string
 	runtimeAPIBin   string
+	automationStore *automation.Store
+	campaignStore   *campaign.Store
 	helpConfig      builtinHelpConfig
 }
 
