@@ -134,6 +134,7 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.WorkerConcurrency = bot.WorkerConcurrency
 	runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs
 	runtime.Permissions = mergeBotPermissions(BotPermissionsConfig{}, bot.Permissions)
+	runtime.CampaignRoleDefaults = bot.CampaignRoleDefaults
 
 	runtime, err = finalizeConfig(runtime, true)
 	if err != nil {
@@ -166,11 +167,11 @@ func deriveBotPromptDir(bot BotConfig, aliceHome string) string {
 	return PromptDirForAliceHome(aliceHome)
 }
 
-func deriveBotCodexHome(bot BotConfig, aliceHome string) string {
+func deriveBotCodexHome(bot BotConfig, _ string) string {
 	if bot.CodexHome != "" {
-		return bot.CodexHome
+		return ResolveCodexHomeDir(bot.CodexHome)
 	}
-	return CodexHomeForAliceHome(aliceHome)
+	return DefaultCodexHome()
 }
 
 func deriveBotSoulPath(bot BotConfig, workspaceDir string) string {

@@ -10,6 +10,7 @@ import (
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/campaignrepo"
+	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
 )
 
@@ -83,7 +84,7 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if !shouldAutoReconcileCampaign(item) {
 		return
 	}
-	result, err := campaignrepo.ReconcileAndPrepare(item.CampaignRepoPath, now, item.MaxParallelTrials, campaignRepoDispatchLease)
+	result, err := campaignrepo.ReconcileAndPrepare(item.CampaignRepoPath, now, item.MaxParallelTrials, campaignRepoDispatchLease, b.campaignRoleDefaults())
 	if err != nil {
 		logging.Warnf("campaign repo reconcile failed campaign=%s path=%s: %v", item.ID, item.CampaignRepoPath, err)
 		return
@@ -481,4 +482,29 @@ func campaignIDFromAutomationStateKey(stateKey string) (string, bool) {
 		return "", false
 	}
 	return campaignID, true
+}
+
+func (b *connectorRuntimeBuilder) campaignRoleDefaults() campaignrepo.CampaignRoleDefaults {
+	if b == nil {
+		return campaignrepo.CampaignRoleDefaults{}
+	}
+	d := b.cfg.CampaignRoleDefaults
+	return campaignrepo.CampaignRoleDefaults{
+		Executor:        configRoleToRepoRole(d.Executor),
+		Reviewer:        configRoleToRepoRole(d.Reviewer),
+		Planner:         configRoleToRepoRole(d.Planner),
+		PlannerReviewer: configRoleToRepoRole(d.PlannerReviewer),
+	}
+}
+
+func configRoleToRepoRole(c config.CampaignRoleDefaultConfig) campaignrepo.RoleConfig {
+	return campaignrepo.RoleConfig{
+		Role:            c.Role,
+		Provider:        c.Provider,
+		Model:           c.Model,
+		Profile:         c.Profile,
+		Workflow:        c.Workflow,
+		ReasoningEffort: c.ReasoningEffort,
+		Personality:     c.Personality,
+	}
 }

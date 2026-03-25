@@ -30,7 +30,7 @@ RUN useradd --create-home --shell /bin/bash alice
 
 ENV HOME=/home/alice \
     ALICE_HOME=/home/alice/.alice \
-    CODEX_HOME=/home/alice/.alice/.codex \
+    CODEX_HOME=/home/alice/.codex \
     CLAUDE_HOME=/home/alice/.claude
 
 WORKDIR /app

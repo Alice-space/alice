@@ -33,7 +33,9 @@ func TestLoadFromFile_LegacyRootBotKeysRejected(t *testing.T) {
 
 func TestLoadFromFile_WithDefaults(t *testing.T) {
 	base := t.TempDir()
+	t.Setenv("HOME", base)
 	t.Setenv(EnvAliceHome, base)
+	t.Setenv(EnvCodexHome, "")
 
 	cfg, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
@@ -119,7 +121,7 @@ feishu_app_secret: sss
 	if runtime.PromptDir != filepath.Join(wantAliceHome, "prompts") {
 		t.Fatalf("unexpected prompt_dir: %s", runtime.PromptDir)
 	}
-	if runtime.CodexHome != filepath.Join(wantAliceHome, ".codex") {
+	if runtime.CodexHome != filepath.Join(base, ".codex") {
 		t.Fatalf("unexpected codex_home: %s", runtime.CodexHome)
 	}
 	if runtime.SoulPath != filepath.Join(runtime.WorkspaceDir, "SOUL.md") {
@@ -136,6 +138,7 @@ feishu_app_secret: sss
 func TestLoadFromFile_AliceHomeDrivesDefaultDirs(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
+	t.Setenv(EnvCodexHome, "")
 
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
@@ -152,6 +155,9 @@ alice_home: "~/.alice-custom"
 	}
 	if runtime.PromptDir != filepath.Join(wantAliceHome, "prompts") {
 		t.Fatalf("unexpected prompt_dir: %s", runtime.PromptDir)
+	}
+	if runtime.CodexHome != filepath.Join(home, ".codex") {
+		t.Fatalf("unexpected shared codex_home got=%q want=%q", runtime.CodexHome, filepath.Join(home, ".codex"))
 	}
 }
 

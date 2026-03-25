@@ -267,7 +267,6 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=ALICE_HOME=$ALICE_HOME
-Environment=CODEX_HOME=$ALICE_HOME/.codex
 Environment=HOME=$HOME
 Environment=PATH=$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory=$ALICE_HOME
@@ -288,7 +287,7 @@ install_or_update() {
   require_cmd install
   require_systemd_user
 
-  mkdir -p "$ALICE_HOME/bin" "$ALICE_HOME/log" "$ALICE_HOME/run" "$ALICE_HOME/.codex"
+  mkdir -p "$ALICE_HOME/bin" "$ALICE_HOME/log" "$ALICE_HOME/run"
 
   local version
   version="$VERSION"
@@ -303,6 +302,11 @@ install_or_update() {
   log "target version: $version"
 
   download_and_install_binary "$version" "$CHANNEL"
+  if HOME="$HOME" "$BIN_PATH" skills sync >/dev/null 2>&1; then
+    log "bundled skills synced into ${CODEX_HOME:-$HOME/.codex}"
+  else
+    log "warning: bundled skill sync failed during install; Alice will retry on startup"
+  fi
   write_systemd_unit
 
   enable_linger_if_possible

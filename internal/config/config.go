@@ -78,6 +78,23 @@ type CodexExecPolicyConfig struct {
 	AddDirs        []string `mapstructure:"add_dirs"`
 }
 
+type CampaignRoleDefaultConfig struct {
+	Role            string `mapstructure:"role"`
+	Provider        string `mapstructure:"provider"`
+	Model           string `mapstructure:"model"`
+	Profile         string `mapstructure:"profile"`
+	Workflow        string `mapstructure:"workflow"`
+	ReasoningEffort string `mapstructure:"reasoning_effort"`
+	Personality     string `mapstructure:"personality"`
+}
+
+type CampaignRoleDefaultsConfig struct {
+	Executor        CampaignRoleDefaultConfig `mapstructure:"executor"`
+	Reviewer        CampaignRoleDefaultConfig `mapstructure:"reviewer"`
+	Planner         CampaignRoleDefaultConfig `mapstructure:"planner"`
+	PlannerReviewer CampaignRoleDefaultConfig `mapstructure:"planner_reviewer"`
+}
+
 type SceneCodexPoliciesConfig struct {
 	Chat CodexExecPolicyConfig `mapstructure:"chat"`
 	Work CodexExecPolicyConfig `mapstructure:"work"`
@@ -134,6 +151,7 @@ type BotConfig struct {
 	WorkerConcurrency         int                         `mapstructure:"worker_concurrency"`
 	AutomationTaskTimeoutSecs int                         `mapstructure:"automation_task_timeout_secs"`
 	Permissions               *BotPermissionsConfig       `mapstructure:"permissions"`
+	CampaignRoleDefaults      CampaignRoleDefaultsConfig  `mapstructure:"campaign_role_defaults"`
 }
 
 type Config struct {
@@ -182,8 +200,9 @@ type Config struct {
 	PromptDir            string                `mapstructure:"prompt_dir"`
 	CodexHome            string                `mapstructure:"codex_home"`
 	SoulPath             string                `mapstructure:"soul_path"`
-	Permissions          BotPermissionsConfig  `mapstructure:"permissions"`
-	Bots                 map[string]BotConfig  `mapstructure:"bots"`
+	Permissions          BotPermissionsConfig       `mapstructure:"permissions"`
+	CampaignRoleDefaults CampaignRoleDefaultsConfig `mapstructure:"campaign_role_defaults"`
+	Bots                 map[string]BotConfig       `mapstructure:"bots"`
 
 	QueueCapacity             int           `mapstructure:"queue_capacity"`
 	WorkerConcurrency         int           `mapstructure:"worker_concurrency"`

@@ -27,13 +27,16 @@ func ReconcileFromPath(root string, now time.Time, maxParallel int) (Repository,
 	return result.Repository, result.Summary, nil
 }
 
-func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDuration time.Duration) (ReconcileResult, error) {
+func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDuration time.Duration, roleDefaults ...CampaignRoleDefaults) (ReconcileResult, error) {
 	if leaseDuration <= 0 {
 		leaseDuration = defaultDispatchLease
 	}
 	repo, err := Load(root)
 	if err != nil {
 		return ReconcileResult{}, err
+	}
+	if len(roleDefaults) > 0 {
+		repo.ConfigRoleDefaults = roleDefaults[0]
 	}
 	changed := false
 

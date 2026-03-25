@@ -90,7 +90,26 @@ func DefaultRuntimeBinaryPath() string {
 }
 
 func DefaultCodexHome() string {
-	return CodexHomeForAliceHome("")
+	if override := strings.TrimSpace(os.Getenv(EnvCodexHome)); override != "" {
+		return normalizeHomePath(override)
+	}
+
+	home, err := os.UserHomeDir()
+	if err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, defaultCodexHomeDirName)
+	}
+	if abs, absErr := filepath.Abs(defaultCodexHomeDirName); absErr == nil {
+		return abs
+	}
+	return defaultCodexHomeDirName
+}
+
+func ResolveCodexHomeDir(override string) string {
+	override = strings.TrimSpace(override)
+	if override != "" {
+		return normalizeHomePath(override)
+	}
+	return DefaultCodexHome()
 }
 
 func ConfigPathForAliceHome(aliceHome string) string {

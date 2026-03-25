@@ -6,9 +6,11 @@ import (
 	"testing"
 )
 
-func TestRuntimeConfigs_MultiBotUsesIsolatedDefaults(t *testing.T) {
+func TestRuntimeConfigs_MultiBotUsesSharedCodexHomeByDefault(t *testing.T) {
 	base := t.TempDir()
+	t.Setenv("HOME", base)
 	t.Setenv(EnvAliceHome, base)
+	t.Setenv(EnvCodexHome, "")
 	cfgPath := writeConfigFile(t, `
 bots:
   work:
@@ -43,7 +45,7 @@ bots:
 	if chat.WorkspaceDir != WorkspaceDirForAliceHome(chat.AliceHome) {
 		t.Fatalf("unexpected chat workspace_dir: %q", chat.WorkspaceDir)
 	}
-	if chat.CodexHome != CodexHomeForAliceHome(chat.AliceHome) {
+	if chat.CodexHome != filepath.Join(base, ".codex") {
 		t.Fatalf("unexpected chat codex_home: %q", chat.CodexHome)
 	}
 	if chat.RuntimeHTTPAddr != "127.0.0.1:7331" {
@@ -56,6 +58,9 @@ bots:
 	}
 	if work.AliceHome != filepath.Join(base, "bots", "work") {
 		t.Fatalf("unexpected work alice_home: %q", work.AliceHome)
+	}
+	if work.CodexHome != filepath.Join(base, ".codex") {
+		t.Fatalf("unexpected work codex_home: %q", work.CodexHome)
 	}
 	if work.RuntimeHTTPAddr != "127.0.0.1:7332" {
 		t.Fatalf("unexpected work runtime_http_addr: %q", work.RuntimeHTTPAddr)

@@ -35,6 +35,13 @@ type RoleConfig struct {
 	Personality     string `yaml:"personality" json:"personality,omitempty"`
 }
 
+type CampaignRoleDefaults struct {
+	Executor        RoleConfig `yaml:"executor" json:"executor,omitempty" mapstructure:"executor"`
+	Reviewer        RoleConfig `yaml:"reviewer" json:"reviewer,omitempty" mapstructure:"reviewer"`
+	Planner         RoleConfig `yaml:"planner" json:"planner,omitempty" mapstructure:"planner"`
+	PlannerReviewer RoleConfig `yaml:"planner_reviewer" json:"planner_reviewer,omitempty" mapstructure:"planner_reviewer"`
+}
+
 type CampaignDocument struct {
 	Path        string              `json:"path"`
 	Body        string              `json:"body,omitempty"`
@@ -165,8 +172,9 @@ type Repository struct {
 	Phases        []PhaseDocument        `json:"phases,omitempty"`
 	Tasks         []TaskDocument         `json:"tasks,omitempty"`
 	Reviews       []ReviewDocument       `json:"reviews,omitempty"`
-	PlanProposals []PlanProposalDocument `json:"plan_proposals,omitempty"`
-	PlanReviews   []PlanReviewDocument   `json:"plan_reviews,omitempty"`
+	PlanProposals      []PlanProposalDocument `json:"plan_proposals,omitempty"`
+	PlanReviews        []PlanReviewDocument   `json:"plan_reviews,omitempty"`
+	ConfigRoleDefaults CampaignRoleDefaults   `json:"-"`
 }
 
 type TaskSummary struct {
