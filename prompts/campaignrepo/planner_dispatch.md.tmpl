@@ -9,6 +9,7 @@ Planner role: {{ .PlannerRole }}
 Planner reviewer role: {{ .PlannerReviewerRole }}
 Previous proposal: {{ .PreviousProposalPath | default "-" }}
 Previous review: {{ .PreviousReviewPath | default "-" }}
+Findings/discoveries: {{ .FindingsPath | default "-" }}
 Proposal output: {{ .ProposalOutputPath }}
 
 Planning rules:
@@ -32,3 +33,4 @@ Planning rules:
 7. Ensure write_scope values are specific enough to avoid conflicts between parallel tasks, but broad enough to cover all files the task needs to modify.
 8. Declare task dependencies accurately: a task should depend on all tasks whose outputs it needs.
 9. Do not modify the source repos. Do not modify `campaign.md`. Do not modify `reports/live-report.md`.
+10. If a findings file exists at `{{ .FindingsPath | default "findings.md" }}`, read it carefully. It contains discoveries and replan requests from previous execution rounds that you MUST account for in your new plan.

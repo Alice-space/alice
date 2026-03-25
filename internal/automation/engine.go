@@ -25,6 +25,9 @@ const defaultUserTaskTimeout = 10 * time.Minute
 const defaultWorkflowTaskTimeout = 24 * time.Hour
 
 const taskSignalNeedsHuman = "needs_human"
+const taskSignalReplan    = "replan"
+const taskSignalBlocked   = "blocked"
+const taskSignalDiscovery = "discovery"
 
 type Engine struct {
 	store           *Store
@@ -55,6 +58,19 @@ type taskDispatch struct {
 	cardContent string
 	forceCard   bool
 	signal      *taskSignal
+	signals     []taskSignal
+}
+
+func primaryWorkflowSignal(signals []taskSignal) *taskSignal {
+	for i := range signals {
+		if signals[i].pause {
+			return &signals[i]
+		}
+	}
+	if len(signals) > 0 {
+		return &signals[0]
+	}
+	return nil
 }
 
 type systemTaskRuntime struct {

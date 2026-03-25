@@ -366,7 +366,9 @@ func (s *Store) RecordTaskSignal(taskID string, at time.Time, kind, message stri
 		at = at.Local()
 		task.Running = false
 		task.ConsecutiveFailures = 0
+		task.LastSignalKind = kind
 		message = strings.TrimSpace(message)
+		task.LastSignalMessage = message
 		if message == "" {
 			task.LastResult = kind + ": " + at.Format(time.RFC3339)
 		} else {

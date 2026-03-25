@@ -109,6 +109,8 @@ type Task struct {
 	DeletedAt           time.Time  `json:"deleted_at,omitempty"`
 	Running             bool       `json:"running,omitempty"`
 	LastResult          string     `json:"last_result,omitempty"`
+	LastSignalKind      string     `json:"last_signal_kind,omitempty"`
+	LastSignalMessage   string     `json:"last_signal_message,omitempty"`
 	ConsecutiveFailures int        `json:"consecutive_failures,omitempty"`
 	Revision            int64      `json:"revision"`
 }
@@ -145,6 +147,8 @@ func NormalizeTask(task Task) Task {
 	task.Action.MentionUserIDs = storeutil.UniqueNonEmptyStrings(task.Action.MentionUserIDs)
 	task.Status = TaskStatus(strings.ToLower(strings.TrimSpace(string(task.Status))))
 	task.LastResult = strings.TrimSpace(task.LastResult)
+	task.LastSignalKind = strings.ToLower(strings.TrimSpace(task.LastSignalKind))
+	task.LastSignalMessage = strings.TrimSpace(task.LastSignalMessage)
 
 	if task.ManageMode == "" {
 		task.ManageMode = ManageModeCreatorOnly

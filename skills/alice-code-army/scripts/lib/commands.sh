@@ -142,6 +142,42 @@ apply_command() {
     summary="Updated campaign direction: ${BASH_REMATCH[1]}"
     patch_json="$(jq -cn --arg summary "$summary" '{summary:$summary}')"
     patch_campaign "$campaign_id" "$patch_json"
+  elif [[ "$command_text" =~ ^/alice[[:space:]]+(replan|re-plan|re_plan)([[:space:]]+(.+))?$ ]]; then
+    local replan_reason="${BASH_REMATCH[3]:-Executor requested replanning}"
+    summary="Replan requested: ${replan_reason}"
+    # Write replan reason to findings.md so planner can read it
+    local repo_path
+    repo_path="$(jq -r '.campaign.campaign_repo_path // ""' <<<"$payload")"
+    if [[ -n "$repo_path" ]]; then
+      mkdir -p "$repo_path"
+      printf '\n## Replan Request (%s)\n\n%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$replan_reason" >> "${repo_path}/findings.md"
+      # Reset plan_status to planning with incremented plan_round
+      if [[ -f "${repo_path}/campaign.md" ]]; then
+        local current_round
+        current_round="$(sed -n 's/^plan_round:[[:space:]]*//p' "${repo_path}/campaign.md" | head -1)"
+        current_round="${current_round:-0}"
+        sed -i "s/^plan_round:.*/plan_round: $(( current_round + 1 ))/" "${repo_path}/campaign.md"
+        update_campaign_plan_status "$repo_path" "planning"
+      fi
+    fi
+    patch_json="$(jq -cn --arg summary "$summary" '{summary:$summary}')"
+    patch_campaign "$campaign_id" "$patch_json"
+  elif [[ "$command_text" =~ ^/alice[[:space:]]+blocked([[:space:]]+(.+))?$ ]]; then
+    local blocked_reason="${BASH_REMATCH[2]:-No reason given}"
+    summary="Task blocked: ${blocked_reason}"
+    patch_json="$(jq -cn --arg summary "$summary" '{summary:$summary}')"
+    patch_campaign "$campaign_id" "$patch_json"
+  elif [[ "$command_text" =~ ^/alice[[:space:]]+discovery([[:space:]]+(.+))?$ ]]; then
+    local discovery_finding="${BASH_REMATCH[2]:-No details}"
+    summary="Discovery: ${discovery_finding}"
+    local repo_path
+    repo_path="$(jq -r '.campaign.campaign_repo_path // ""' <<<"$payload")"
+    if [[ -n "$repo_path" ]]; then
+      mkdir -p "$repo_path"
+      printf '\n## Discovery (%s)\n\n%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$discovery_finding" >> "${repo_path}/findings.md"
+    fi
+    patch_json="$(jq -cn --arg summary "$summary" '{summary:$summary}')"
+    patch_campaign "$campaign_id" "$patch_json"
   else
     die "unsupported command: ${command_text}"
   fi

@@ -17,6 +17,7 @@ type ReconcileResult struct {
 	AppliedReviews   int                `json:"applied_reviews"`
 	ClaimedExecutors int                `json:"claimed_executors"`
 	ClaimedReviewers int                `json:"claimed_reviewers"`
+	Events           []ReconcileEvent   `json:"events,omitempty"`
 }
 
 func ReconcileFromPath(root string, now time.Time, maxParallel int) (Repository, Summary, error) {
@@ -39,13 +40,21 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		repo.ConfigRoleDefaults = roleDefaults[0]
 	}
 	changed := false
+	campaignID := strings.TrimSpace(repo.Campaign.Frontmatter.CampaignID)
+	campaignTitle := strings.TrimSpace(repo.Campaign.Frontmatter.Title)
+	var events []ReconcileEvent
 
+	prevPlanStatus := normalizePlanStatus(repo.Campaign.Frontmatter.PlanStatus)
 	planChanged, err := reconcilePlanPhase(&repo, now, leaseDuration)
 	if err != nil {
 		return ReconcileResult{}, err
 	}
 	if planChanged {
 		changed = true
+		newPlanStatus := normalizePlanStatus(repo.Campaign.Frontmatter.PlanStatus)
+		if e, ok := planTransitionEvent(campaignID, campaignTitle, prevPlanStatus, newPlanStatus, repo.Campaign.Frontmatter.PlanRound); ok {
+			events = append(events, e)
+		}
 	}
 
 	if isPlanningPhase(repo.Campaign.Frontmatter.PlanStatus) {
@@ -59,33 +68,37 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 			Summary:       summary,
 			DispatchTasks: dispatchTasks,
 			Changed:       changed,
+			Events:        events,
 		}, nil
 	}
 
-	appliedReviews, err := applyReviewVerdicts(&repo)
+	appliedReviews, verdictEvents, err := applyReviewVerdicts(&repo, campaignID)
 	if err != nil {
 		return ReconcileResult{}, err
 	}
 	if appliedReviews > 0 {
 		changed = true
+		events = append(events, verdictEvents...)
 	}
 
 	summary := Summarize(repo, now, maxParallel)
-	claimedExecutors, err := claimSelectedExecutorTasks(&repo, summary, now, leaseDuration)
+	claimedExecutors, executorEvents, err := claimSelectedExecutorTasks(&repo, summary, now, leaseDuration, campaignID)
 	if err != nil {
 		return ReconcileResult{}, err
 	}
 	if claimedExecutors > 0 {
 		changed = true
+		events = append(events, executorEvents...)
 		summary = Summarize(repo, now, maxParallel)
 	}
 
-	claimedReviewers, err := claimSelectedReviewTasks(&repo, summary, now, leaseDuration)
+	claimedReviewers, reviewerEvents, err := claimSelectedReviewTasks(&repo, summary, now, leaseDuration, campaignID)
 	if err != nil {
 		return ReconcileResult{}, err
 	}
 	if claimedReviewers > 0 {
 		changed = true
+		events = append(events, reviewerEvents...)
 		summary = Summarize(repo, now, maxParallel)
 	}
 
@@ -102,15 +115,64 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		AppliedReviews:   appliedReviews,
 		ClaimedExecutors: claimedExecutors,
 		ClaimedReviewers: claimedReviewers,
+		Events:           events,
 	}, nil
 }
 
-func applyReviewVerdicts(repo *Repository) (int, error) {
+func planTransitionEvent(campaignID, campaignTitle, prevStatus, newStatus string, planRound int) (ReconcileEvent, bool) {
+	roundStr := fmt.Sprintf("第 %d 轮", planRound)
+	switch {
+	case prevStatus == PlanStatusIdle && newStatus == PlanStatusPlanning:
+		return ReconcileEvent{
+			Kind:       EventPlanningStarted,
+			CampaignID: campaignID,
+			Title:      "规划启动",
+			Detail:     fmt.Sprintf("Campaign **%s** 开始规划（%s）", campaignTitle, roundStr),
+			Severity:   "info",
+		}, true
+	case prevStatus == PlanStatusPlanning && newStatus == PlanStatusPlanReviewPending:
+		return ReconcileEvent{
+			Kind:       EventProposalSubmitted,
+			CampaignID: campaignID,
+			Title:      "规划方案已提交",
+			Detail:     fmt.Sprintf("Campaign **%s** 规划方案已提交，等待评审（%s）", campaignTitle, roundStr),
+			Severity:   "info",
+		}, true
+	case (prevStatus == PlanStatusPlanReviewPending || prevStatus == PlanStatusPlanReviewing) && newStatus == PlanStatusPlanApproved:
+		return ReconcileEvent{
+			Kind:       EventPlanReviewVerdict,
+			CampaignID: campaignID,
+			Title:      "方案评审通过",
+			Detail:     fmt.Sprintf("Campaign **%s** 规划方案评审通过，等待人工批准（%s）", campaignTitle, roundStr),
+			Severity:   "success",
+		}, true
+	case (prevStatus == PlanStatusPlanReviewPending || prevStatus == PlanStatusPlanReviewing) && newStatus == PlanStatusPlanning:
+		return ReconcileEvent{
+			Kind:       EventPlanReviewVerdict,
+			CampaignID: campaignID,
+			Title:      "方案评审未通过，重新规划",
+			Detail:     fmt.Sprintf("Campaign **%s** 规划方案评审未通过，进入第 %d 轮规划", campaignTitle, planRound),
+			Severity:   "warning",
+		}, true
+	case prevStatus == PlanStatusPlanApproved && newStatus == PlanStatusHumanApproved:
+		return ReconcileEvent{
+			Kind:       EventPlanApproved,
+			CampaignID: campaignID,
+			Title:      "方案已批准，开始执行",
+			Detail:     fmt.Sprintf("Campaign **%s** 规划方案已批准，任务即将分配执行", campaignTitle),
+			Severity:   "success",
+		}, true
+	}
+	return ReconcileEvent{}, false
+}
+
+func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileEvent, error) {
 	if repo == nil || len(repo.Reviews) == 0 || len(repo.Tasks) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	reviewIndex := reviewsByTask(repo.Reviews)
 	applied := 0
+	var events []ReconcileEvent
 	for idx := range repo.Tasks {
 		task := &repo.Tasks[idx]
 		status := normalizeTaskStatus(task.Frontmatter.Status)
@@ -128,19 +190,53 @@ func applyReviewVerdicts(repo *Repository) (int, error) {
 		if verdict == "" {
 			continue
 		}
+		taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+		taskTitle := strings.TrimSpace(task.Frontmatter.Title)
 		switch verdict {
 		case "approve":
 			task.Frontmatter.Status = TaskStatusAccepted
 			task.Frontmatter.ReviewStatus = "approved"
+			events = append(events, ReconcileEvent{
+				Kind:       EventReviewVerdictApplied,
+				CampaignID: campaignID,
+				TaskID:     taskID,
+				Title:      "评审通过",
+				Detail:     fmt.Sprintf("任务 **%s** %s 评审通过，已接受", taskID, taskTitle),
+				Severity:   "success",
+			})
 		case "blocking":
 			task.Frontmatter.Status = TaskStatusBlocked
 			task.Frontmatter.ReviewStatus = "blocked"
+			events = append(events, ReconcileEvent{
+				Kind:       EventReviewVerdictApplied,
+				CampaignID: campaignID,
+				TaskID:     taskID,
+				Title:      "评审阻塞",
+				Detail:     fmt.Sprintf("任务 **%s** %s 评审结果：阻塞", taskID, taskTitle),
+				Severity:   "error",
+			})
 		case "reject":
 			task.Frontmatter.Status = TaskStatusRejected
 			task.Frontmatter.ReviewStatus = "blocked"
+			events = append(events, ReconcileEvent{
+				Kind:       EventReviewVerdictApplied,
+				CampaignID: campaignID,
+				TaskID:     taskID,
+				Title:      "评审拒绝",
+				Detail:     fmt.Sprintf("任务 **%s** %s 评审结果：拒绝", taskID, taskTitle),
+				Severity:   "error",
+			})
 		default:
 			task.Frontmatter.Status = TaskStatusRework
 			task.Frontmatter.ReviewStatus = "changes_requested"
+			events = append(events, ReconcileEvent{
+				Kind:       EventReviewVerdictApplied,
+				CampaignID: campaignID,
+				TaskID:     taskID,
+				Title:      "需要返工",
+				Detail:     fmt.Sprintf("任务 **%s** %s 评审结果：需要修改", taskID, taskTitle),
+				Severity:   "warning",
+			})
 		}
 		task.Frontmatter.DispatchState = "judge_applied"
 		task.Frontmatter.LastReviewPath = filepath.ToSlash(review.Path)
@@ -152,19 +248,20 @@ func applyReviewVerdicts(repo *Repository) (int, error) {
 			task.Frontmatter.HeadCommit = commit
 		}
 		if err := persistTaskDocument(repo, idx); err != nil {
-			return applied, err
+			return applied, events, err
 		}
 		applied++
 	}
-	return applied, nil
+	return applied, events, nil
 }
 
-func claimSelectedExecutorTasks(repo *Repository, summary Summary, now time.Time, leaseDuration time.Duration) (int, error) {
+func claimSelectedExecutorTasks(repo *Repository, summary Summary, now time.Time, leaseDuration time.Duration, campaignID string) (int, []ReconcileEvent, error) {
 	if repo == nil || len(summary.SelectedReady) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	index := taskIndexesByPath(repo.Tasks)
 	claimed := 0
+	var events []ReconcileEvent
 	for _, selected := range summary.SelectedReady {
 		taskIndex, ok := index[filepath.ToSlash(selected.Path)]
 		if !ok {
@@ -183,22 +280,33 @@ func claimSelectedExecutorTasks(repo *Repository, summary Summary, now time.Time
 			task.Frontmatter.ReviewStatus = "pending"
 		}
 		if err := persistTaskDocument(repo, taskIndex); err != nil {
-			return claimed, err
+			return claimed, events, err
 		}
 		if filepath.ToSlash(repo.Tasks[taskIndex].Path) != filepath.ToSlash(selected.Path) {
-			return claimed, fmt.Errorf("task index stale for %s", selected.Path)
+			return claimed, events, fmt.Errorf("task index stale for %s", selected.Path)
 		}
+		taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+		taskTitle := strings.TrimSpace(task.Frontmatter.Title)
+		events = append(events, ReconcileEvent{
+			Kind:       EventTaskDispatched,
+			CampaignID: campaignID,
+			TaskID:     taskID,
+			Title:      "任务已派发执行",
+			Detail:     fmt.Sprintf("任务 **%s** %s 已派发给 %s（第 %d 轮）", taskID, taskTitle, roleLabel(role), task.Frontmatter.ExecutionRound),
+			Severity:   "info",
+		})
 		claimed++
 	}
-	return claimed, nil
+	return claimed, events, nil
 }
 
-func claimSelectedReviewTasks(repo *Repository, summary Summary, now time.Time, leaseDuration time.Duration) (int, error) {
+func claimSelectedReviewTasks(repo *Repository, summary Summary, now time.Time, leaseDuration time.Duration, campaignID string) (int, []ReconcileEvent, error) {
 	if repo == nil || len(summary.SelectedReview) == 0 {
-		return 0, nil
+		return 0, nil, nil
 	}
 	index := taskIndexesByPath(repo.Tasks)
 	claimed := 0
+	var events []ReconcileEvent
 	for _, selected := range summary.SelectedReview {
 		taskIndex, ok := index[filepath.ToSlash(selected.Path)]
 		if !ok {
@@ -215,12 +323,22 @@ func claimSelectedReviewTasks(repo *Repository, summary Summary, now time.Time, 
 		task.WakeAt = time.Time{}
 		task.Frontmatter.WakePrompt = ""
 		if err := persistTaskDocument(repo, taskIndex); err != nil {
-			return claimed, err
+			return claimed, events, err
 		}
 		if filepath.ToSlash(repo.Tasks[taskIndex].Path) != filepath.ToSlash(selected.Path) {
-			return claimed, fmt.Errorf("task index stale for %s", selected.Path)
+			return claimed, events, fmt.Errorf("task index stale for %s", selected.Path)
 		}
+		taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+		taskTitle := strings.TrimSpace(task.Frontmatter.Title)
+		events = append(events, ReconcileEvent{
+			Kind:       EventTaskDispatched,
+			CampaignID: campaignID,
+			TaskID:     taskID,
+			Title:      "任务已派发评审",
+			Detail:     fmt.Sprintf("任务 **%s** %s 已派发给 %s 评审（第 %d 轮）", taskID, taskTitle, roleLabel(role), task.Frontmatter.ReviewRound),
+			Severity:   "info",
+		})
 		claimed++
 	}
-	return claimed, nil
+	return claimed, events, nil
 }

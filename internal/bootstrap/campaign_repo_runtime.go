@@ -56,6 +56,7 @@ func (b *connectorRuntimeBuilder) handleCampaignRepoAutomationTaskCompletion(tas
 	if !ok {
 		return
 	}
+	b.handleCampaignRepoTaskSignals(campaignID, task)
 	b.runCampaignRepoReconcileCampaign(campaignID)
 }
 
@@ -88,6 +89,9 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if err != nil {
 		logging.Warnf("campaign repo reconcile failed campaign=%s path=%s: %v", item.ID, item.CampaignRepoPath, err)
 		return
+	}
+	if len(result.Events) > 0 {
+		b.sendCampaignNotifications(item, result.Events)
 	}
 	if err := b.syncCampaignDispatchTasks(item, result.DispatchTasks); err != nil {
 		logging.Warnf("sync dispatch tasks failed campaign=%s: %v", item.ID, err)
