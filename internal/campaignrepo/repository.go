@@ -42,17 +42,17 @@ type CampaignDocument struct {
 }
 
 type CampaignFrontmatter struct {
-	CampaignID        string     `yaml:"campaign_id" json:"campaign_id,omitempty"`
-	Title             string     `yaml:"title" json:"title,omitempty"`
-	Objective         string     `yaml:"objective" json:"objective,omitempty"`
-	Status            string     `yaml:"status" json:"status,omitempty"`
-	CampaignRepoPath  string     `yaml:"campaign_repo_path" json:"campaign_repo_path,omitempty"`
-	CurrentPhase      string     `yaml:"current_phase" json:"current_phase,omitempty"`
-	CurrentDirection  string     `yaml:"current_direction" json:"current_direction,omitempty"`
-	CurrentWinnerTask string     `yaml:"current_winner_task" json:"current_winner_task,omitempty"`
-	SourceRepos       []string   `yaml:"source_repos" json:"source_repos,omitempty"`
-	ReviewMode        string     `yaml:"review_mode" json:"review_mode,omitempty"`
-	ReportMode        string     `yaml:"report_mode" json:"report_mode,omitempty"`
+	CampaignID             string     `yaml:"campaign_id" json:"campaign_id,omitempty"`
+	Title                  string     `yaml:"title" json:"title,omitempty"`
+	Objective              string     `yaml:"objective" json:"objective,omitempty"`
+	Status                 string     `yaml:"status" json:"status,omitempty"`
+	CampaignRepoPath       string     `yaml:"campaign_repo_path" json:"campaign_repo_path,omitempty"`
+	CurrentPhase           string     `yaml:"current_phase" json:"current_phase,omitempty"`
+	CurrentDirection       string     `yaml:"current_direction" json:"current_direction,omitempty"`
+	CurrentWinnerTask      string     `yaml:"current_winner_task" json:"current_winner_task,omitempty"`
+	SourceRepos            []string   `yaml:"source_repos" json:"source_repos,omitempty"`
+	ReviewMode             string     `yaml:"review_mode" json:"review_mode,omitempty"`
+	ReportMode             string     `yaml:"report_mode" json:"report_mode,omitempty"`
 	DefaultExecutor        RoleConfig `yaml:"default_executor" json:"default_executor,omitempty"`
 	DefaultReviewer        RoleConfig `yaml:"default_reviewer" json:"default_reviewer,omitempty"`
 	DefaultPlanner         RoleConfig `yaml:"default_planner" json:"default_planner,omitempty"`
@@ -165,8 +165,8 @@ type Repository struct {
 	Phases        []PhaseDocument        `json:"phases,omitempty"`
 	Tasks         []TaskDocument         `json:"tasks,omitempty"`
 	Reviews       []ReviewDocument       `json:"reviews,omitempty"`
-	PlanProposals []PlanProposalDocument  `json:"plan_proposals,omitempty"`
-	PlanReviews   []PlanReviewDocument    `json:"plan_reviews,omitempty"`
+	PlanProposals []PlanProposalDocument `json:"plan_proposals,omitempty"`
+	PlanReviews   []PlanReviewDocument   `json:"plan_reviews,omitempty"`
 }
 
 type TaskSummary struct {

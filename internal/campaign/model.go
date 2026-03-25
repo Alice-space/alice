@@ -20,16 +20,16 @@ const (
 type CampaignStatus string
 
 const (
-	StatusPlanned            CampaignStatus = "planned"
-	StatusPlanning           CampaignStatus = "planning"
-	StatusPlanReviewPending  CampaignStatus = "plan_review_pending"
-	StatusPlanApproved       CampaignStatus = "plan_approved"
-	StatusRunning            CampaignStatus = "running"
-	StatusHold               CampaignStatus = "hold"
-	StatusMerged             CampaignStatus = "merged"
-	StatusRejected           CampaignStatus = "rejected"
-	StatusCompleted          CampaignStatus = "completed"
-	StatusCanceled           CampaignStatus = "canceled"
+	StatusPlanned           CampaignStatus = "planned"
+	StatusPlanning          CampaignStatus = "planning"
+	StatusPlanReviewPending CampaignStatus = "plan_review_pending"
+	StatusPlanApproved      CampaignStatus = "plan_approved"
+	StatusRunning           CampaignStatus = "running"
+	StatusHold              CampaignStatus = "hold"
+	StatusMerged            CampaignStatus = "merged"
+	StatusRejected          CampaignStatus = "rejected"
+	StatusCompleted         CampaignStatus = "completed"
+	StatusCanceled          CampaignStatus = "canceled"
 )
 
 type TrialStatus string
