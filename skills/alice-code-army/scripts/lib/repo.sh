@@ -36,6 +36,14 @@ materialize_campaign_repo_template() {
       -e "s#__CAMPAIGN_REPO_PATH__#${escaped_repo_path}#g" \
       "$file"
   done < <(find "$dest" -type f -name '*.md' -print0)
+
+  ensure_campaign_repo_writable "$dest"
+}
+
+ensure_campaign_repo_writable() {
+  local dest="$1"
+  [[ -d "$dest" ]] || return 0
+  chmod -R u+w "$dest"
 }
 
 ensure_campaign_repo_git_init() {
@@ -67,4 +75,3 @@ init_campaign_repo() {
   ensure_campaign_repo_git_init "$wanted_path"
   campaign_json "$campaign_id"
 }
-

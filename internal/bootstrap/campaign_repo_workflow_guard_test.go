@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/Alice-space/alice/internal/automation"
@@ -53,6 +54,9 @@ plan_status: planning
 	}
 	if !decision.Block {
 		t.Fatal("expected generic reconcile worker to be blocked")
+	}
+	if !strings.Contains(decision.Message, "repo-reconcile camp_demo") {
+		t.Fatalf("expected actionable repo-reconcile hint, got %q", decision.Message)
 	}
 }
 

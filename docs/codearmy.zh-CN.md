@@ -60,7 +60,7 @@ flowchart LR
 
 | 部分 | 在哪里 | 作用 | 你什么时候会碰到 |
 | --- | --- | --- | --- |
-| 用户入口脚本 | `skills/alice-code-army/scripts/alice-code-army.sh` | 对外提供 `create`、`repo-scan`、`repo-reconcile`、`approve-plan`、`apply-command` 等命令 | 你手动操作 campaign 时 |
+| 用户入口脚本 | `skills/alice-code-army/scripts/alice-code-army.sh` | 对外提供 `create`、`bootstrap`、`repo-scan`、`repo-reconcile`、`approve-plan`、`apply-command` 等命令 | 你手动操作 campaign 时 |
 | Runtime API | `internal/runtimeapi/campaign_handlers.go` | 管理当前会话范围内的 campaign、trial、guidance、review、pitfall | skill 脚本在后台调用 |
 | Runtime campaign store | `internal/campaign/*` | 保存轻量 campaign 索引和摘要 | 你执行 `list/get/patch` 时 |
 | Campaign repo loader/reconcile | `internal/campaignrepo/*` | 读取 `campaign.md`、`plans/`、`phases/`、`reviews/`，推进 plan/task 状态并生成 dispatch task | 你执行 `repo-scan`/`repo-reconcile` 或后台自动跑时 |
@@ -315,20 +315,33 @@ flowchart LR
 ### 1. 创建 campaign
 
 ```bash
-$HOME/.agents/skills/alice-code-army/scripts/alice-code-army.sh create '{
+$HOME/.agents/skills/alice-code-army/scripts/alice-code-army.sh bootstrap '{
   "title": "Refactor connector retries",
   "objective": "梳理重试策略，降低重复请求，并补齐验证",
   "repo": "group/project",
   "campaign_repo_path": "./campaigns/retry-refactor",
-  "max_parallel_trials": 3
+  "max_parallel_trials": 3,
+  "source_repos": [
+    {
+      "repo_id": "local-retry-refactor",
+      "local_path": "/abs/path/to/project"
+    }
+  ],
+  "research_contract": {
+    "constraints": ["先完成 planning/review/human approval，再进入执行"]
+  }
 }'
 ```
 
 这一步会：
 
 - 在 runtime campaign store 里创建 campaign。
-- 自动 scaffold 一个 campaign repo。
+- 自动 scaffold 一个 campaign repo，并确保文件可写。
+- 写入 baseline `source_repos`、`repos/*.md`、`docs/research-contract.md`。
+- 立即执行一次 `repo-reconcile`，让 `plan_status` 从 `idle` 进入 `planning`，并同步官方 planner dispatch。
 - 如果你没传 `campaign_repo_path`，默认放到 `./campaigns/<slug>`。
+
+如果你只想分步手动操作，仍然可以继续用 `create`，但不要在 `plan_status != human_approved` 时手工创建 generic `/alice reconcile campaign ...` workflow。
 
 ### 2. 补齐 campaign repo 的事实源
 

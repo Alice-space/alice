@@ -9,6 +9,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 for lib in \
   "$SCRIPT_DIR/lib/common.sh" \
   "$SCRIPT_DIR/lib/repo.sh" \
+  "$SCRIPT_DIR/lib/bootstrap.sh" \
   "$SCRIPT_DIR/lib/gitlab.sh" \
   "$SCRIPT_DIR/lib/render.sh" \
   "$SCRIPT_DIR/lib/commands.sh"
@@ -39,6 +40,10 @@ main() {
     create)
       [[ $# -eq 2 ]] || die "usage: $PROGRAM create CREATE_JSON"
       create_repo_first "$2"
+      ;;
+    bootstrap)
+      [[ $# -eq 2 ]] || die "usage: $PROGRAM bootstrap BOOTSTRAP_JSON"
+      bootstrap_repo_first "$2"
       ;;
     init-repo)
       [[ $# -ge 2 && $# -le 3 ]] || die "usage: $PROGRAM init-repo CAMPAIGN_ID [DEST_DIR]"

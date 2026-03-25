@@ -75,6 +75,9 @@ Implementation and docs must describe the same behavior.
 - Stage only intended files.
 - Use clear commit messages (what changed + why).
 - Default target branch is `dev` (not `main`).
+- For GitHub release work, first check the repo-local skill at `.agents/skills/github/SKILL.md`.
+- If that skill exists, follow its `scripts/github.sh` workflow for release promotion and post-release self-update.
+- If the repo-local GitHub skill is unavailable, fall back to `gh` with the same `dev -> main` / merge-commit release policy.
 - Suggested flow:
 
 ```bash

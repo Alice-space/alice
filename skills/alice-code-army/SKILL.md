@@ -121,6 +121,10 @@ task frontmatter 现在默认带两类角色：
   `scripts/alice-code-army.sh create <<'JSON'`
   `{ "title": "Detector Scan", "objective": "完成 repo-native 的多阶段研究协作", "repo": "group/source-repo", "campaign_repo_path": "./campaigns/detector-scan", "max_parallel_trials": 6 }`
   `JSON`
+- 安全启动一个 campaign：create + baseline facts + repo-reconcile，一次性拉起正式 planner dispatch：
+  `scripts/alice-code-army.sh bootstrap <<'JSON'`
+  `{ "title": "Detector Scan", "objective": "完成 repo-native 的多阶段研究协作", "repo": "group/source-repo", "campaign_repo_path": "./campaigns/detector-scan", "max_parallel_trials": 6, "source_repos": [ { "repo_id": "repo-a", "local_path": "/path/to/repo-a" } ], "research_contract": { "constraints": ["先完成 planning，再进入执行"] } }`
+  `JSON`
 - 为已有 campaign 手动初始化或补建 campaign repo：
   `scripts/alice-code-army.sh init-repo camp_xxx ./campaigns/detector-scan`
 - 扫描 campaign repo，查看当前 ready / blocked / wake 状态：

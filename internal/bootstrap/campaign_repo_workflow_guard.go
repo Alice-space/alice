@@ -51,9 +51,10 @@ func (b *connectorRuntimeBuilder) guardCampaignRepoWorkflowTask(_ context.Contex
 	}
 
 	reason := fmt.Sprintf(
-		"campaign `%s` 仍处于规划门禁阶段（plan_status=%s）；generic code_army reconcile worker 已暂停，请先让正式 planner dispatch 跑完并完成 plan review / human approval。",
+		"campaign `%s` 仍处于规划门禁阶段（plan_status=%s）；generic code_army reconcile worker 已暂停。请先运行 `alice-code-army.sh repo-reconcile %s` 或使用 `alice-code-army.sh bootstrap ...` 触发正式 planner dispatch，并等待 plan review / human approval。",
 		campaignID,
 		planStatus,
+		campaignID,
 	)
 	return automation.WorkflowPreflightDecision{
 		Block:         true,

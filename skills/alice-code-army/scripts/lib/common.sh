@@ -3,7 +3,7 @@
 usage() {
   cat <<EOF
 Usage:
-  $PROGRAM list|get|delete|create|init-repo|repo-scan|repo-reconcile|patch|upsert-trial|add-guidance|add-review|add-pitfall ...
+  $PROGRAM list|get|delete|create|bootstrap|init-repo|repo-scan|repo-reconcile|patch|upsert-trial|add-guidance|add-review|add-pitfall ...
   $PROGRAM approve-plan CAMPAIGN_ID
   $PROGRAM plan-status CAMPAIGN_ID
   $PROGRAM apply-command CAMPAIGN_ID COMMAND [SOURCE]
@@ -23,6 +23,7 @@ Environment:
 
 Repo-first contract:
   create initializes a campaign and, by default, scaffolds a campaign repo template.
+  bootstrap is the safe-start entrypoint: it creates the campaign, fills baseline repo facts, and runs repo-reconcile to dispatch the official planner.
   delete removes the runtime campaign record; pass --delete-repo to also remove the local campaign repo path.
   campaign_repo_path in the payload is optional; if omitted, a local ./campaigns/<slug> path is used.
   Alice also runs a background repo reconciler that refreshes live-report and syncs wake tasks from task frontmatter.
