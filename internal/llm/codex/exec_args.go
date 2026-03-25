@@ -84,7 +84,7 @@ func buildExecArgs(
 }
 
 func shouldUseDangerousBypass(policy ExecPolicyConfig) bool {
-	return policy.Sandbox == defaultWorkSandbox &&
+	return policy.Sandbox == "danger-full-access" &&
 		policy.AskForApproval == defaultApprovalMode
 }
 

@@ -14,12 +14,15 @@ const (
 	defaultConfigFileName      = "config.yaml"
 	defaultWorkspaceDirName    = "workspace"
 	defaultPromptDirName       = "prompts"
+	defaultSkillDirName        = "skills"
 	defaultLogDirName          = "log"
 	defaultRunDirName          = "run"
 	defaultPIDFileName         = "alice.pid"
 	defaultBinaryDirName       = "bin"
 	defaultConnectorBinaryName = "alice"
 	defaultCodexHomeDirName    = ".codex"
+	defaultAgentsHomeDirName   = ".agents"
+	defaultClaudeHomeDirName   = ".claude"
 )
 
 // defaultAliceHomeName is intentionally mutable via -ldflags -X.
@@ -67,6 +70,18 @@ func DefaultWorkspaceDir() string {
 
 func DefaultPromptDir() string {
 	return PromptDirForAliceHome("")
+}
+
+func DefaultBundledSkillSourceDir() string {
+	return BundledSkillSourceDirForAliceHome("")
+}
+
+func DefaultAgentsSkillsDir() string {
+	return filepath.Join(defaultUserHomeScopedDir(defaultAgentsHomeDirName), defaultSkillDirName)
+}
+
+func DefaultClaudeSkillsDir() string {
+	return filepath.Join(defaultUserHomeScopedDir(defaultClaudeHomeDirName), defaultSkillDirName)
 }
 
 func DefaultRunDir() string {
@@ -122,6 +137,10 @@ func WorkspaceDirForAliceHome(aliceHome string) string {
 
 func PromptDirForAliceHome(aliceHome string) string {
 	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultPromptDirName)
+}
+
+func BundledSkillSourceDirForAliceHome(aliceHome string) string {
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), defaultSkillDirName)
 }
 
 func RunDirForAliceHome(aliceHome string) string {
@@ -186,4 +205,15 @@ func expandHomePrefix(path string) string {
 		return path
 	}
 	return filepath.Join(home, strings.TrimPrefix(path, "~"+string(os.PathSeparator)))
+}
+
+func defaultUserHomeScopedDir(name string) string {
+	home, err := os.UserHomeDir()
+	if err == nil && strings.TrimSpace(home) != "" {
+		return filepath.Join(home, name)
+	}
+	if abs, absErr := filepath.Abs(name); absErr == nil {
+		return abs
+	}
+	return name
 }

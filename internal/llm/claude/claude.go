@@ -26,7 +26,7 @@ type Runner struct {
 }
 
 func (r Runner) Run(ctx context.Context, userText string) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", nil, nil)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", nil, nil)
 	return reply, err
 }
 
@@ -35,7 +35,7 @@ func (r Runner) RunWithProgress(
 	userText string,
 	onThinking func(step string),
 ) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", nil, onThinking)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", nil, onThinking)
 	return reply, err
 }
 
@@ -44,7 +44,7 @@ func (r Runner) RunWithThread(
 	threadID string,
 	userText string,
 ) (string, string, error) {
-	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", "", "", nil, nil)
+	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", "", "", "", nil, nil)
 }
 
 func (r Runner) RunWithThreadAndProgress(
@@ -56,6 +56,7 @@ func (r Runner) RunWithThreadAndProgress(
 	profile string,
 	personality string,
 	noReplyToken string,
+	promptPrefixOverride string,
 	env map[string]string,
 	onThinking func(step string),
 ) (string, string, error) {
@@ -63,14 +64,18 @@ func (r Runner) RunWithThreadAndProgress(
 	profile = strings.TrimSpace(profile)
 	agentName = strings.TrimSpace(agentName)
 	personality = strings.TrimSpace(personality)
-	prompt, err := r.renderPrompt(threadID, userText, personality, noReplyToken)
+	resolvedPrefix := r.PromptPrefix
+	if strings.TrimSpace(promptPrefixOverride) != "" {
+		resolvedPrefix = strings.TrimSpace(promptPrefixOverride)
+	}
+	prompt, err := r.renderPrompt(threadID, userText, personality, noReplyToken, resolvedPrefix)
 	logging.Debugf(
 		"claude prompt assemble thread_id=%s model=%q profile=%q personality=%q prefix=%q user_prompt=%q final_prompt=%q",
 		threadID,
 		model,
 		profile,
 		personality,
-		r.PromptPrefix,
+		resolvedPrefix,
 		userText,
 		prompt,
 	)
@@ -276,12 +281,12 @@ func (r Runner) RunWithThreadAndProgress(
 	return finalMessage, activeThreadID, nil
 }
 
-func (r Runner) renderPrompt(threadID string, userText string, personality string, noReplyToken string) (string, error) {
+func (r Runner) renderPrompt(threadID string, userText string, personality string, noReplyToken string, promptPrefixOverride string) (string, error) {
 	loader := r.Prompts
 	if loader == nil {
 		loader = prompting.DefaultLoader()
 	}
-	promptPrefix, err := prompting.ComposePromptPrefix(r.PromptPrefix, personality, noReplyToken)
+	promptPrefix, err := prompting.ComposePromptPrefix(promptPrefixOverride, personality, noReplyToken)
 	if err != nil {
 		return "", err
 	}

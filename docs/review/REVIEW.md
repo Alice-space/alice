@@ -4,6 +4,10 @@
 > 代码规模：~36,000 行 Go 代码，200+ 文件，19 个 internal 包，5 个 skill
 > 审稿范围：全部 internal/ 包、cmd/connector、skills/、prompts/、docs/、scripts/、CI/CD
 
+## 增量审稿入口
+
+- `dev` 相对 `main` 的增量审稿见 [REVIEW-dev-vs-main-2026-03-25.md](./REVIEW-dev-vs-main-2026-03-25.md)
+
 ---
 
 ## 总体评价

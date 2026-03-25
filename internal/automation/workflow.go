@@ -29,6 +29,7 @@ type WorkflowRunRequest struct {
 	Profile         string
 	ReasoningEffort string
 	Personality     string
+	PromptPrefix    string
 	Env             map[string]string
 }
 
@@ -87,6 +88,7 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 		Profile:         strings.TrimSpace(req.Profile),
 		ReasoningEffort: strings.TrimSpace(req.ReasoningEffort),
 		Personality:     strings.TrimSpace(req.Personality),
+		PromptPrefix:    strings.TrimSpace(req.PromptPrefix),
 		Env:             env,
 	})
 	if err != nil {

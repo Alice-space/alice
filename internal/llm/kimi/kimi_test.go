@@ -35,7 +35,7 @@ func TestBuildPrompt_UsesPrefixOnlyForNewThread(t *testing.T) {
 		PromptPrefix: "你是助手Alice。",
 	}
 
-	prompt, err := runner.renderPrompt("", "你好", "", "")
+	prompt, err := runner.renderPrompt("", "你好", "", "", runner.PromptPrefix)
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
@@ -43,7 +43,7 @@ func TestBuildPrompt_UsesPrefixOnlyForNewThread(t *testing.T) {
 		t.Fatalf("unexpected new-thread prompt: %q", prompt)
 	}
 
-	resumePrompt, err := runner.renderPrompt("session_123", "你好", "", "")
+	resumePrompt, err := runner.renderPrompt("session_123", "你好", "", "", runner.PromptPrefix)
 	if err != nil {
 		t.Fatalf("render resume prompt failed: %v", err)
 	}
@@ -56,7 +56,7 @@ func TestBuildPrompt_IgnoresPersonalityText(t *testing.T) {
 	runner := Runner{
 		Prompts: prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 	}
-	prompt, err := runner.renderPrompt("", "你好", "pragmatic", "")
+	prompt, err := runner.renderPrompt("", "你好", "pragmatic", "", "")
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
@@ -118,6 +118,7 @@ EOF
 		"",
 		"",
 		"",
+		"",
 		nil,
 		func(step string) {
 			updates = append(updates, strings.TrimSpace(step))
@@ -165,6 +166,7 @@ EOF
 		"",
 		"assistant",
 		"你好",
+		"",
 		"",
 		"",
 		"",
@@ -222,6 +224,7 @@ EOF
 		"",
 		"",
 		"",
+		"",
 		nil,
 		nil,
 	)
@@ -260,6 +263,7 @@ exit 37
 		"",
 		"",
 		"",
+		"",
 		nil,
 		nil,
 	)
@@ -295,6 +299,7 @@ sleep 5
 		"",
 		"assistant",
 		"hello",
+		"",
 		"",
 		"",
 		"",

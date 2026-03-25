@@ -15,17 +15,7 @@ func normalizeLoadedConfig(cfg Config, rootEnv map[string]string) Config {
 	cfg.LLMProvider = strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
 	cfg.LLMProfiles = normalizeLLMProfiles(cfg.LLMProfiles)
 	cfg.GroupScenes = normalizeGroupScenes(cfg.GroupScenes)
-	cfg.CodexCommand = strings.TrimSpace(cfg.CodexCommand)
-	cfg.CodexModel = strings.TrimSpace(cfg.CodexModel)
-	cfg.CodexReasoningEffort = strings.ToLower(strings.TrimSpace(cfg.CodexReasoningEffort))
 	cfg.CodexEnv = normalizeEnvMap(rootEnv)
-	cfg.CodexPromptPrefix = strings.TrimSpace(cfg.CodexPromptPrefix)
-	cfg.ClaudeCommand = strings.TrimSpace(cfg.ClaudeCommand)
-	cfg.ClaudePromptPrefix = strings.TrimSpace(cfg.ClaudePromptPrefix)
-	cfg.GeminiCommand = strings.TrimSpace(cfg.GeminiCommand)
-	cfg.GeminiPromptPrefix = strings.TrimSpace(cfg.GeminiPromptPrefix)
-	cfg.KimiCommand = strings.TrimSpace(cfg.KimiCommand)
-	cfg.KimiPromptPrefix = strings.TrimSpace(cfg.KimiPromptPrefix)
 	cfg.RuntimeHTTPAddr = strings.TrimSpace(cfg.RuntimeHTTPAddr)
 	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
@@ -95,10 +85,16 @@ func normalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileC
 			continue
 		}
 		profile.Provider = strings.ToLower(strings.TrimSpace(profile.Provider))
+		profile.Command = strings.TrimSpace(profile.Command)
 		profile.Model = strings.TrimSpace(profile.Model)
 		profile.Profile = strings.TrimSpace(profile.Profile)
 		profile.ReasoningEffort = strings.ToLower(strings.TrimSpace(profile.ReasoningEffort))
 		profile.Personality = strings.ToLower(strings.TrimSpace(profile.Personality))
+		profile.PromptPrefix = strings.TrimSpace(profile.PromptPrefix)
+		if profile.Permissions != nil {
+			normalized := normalizeCodexExecPolicy(*profile.Permissions)
+			profile.Permissions = &normalized
+		}
 		out[name] = profile
 	}
 	return out

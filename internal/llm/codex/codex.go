@@ -24,17 +24,13 @@ type Runner struct {
 	Env                    map[string]string
 	PromptPrefix           string
 	WorkspaceDir           string
-	ChatExecPolicy         ExecPolicyConfig
-	WorkExecPolicy         ExecPolicyConfig
 	Prompts                *prompting.Loader
 }
 
-const fileChangeCallbackPrefix = "[file_change] "
-
 const (
-	sceneWork            = "work"
+	fileChangeCallbackPrefix = "[file_change] "
+
 	defaultChatSandbox   = "workspace-write"
-	defaultWorkSandbox   = "danger-full-access"
 	defaultApprovalMode  = "never"
 	envAliceResourceRoot = "ALICE_MCP_RESOURCE_ROOT"
 )
@@ -67,7 +63,7 @@ type fileDiffStat struct {
 type repoDiffSnapshot map[string]fileDiffStat
 
 func (r Runner) Run(ctx context.Context, userText string) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", "", nil, nil)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, ExecPolicyConfig{}, "", "", "", "", "", "", nil, nil)
 	return reply, err
 }
 
@@ -76,7 +72,7 @@ func (r Runner) RunWithProgress(
 	userText string,
 	onThinking func(step string),
 ) (string, error) {
-	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, "", "", "", "", "", "", nil, onThinking)
+	reply, _, err := r.RunWithThreadAndProgress(ctx, "", "assistant", userText, ExecPolicyConfig{}, "", "", "", "", "", "", nil, onThinking)
 	return reply, err
 }
 
@@ -85,7 +81,7 @@ func (r Runner) RunWithThread(
 	threadID string,
 	userText string,
 ) (string, string, error) {
-	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, "", "", "", "", "", "", nil, nil)
+	return r.RunWithThreadAndProgress(ctx, threadID, "assistant", userText, ExecPolicyConfig{}, "", "", "", "", "", "", nil, nil)
 }
 
 func (r Runner) RunWithThreadAndProgress(
@@ -93,7 +89,8 @@ func (r Runner) RunWithThreadAndProgress(
 	threadID string,
 	agentName string,
 	userText string,
-	scene string,
+	policy ExecPolicyConfig,
+	promptPrefixOverride string,
 	model string,
 	profile string,
 	reasoningEffort string,
@@ -107,7 +104,8 @@ func (r Runner) RunWithThreadAndProgress(
 		threadID,
 		agentName,
 		userText,
-		scene,
+		policy,
+		promptPrefixOverride,
 		model,
 		profile,
 		reasoningEffort,
@@ -124,7 +122,8 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 	threadID string,
 	agentName string,
 	userText string,
-	scene string,
+	policy ExecPolicyConfig,
+	promptPrefixOverride string,
 	model string,
 	profile string,
 	reasoningEffort string,
@@ -143,13 +142,17 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 		reasoningEffort = strings.TrimSpace(r.DefaultReasoningEffort)
 	}
 	agentName = strings.TrimSpace(agentName)
-	prompt, err := r.renderPrompt(threadID, userText, personality, noReplyToken)
+	resolvedPrefix := r.PromptPrefix
+	if strings.TrimSpace(promptPrefixOverride) != "" {
+		resolvedPrefix = strings.TrimSpace(promptPrefixOverride)
+	}
+	prompt, err := r.renderPrompt(threadID, userText, personality, noReplyToken, resolvedPrefix)
 	logging.Debugf(
 		"codex prompt assemble thread_id=%s model=%q profile=%q prefix=%q user_prompt=%q final_prompt=%q",
 		threadID,
 		model,
 		profile,
-		r.PromptPrefix,
+		resolvedPrefix,
 		userText,
 		prompt,
 	)
@@ -175,7 +178,7 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 		profile,
 		reasoningEffort,
 		personality,
-		r.execPolicy(scene, env),
+		r.execPolicy(policy, env),
 	)
 	cmd := exec.CommandContext(tctx, r.Command, cmdArgs...)
 	configureInterruptibleCommand(cmd, "codex")
@@ -388,16 +391,10 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 	return finalMessage, activeThreadID, usage, nil
 }
 
-func (r Runner) execPolicy(scene string, env map[string]string) ExecPolicyConfig {
-	policy := r.ChatExecPolicy
-	defaultSandbox := defaultChatSandbox
-	if strings.ToLower(strings.TrimSpace(scene)) == sceneWork {
-		policy = r.WorkExecPolicy
-		defaultSandbox = defaultWorkSandbox
-	}
+func (r Runner) execPolicy(policy ExecPolicyConfig, env map[string]string) ExecPolicyConfig {
 	policy.Sandbox = strings.TrimSpace(policy.Sandbox)
 	if policy.Sandbox == "" {
-		policy.Sandbox = defaultSandbox
+		policy.Sandbox = defaultChatSandbox
 	}
 	policy.AskForApproval = strings.TrimSpace(policy.AskForApproval)
 	if policy.AskForApproval == "" {
@@ -434,12 +431,12 @@ func appendUniqueAddDir(out []string, raw string) []string {
 	return append(out, trimmed)
 }
 
-func (r Runner) renderPrompt(threadID string, userText string, personality string, noReplyToken string) (string, error) {
+func (r Runner) renderPrompt(threadID string, userText string, personality string, noReplyToken string, promptPrefixOverride string) (string, error) {
 	loader := r.Prompts
 	if loader == nil {
 		loader = prompting.DefaultLoader()
 	}
-	promptPrefix, err := r.composePromptPrefix(personality, noReplyToken)
+	promptPrefix, err := prompting.ComposePromptPrefix(promptPrefixOverride, personality, noReplyToken)
 	if err != nil {
 		return "", err
 	}
@@ -449,10 +446,6 @@ func (r Runner) renderPrompt(threadID string, userText string, personality strin
 		"PromptPrefix": promptPrefix,
 		"UserText":     strings.TrimSpace(userText),
 	})
-}
-
-func (r Runner) composePromptPrefix(personality string, noReplyToken string) (string, error) {
-	return prompting.ComposePromptPrefix(r.PromptPrefix, personality, noReplyToken)
 }
 
 func errorString(err error) string {

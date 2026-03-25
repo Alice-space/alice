@@ -189,6 +189,7 @@ func reviewDocumentPath(task TaskDocument) string {
 func buildPlannerDispatchPrompt(repo Repository, role RoleConfig) (string, error) {
 	prevProposal, prevReview := previousProposalAndReview(repo)
 	proposalOutputPath := filepath.Join(repo.Root, "plans", "proposals", fmt.Sprintf("round-%03d-plan.md", maxInt(repo.Campaign.Frontmatter.PlanRound, 1)))
+	findingsPath := filepath.Join(repo.Root, "findings.md")
 	return renderCampaignPrompt(campaignRepoPromptPlannerDispatch, map[string]any{
 		"CampaignRepo":         repo.Root,
 		"CampaignFile":         filepath.Join(repo.Root, filepath.FromSlash(repo.Campaign.Path)),
@@ -200,6 +201,7 @@ func buildPlannerDispatchPrompt(repo Repository, role RoleConfig) (string, error
 		"PreviousProposalPath": prevProposal,
 		"PreviousReviewPath":   prevReview,
 		"ProposalOutputPath":   proposalOutputPath,
+		"FindingsPath":         findingsPath,
 	})
 }
 

@@ -163,31 +163,10 @@ func applyReloadableFields(dst *config.Config, src config.Config, changed map[st
 		dst.GroupScenes = src.GroupScenes
 		changed["group_scenes"] = struct{}{}
 	}
-	applyStringField(&dst.CodexCommand, src.CodexCommand, "codex_command", changed)
-	applyIntField(&dst.CodexTimeoutSecs, src.CodexTimeoutSecs, "codex_timeout_secs", changed)
-	applyDurationField(&dst.CodexTimeout, src.CodexTimeout, "codex_timeout", changed)
-	applyStringField(&dst.CodexModel, src.CodexModel, "codex_model", changed)
-	applyStringField(&dst.CodexReasoningEffort, src.CodexReasoningEffort, "codex_model_reasoning_effort", changed)
 	if !stringMapEqual(dst.CodexEnv, src.CodexEnv) {
 		dst.CodexEnv = cloneStringMap(src.CodexEnv)
 		changed["env"] = struct{}{}
 	}
-	applyStringField(&dst.CodexPromptPrefix, src.CodexPromptPrefix, "codex_prompt_prefix", changed)
-
-	applyStringField(&dst.ClaudeCommand, src.ClaudeCommand, "claude_command", changed)
-	applyIntField(&dst.ClaudeTimeoutSecs, src.ClaudeTimeoutSecs, "claude_timeout_secs", changed)
-	applyDurationField(&dst.ClaudeTimeout, src.ClaudeTimeout, "claude_timeout", changed)
-	applyStringField(&dst.ClaudePromptPrefix, src.ClaudePromptPrefix, "claude_prompt_prefix", changed)
-
-	applyStringField(&dst.GeminiCommand, src.GeminiCommand, "gemini_command", changed)
-	applyIntField(&dst.GeminiTimeoutSecs, src.GeminiTimeoutSecs, "gemini_timeout_secs", changed)
-	applyDurationField(&dst.GeminiTimeout, src.GeminiTimeout, "gemini_timeout", changed)
-	applyStringField(&dst.GeminiPromptPrefix, src.GeminiPromptPrefix, "gemini_prompt_prefix", changed)
-
-	applyStringField(&dst.KimiCommand, src.KimiCommand, "kimi_command", changed)
-	applyIntField(&dst.KimiTimeoutSecs, src.KimiTimeoutSecs, "kimi_timeout_secs", changed)
-	applyDurationField(&dst.KimiTimeout, src.KimiTimeout, "kimi_timeout", changed)
-	applyStringField(&dst.KimiPromptPrefix, src.KimiPromptPrefix, "kimi_prompt_prefix", changed)
 
 	applyIntField(&dst.AutomationTaskTimeoutSecs, src.AutomationTaskTimeoutSecs, "automation_task_timeout_secs", changed)
 	applyDurationField(&dst.AutomationTaskTimeout, src.AutomationTaskTimeout, "automation_task_timeout", changed)
@@ -204,21 +183,7 @@ func llmRuntimeConfigChanged(current, next config.Config) bool {
 	return current.LLMProvider != next.LLMProvider ||
 		!llmProfileMapEqual(current.LLMProfiles, next.LLMProfiles) ||
 		current.GroupScenes != next.GroupScenes ||
-		current.CodexCommand != next.CodexCommand ||
-		current.CodexTimeout != next.CodexTimeout ||
-		current.CodexModel != next.CodexModel ||
-		current.CodexReasoningEffort != next.CodexReasoningEffort ||
-		!stringMapEqual(current.CodexEnv, next.CodexEnv) ||
-		current.CodexPromptPrefix != next.CodexPromptPrefix ||
-		current.ClaudeCommand != next.ClaudeCommand ||
-		current.ClaudeTimeout != next.ClaudeTimeout ||
-		current.ClaudePromptPrefix != next.ClaudePromptPrefix ||
-		current.GeminiCommand != next.GeminiCommand ||
-		current.GeminiTimeout != next.GeminiTimeout ||
-		current.GeminiPromptPrefix != next.GeminiPromptPrefix ||
-		current.KimiCommand != next.KimiCommand ||
-		current.KimiTimeout != next.KimiTimeout ||
-		current.KimiPromptPrefix != next.KimiPromptPrefix
+		!stringMapEqual(current.CodexEnv, next.CodexEnv)
 }
 
 func loggingConfigChanged(current, next config.Config) bool {

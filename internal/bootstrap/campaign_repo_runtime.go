@@ -56,7 +56,17 @@ func (b *connectorRuntimeBuilder) handleCampaignRepoAutomationTaskCompletion(tas
 	if !ok {
 		return
 	}
-	b.runCampaignRepoReconcileCampaign(campaignID)
+	if b == nil || b.campaignStore == nil {
+		return
+	}
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return
+	}
+	b.campaignRepoMu.Lock()
+	defer b.campaignRepoMu.Unlock()
+	b.handleCampaignRepoTaskSignals(campaignID, task)
+	b.reconcileCampaignRepoLocked(campaignID)
 }
 
 func (b *connectorRuntimeBuilder) runCampaignRepoReconcileCampaign(campaignID string) {
@@ -67,10 +77,13 @@ func (b *connectorRuntimeBuilder) runCampaignRepoReconcileCampaign(campaignID st
 	if campaignID == "" {
 		return
 	}
-
 	b.campaignRepoMu.Lock()
 	defer b.campaignRepoMu.Unlock()
+	b.reconcileCampaignRepoLocked(campaignID)
+}
 
+// reconcileCampaignRepoLocked runs a single-campaign reconcile assuming campaignRepoMu is held.
+func (b *connectorRuntimeBuilder) reconcileCampaignRepoLocked(campaignID string) {
 	item, err := b.campaignStore.GetCampaign(campaignID)
 	if err != nil {
 		logging.Warnf("load campaign for event-driven reconcile failed campaign=%s: %v", campaignID, err)
@@ -88,6 +101,9 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if err != nil {
 		logging.Warnf("campaign repo reconcile failed campaign=%s path=%s: %v", item.ID, item.CampaignRepoPath, err)
 		return
+	}
+	if len(result.Events) > 0 {
+		b.sendCampaignNotifications(item, result.Events)
 	}
 	if err := b.syncCampaignDispatchTasks(item, result.DispatchTasks); err != nil {
 		logging.Warnf("sync dispatch tasks failed campaign=%s: %v", item.ID, err)
@@ -499,12 +515,8 @@ func (b *connectorRuntimeBuilder) campaignRoleDefaults() campaignrepo.CampaignRo
 
 func configRoleToRepoRole(c config.CampaignRoleDefaultConfig) campaignrepo.RoleConfig {
 	return campaignrepo.RoleConfig{
-		Role:            c.Role,
-		Provider:        c.Provider,
-		Model:           c.Model,
-		Profile:         c.Profile,
-		Workflow:        c.Workflow,
-		ReasoningEffort: c.ReasoningEffort,
-		Personality:     c.Personality,
+		Role:     c.Role,
+		Profile:  c.LLMProfile,
+		Workflow: c.Workflow,
 	}
 }

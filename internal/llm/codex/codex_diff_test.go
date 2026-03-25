@@ -36,7 +36,7 @@ wait $!
 	done := make(chan error, 1)
 	startedAt := time.Now()
 	go func() {
-		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "assistant", "hello", "", "", "", "", "", "", nil, nil)
+		_, _, err := runner.RunWithThreadAndProgress(ctx, "", "assistant", "hello", ExecPolicyConfig{}, "", "", "", "", "", "", nil, nil)
 		done <- err
 	}()
 

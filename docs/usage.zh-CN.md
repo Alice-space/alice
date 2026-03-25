@@ -223,4 +223,5 @@ Alice 还提供本地 runtime HTTP API。自带 skill 通过它来：
 - [README](../README.md)
 - [English Usage Guide](./usage.md)
 - [架构文档](./architecture.zh-CN.md)
+- [CodeArmy 使用指南](./codearmy.zh-CN.md)
 - [飞书消息流说明](./feishu-message-flow.zh-CN.md)

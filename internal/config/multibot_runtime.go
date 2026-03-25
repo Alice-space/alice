@@ -97,25 +97,10 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.TriggerPrefix = bot.TriggerPrefix
 	runtime.ImmediateFeedbackMode = bot.ImmediateFeedbackMode
 	runtime.ImmediateFeedbackReaction = bot.ImmediateFeedbackReaction
-	runtime.LLMProvider = bot.LLMProvider
 	runtime.LLMProfiles = mergeLLMProfiles(nil, bot.LLMProfiles)
 	if bot.GroupScenes != nil {
 		runtime.GroupScenes = *bot.GroupScenes
 	}
-	runtime.CodexCommand = bot.CodexCommand
-	runtime.CodexTimeoutSecs = bot.CodexTimeoutSecs
-	runtime.CodexModel = bot.CodexModel
-	runtime.CodexReasoningEffort = bot.CodexReasoningEffort
-	runtime.CodexPromptPrefix = bot.CodexPromptPrefix
-	runtime.ClaudeCommand = bot.ClaudeCommand
-	runtime.ClaudeTimeoutSecs = bot.ClaudeTimeoutSecs
-	runtime.ClaudePromptPrefix = bot.ClaudePromptPrefix
-	runtime.GeminiCommand = bot.GeminiCommand
-	runtime.GeminiTimeoutSecs = bot.GeminiTimeoutSecs
-	runtime.GeminiPromptPrefix = bot.GeminiPromptPrefix
-	runtime.KimiCommand = bot.KimiCommand
-	runtime.KimiTimeoutSecs = bot.KimiTimeoutSecs
-	runtime.KimiPromptPrefix = bot.KimiPromptPrefix
 	runtime.RuntimeHTTPAddr, err = deriveBotRuntimeHTTPAddr(bot, index)
 	if err != nil {
 		return Config{}, fmt.Errorf("bots.%s: derive runtime_http_addr failed: %w", runtime.BotID, err)
@@ -129,7 +114,7 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.PromptDir = deriveBotPromptDir(bot, runtime.AliceHome)
 	runtime.CodexHome = deriveBotCodexHome(bot, runtime.AliceHome)
 	runtime.SoulPath = deriveBotSoulPath(bot, runtime.WorkspaceDir)
-	runtime.CodexEnv = mergeStringMap(nil, bot.CodexEnv)
+	runtime.CodexEnv = mergeStringMap(nil, bot.Env)
 	runtime.QueueCapacity = bot.QueueCapacity
 	runtime.WorkerConcurrency = bot.WorkerConcurrency
 	runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs

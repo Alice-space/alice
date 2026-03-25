@@ -67,18 +67,6 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 		cfg.ImmediateFeedbackReaction = DefaultImmediateFeedbackReaction
 	}
 	cfg.CodexEnv = applyDefaultCodexEnv(cfg.CodexEnv)
-	if cfg.CodexCommand == "" {
-		cfg.CodexCommand = "codex"
-	}
-	if cfg.ClaudeCommand == "" {
-		cfg.ClaudeCommand = "claude"
-	}
-	if cfg.GeminiCommand == "" {
-		cfg.GeminiCommand = "gemini"
-	}
-	if cfg.KimiCommand == "" {
-		cfg.KimiCommand = "kimi"
-	}
 	if cfg.RuntimeHTTPAddr == "" {
 		cfg.RuntimeHTTPAddr = DefaultRuntimeHTTPAddr
 	}
@@ -164,30 +152,6 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 		return Config{}, errors.New("trigger_prefix is required when trigger_mode is prefix")
 	}
 
-	if cfg.CodexTimeoutSecs <= 0 {
-		if cfg.LLMProvider == DefaultLLMProvider {
-			return Config{}, errors.New("codex_timeout_secs must be > 0")
-		}
-		cfg.CodexTimeoutSecs = 172800
-	}
-	if cfg.ClaudeTimeoutSecs <= 0 {
-		if cfg.LLMProvider == LLMProviderClaude {
-			return Config{}, errors.New("claude_timeout_secs must be > 0")
-		}
-		cfg.ClaudeTimeoutSecs = 172800
-	}
-	if cfg.GeminiTimeoutSecs <= 0 {
-		if cfg.LLMProvider == LLMProviderGemini {
-			return Config{}, errors.New("gemini_timeout_secs must be > 0")
-		}
-		cfg.GeminiTimeoutSecs = 172800
-	}
-	if cfg.KimiTimeoutSecs <= 0 {
-		if cfg.LLMProvider == LLMProviderKimi {
-			return Config{}, errors.New("kimi_timeout_secs must be > 0")
-		}
-		cfg.KimiTimeoutSecs = 172800
-	}
 	for key := range cfg.CodexEnv {
 		if key == "" {
 			return Config{}, errors.New("env key must not be empty")
@@ -209,10 +173,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	if err := validateBotPermissions(cfg.Permissions); err != nil {
 		return Config{}, err
 	}
-	cfg.CodexTimeout = time.Duration(cfg.CodexTimeoutSecs) * time.Second
-	cfg.ClaudeTimeout = time.Duration(cfg.ClaudeTimeoutSecs) * time.Second
-	cfg.GeminiTimeout = time.Duration(cfg.GeminiTimeoutSecs) * time.Second
-	cfg.KimiTimeout = time.Duration(cfg.KimiTimeoutSecs) * time.Second
+	cfg.LLMProfiles = finalizeLLMProfiles(cfg.LLMProfiles)
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 
 	if len(cfg.Bots) == 0 {
@@ -228,6 +189,46 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 		return Config{}, err
 	}
 	return cfg, nil
+}
+
+func finalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileConfig {
+	if len(in) == 0 {
+		return in
+	}
+	out := make(map[string]LLMProfileConfig, len(in))
+	for name, profile := range in {
+		if profile.Command == "" {
+			switch profile.Provider {
+			case LLMProviderClaude:
+				profile.Command = "claude"
+			case LLMProviderGemini:
+				profile.Command = "gemini"
+			case LLMProviderKimi:
+				profile.Command = "kimi"
+			default:
+				profile.Command = "codex"
+			}
+		}
+		if profile.TimeoutSecs <= 0 {
+			profile.TimeoutSecs = DefaultLLMTimeoutSecs
+		}
+		profile.Timeout = time.Duration(profile.TimeoutSecs) * time.Second
+		if profile.Permissions == nil {
+			profile.Permissions = &CodexExecPolicyConfig{
+				Sandbox:        CodexSandboxWorkspaceWrite,
+				AskForApproval: CodexApprovalNever,
+			}
+		} else {
+			if profile.Permissions.Sandbox == "" {
+				profile.Permissions.Sandbox = CodexSandboxWorkspaceWrite
+			}
+			if profile.Permissions.AskForApproval == "" {
+				profile.Permissions.AskForApproval = CodexApprovalNever
+			}
+		}
+		out[name] = profile
+	}
+	return out
 }
 
 func (cfg Config) AllowedBundledSkills() []string {

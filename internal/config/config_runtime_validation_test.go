@@ -118,146 +118,163 @@ trigger_mode: "prefix"
 	}
 }
 
-func TestLoadFromFile_LLMProviderInvalid(t *testing.T) {
+func TestLoadFromFile_LLMProfileProviderInvalid(t *testing.T) {
 	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-llm_provider: openai
+llm_profiles:
+  main:
+    provider: openai
 `)
 
 	_, err := LoadFromFile(path)
 	if err == nil {
 		t.Fatal("expected error, got nil")
 	}
-	if !strings.Contains(err.Error(), "unsupported llm_provider") {
+	if !strings.Contains(err.Error(), "unsupported") {
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
 
-func TestLoadFromFile_LLMProviderTrimmedLowercase(t *testing.T) {
+func TestLoadFromFile_LLMProfileProviderTrimmedLowercase(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-llm_provider: "  CoDeX  "
+llm_profiles:
+  main:
+    provider: "  CoDeX  "
 `)
 
-	if runtime.LLMProvider != DefaultLLMProvider {
-		t.Fatalf("unexpected llm_provider: %q", runtime.LLMProvider)
+	profile, ok := runtime.LLMProfiles["main"]
+	if !ok {
+		t.Fatal("expected llm_profiles.main to exist")
+	}
+	if profile.Provider != DefaultLLMProvider {
+		t.Fatalf("unexpected provider: %q", profile.Provider)
 	}
 }
 
-func TestLoadFromFile_LLMProviderClaude(t *testing.T) {
+func TestLoadFromFile_LLMProfileClaude(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-llm_provider: "  ClAuDe  "
-claude_command: "  claude-custom  "
-claude_timeout_secs: 233
-claude_prompt_prefix: "  你是Claude助手  "
+llm_profiles:
+  main:
+    provider: "  ClAuDe  "
+    command: "  claude-custom  "
+    timeout_secs: 233
+    prompt_prefix: "  你是Claude助手  "
 `)
 
-	if runtime.LLMProvider != LLMProviderClaude {
-		t.Fatalf("unexpected llm_provider: %q", runtime.LLMProvider)
+	profile, ok := runtime.LLMProfiles["main"]
+	if !ok {
+		t.Fatal("expected llm_profiles.main to exist")
 	}
-	if runtime.ClaudeCommand != "claude-custom" {
-		t.Fatalf("unexpected claude_command: %q", runtime.ClaudeCommand)
+	if profile.Provider != LLMProviderClaude {
+		t.Fatalf("unexpected provider: %q", profile.Provider)
 	}
-	if runtime.ClaudeTimeout != 233*time.Second {
-		t.Fatalf("unexpected claude_timeout: %s", runtime.ClaudeTimeout)
+	if profile.Command != "claude-custom" {
+		t.Fatalf("unexpected command: %q", profile.Command)
 	}
-	if runtime.ClaudePromptPrefix != "你是Claude助手" {
-		t.Fatalf("unexpected claude_prompt_prefix: %q", runtime.ClaudePromptPrefix)
+	if profile.Timeout != 233*time.Second {
+		t.Fatalf("unexpected timeout: %s", profile.Timeout)
+	}
+	if profile.PromptPrefix != "你是Claude助手" {
+		t.Fatalf("unexpected prompt_prefix: %q", profile.PromptPrefix)
 	}
 }
 
-func TestLoadFromFile_LLMProviderGemini(t *testing.T) {
+func TestLoadFromFile_LLMProfileGemini(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-llm_provider: "  GeMiNi  "
-gemini_command: "  gemini-custom  "
-gemini_timeout_secs: 321
-gemini_prompt_prefix: "  你是Gemini助手  "
+llm_profiles:
+  main:
+    provider: "  GeMiNi  "
+    command: "  gemini-custom  "
+    timeout_secs: 321
+    prompt_prefix: "  你是Gemini助手  "
 `)
 
-	if runtime.LLMProvider != LLMProviderGemini {
-		t.Fatalf("unexpected llm_provider: %q", runtime.LLMProvider)
+	profile, ok := runtime.LLMProfiles["main"]
+	if !ok {
+		t.Fatal("expected llm_profiles.main to exist")
 	}
-	if runtime.GeminiCommand != "gemini-custom" {
-		t.Fatalf("unexpected gemini_command: %q", runtime.GeminiCommand)
+	if profile.Provider != LLMProviderGemini {
+		t.Fatalf("unexpected provider: %q", profile.Provider)
 	}
-	if runtime.GeminiTimeout != 321*time.Second {
-		t.Fatalf("unexpected gemini_timeout: %s", runtime.GeminiTimeout)
+	if profile.Command != "gemini-custom" {
+		t.Fatalf("unexpected command: %q", profile.Command)
 	}
-	if runtime.GeminiPromptPrefix != "你是Gemini助手" {
-		t.Fatalf("unexpected gemini_prompt_prefix: %q", runtime.GeminiPromptPrefix)
+	if profile.Timeout != 321*time.Second {
+		t.Fatalf("unexpected timeout: %s", profile.Timeout)
+	}
+	if profile.PromptPrefix != "你是Gemini助手" {
+		t.Fatalf("unexpected prompt_prefix: %q", profile.PromptPrefix)
 	}
 }
 
-func TestLoadFromFile_GeminiTimeoutInvalid(t *testing.T) {
-	path := writeSingleBotConfig(t, `
-feishu_app_id: cli_xxx
-feishu_app_secret: sss
-llm_provider: gemini
-gemini_timeout_secs: 0
-`)
-
-	_, err := LoadFromFile(path)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "gemini_timeout_secs must be > 0") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestLoadFromFile_CodexTimeoutIgnoredWhenGeminiProvider(t *testing.T) {
+func TestLoadFromFile_LLMProfileTimeoutDefaultsWhenZero(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-llm_provider: gemini
-codex_timeout_secs: 0
-gemini_timeout_secs: 60
+llm_profiles:
+  gemini:
+    provider: gemini
+    timeout_secs: 0
+  codex:
+    provider: codex
+    timeout_secs: 60
 `)
 
-	if runtime.CodexTimeout != 172800*time.Second {
-		t.Fatalf("unexpected codex_timeout fallback: %s", runtime.CodexTimeout)
+	geminiProfile, ok := runtime.LLMProfiles["gemini"]
+	if !ok {
+		t.Fatal("expected llm_profiles.gemini to exist")
 	}
-	if runtime.GeminiTimeout != 60*time.Second {
-		t.Fatalf("unexpected gemini_timeout: %s", runtime.GeminiTimeout)
+	if geminiProfile.Timeout != DefaultLLMTimeoutSecs*time.Second {
+		t.Fatalf("unexpected gemini timeout: %s (expected default %s)", geminiProfile.Timeout, time.Duration(DefaultLLMTimeoutSecs)*time.Second)
+	}
+
+	codexProfile, ok := runtime.LLMProfiles["codex"]
+	if !ok {
+		t.Fatal("expected llm_profiles.codex to exist")
+	}
+	if codexProfile.Timeout != 60*time.Second {
+		t.Fatalf("unexpected codex timeout: %s", codexProfile.Timeout)
 	}
 }
 
-func TestLoadFromFile_ClaudeTimeoutInvalid(t *testing.T) {
-	path := writeSingleBotConfig(t, `
-feishu_app_id: cli_xxx
-feishu_app_secret: sss
-llm_provider: claude
-claude_timeout_secs: 0
-`)
-
-	_, err := LoadFromFile(path)
-	if err == nil {
-		t.Fatal("expected error, got nil")
-	}
-	if !strings.Contains(err.Error(), "claude_timeout_secs must be > 0") {
-		t.Fatalf("unexpected error: %v", err)
-	}
-}
-
-func TestLoadFromFile_CodexTimeoutIgnoredWhenClaudeProvider(t *testing.T) {
+func TestLoadFromFile_LLMProfileCommandDefaultsByProvider(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-llm_provider: claude
-codex_timeout_secs: 0
-claude_timeout_secs: 60
+llm_profiles:
+  claude:
+    provider: claude
+  gemini:
+    provider: gemini
+  kimi:
+    provider: kimi
+  codex:
+    provider: codex
 `)
 
-	if runtime.CodexTimeout != 172800*time.Second {
-		t.Fatalf("unexpected codex_timeout fallback: %s", runtime.CodexTimeout)
+	cases := []struct {
+		name    string
+		wantCmd string
+	}{
+		{"claude", "claude"},
+		{"gemini", "gemini"},
+		{"kimi", "kimi"},
+		{"codex", "codex"},
 	}
-	if runtime.ClaudeTimeout != 60*time.Second {
-		t.Fatalf("unexpected claude_timeout: %s", runtime.ClaudeTimeout)
+	for _, tc := range cases {
+		profile, ok := runtime.LLMProfiles[tc.name]
+		if !ok {
+			t.Fatalf("expected llm_profiles.%s to exist", tc.name)
+		}
+		if profile.Command != tc.wantCmd {
+			t.Fatalf("llm_profiles.%s: unexpected command %q, want %q", tc.name, profile.Command, tc.wantCmd)
+		}
 	}
 }

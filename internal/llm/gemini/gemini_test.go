@@ -33,7 +33,7 @@ func TestBuildPrompt_NewThreadIncludesPrefix(t *testing.T) {
 		Prompts:      prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 		PromptPrefix: "你是助手Alice。",
 	}
-	prompt, err := runner.renderPrompt("", "你好", "", "")
+	prompt, err := runner.renderPrompt("", "你好", "", "", runner.PromptPrefix)
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
@@ -47,7 +47,7 @@ func TestBuildPrompt_ResumeThreadSkipsPrefix(t *testing.T) {
 		Prompts:      prompting.NewLoader(filepath.Join("..", "..", "..", "prompts")),
 		PromptPrefix: "你是助手Alice。",
 	}
-	prompt, err := runner.renderPrompt("session_123", "你好", "", "")
+	prompt, err := runner.renderPrompt("session_123", "你好", "", "", runner.PromptPrefix)
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
@@ -110,6 +110,7 @@ EOF
 		"gemini-2.5-flash",
 		"",
 		"",
+		"",
 		map[string]string{"ALICE_TEST_ENV": "env_ok"},
 		func(step string) {
 			updates = append(updates, strings.TrimSpace(step))
@@ -168,6 +169,7 @@ EOF
 		"session_existing",
 		"assistant",
 		"你好",
+		"",
 		"",
 		"",
 		"",

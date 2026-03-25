@@ -15,39 +15,45 @@ import (
 const embeddedSkillMarkerFile = ".alice-embedded-skill"
 
 type SkillLinkReport struct {
-	CodexHome  string
-	Discovered int
-	Linked     int
-	Updated    int
-	Unchanged  int
-	Failed     int
+	AliceHome       string
+	SourceRoot      string
+	AgentsSkillsDir string
+	ClaudeSkillsDir string
+	Discovered      int
+	Linked          int
+	Updated         int
+	Unchanged       int
+	Failed          int
 }
 
 func EnsureBundledSkillsLinked(workspaceDir string) (SkillLinkReport, error) {
 	_ = workspaceDir
-	codexHome, err := resolveCodexHome()
-	if err != nil {
-		return SkillLinkReport{}, err
-	}
-	return EnsureBundledSkillsLinkedForCodexHome(codexHome, nil)
+	return EnsureBundledSkillsLinkedForAliceHome(config.AliceHomeDir(), nil)
 }
 
-func EnsureBundledSkillsLinkedForCodexHome(codexHome string, allowedSkills []string) (SkillLinkReport, error) {
+func EnsureBundledSkillsLinkedForAliceHome(aliceHome string, allowedSkills []string) (SkillLinkReport, error) {
 	report := SkillLinkReport{}
 	entries, err := fs.ReadDir(aliceassets.SkillsFS, ".")
 	if err != nil {
 		return report, fmt.Errorf("read embedded bundled skills failed: %w", err)
 	}
 
-	codexHome = strings.TrimSpace(codexHome)
-	if codexHome == "" {
-		return report, fmt.Errorf("codex home is empty")
+	aliceHome = config.ResolveAliceHomeDir(aliceHome)
+	if strings.TrimSpace(aliceHome) == "" {
+		return report, fmt.Errorf("alice home is empty")
 	}
-	report.CodexHome = codexHome
-	dstRoot := filepath.Join(codexHome, "skills")
-	if err := os.MkdirAll(dstRoot, 0o755); err != nil {
-		return report, fmt.Errorf("create codex skills dir failed: %w", err)
+	report.AliceHome = aliceHome
+	report.SourceRoot = config.BundledSkillSourceDirForAliceHome(aliceHome)
+	report.AgentsSkillsDir = config.DefaultAgentsSkillsDir()
+	report.ClaudeSkillsDir = config.DefaultClaudeSkillsDir()
+
+	if err := ensureDirectoryRoot(report.SourceRoot); err != nil {
+		return report, fmt.Errorf("prepare bundled skill source dir failed: %w", err)
 	}
+	if err := ensureDirectoryRoot(report.AgentsSkillsDir); err != nil {
+		return report, fmt.Errorf("prepare agents skills dir failed: %w", err)
+	}
+
 	allowed := make(map[string]struct{}, len(allowedSkills))
 	for _, skill := range allowedSkills {
 		trimmed := strings.TrimSpace(skill)
@@ -75,13 +81,20 @@ func EnsureBundledSkillsLinkedForCodexHome(codexHome string, allowedSkills []str
 		}
 
 		report.Discovered++
-		dst := filepath.Join(dstRoot, name)
-		changed, failed := ensureEmbeddedSkillInstalled(name, dst)
+		sourceDir := filepath.Join(report.SourceRoot, name)
+		sourceChanged, failed := ensureEmbeddedSkillMaterialized(name, sourceDir)
 		if failed {
 			report.Failed++
 			continue
 		}
-		switch changed {
+		agentSkillDir := filepath.Join(report.AgentsSkillsDir, name)
+		linkChanged, failed := ensureSkillSymlink(agentSkillDir, sourceDir)
+		if failed {
+			report.Failed++
+			continue
+		}
+
+		switch classifySkillSync(sourceChanged, linkChanged) {
 		case "linked":
 			report.Linked++
 		case "updated":
@@ -91,11 +104,11 @@ func EnsureBundledSkillsLinkedForCodexHome(codexHome string, allowedSkills []str
 		}
 	}
 
-	return report, nil
-}
+	if err := ensureClaudeSkillsAlias(report.ClaudeSkillsDir, report.AgentsSkillsDir); err != nil {
+		return report, fmt.Errorf("prepare claude skills link failed: %w", err)
+	}
 
-func resolveCodexHome() (string, error) {
-	return config.ResolveCodexHomeDir(""), nil
+	return report, nil
 }
 
 func hasEmbeddedSkillManifest(skillName string) bool {
@@ -103,7 +116,7 @@ func hasEmbeddedSkillManifest(skillName string) bool {
 	return err == nil && !info.IsDir()
 }
 
-func ensureEmbeddedSkillInstalled(skillName, dst string) (changed string, failed bool) {
+func ensureEmbeddedSkillMaterialized(skillName, dst string) (changed string, failed bool) {
 	info, err := os.Lstat(dst)
 	if err != nil {
 		if os.IsNotExist(err) {
@@ -200,4 +213,91 @@ func filePerm(entry fs.DirEntry) os.FileMode {
 func hasEmbeddedMarker(dst string) bool {
 	info, err := os.Stat(filepath.Join(dst, embeddedSkillMarkerFile))
 	return err == nil && !info.IsDir()
+}
+
+func ensureDirectoryRoot(dst string) error {
+	info, err := os.Lstat(dst)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return os.MkdirAll(dst, 0o755)
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 {
+		return fmt.Errorf("%s must be a directory, got symlink", dst)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("%s must be a directory", dst)
+	}
+	return nil
+}
+
+func ensureSkillSymlink(dst, target string) (changed string, failed bool) {
+	if err := ensureDirectoryRoot(filepath.Dir(dst)); err != nil {
+		return "", true
+	}
+
+	info, err := os.Lstat(dst)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if linkErr := os.Symlink(target, dst); linkErr != nil {
+				return "", true
+			}
+			return "linked", false
+		}
+		return "", true
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return "", true
+	}
+	same, err := symlinkPointsTo(dst, target)
+	if err != nil || !same {
+		return "", true
+	}
+	return "unchanged", false
+}
+
+func ensureClaudeSkillsAlias(dst, target string) error {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return err
+	}
+	info, err := os.Lstat(dst)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return os.Symlink(target, dst)
+		}
+		return err
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		return fmt.Errorf("%s already exists and is not a symlink", dst)
+	}
+	same, err := symlinkPointsTo(dst, target)
+	if err != nil {
+		return err
+	}
+	if !same {
+		return fmt.Errorf("%s already points elsewhere", dst)
+	}
+	return nil
+}
+
+func symlinkPointsTo(linkPath, target string) (bool, error) {
+	current, err := os.Readlink(linkPath)
+	if err != nil {
+		return false, err
+	}
+	if !filepath.IsAbs(current) {
+		current = filepath.Join(filepath.Dir(linkPath), current)
+	}
+	return filepath.Clean(current) == filepath.Clean(target), nil
+}
+
+func classifySkillSync(sourceChanged, linkChanged string) string {
+	if linkChanged == "linked" {
+		return "linked"
+	}
+	if sourceChanged == "linked" || sourceChanged == "updated" {
+		return "updated"
+	}
+	return "unchanged"
 }

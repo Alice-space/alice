@@ -7,7 +7,7 @@ description: '通过本机 CUPS 打印用户提供的文件。适用于用户要
 
 按以下流程执行，保证打印结果可追踪、可反馈。
 
-维护约束：当前会话里 `.codex/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
+维护约束：当前会话里 `.agents/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
 
 ## 工作流
 

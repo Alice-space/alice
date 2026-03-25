@@ -170,6 +170,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			Profile:         task.Action.Profile,
 			ReasoningEffort: task.Action.ReasoningEffort,
 			Personality:     task.Action.Personality,
+			PromptPrefix:    task.Action.PromptPrefix,
 			Env:             e.buildTaskRunEnv(task),
 		})
 		if err != nil {
@@ -220,12 +221,14 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			Profile:         task.Action.Profile,
 			ReasoningEffort: task.Action.ReasoningEffort,
 			Personality:     task.Action.Personality,
+			PromptPrefix:    task.Action.PromptPrefix,
 			Env:             e.buildTaskRunEnv(task),
 		})
 		if err != nil {
 			return taskDispatch{}, err
 		}
-		signal := detectWorkflowSignal(result.Commands)
+		signals := detectWorkflowSignals(result.Commands)
+		signal := primaryWorkflowSignal(signals)
 		reply := strings.TrimSpace(result.Message)
 		if reply == "" {
 			reply = fallbackWorkflowReply(signal)
@@ -250,16 +253,30 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			return taskDispatch{}, err
 		}
 		dispatch := taskDispatch{
-			text:   text,
-			signal: signal,
+			text:    text,
+			signal:  signal,
+			signals: signals,
 		}
-		if signal != nil && signal.kind == taskSignalNeedsHuman {
-			cardContent, err := buildTaskWarningCardContent(task, text, signal.message)
-			if err != nil {
-				return taskDispatch{}, err
+		if signal != nil {
+			var cardContent string
+			var cardErr error
+			switch signal.kind {
+			case taskSignalNeedsHuman:
+				cardContent, cardErr = buildTaskWarningCardContent(task, text, signal.message)
+			case taskSignalReplan:
+				cardContent, cardErr = buildReplanCardContent(task, text, signal.message)
+			case taskSignalBlocked:
+				cardContent, cardErr = buildBlockedCardContent(task, text, signal.message)
+			case taskSignalDiscovery:
+				cardContent, cardErr = buildDiscoveryCardContent(task, text, signal.message)
 			}
-			dispatch.forceCard = true
-			dispatch.cardContent = cardContent
+			if cardErr != nil {
+				return taskDispatch{}, cardErr
+			}
+			if cardContent != "" {
+				dispatch.forceCard = true
+				dispatch.cardContent = cardContent
+			}
 		}
 		return dispatch, nil
 	default:

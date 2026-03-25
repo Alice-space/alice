@@ -63,24 +63,6 @@ feishu_app_secret: sss
 	if runtime.LLMProvider != DefaultLLMProvider {
 		t.Fatalf("unexpected llm_provider: %s", runtime.LLMProvider)
 	}
-	if runtime.CodexCommand != "codex" {
-		t.Fatalf("unexpected codex_command: %s", runtime.CodexCommand)
-	}
-	if runtime.CodexTimeout != 172800*time.Second {
-		t.Fatalf("unexpected codex_timeout: %s", runtime.CodexTimeout)
-	}
-	if runtime.ClaudeCommand != "claude" {
-		t.Fatalf("unexpected claude_command: %s", runtime.ClaudeCommand)
-	}
-	if runtime.ClaudeTimeout != 172800*time.Second {
-		t.Fatalf("unexpected claude_timeout: %s", runtime.ClaudeTimeout)
-	}
-	if runtime.GeminiCommand != "gemini" {
-		t.Fatalf("unexpected gemini_command: %s", runtime.GeminiCommand)
-	}
-	if runtime.GeminiTimeout != 172800*time.Second {
-		t.Fatalf("unexpected gemini_timeout: %s", runtime.GeminiTimeout)
-	}
 	if runtime.QueueCapacity != 256 {
 		t.Fatalf("unexpected queue_capacity: %d", runtime.QueueCapacity)
 	}
@@ -192,18 +174,25 @@ env:
 	}
 }
 
-func TestLoadFromFile_CodexModelConfigTrimmed(t *testing.T) {
+func TestLoadFromFile_LLMProfileModelConfigTrimmed(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-codex_model: "  gpt-5.4  "
-codex_model_reasoning_effort: "  HIGH  "
+llm_profiles:
+  main:
+    provider: codex
+    model: "  gpt-5.4  "
+    reasoning_effort: "  HIGH  "
 `)
 
-	if runtime.CodexModel != "gpt-5.4" {
-		t.Fatalf("unexpected codex_model: %q", runtime.CodexModel)
+	profile, ok := runtime.LLMProfiles["main"]
+	if !ok {
+		t.Fatal("expected llm_profiles.main to exist")
 	}
-	if runtime.CodexReasoningEffort != "high" {
-		t.Fatalf("unexpected codex_model_reasoning_effort: %q", runtime.CodexReasoningEffort)
+	if profile.Model != "gpt-5.4" {
+		t.Fatalf("unexpected model: %q", profile.Model)
+	}
+	if profile.ReasoningEffort != "high" {
+		t.Fatalf("unexpected reasoning_effort: %q", profile.ReasoningEffort)
 	}
 }

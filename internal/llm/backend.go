@@ -18,6 +18,12 @@ func (u Usage) HasUsage() bool {
 	return u.InputTokens != 0 || u.CachedInputTokens != 0 || u.OutputTokens != 0
 }
 
+type ExecPolicyConfig struct {
+	Sandbox        string
+	AskForApproval string
+	AddDirs        []string
+}
+
 type RunRequest struct {
 	ThreadID        string
 	AgentName       string
@@ -29,6 +35,8 @@ type RunRequest struct {
 	ReasoningEffort string
 	Personality     string
 	NoReplyToken    string
+	PromptPrefix    string
+	ExecPolicy      ExecPolicyConfig
 	Env             map[string]string
 	OnProgress      ProgressFunc
 }

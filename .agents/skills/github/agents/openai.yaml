@@ -1,0 +1,4 @@
+interface:
+  display_name: "GitHub Ops"
+  short_description: "操作 GitHub 仓库并执行 PR、发布与自更新流程"
+  default_prompt: "用 $github 完成 dev 到 main 的发布流程，或更新本地 Alice 运行时。"

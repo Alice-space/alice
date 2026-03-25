@@ -111,18 +111,14 @@ bots:
 	}
 }
 
-func TestFinalizeConfig_PreservesCodexAddDirsCase(t *testing.T) {
-	cfg := normalizeBotPermissions(BotPermissionsConfig{
-		Codex: SceneCodexPoliciesConfig{
-			Chat: CodexExecPolicyConfig{
-				AddDirs: []string{"./DataDir", "./DataDir", "/Tmp/MixedCase"},
-			},
-		},
+func TestFinalizeConfig_LLMProfilePreservesAddDirsCase(t *testing.T) {
+	policy := normalizeCodexExecPolicy(CodexExecPolicyConfig{
+		AddDirs: []string{"./DataDir", "./DataDir", "/Tmp/MixedCase"},
 	})
 
 	want := []string{"./DataDir", "/Tmp/MixedCase"}
-	if !reflect.DeepEqual(cfg.Codex.Chat.AddDirs, want) {
-		t.Fatalf("unexpected chat add_dirs: got=%#v want=%#v", cfg.Codex.Chat.AddDirs, want)
+	if !reflect.DeepEqual(policy.AddDirs, want) {
+		t.Fatalf("unexpected add_dirs: got=%#v want=%#v", policy.AddDirs, want)
 	}
 }
 

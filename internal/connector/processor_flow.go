@@ -193,6 +193,7 @@ func jobLLMRunOptions(job Job) llmRunOptions {
 		ReasoningEffort: job.LLMReasoningEffort,
 		Personality:     job.LLMPersonality,
 		NoReplyToken:    job.NoReplyToken,
+		PromptPrefix:    job.LLMPromptPrefix,
 	}
 }
 

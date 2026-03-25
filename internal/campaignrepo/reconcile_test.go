@@ -86,7 +86,7 @@ created_at: "2026-03-24T10:30:00+08:00"
 			if err != nil {
 				t.Fatalf("load repo failed: %v", err)
 			}
-			applied, err := applyReviewVerdicts(&repo)
+			applied, _, err := applyReviewVerdicts(&repo, "")
 			if err != nil {
 				t.Fatalf("apply review verdicts failed: %v", err)
 			}

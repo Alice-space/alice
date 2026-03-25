@@ -40,6 +40,7 @@ type llmRunOptions struct {
 	ReasoningEffort string
 	Personality     string
 	NoReplyToken    string
+	PromptPrefix    string
 }
 
 func (p *Processor) runLLM(
@@ -65,6 +66,7 @@ func (p *Processor) runLLM(
 		ReasoningEffort: strings.TrimSpace(options.ReasoningEffort),
 		Personality:     strings.TrimSpace(options.Personality),
 		NoReplyToken:    strings.TrimSpace(options.NoReplyToken),
+		PromptPrefix:    strings.TrimSpace(options.PromptPrefix),
 		Env:             env,
 		OnProgress:      onAgentMessage,
 	})

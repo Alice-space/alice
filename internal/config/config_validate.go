@@ -225,6 +225,11 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
 		}
+		if profile.Permissions != nil {
+			if err := validateCodexExecPolicy(*profile.Permissions, fmt.Sprintf("llm_profiles.%s.permissions", name)); err != nil {
+				return err
+			}
+		}
 	}
 	switch cfg.ImageGeneration.Provider {
 	case "", "openai":
@@ -277,6 +282,11 @@ func validateSceneConfig(cfg Config) error {
 		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
+		}
+		if profile.Permissions != nil {
+			if err := validateCodexExecPolicy(*profile.Permissions, fmt.Sprintf("llm_profiles.%s.permissions", name)); err != nil {
+				return err
+			}
 		}
 	}
 	if cfg.GroupScenes.Chat.Enabled {

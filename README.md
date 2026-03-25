@@ -22,6 +22,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 - Per-bot isolated `workspace`, `SOUL.md`, and prompts, with shared `CODEX_HOME` by default
 - Scene-aware routing for casual chat and explicit work threads
 - Runtime HTTP API for bundled skills and automation
+- Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
 - Embedded prompts, skills, config example, and `SOUL.md` example
 - Release installer for `systemd --user` deployments
 

@@ -70,6 +70,15 @@ func TestDefaultRuntimePaths(t *testing.T) {
 	if got := DefaultPromptDir(); got != filepath.Join(aliceHome, "prompts") {
 		t.Fatalf("unexpected default prompt path: %q", got)
 	}
+	if got := DefaultBundledSkillSourceDir(); got != filepath.Join(aliceHome, "skills") {
+		t.Fatalf("unexpected default bundled skill source path: %q", got)
+	}
+	if got := DefaultAgentsSkillsDir(); got != filepath.Join(home, ".agents", "skills") {
+		t.Fatalf("unexpected default agents skills path: %q", got)
+	}
+	if got := DefaultClaudeSkillsDir(); got != filepath.Join(home, ".claude", "skills") {
+		t.Fatalf("unexpected default claude skills path: %q", got)
+	}
 	if got := DefaultLogDir(); got != filepath.Join(aliceHome, "log") {
 		t.Fatalf("unexpected default log dir path: %q", got)
 	}
@@ -117,6 +126,9 @@ func TestRuntimePaths_ForAliceHomeOverride(t *testing.T) {
 	}
 	if got := PromptDirForAliceHome(override); got != filepath.Join(aliceHome, "prompts") {
 		t.Fatalf("unexpected prompt path: %q", got)
+	}
+	if got := BundledSkillSourceDirForAliceHome(override); got != filepath.Join(aliceHome, "skills") {
+		t.Fatalf("unexpected bundled skill source path: %q", got)
 	}
 	if got := LogDirForAliceHome(override); got != filepath.Join(aliceHome, "log") {
 		t.Fatalf("unexpected log dir path: %q", got)

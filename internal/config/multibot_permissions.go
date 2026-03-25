@@ -13,20 +13,6 @@ func normalizeBotPermissions(in BotPermissionsConfig) BotPermissionsConfig {
 		in.RuntimeCampaigns = boolPtr(true)
 	}
 	in.AllowedSkills = normalizeStringSlice(in.AllowedSkills)
-	in.Codex.Chat = normalizeCodexExecPolicy(in.Codex.Chat)
-	in.Codex.Work = normalizeCodexExecPolicy(in.Codex.Work)
-	if in.Codex.Chat.Sandbox == "" {
-		in.Codex.Chat.Sandbox = CodexSandboxWorkspaceWrite
-	}
-	if in.Codex.Chat.AskForApproval == "" {
-		in.Codex.Chat.AskForApproval = CodexApprovalNever
-	}
-	if in.Codex.Work.Sandbox == "" {
-		in.Codex.Work.Sandbox = CodexSandboxDangerFullAccess
-	}
-	if in.Codex.Work.AskForApproval == "" {
-		in.Codex.Work.AskForApproval = CodexApprovalNever
-	}
 	return in
 }
 
@@ -37,13 +23,7 @@ func normalizeCodexExecPolicy(in CodexExecPolicyConfig) CodexExecPolicyConfig {
 	return in
 }
 
-func validateBotPermissions(cfg BotPermissionsConfig) error {
-	if err := validateCodexExecPolicy(cfg.Codex.Chat, "permissions.codex.chat"); err != nil {
-		return err
-	}
-	if err := validateCodexExecPolicy(cfg.Codex.Work, "permissions.codex.work"); err != nil {
-		return err
-	}
+func validateBotPermissions(_ BotPermissionsConfig) error {
 	return nil
 }
 
@@ -77,24 +57,6 @@ func mergeBotPermissions(base BotPermissionsConfig, override *BotPermissionsConf
 	}
 	if len(override.AllowedSkills) > 0 {
 		merged.AllowedSkills = normalizeStringSlice(override.AllowedSkills)
-	}
-	if override.Codex.Chat.Sandbox != "" {
-		merged.Codex.Chat.Sandbox = override.Codex.Chat.Sandbox
-	}
-	if override.Codex.Chat.AskForApproval != "" {
-		merged.Codex.Chat.AskForApproval = override.Codex.Chat.AskForApproval
-	}
-	if len(override.Codex.Chat.AddDirs) > 0 {
-		merged.Codex.Chat.AddDirs = normalizePathSlice(override.Codex.Chat.AddDirs)
-	}
-	if override.Codex.Work.Sandbox != "" {
-		merged.Codex.Work.Sandbox = override.Codex.Work.Sandbox
-	}
-	if override.Codex.Work.AskForApproval != "" {
-		merged.Codex.Work.AskForApproval = override.Codex.Work.AskForApproval
-	}
-	if len(override.Codex.Work.AddDirs) > 0 {
-		merged.Codex.Work.AddDirs = normalizePathSlice(override.Codex.Work.AddDirs)
 	}
 	return normalizeBotPermissions(merged)
 }

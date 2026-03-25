@@ -20,6 +20,7 @@ const DefaultRuntimeHTTPAddr = "127.0.0.1:7331"
 const DefaultWorkerConcurrency = 3
 const DefaultHTTPSProxy = "http://127.0.0.1:8080"
 const DefaultALLProxy = "http://127.0.0.1:8080"
+const DefaultLLMTimeoutSecs = 172800
 
 var configValidator = validator.New()
 
@@ -29,11 +30,18 @@ const (
 )
 
 type LLMProfileConfig struct {
-	Provider        string `mapstructure:"provider"`
-	Model           string `mapstructure:"model"`
-	Profile         string `mapstructure:"profile"`
-	ReasoningEffort string `mapstructure:"reasoning_effort"`
-	Personality     string `mapstructure:"personality"`
+	Provider        string                 `mapstructure:"provider"`
+	Command         string                 `mapstructure:"command"`
+	TimeoutSecs     int                    `mapstructure:"timeout_secs"`
+	Model           string                 `mapstructure:"model"`
+	Profile         string                 `mapstructure:"profile"`
+	ReasoningEffort string                 `mapstructure:"reasoning_effort"`
+	Personality     string                 `mapstructure:"personality"`
+	PromptPrefix    string                 `mapstructure:"prompt_prefix"`
+	Permissions     *CodexExecPolicyConfig `mapstructure:"permissions"`
+
+	// Computed at finalization, not from YAML.
+	Timeout time.Duration `mapstructure:"-"`
 }
 
 type GroupSceneConfig struct {
@@ -78,14 +86,11 @@ type CodexExecPolicyConfig struct {
 	AddDirs        []string `mapstructure:"add_dirs"`
 }
 
+// CampaignRoleDefaultConfig references an llm_profile by name.
 type CampaignRoleDefaultConfig struct {
-	Role            string `mapstructure:"role"`
-	Provider        string `mapstructure:"provider"`
-	Model           string `mapstructure:"model"`
-	Profile         string `mapstructure:"profile"`
-	Workflow        string `mapstructure:"workflow"`
-	ReasoningEffort string `mapstructure:"reasoning_effort"`
-	Personality     string `mapstructure:"personality"`
+	Role       string `mapstructure:"role"`
+	LLMProfile string `mapstructure:"llm_profile"`
+	Workflow   string `mapstructure:"workflow"`
 }
 
 type CampaignRoleDefaultsConfig struct {
@@ -95,17 +100,11 @@ type CampaignRoleDefaultsConfig struct {
 	PlannerReviewer CampaignRoleDefaultConfig `mapstructure:"planner_reviewer"`
 }
 
-type SceneCodexPoliciesConfig struct {
-	Chat CodexExecPolicyConfig `mapstructure:"chat"`
-	Work CodexExecPolicyConfig `mapstructure:"work"`
-}
-
 type BotPermissionsConfig struct {
-	RuntimeMessage    *bool                    `mapstructure:"runtime_message"`
-	RuntimeAutomation *bool                    `mapstructure:"runtime_automation"`
-	RuntimeCampaigns  *bool                    `mapstructure:"runtime_campaigns"`
-	AllowedSkills     []string                 `mapstructure:"allowed_skills"`
-	Codex             SceneCodexPoliciesConfig `mapstructure:"codex"`
+	RuntimeMessage    *bool    `mapstructure:"runtime_message"`
+	RuntimeAutomation *bool    `mapstructure:"runtime_automation"`
+	RuntimeCampaigns  *bool    `mapstructure:"runtime_campaigns"`
+	AllowedSkills     []string `mapstructure:"allowed_skills"`
 }
 
 type BotConfig struct {
@@ -119,23 +118,8 @@ type BotConfig struct {
 	TriggerPrefix             string                      `mapstructure:"trigger_prefix"`
 	ImmediateFeedbackMode     string                      `mapstructure:"immediate_feedback_mode"`
 	ImmediateFeedbackReaction string                      `mapstructure:"immediate_feedback_reaction"`
-	LLMProvider               string                      `mapstructure:"llm_provider"`
 	LLMProfiles               map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
 	GroupScenes               *GroupScenesConfig          `mapstructure:"group_scenes"`
-	CodexCommand              string                      `mapstructure:"codex_command"`
-	CodexTimeoutSecs          int                         `mapstructure:"codex_timeout_secs"`
-	CodexModel                string                      `mapstructure:"codex_model"`
-	CodexReasoningEffort      string                      `mapstructure:"codex_model_reasoning_effort"`
-	CodexPromptPrefix         string                      `mapstructure:"codex_prompt_prefix"`
-	ClaudeCommand             string                      `mapstructure:"claude_command"`
-	ClaudeTimeoutSecs         int                         `mapstructure:"claude_timeout_secs"`
-	ClaudePromptPrefix        string                      `mapstructure:"claude_prompt_prefix"`
-	GeminiCommand             string                      `mapstructure:"gemini_command"`
-	GeminiTimeoutSecs         int                         `mapstructure:"gemini_timeout_secs"`
-	GeminiPromptPrefix        string                      `mapstructure:"gemini_prompt_prefix"`
-	KimiCommand               string                      `mapstructure:"kimi_command"`
-	KimiTimeoutSecs           int                         `mapstructure:"kimi_timeout_secs"`
-	KimiPromptPrefix          string                      `mapstructure:"kimi_prompt_prefix"`
 	RuntimeHTTPAddr           string                      `mapstructure:"runtime_http_addr"`
 	RuntimeHTTPToken          string                      `mapstructure:"runtime_http_token"`
 	FailureMessage            string                      `mapstructure:"failure_message"`
@@ -146,7 +130,7 @@ type BotConfig struct {
 	PromptDir                 string                      `mapstructure:"prompt_dir"`
 	CodexHome                 string                      `mapstructure:"codex_home"`
 	SoulPath                  string                      `mapstructure:"soul_path"`
-	CodexEnv                  map[string]string           `mapstructure:"env"`
+	Env                       map[string]string           `mapstructure:"env"`
 	QueueCapacity             int                         `mapstructure:"queue_capacity"`
 	WorkerConcurrency         int                         `mapstructure:"worker_concurrency"`
 	AutomationTaskTimeoutSecs int                         `mapstructure:"automation_task_timeout_secs"`
@@ -171,34 +155,19 @@ type Config struct {
 	LLMProfiles map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
 	GroupScenes GroupScenesConfig           `mapstructure:"group_scenes"`
 
-	CodexCommand         string                     `mapstructure:"codex_command"`
-	CodexTimeout         time.Duration              `mapstructure:"-"`
-	CodexTimeoutSecs     int                        `mapstructure:"codex_timeout_secs"`
-	CodexModel           string                     `mapstructure:"codex_model"`
-	CodexReasoningEffort string                     `mapstructure:"codex_model_reasoning_effort"`
-	CodexEnv             map[string]string          `mapstructure:"env"`
-	CodexPromptPrefix    string                     `mapstructure:"codex_prompt_prefix"`
-	ClaudeCommand        string                     `mapstructure:"claude_command"`
-	ClaudeTimeout        time.Duration              `mapstructure:"-"`
-	ClaudeTimeoutSecs    int                        `mapstructure:"claude_timeout_secs"`
-	ClaudePromptPrefix   string                     `mapstructure:"claude_prompt_prefix"`
-	GeminiCommand        string                     `mapstructure:"gemini_command"`
-	GeminiTimeout        time.Duration              `mapstructure:"-"`
-	GeminiTimeoutSecs    int                        `mapstructure:"gemini_timeout_secs"`
-	GeminiPromptPrefix   string                     `mapstructure:"gemini_prompt_prefix"`
-	KimiCommand          string                     `mapstructure:"kimi_command"`
-	KimiTimeout          time.Duration              `mapstructure:"-"`
-	KimiTimeoutSecs      int                        `mapstructure:"kimi_timeout_secs"`
-	KimiPromptPrefix     string                     `mapstructure:"kimi_prompt_prefix"`
-	RuntimeHTTPAddr      string                     `mapstructure:"runtime_http_addr"`
-	RuntimeHTTPToken     string                     `mapstructure:"runtime_http_token"`
-	FailureMessage       string                     `mapstructure:"failure_message"`
-	ThinkingMessage      string                     `mapstructure:"thinking_message"`
+	// Shared env for all LLM subprocesses (HTTPS_PROXY, API keys, etc.)
+	CodexEnv  map[string]string `mapstructure:"env"`
+	CodexHome string            `mapstructure:"codex_home"`
+
+	RuntimeHTTPAddr  string `mapstructure:"runtime_http_addr"`
+	RuntimeHTTPToken string `mapstructure:"runtime_http_token"`
+	FailureMessage   string `mapstructure:"failure_message"`
+	ThinkingMessage  string `mapstructure:"thinking_message"`
+
 	ImageGeneration      ImageGenerationConfig      `mapstructure:"image_generation"`
 	AliceHome            string                     `mapstructure:"alice_home"`
 	WorkspaceDir         string                     `mapstructure:"workspace_dir"`
 	PromptDir            string                     `mapstructure:"prompt_dir"`
-	CodexHome            string                     `mapstructure:"codex_home"`
 	SoulPath             string                     `mapstructure:"soul_path"`
 	Permissions          BotPermissionsConfig       `mapstructure:"permissions"`
 	CampaignRoleDefaults CampaignRoleDefaultsConfig `mapstructure:"campaign_role_defaults"`

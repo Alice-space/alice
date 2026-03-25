@@ -7,7 +7,7 @@ description: 通过 Alice 本地 runtime HTTP API 向当前会话发送图片或
 
 使用 `scripts/alice-message.sh` 把附件发送回当前 Alice 会话。脚本会自动读取当前会话上下文，并由 Alice 自动路由普通回复/话题回复。纯文本消息不走这个 skill，由程序主链路直接转发。
 
-维护约束：当前会话里 `.codex/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
+维护约束：当前会话里 `.agents/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
 
 ## 常用命令
 

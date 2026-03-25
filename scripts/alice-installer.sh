@@ -302,8 +302,8 @@ install_or_update() {
   log "target version: $version"
 
   download_and_install_binary "$version" "$CHANNEL"
-  if HOME="$HOME" "$BIN_PATH" skills sync >/dev/null 2>&1; then
-    log "bundled skills synced into ${CODEX_HOME:-$HOME/.codex}"
+  if HOME="$HOME" ALICE_HOME="$ALICE_HOME" "$BIN_PATH" --alice-home "$ALICE_HOME" skills sync >/dev/null 2>&1; then
+    log "bundled skills synced into $HOME/.agents/skills (source: $ALICE_HOME/skills)"
   else
     log "warning: bundled skill sync failed during install; Alice will retry on startup"
   fi

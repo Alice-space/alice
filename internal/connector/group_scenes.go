@@ -176,6 +176,7 @@ func applyLLMProfileToJob(job *Job, defaultProvider string, profile config.LLMPr
 	job.LLMProfile = strings.TrimSpace(profile.Profile)
 	job.LLMReasoningEffort = strings.TrimSpace(profile.ReasoningEffort)
 	job.LLMPersonality = strings.TrimSpace(profile.Personality)
+	job.LLMPromptPrefix = strings.TrimSpace(profile.PromptPrefix)
 }
 
 func buildChatSceneSessionKey(receiveIDType, receiveID string) string {

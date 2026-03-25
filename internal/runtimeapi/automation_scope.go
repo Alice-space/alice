@@ -139,6 +139,9 @@ func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScop
 	if strings.TrimSpace(task.Action.Personality) == "" {
 		task.Action.Personality = strings.TrimSpace(profile.Personality)
 	}
+	if strings.TrimSpace(task.Action.PromptPrefix) == "" {
+		task.Action.PromptPrefix = strings.TrimSpace(profile.PromptPrefix)
+	}
 }
 
 func resolveSceneLLMProfile(runtime automationRuntimeConfig, sessionKey string) (config.LLMProfileConfig, bool) {

@@ -94,6 +94,7 @@ type Job struct {
 	LLMProfile           string
 	LLMReasoningEffort   string
 	LLMPersonality       string
+	LLMPromptPrefix      string
 	NoReplyToken         string
 	SoulDoc              soulDocument
 	DisableAck           bool

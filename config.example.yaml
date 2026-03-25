@@ -1,5 +1,5 @@
-# Alice now uses a pure multi-bot config model.
-# There is no root single-bot compatibility layer anymore.
+# Alice uses a pure multi-bot config model.
+# There is no root single-bot compatibility layer.
 # Each bot owns its own credentials, runtime state, workspace and prompts.
 # By default, bots share one CODEX_HOME.
 #
@@ -11,7 +11,7 @@
 # - soul_path:    <workspace>/SOUL.md
 # Missing SOUL.md files are created from the embedded SOUL.md.example on startup.
 #
-# Process-level base home is still controlled by:
+# Process-level base home is controlled by:
 # - CLI flag: `alice --alice-home /path/to/home`
 # - env var: `ALICE_HOME=/path/to/home`
 # Shared Codex home is controlled by:
@@ -20,6 +20,9 @@
 # - default: `~/.codex`
 
 bots:
+  # ──────────────────────────────────────────────────────────────────────────
+  # Example 1: single-provider chat bot (Codex)
+  # ──────────────────────────────────────────────────────────────────────────
   chat_bot:
     name: "Alice Chat"
     feishu_app_id: "cli_chat_xxxxx"
@@ -29,7 +32,7 @@ bots:
     feishu_bot_user_id: ""
 
     # Optional runtime directories.
-    # Empty alice_home/workspace_dir/prompt_dir use defaults under <ALICE_HOME>/bots/chat_bot.
+    # Empty values use defaults under <ALICE_HOME>/bots/chat_bot.
     # Empty codex_home inherits shared CODEX_HOME or ~/.codex.
     alice_home: ""
     workspace_dir: ""
@@ -38,62 +41,78 @@ bots:
     # If the file does not exist yet, Alice writes the embedded SOUL.md.example here on startup.
     soul_path: "SOUL.md"
 
-    # Group work-scene trigger mode:
-    # - at: only messages that @bot can enter / continue a work session (default)
-    # - prefix: only messages starting with trigger_prefix can enter / continue a work session
+    # Trigger mode for group chats:
+    # - at: only @bot messages can enter / continue a session (default)
+    # - prefix: only messages starting with trigger_prefix
     trigger_mode: "at"
     trigger_prefix: ""
 
-    codex_command: "codex"
-    codex_timeout_secs: 172800
-    # Optional. Empty means inherit the Codex CLI default model from the active CODEX_HOME config.
-    codex_model: ""
-    # Optional. Empty means inherit Codex CLI default reasoning effort.
-    codex_model_reasoning_effort: ""
-    claude_command: "claude"
-    claude_timeout_secs: 172800
-    gemini_command: "gemini"
-    gemini_timeout_secs: 172800
-    kimi_command: "kimi"
-    kimi_timeout_secs: 172800
-
-    # Optional named LLM profiles for scene routing.
-    # Use these to select different models, reasoning effort, personalities or
-    # provider-side profiles in different scenes.
-    # chat / work can use different providers. If provider is omitted on a
-    # profile, Alice falls back to the inferred/default provider.
+    # ── LLM Profiles ──────────────────────────────────────────────────────
+    # All model-related config lives here. Each profile is self-contained.
+    # Supported providers: codex | claude | gemini | kimi
+    #
+    # Profile fields:
+    #   provider:          LLM backend (required)
+    #   command:           CLI binary name (default: provider name, e.g. "codex")
+    #   timeout_secs:      per-run timeout in seconds (default: 172800 = 48h)
+    #   model:             model name passed to the CLI
+    #   reasoning_effort:  thinking intensity — Codex-only; ignored for other providers
+    #                      values: low | medium | high | xhigh
+    #   personality:       Codex personality preset (e.g. "friendly", "pragmatic")
+    #   prompt_prefix:     prepended to every prompt sent to this backend
+    #   permissions:       sandbox + approval policy for this profile
+    #     sandbox:         read-only | workspace-write | danger-full-access
+    #     ask_for_approval: untrusted | on-request | never
+    #     add_dirs:        extra directories to expose to the sandbox
+    #
+    # Codex models (passed as -m to codex CLI):
+    #   o3               — most capable reasoning model
+    #   o4-mini          — fast, lightweight
+    #   gpt-5.4          — latest GPT-5 series
+    #   gpt-5.4-mini     — fast GPT-5 series
+    #   gpt-4.1          — GPT-4.1 (stable)
+    #   gpt-4.1-mini     — lightweight GPT-4.1
+    #   (empty)          — inherits Codex CLI default from active CODEX_HOME config
+    #
+    # Claude models (passed as --model to claude CLI):
+    #   claude-opus-4-6          — most capable; best for review / planning
+    #   claude-sonnet-4-6        — recommended balance of speed and quality
+    #   claude-sonnet-4-20250514 — Sonnet 4 (older date-based alias)
+    #   claude-haiku-4-5-20251001 — fast and lightweight
+    #
+    # Gemini models (passed as --model to gemini CLI):
+    #   gemini-2.5-pro   — most capable
+    #   gemini-2.5-flash — fast, cost-efficient
+    #   gemini-2.0-flash — previous generation
+    #
+    # Kimi models (passed as --model to kimi CLI):
+    #   (refer to Kimi CLI documentation for available model names)
     llm_profiles:
       chat:
         provider: "codex"
         model: "gpt-5.4-mini"
-        profile: ""
         reasoning_effort: "low"
         personality: "friendly"
+        permissions:
+          sandbox: "workspace-write"
+          ask_for_approval: "never"
 
-    # Optional: environment variables passed to LLM subprocesses.
+    # Optional: environment variables passed to all LLM subprocesses.
     env:
       # If Alice is launched outside an nvm-initialized shell, ensure PATH points
-      # to a Node >= 20 installation so `gemini` resolves the correct runtime.
+      # to a Node >= 20 installation so CLIs like `gemini` resolve correctly.
       PATH: "/home/you/.nvm/versions/node/v24.14.0/bin:/usr/local/bin:/usr/bin:/bin"
       HTTPS_PROXY: "http://127.0.0.1:8080"
       ALL_PROXY: "http://127.0.0.1:8080"
       OPENAI_API_KEY: ""
-      # Dedicated OpenAI image proxy envs. These only affect image_generation
-      # and do not affect the Feishu sender chain.
+      # Dedicated OpenAI image proxy envs — only affect image_generation.
       OPENAI_HTTPS_PROXY: "http://127.0.0.1:7890"
       OPENAI_NO_PROXY: "open.feishu.cn"
 
-    # Prompt and fallback
-    codex_prompt_prefix: ""
-    claude_prompt_prefix: ""
-    gemini_prompt_prefix: ""
-    kimi_prompt_prefix: ""
     failure_message: "Codex 暂时不可用，请稍后重试。"
     thinking_message: "正在思考中..."
 
-    # Optional roleplay image generation. This runs inside Alice after a text
-    # reply is produced. Proxy for this client must come from env.OPENAI_*_PROXY
-    # and still does not affect Feishu traffic.
+    # Optional roleplay image generation. Proxy must come from env.OPENAI_*_PROXY.
     image_generation:
       enabled: false
       provider: "openai"
@@ -103,61 +122,24 @@ bots:
       model: "gpt-image-1.5"
       base_url: ""
       timeout_secs: 120
-      # moderation:
-      #   edit / generate (GPT image models only): auto | low
       moderation: ""
-      # n:
-      #   edit / generate: 1..10
-      #   generate with dall-e-3: only 1
       n: 0
-      # output_compression:
-      #   edit / generate: 0..100
-      #   only for jpeg / webp output on GPT image models; -1 means unset
       output_compression: -1
-      # response_format:
-      #   generate: url | b64_json
-      #   only for dall-e-2 / dall-e-3; GPT image models always return base64
       response_format: ""
-      # size:
-      #   edit: auto | 1024x1024 | 1536x1024 | 1024x1536
-      #   generate (gpt-image-*): auto | 1024x1024 | 1536x1024 | 1024x1536
-      #   generate (dall-e-2): 256x256 | 512x512 | 1024x1024
-      #   generate (dall-e-3): 1024x1024 | 1792x1024 | 1024x1792
       size: "1024x1536"
-      # quality:
-      #   edit: auto | low | medium | high
-      #   generate (gpt-image-*): auto | low | medium | high
-      #   generate (dall-e-3): auto | standard | hd
-      #   generate (dall-e-2): standard
       quality: "high"
-      # background:
-      #   edit / generate (GPT image models only): auto | opaque | transparent
       background: "auto"
-      # output_format:
-      #   edit / generate (GPT image models only): png | jpeg | webp
       output_format: "png"
-      # partial_images:
-      #   edit / generate with stream=true: 0..3; -1 means unset
       partial_images: -1
-      # stream:
-      #   edit / generate (GPT image models only): true | false
       stream: false
-      # style:
-      #   generate (dall-e-3 only): vivid | natural
       style: ""
-      # input_fidelity:
-      #   edit only: low | high
-      #   supported by gpt-image-1 / gpt-image-1.5 and later, not gpt-image-1-mini
       input_fidelity: "high"
-      # mask_path:
-      #   edit only: local PNG mask path; transparent area means "editable"
-      #   leave empty to disable
       mask_path: ""
       use_current_attachments: true
 
-    # Immediate feedback after receiving a reply-style message:
+    # Immediate feedback after receiving a message:
+    # - reaction: add a message reaction first, then fallback to reply (default)
     # - reply: send an explicit `收到！` reply
-    # - reaction: add a message reaction first, then fallback to `收到！` if reaction fails
     immediate_feedback_mode: "reaction"
     immediate_feedback_reaction: "OK"
 
@@ -172,62 +154,62 @@ bots:
       work:
         enabled: false
 
-    # Runtime and Codex permissions for this bot.
-    # chat scene defaults to workspace-write; work scene defaults to danger-full-access.
+    # Runtime permissions.
     permissions:
       runtime_message: true
       runtime_automation: false
       runtime_campaigns: false
       allowed_skills: ["alice-message"]
-      codex:
-        chat:
-          sandbox: "workspace-write"
-          ask_for_approval: "never"
-          add_dirs: []
-        work:
-          sandbox: "danger-full-access"
-          ask_for_approval: "never"
-          add_dirs: []
 
     queue_capacity: 256
     worker_concurrency: 3
     automation_task_timeout_secs: 6000
 
-    # Optional campaign role defaults for code-army.
-    # These override the Go hardcoded defaults but can still be overridden
-    # by campaign.md frontmatter or task-level role config.
-    # Cascade: Go defaults → config.yaml → campaign.md → task frontmatter
-    # campaign_role_defaults:
-    #   executor:
-    #     provider: "codex"
-    #     model: ""
-    #   reviewer:
-    #     provider: "claude"
-    #     model: "claude-opus-4-6"
-    #   planner:
-    #     provider: "claude"
-    #     model: "claude-sonnet-4-6"
-    #   planner_reviewer:
-    #     provider: "claude"
-    #     model: "claude-opus-4-6"
-
+  # ──────────────────────────────────────────────────────────────────────────
+  # Example 2: multi-provider work bot (Codex for chat, Claude for work)
+  # ──────────────────────────────────────────────────────────────────────────
   work_bot:
     name: "Alice Work"
     feishu_app_id: "cli_work_xxxxx"
     feishu_app_secret: "work_secret"
-    # If the file does not exist yet, Alice writes the embedded SOUL.md.example here on startup.
     soul_path: "SOUL.md"
+
     llm_profiles:
+      # Light Codex profile for casual group chat.
       chat:
         provider: "codex"
         model: "gpt-5.4-mini"
         reasoning_effort: "low"
         personality: "friendly"
+        permissions:
+          sandbox: "workspace-write"
+          ask_for_approval: "never"
+
+      # Powerful Claude profile for deep engineering work sessions.
       work:
         provider: "claude"
-        model: "claude-sonnet-4-20250514"
-        reasoning_effort: "high"
-        personality: "pragmatic"
+        model: "claude-sonnet-4-6"
+        # reasoning_effort is Codex-only and is ignored for Claude.
+        prompt_prefix: ""
+        permissions:
+          sandbox: "danger-full-access"
+          ask_for_approval: "never"
+
+      # Example: high-reasoning Codex profile for complex tasks.
+      # heavy:
+      #   provider: "codex"
+      #   model: "o3"
+      #   reasoning_effort: "high"
+      #   permissions:
+      #     sandbox: "danger-full-access"
+      #     ask_for_approval: "never"
+
+    env:
+      HTTPS_PROXY: "http://127.0.0.1:8080"
+      ALL_PROXY: "http://127.0.0.1:8080"
+      OPENAI_API_KEY: ""
+      ANTHROPIC_API_KEY: ""
+
     group_scenes:
       chat:
         enabled: true
@@ -238,30 +220,29 @@ bots:
         trigger_tag: "#work"
         session_scope: "per_thread"
         llm_profile: "work"
+
     permissions:
       runtime_message: true
       runtime_automation: true
       runtime_campaigns: true
       allowed_skills: ["alice-message", "alice-scheduler", "alice-code-army"]
-      codex:
-        chat:
-          sandbox: "workspace-write"
-          ask_for_approval: "never"
-        work:
-          sandbox: "danger-full-access"
-          ask_for_approval: "never"
+
+    # Optional campaign role defaults for code-army.
+    # Cascade: Go defaults → config.yaml → campaign.md → task frontmatter
+    # Each role references an llm_profile by name.
     campaign_role_defaults:
       executor:
-        provider: "codex"
+        llm_profile: "work"
       reviewer:
-        provider: "claude"
-        model: "claude-opus-4-6"
+        llm_profile: "work"
       planner:
-        provider: "claude"
-        model: "claude-sonnet-4-6"
+        llm_profile: "work"
       planner_reviewer:
-        provider: "claude"
-        model: "claude-opus-4-6"
+        llm_profile: "work"
+
+    queue_capacity: 256
+    worker_concurrency: 3
+    automation_task_timeout_secs: 6000
 
 # debug | info | warn | error
 log_level: "info"

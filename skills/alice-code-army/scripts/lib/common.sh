@@ -46,6 +46,7 @@ resolve_ihep_gitlab_helper() {
   for candidate in \
     "$script_dir/../../ihep-gitlab/scripts/ihep-gitlab.sh" \
     "$script_dir/../../../../IHEP-cluster-skill/skills/ihep-gitlab/scripts/ihep-gitlab.sh" \
+    "$HOME/.agents/skills/ihep-gitlab/scripts/ihep-gitlab.sh" \
     "$shared_codex_home/skills/ihep-gitlab/scripts/ihep-gitlab.sh" \
     "$ALICE_HOME_DIR/.codex/skills/ihep-gitlab/scripts/ihep-gitlab.sh" \
     "$HOME/.alice/.codex/skills/ihep-gitlab/scripts/ihep-gitlab.sh"

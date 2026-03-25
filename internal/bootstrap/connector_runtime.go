@@ -3,8 +3,10 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/oklog/run"
 
@@ -31,42 +33,117 @@ type ConnectorRuntime struct {
 	mu                  sync.Mutex
 }
 
+// buildFactoryConfig derives per-provider FactoryConfig from llm_profiles.
+// For each provider, the first profile (alphabetically by name) that matches
+// provides the provider-level command, timeout, and default model/reasoning_effort/prompt_prefix.
+// All profiles are also stored as per-profile runner overrides so that selecting a specific
+// profile by its outer map name applies that profile's command, timeout, and prompt_prefix.
 func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.FactoryConfig {
 	defaultEnv := applyLLMProcessEnvDefaults(cfg.CodexEnv, cfg.CodexHome)
+
+	type providerDefaults struct {
+		command         string
+		timeout         time.Duration
+		model           string
+		reasoningEffort string
+		promptPrefix    string
+	}
+	defaults := map[string]*providerDefaults{}
+
+	// Per-provider per-profile overrides: profileOverrides[provider][outerProfileName] = override.
+	profileOverrides := map[string]map[string]llm.ProfileRunnerConfig{}
+
+	// Collect sorted profile names for deterministic first-profile selection.
+	profileNames := make([]string, 0, len(cfg.LLMProfiles))
+	for name := range cfg.LLMProfiles {
+		profileNames = append(profileNames, name)
+	}
+	sort.Strings(profileNames)
+
+	for _, name := range profileNames {
+		profile := cfg.LLMProfiles[name]
+		provider := strings.ToLower(strings.TrimSpace(profile.Provider))
+		if provider == "" {
+			provider = config.DefaultLLMProvider
+		}
+		if _, exists := defaults[provider]; !exists {
+			defaults[provider] = &providerDefaults{
+				command:         profile.Command,
+				timeout:         profile.Timeout,
+				model:           profile.Model,
+				reasoningEffort: profile.ReasoningEffort,
+				promptPrefix:    profile.PromptPrefix,
+			}
+		}
+		// Register per-profile runner override keyed by outer profile name.
+		if _, ok := profileOverrides[provider]; !ok {
+			profileOverrides[provider] = map[string]llm.ProfileRunnerConfig{}
+		}
+		profileOverrides[provider][name] = llm.ProfileRunnerConfig{
+			Command:      profile.Command,
+			Timeout:      profile.Timeout,
+			PromptPrefix: profile.PromptPrefix,
+		}
+	}
+
+	get := func(provider, fallbackCmd string) providerDefaults {
+		if d, ok := defaults[provider]; ok {
+			return *d
+		}
+		return providerDefaults{
+			command: fallbackCmd,
+			timeout: time.Duration(config.DefaultLLMTimeoutSecs) * time.Second,
+		}
+	}
+
+	getOverrides := func(provider string) map[string]llm.ProfileRunnerConfig {
+		if m, ok := profileOverrides[provider]; ok {
+			return m
+		}
+		return nil
+	}
+
+	codex := get(config.DefaultLLMProvider, "codex")
+	claude := get(config.LLMProviderClaude, "claude")
+	gemini := get(config.LLMProviderGemini, "gemini")
+	kimi := get(config.LLMProviderKimi, "kimi")
+
 	return llm.FactoryConfig{
 		Provider: cfg.LLMProvider,
 		Prompts:  prompts,
 		Codex: llm.CodexConfig{
-			Command:         cfg.CodexCommand,
-			Timeout:         cfg.CodexTimeout,
-			Model:           cfg.CodexModel,
-			ReasoningEffort: cfg.CodexReasoningEffort,
-			Env:             defaultEnv,
-			PromptPrefix:    cfg.CodexPromptPrefix,
-			WorkspaceDir:    cfg.WorkspaceDir,
-			ChatExecPolicy:  buildCodexExecPolicy(cfg.Permissions.Codex.Chat),
-			WorkExecPolicy:  buildCodexExecPolicy(cfg.Permissions.Codex.Work),
+			Command:          codex.command,
+			Timeout:          codex.timeout,
+			Model:            codex.model,
+			ReasoningEffort:  codex.reasoningEffort,
+			Env:              defaultEnv,
+			PromptPrefix:     codex.promptPrefix,
+			WorkspaceDir:     cfg.WorkspaceDir,
+			ProfileOverrides: getOverrides(config.DefaultLLMProvider),
 		},
 		Claude: llm.ClaudeConfig{
-			Command:      cfg.ClaudeCommand,
-			Timeout:      cfg.ClaudeTimeout,
-			Env:          defaultEnv,
-			PromptPrefix: cfg.ClaudePromptPrefix,
-			WorkspaceDir: cfg.WorkspaceDir,
+			Command:          claude.command,
+			Timeout:          claude.timeout,
+			Env:              defaultEnv,
+			PromptPrefix:     claude.promptPrefix,
+			WorkspaceDir:     cfg.WorkspaceDir,
+			ProfileOverrides: getOverrides(config.LLMProviderClaude),
 		},
 		Gemini: llm.GeminiConfig{
-			Command:      cfg.GeminiCommand,
-			Timeout:      cfg.GeminiTimeout,
-			Env:          defaultEnv,
-			PromptPrefix: cfg.GeminiPromptPrefix,
-			WorkspaceDir: cfg.WorkspaceDir,
+			Command:          gemini.command,
+			Timeout:          gemini.timeout,
+			Env:              defaultEnv,
+			PromptPrefix:     gemini.promptPrefix,
+			WorkspaceDir:     cfg.WorkspaceDir,
+			ProfileOverrides: getOverrides(config.LLMProviderGemini),
 		},
 		Kimi: llm.KimiConfig{
-			Command:      cfg.KimiCommand,
-			Timeout:      cfg.KimiTimeout,
-			Env:          defaultEnv,
-			PromptPrefix: cfg.KimiPromptPrefix,
-			WorkspaceDir: cfg.WorkspaceDir,
+			Command:          kimi.command,
+			Timeout:          kimi.timeout,
+			Env:              defaultEnv,
+			PromptPrefix:     kimi.promptPrefix,
+			WorkspaceDir:     cfg.WorkspaceDir,
+			ProfileOverrides: getOverrides(config.LLMProviderKimi),
 		},
 	}
 }

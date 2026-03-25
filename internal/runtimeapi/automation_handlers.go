@@ -171,12 +171,14 @@ func (s *Server) handleAutomationTaskDelete(c *gin.Context) {
 		return
 	}
 	taskID := strings.TrimSpace(c.Param("taskID"))
+	var errTaskNotInScope = errors.New("task not found in current scope")
+	var errPermissionDenied = errors.New("permission denied for task delete")
 	deleted, err := s.automation.PatchTask(taskID, func(task *automation.Task) error {
 		if task.Scope != scopeCtx.scope {
-			return errors.New("task not found in current scope")
+			return errTaskNotInScope
 		}
 		if !canManageTask(*task, scopeCtx.actorID) {
-			return errors.New("permission denied for task delete")
+			return errPermissionDenied
 		}
 		task.Status = automation.TaskStatusDeleted
 		task.NextRunAt = time.Time{}
@@ -184,8 +186,11 @@ func (s *Server) handleAutomationTaskDelete(c *gin.Context) {
 	})
 	if err != nil {
 		status := http.StatusBadGateway
-		if errors.Is(err, automation.ErrTaskNotFound) {
+		switch {
+		case errors.Is(err, automation.ErrTaskNotFound), errors.Is(err, errTaskNotInScope):
 			status = http.StatusNotFound
+		case errors.Is(err, errPermissionDenied):
+			status = http.StatusForbidden
 		}
 		c.JSON(status, gin.H{"error": err.Error()})
 		return

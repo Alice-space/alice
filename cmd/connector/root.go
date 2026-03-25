@@ -141,7 +141,10 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		return err
 	}
 	authChecks := map[string]*codexLoginCheck{}
-	skillPlans := map[string]*bundledSkillSyncPlan{}
+	skillPlan := &bundledSkillSyncPlan{
+		AliceHome: cfg.AliceHome,
+		allowed:   map[string]struct{}{},
+	}
 	for _, runtimeCfg := range runtimeConfigs {
 		if err := ensureWorkspaceDir(runtimeCfg.WorkspaceDir); err != nil {
 			return err
@@ -154,11 +157,12 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		}
 
 		if runtimeUsesCodex(runtimeCfg) {
-			key := runtimeCfg.CodexCommand + "\x00" + runtimeCfg.CodexHome
+			codexCmd := resolveCodexCommand(runtimeCfg)
+			key := codexCmd + "\x00" + runtimeCfg.CodexHome
 			check, ok := authChecks[key]
 			if !ok {
 				check = &codexLoginCheck{
-					Command:   runtimeCfg.CodexCommand,
+					Command:   codexCmd,
 					CodexHome: runtimeCfg.CodexHome,
 				}
 				authChecks[key] = check
@@ -166,21 +170,13 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 			check.Bots = append(check.Bots, runtimeCfg.BotID)
 		}
 
-		plan, ok := skillPlans[runtimeCfg.CodexHome]
-		if !ok {
-			plan = &bundledSkillSyncPlan{
-				CodexHome: runtimeCfg.CodexHome,
-				allowed:   map[string]struct{}{},
-			}
-			skillPlans[runtimeCfg.CodexHome] = plan
-		}
-		plan.Bots = append(plan.Bots, runtimeCfg.BotID)
+		skillPlan.Bots = append(skillPlan.Bots, runtimeCfg.BotID)
 		for _, skill := range runtimeCfg.AllowedBundledSkills() {
 			skill = strings.TrimSpace(skill)
 			if skill == "" {
 				continue
 			}
-			plan.allowed[skill] = struct{}{}
+			skillPlan.allowed[skill] = struct{}{}
 		}
 	}
 
@@ -207,30 +203,23 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		logging.Infof("codex login verified bots=%s codex_home=%s command=%s", check.botList(), report.CodexHome, report.Command)
 	}
 
-	skillKeys := make([]string, 0, len(skillPlans))
-	for key := range skillPlans {
-		skillKeys = append(skillKeys, key)
-	}
-	sort.Strings(skillKeys)
-	for _, key := range skillKeys {
-		plan := skillPlans[key]
-		skillReport, skillErr := bootstrap.EnsureBundledSkillsLinkedForCodexHome(plan.CodexHome, plan.allowedSkills())
-		if skillErr != nil {
-			logging.Warnf("sync bundled skills failed bots=%s codex_home=%s: %v", plan.botList(), plan.CodexHome, skillErr)
-			continue
-		}
-		if skillReport.Discovered > 0 {
-			logging.Infof(
-				"bundled skills synced bots=%s codex_home=%s discovered=%d linked=%d updated=%d unchanged=%d failed=%d",
-				plan.botList(),
-				skillReport.CodexHome,
-				skillReport.Discovered,
-				skillReport.Linked,
-				skillReport.Updated,
-				skillReport.Unchanged,
-				skillReport.Failed,
-			)
-		}
+	skillReport, skillErr := bootstrap.EnsureBundledSkillsLinkedForAliceHome(skillPlan.AliceHome, skillPlan.allowedSkills())
+	if skillErr != nil {
+		logging.Warnf("sync bundled skills failed bots=%s alice_home=%s: %v", skillPlan.botList(), skillPlan.AliceHome, skillErr)
+	} else if skillReport.Discovered > 0 {
+		logging.Infof(
+			"bundled skills synced bots=%s alice_home=%s source_root=%s agents_skills=%s claude_skills=%s discovered=%d linked=%d updated=%d unchanged=%d failed=%d",
+			skillPlan.botList(),
+			skillReport.AliceHome,
+			skillReport.SourceRoot,
+			skillReport.AgentsSkillsDir,
+			skillReport.ClaudeSkillsDir,
+			skillReport.Discovered,
+			skillReport.Linked,
+			skillReport.Updated,
+			skillReport.Unchanged,
+			skillReport.Failed,
+		)
 	}
 
 	manager, err := bootstrap.BuildRuntimeManager(cfg)
@@ -491,7 +480,7 @@ func (c *codexLoginCheck) botList() string {
 }
 
 type bundledSkillSyncPlan struct {
-	CodexHome string
+	AliceHome string
 	Bots      []string
 	allowed   map[string]struct{}
 }
@@ -518,6 +507,25 @@ func runtimeUsesCodex(cfg config.Config) bool {
 		}
 	}
 	return false
+}
+
+// resolveCodexCommand returns the codex command from the first codex profile
+// (alphabetically), falling back to "codex".
+func resolveCodexCommand(cfg config.Config) string {
+	names := make([]string, 0, len(cfg.LLMProfiles))
+	for name, profile := range cfg.LLMProfiles {
+		if strings.ToLower(strings.TrimSpace(profile.Provider)) == config.DefaultLLMProvider ||
+			profile.Provider == "" {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if cmd := strings.TrimSpace(cfg.LLMProfiles[name].Command); cmd != "" {
+			return cmd
+		}
+	}
+	return "codex"
 }
 
 func formatCodexLoginOutput(command, output string) string {
