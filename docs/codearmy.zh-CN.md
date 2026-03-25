@@ -137,6 +137,8 @@ campaign-repo/
     plan-review.md
 ```
 
+初始化模板只保留 `P01` 作为 phase 目录示例；实际需要多少个 phase，应该由 planner 在 proposal 和 merged plan 里决定，而不是由模板预设死。
+
 最常看的几个位置：
 
 | 文件/目录 | 作用 | 排障时先看什么 |
@@ -164,9 +166,9 @@ campaign_repo_path: "/path/to/campaign"
 current_phase: P01
 source_repos: []
 default_executor:
-  role: executor.codex
+  role: executor
 default_reviewer:
-  role: reviewer.claude
+  role: reviewer
 default_planner:
   role: planner
 default_planner_reviewer:
@@ -175,6 +177,8 @@ plan_round: 0
 plan_status: idle
 ---
 ```
+
+这里的 `role` 是角色标识，不是模型名。`provider` / `model` / `profile` 可以在 frontmatter 里显式覆盖；若省略或留空，则由 Alice runtime 按当前配置决定实际调度到哪个后端。
 
 这些字段最影响系统行为：
 
@@ -206,9 +210,9 @@ write_scope: []
 owner_agent: ""
 lease_until: ""
 executor:
-  role: executor.codex
+  role: executor
 reviewer:
-  role: reviewer.claude
+  role: reviewer
 dispatch_state: idle
 review_status: pending
 execution_round: 0

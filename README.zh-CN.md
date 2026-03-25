@@ -22,6 +22,7 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 - 支持群聊里的 `chat` / `work` 两种场景路由
 - 提供 runtime HTTP API 给 skill 和自动化任务
 - 自带 skill 会释放到 `${ALICE_HOME:-~/.alice}/skills`，再链接到 `~/.agents/skills`，并通过 `~/.claude/skills` 暴露给 Claude
+- `alice-code-army` 通过 Alice runtime 按角色派发 planner / reviewer / executor 流程，模板不再把具体模型写死
 - 二进制内嵌 prompts、skills、配置示例和 `SOUL.md` 示例
 - 提供适合 `systemd --user` 的安装脚本
 

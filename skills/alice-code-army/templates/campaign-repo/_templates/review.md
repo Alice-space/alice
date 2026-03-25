@@ -3,8 +3,8 @@ review_id: R000
 target_task: T000
 review_round: 1
 reviewer:
-  role: reviewer.claude
-  provider: claude
+  role: reviewer
+  provider: ""
   model: ""
   profile: ""
   workflow: code_army

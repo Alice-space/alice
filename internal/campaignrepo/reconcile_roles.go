@@ -66,8 +66,7 @@ func mergeRoleConfig(base RoleConfig, overlay RoleConfig) RoleConfig {
 
 func defaultExecutorRoleConfig() RoleConfig {
 	return normalizeRoleConfig(RoleConfig{
-		Role:            "executor.codex",
-		Provider:        "codex",
+		Role:            "executor",
 		Workflow:        "code_army",
 		ReasoningEffort: "high",
 		Personality:     "pragmatic",
@@ -76,8 +75,7 @@ func defaultExecutorRoleConfig() RoleConfig {
 
 func defaultReviewerRoleConfig() RoleConfig {
 	return normalizeRoleConfig(RoleConfig{
-		Role:            "reviewer.claude",
-		Provider:        "claude",
+		Role:            "reviewer",
 		Workflow:        "code_army",
 		ReasoningEffort: "high",
 		Personality:     "analytical",
@@ -87,7 +85,6 @@ func defaultReviewerRoleConfig() RoleConfig {
 func defaultPlannerRoleConfig() RoleConfig {
 	return normalizeRoleConfig(RoleConfig{
 		Role:            "planner",
-		Provider:        "claude",
 		Workflow:        "code_army",
 		ReasoningEffort: "high",
 		Personality:     "analytical",
@@ -97,7 +94,6 @@ func defaultPlannerRoleConfig() RoleConfig {
 func defaultPlannerReviewerRoleConfig() RoleConfig {
 	return normalizeRoleConfig(RoleConfig{
 		Role:            "planner_reviewer",
-		Provider:        "claude",
 		Workflow:        "code_army",
 		ReasoningEffort: "high",
 		Personality:     "analytical",

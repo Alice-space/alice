@@ -10,16 +10,16 @@ write_scope: []
 owner_agent: ""
 lease_until: ""
 executor:
-  role: executor.codex
-  provider: codex
+  role: executor
+  provider: ""
   model: ""
   profile: ""
   workflow: code_army
   reasoning_effort: high
   personality: pragmatic
 reviewer:
-  role: reviewer.claude
-  provider: claude
+  role: reviewer
+  provider: ""
   model: ""
   profile: ""
   workflow: code_army

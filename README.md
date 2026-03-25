@@ -23,6 +23,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 - Scene-aware routing for casual chat and explicit work threads
 - Runtime HTTP API for bundled skills and automation
 - Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
+- `alice-code-army` uses Alice runtime role dispatch for planner / reviewer / executor flows; templates no longer hardwire concrete models
 - Embedded prompts, skills, config example, and `SOUL.md` example
 - Release installer for `systemd --user` deployments
 
