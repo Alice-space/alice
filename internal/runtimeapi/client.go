@@ -138,6 +138,23 @@ func (c *Client) PatchCampaign(
 	return c.do(ctx, session, http.MethodPatch, "/api/v1/campaigns/"+campaignID, patchBody, contentType, nil)
 }
 
+func (c *Client) DeleteCampaign(
+	ctx context.Context,
+	session mcpbridge.SessionContext,
+	campaignID string,
+	deleteRepo bool,
+) (map[string]any, error) {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return nil, fmt.Errorf("campaign id is required")
+	}
+	query := map[string]string{}
+	if deleteRepo {
+		query["delete_repo"] = "true"
+	}
+	return c.delete(ctx, session, "/api/v1/campaigns/"+campaignID, query)
+}
+
 func (c *Client) UpsertTrial(
 	ctx context.Context,
 	session mcpbridge.SessionContext,

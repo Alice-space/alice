@@ -117,3 +117,31 @@ func TestStore_UpsertTrialAndAppendRecords(t *testing.T) {
 		t.Fatalf("unexpected pitfall append result: %#v", updated.Pitfalls)
 	}
 }
+
+func TestStore_DeleteCampaign(t *testing.T) {
+	base := time.Date(2026, 3, 20, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "campaigns.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateCampaign(Campaign{
+		Title:             "Delete Me",
+		Objective:         "remove the campaign cleanly",
+		Session:           SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_1"},
+		Creator:           Actor{UserID: "ou_user"},
+		MaxParallelTrials: 1,
+	})
+	if err != nil {
+		t.Fatalf("create campaign failed: %v", err)
+	}
+
+	deleted, err := store.DeleteCampaign(created.ID)
+	if err != nil {
+		t.Fatalf("delete campaign failed: %v", err)
+	}
+	if deleted.ID != created.ID {
+		t.Fatalf("expected deleted id %q, got %q", created.ID, deleted.ID)
+	}
+	if _, err := store.GetCampaign(created.ID); err == nil {
+		t.Fatal("expected deleted campaign lookup to fail")
+	}
+}

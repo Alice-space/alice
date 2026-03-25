@@ -168,6 +168,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 	automationEngine.SetUserTaskTimeout(b.cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(b.backend)
 	automationEngine.SetWorkflowRunner(automation.NewPromptWorkflowRunner(b.backend))
+	automationEngine.SetWorkflowPreflightHook(b.guardCampaignRepoWorkflowTask)
 	automationEngine.SetRunEnv(map[string]string{
 		runtimeapi.EnvBaseURL: runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
 		runtimeapi.EnvToken:   b.resolveRuntimeAPIToken(),

@@ -127,6 +127,31 @@ func (s *Store) GetCampaign(campaignID string) (Campaign, error) {
 	return item, nil
 }
 
+func (s *Store) DeleteCampaign(campaignID string) (Campaign, error) {
+	if s == nil {
+		return Campaign{}, errors.New("store is nil")
+	}
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return Campaign{}, errors.New("campaign id is empty")
+	}
+
+	var deleted Campaign
+	err := s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
+		idx := findCampaignIndex(snapshot.Campaigns, campaignID)
+		if idx < 0 {
+			return false, ErrCampaignNotFound
+		}
+		deleted = NormalizeCampaign(snapshot.Campaigns[idx])
+		snapshot.Campaigns = append(snapshot.Campaigns[:idx], snapshot.Campaigns[idx+1:]...)
+		return true, nil
+	})
+	if err != nil {
+		return Campaign{}, err
+	}
+	return deleted, nil
+}
+
 func (s *Store) CreateCampaign(c Campaign) (Campaign, error) {
 	if s == nil {
 		return Campaign{}, errors.New("store is nil")

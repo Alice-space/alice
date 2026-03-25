@@ -26,6 +26,15 @@ func (e *Engine) SetWorkflowRunner(runner WorkflowRunner) {
 	e.workflowRunner = runner
 }
 
+func (e *Engine) SetWorkflowPreflightHook(hook WorkflowPreflightHook) {
+	if e == nil {
+		return
+	}
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
+	e.workflowGuard = hook
+}
+
 func (e *Engine) SetUserTaskCompletionHook(hook UserTaskCompletionHook) {
 	if e == nil {
 		return
@@ -143,6 +152,15 @@ func (e *Engine) workflowRunnerValue() WorkflowRunner {
 	e.runtimeMu.RLock()
 	defer e.runtimeMu.RUnlock()
 	return e.workflowRunner
+}
+
+func (e *Engine) workflowPreflightHookValue() WorkflowPreflightHook {
+	if e == nil {
+		return nil
+	}
+	e.runtimeMu.RLock()
+	defer e.runtimeMu.RUnlock()
+	return e.workflowGuard
 }
 
 func (e *Engine) userTaskCompletionHookValue() UserTaskCompletionHook {

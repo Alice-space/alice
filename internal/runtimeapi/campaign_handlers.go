@@ -5,11 +5,14 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
+	"time"
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/gin-gonic/gin"
 
+	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/mcpbridge"
@@ -108,6 +111,55 @@ func (s *Server) handleCampaignPatch(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": persisted})
 }
 
+func (s *Server) handleCampaignDelete(c *gin.Context) {
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
+		return
+	}
+	campaignID := strings.TrimSpace(c.Param("campaignID"))
+	current, ok := s.loadScopedCampaign(c, scopeCtx, campaignID, "campaign delete")
+	if !ok {
+		return
+	}
+
+	deleteRepo := queryBoolFlag(c.Query("delete_repo"))
+	deletedRepoPath := ""
+	if deleteRepo && strings.TrimSpace(current.CampaignRepoPath) != "" {
+		if err := os.RemoveAll(current.CampaignRepoPath); err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		deletedRepoPath = current.CampaignRepoPath
+	}
+
+	deletedTaskIDs, err := s.deleteCampaignAutomationTasks(scopeCtx, current.ID)
+	if err != nil {
+		status := http.StatusBadGateway
+		if strings.Contains(err.Error(), "permission denied") {
+			status = http.StatusForbidden
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+
+	deleted, err := s.campaigns.DeleteCampaign(current.ID)
+	if err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, campaign.ErrCampaignNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return
+	}
+	logging.Infof("runtime api audit action=campaign_delete actor=%s campaign=%s scope=%s deleted_tasks=%d delete_repo=%t", scopeCtx.actorID, deleted.ID, deleted.Session.ScopeKey, len(deletedTaskIDs), deleteRepo)
+	c.JSON(http.StatusOK, gin.H{
+		"status":                      "ok",
+		"campaign":                    deleted,
+		"deleted_automation_task_ids": deletedTaskIDs,
+		"deleted_campaign_repo_path":  deletedRepoPath,
+	})
+}
+
 func (s *Server) handleCampaignTrialUpsert(c *gin.Context) {
 	scopeCtx, ok := s.resolveCampaignRequestScope(c)
 	if !ok {
@@ -198,6 +250,61 @@ func (s *Server) handleCampaignPitfallAdd(c *gin.Context) {
 	}
 	logging.Infof("runtime api audit action=campaign_pitfall_add actor=%s campaign=%s pitfall=%s", scopeCtx.actorID, updated.ID, pitfall.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": updated, "pitfall": pitfall})
+}
+
+func (s *Server) deleteCampaignAutomationTasks(scopeCtx campaignScopeContext, campaignID string) ([]string, error) {
+	if s == nil || s.automation == nil {
+		return nil, nil
+	}
+	scope := automation.Scope{Kind: automation.ScopeKindUser, ID: scopeCtx.actorID}
+	if scopeCtx.isGroup {
+		scope = automation.Scope{Kind: automation.ScopeKindChat, ID: scopeCtx.session.ReceiveID}
+	}
+	tasks, err := s.automation.ListTasks(scope, "all", runtimeAPIMaxListLimit)
+	if err != nil {
+		return nil, err
+	}
+	deleted := make([]string, 0)
+	for _, task := range tasks {
+		task = automation.NormalizeTask(task)
+		if !campaignMatchesAutomationTask(task, campaignID) {
+			continue
+		}
+		if !canManageTask(task, scopeCtx.actorID) {
+			return deleted, errors.New("permission denied for campaign-linked task delete")
+		}
+		persisted, err := s.automation.PatchTask(task.ID, func(item *automation.Task) error {
+			item.Status = automation.TaskStatusDeleted
+			item.NextRunAt = time.Time{}
+			return nil
+		})
+		if err != nil {
+			return deleted, err
+		}
+		deleted = append(deleted, persisted.ID)
+	}
+	return deleted, nil
+}
+
+func campaignMatchesAutomationTask(task automation.Task, campaignID string) bool {
+	campaignID = strings.TrimSpace(campaignID)
+	if campaignID == "" {
+		return false
+	}
+	task = automation.NormalizeTask(task)
+	return strings.Contains(task.ID, campaignID) ||
+		strings.Contains(task.Title, campaignID) ||
+		strings.Contains(task.Action.Prompt, campaignID) ||
+		strings.Contains(task.Action.StateKey, campaignID)
+}
+
+func queryBoolFlag(raw string) bool {
+	switch strings.ToLower(strings.TrimSpace(raw)) {
+	case "1", "true", "yes", "on":
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *Server) resolveCampaignRequestScope(c *gin.Context) (campaignScopeContext, bool) {

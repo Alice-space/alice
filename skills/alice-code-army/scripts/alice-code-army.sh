@@ -31,6 +31,11 @@ main() {
       shift
       exec "$ALICE_BIN" runtime campaigns "$cmd" "$@"
       ;;
+    delete)
+      [[ $# -ge 2 && $# -le 3 ]] || die "usage: $PROGRAM delete CAMPAIGN_ID [--delete-repo]"
+      shift
+      exec "$ALICE_BIN" runtime campaigns delete "$@"
+      ;;
     create)
       [[ $# -eq 2 ]] || die "usage: $PROGRAM create CREATE_JSON"
       create_repo_first "$2"
@@ -44,7 +49,7 @@ main() {
       run_campaigns repo-scan "$2"
       ;;
     repo-reconcile)
-      [[ $# -ge 2 && $# -le 4 ]] || die "usage: $PROGRAM repo-reconcile CAMPAIGN_ID [--write-report=false] [--update-runtime=false]"
+      [[ $# -ge 2 && $# -le 5 ]] || die "usage: $PROGRAM repo-reconcile CAMPAIGN_ID [--write-report=false] [--update-runtime=false] [--sync-dispatch=false]"
       shift
       run_campaigns repo-reconcile "$@"
       ;;

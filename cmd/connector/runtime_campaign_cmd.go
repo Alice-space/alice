@@ -21,6 +21,7 @@ func newRuntimeCampaignCmd() *cobra.Command {
 		newRuntimeCampaignCreateCmd(),
 		newRuntimeCampaignGetCmd(),
 		newRuntimeCampaignPatchCmd(),
+		newRuntimeCampaignDeleteCmd(),
 		newRuntimeCampaignRepoScanCmd(),
 		newRuntimeCampaignRepoReconcileCmd(),
 		newRuntimeCampaignTrialUpsertCmd(),
@@ -28,6 +29,31 @@ func newRuntimeCampaignCmd() *cobra.Command {
 		newRuntimeCampaignReviewAddCmd(),
 		newRuntimeCampaignPitfallAddCmd(),
 	)
+	return cmd
+}
+
+func newRuntimeCampaignDeleteCmd() *cobra.Command {
+	var deleteRepo bool
+
+	cmd := &cobra.Command{
+		Use:   "delete CAMPAIGN_ID",
+		Short: "Delete one campaign",
+		Args:  cobra.ExactArgs(1),
+		RunE: withRuntimeClient(func(
+			ctx context.Context,
+			client *runtimeapi.Client,
+			session mcpbridge.SessionContext,
+			_ *cobra.Command,
+			args []string,
+		) error {
+			result, err := deleteRuntimeCampaign(ctx, client, session, args[0], deleteRepo)
+			if err != nil {
+				return err
+			}
+			return printRuntimeJSON(result)
+		}),
+	}
+	cmd.Flags().BoolVar(&deleteRepo, "delete-repo", false, "also delete the local campaign repo path if present")
 	return cmd
 }
 

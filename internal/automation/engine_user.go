@@ -209,6 +209,55 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if prompt == "" {
 			return taskDispatch{}, errors.New("action prompt is empty for run_workflow")
 		}
+		if guard := e.workflowPreflightHookValue(); guard != nil {
+			decision, err := guard(ctx, task)
+			if err != nil {
+				return taskDispatch{}, err
+			}
+			if decision.Block {
+				reason := strings.TrimSpace(decision.SignalMessage)
+				if reason == "" {
+					reason = strings.TrimSpace(decision.Message)
+				}
+				if reason == "" {
+					reason = "workflow requested human intervention"
+				}
+				signalKind := strings.TrimSpace(decision.SignalKind)
+				if signalKind == "" {
+					signalKind = taskSignalNeedsHuman
+				}
+				signal := &taskSignal{
+					kind:    signalKind,
+					message: reason,
+					pause:   true,
+				}
+				reply := strings.TrimSpace(decision.Message)
+				if reply == "" {
+					reply = fallbackWorkflowReply(signal)
+				}
+				text, err := BuildDispatchText(Action{
+					Type:           ActionTypeSendText,
+					Text:           reply,
+					MentionUserIDs: task.Action.MentionUserIDs,
+				})
+				if err != nil {
+					return taskDispatch{}, err
+				}
+				dispatch := taskDispatch{
+					text:   text,
+					signal: signal,
+				}
+				if decision.ForceCard || signal.kind == taskSignalNeedsHuman {
+					cardContent, err := buildTaskWarningCardContent(task, reply, reason)
+					if err != nil {
+						return taskDispatch{}, err
+					}
+					dispatch.cardContent = cardContent
+					dispatch.forceCard = true
+				}
+				return dispatch, nil
+			}
+		}
 		result, err := runner.Run(ctx, WorkflowRunRequest{
 			Workflow:        task.Action.Workflow,
 			TaskID:          task.ID,

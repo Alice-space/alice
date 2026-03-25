@@ -113,6 +113,10 @@ task frontmatter 现在默认带两类角色：
 
 - 列出当前 thread 下的 campaign：
   `scripts/alice-code-army.sh list`
+- 删除一个 campaign：
+  `scripts/alice-code-army.sh delete camp_xxx`
+- 删除一个 campaign，并顺手删除本地 campaign repo：
+  `scripts/alice-code-army.sh delete camp_xxx --delete-repo`
 - 新建 campaign，并默认直接 scaffold campaign repo：
   `scripts/alice-code-army.sh create <<'JSON'`
   `{ "title": "Detector Scan", "objective": "完成 repo-native 的多阶段研究协作", "repo": "group/source-repo", "campaign_repo_path": "./campaigns/detector-scan", "max_parallel_trials": 6 }`
