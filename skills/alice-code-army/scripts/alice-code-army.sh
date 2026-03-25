@@ -44,7 +44,7 @@ main() {
       run_campaigns repo-scan "$2"
       ;;
     repo-reconcile)
-      [[ $# -ge 2 && $# -le 4 ]] || die "usage: $PROGRAM repo-reconcile CAMPAIGN_ID [--write-report=false] [--update-runtime=false]"
+      [[ $# -ge 2 && $# -le 5 ]] || die "usage: $PROGRAM repo-reconcile CAMPAIGN_ID [--write-report=false] [--update-runtime=false] [--sync-dispatch=false]"
       shift
       run_campaigns repo-reconcile "$@"
       ;;

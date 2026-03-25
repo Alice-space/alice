@@ -47,6 +47,7 @@ func newRuntimeCampaignRepoScanCmd() *cobra.Command {
 func newRuntimeCampaignRepoReconcileCmd() *cobra.Command {
 	var writeReport bool
 	var updateRuntime bool
+	var syncDispatch bool
 
 	cmd := &cobra.Command{
 		Use:   "repo-reconcile CAMPAIGN_ID",
@@ -87,17 +88,26 @@ func newRuntimeCampaignRepoReconcileCmd() *cobra.Command {
 					item = updated
 				}
 			}
+			syncedDispatchTasks := 0
+			if syncDispatch {
+				syncedDispatchTasks, err = syncRuntimeDispatchTasks(ctx, client, session, item, result.DispatchTasks)
+				if err != nil {
+					return err
+				}
+			}
 			return printRuntimeJSON(map[string]any{
-				"status":           "ok",
-				"campaign":         item,
-				"summary":          result.Summary,
-				"dispatch_tasks":   result.DispatchTasks,
-				"live_report_path": liveReportPath,
+				"status":                "ok",
+				"campaign":              item,
+				"summary":               result.Summary,
+				"dispatch_tasks":        result.DispatchTasks,
+				"synced_dispatch_tasks": syncedDispatchTasks,
+				"live_report_path":      liveReportPath,
 			})
 		}),
 	}
 	cmd.Flags().BoolVar(&writeReport, "write-report", true, "rewrite reports/live-report.md from the reconciled summary")
 	cmd.Flags().BoolVar(&updateRuntime, "update-runtime", true, "patch the runtime campaign summary after reconcile")
+	cmd.Flags().BoolVar(&syncDispatch, "sync-dispatch", true, "create or update runtime automation tasks for planner/reviewer/executor dispatches")
 	return cmd
 }
 

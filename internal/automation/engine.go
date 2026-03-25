@@ -18,6 +18,16 @@ type LLMRunner interface {
 	Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error)
 }
 
+type WorkflowPreflightDecision struct {
+	Block         bool
+	Message       string
+	SignalKind    string
+	SignalMessage string
+	ForceCard     bool
+}
+
+type WorkflowPreflightHook func(ctx context.Context, task Task) (WorkflowPreflightDecision, error)
+
 type SystemTaskFunc func(ctx context.Context)
 type UserTaskCompletionHook func(task Task, err error)
 
@@ -35,6 +45,7 @@ type Engine struct {
 	runtimeMu       sync.RWMutex
 	llmRunner       LLMRunner
 	workflowRunner  WorkflowRunner
+	workflowGuard   WorkflowPreflightHook
 	userTaskHook    UserTaskCompletionHook
 	runEnv          map[string]string
 	userTaskTimeout time.Duration

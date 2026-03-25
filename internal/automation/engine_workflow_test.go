@@ -243,6 +243,77 @@ func TestEngine_RunUserTask_RunWorkflow_NeedsHumanPausesTaskAndWarns(t *testing.
 	}
 }
 
+func TestEngine_RunUserTask_RunWorkflow_PreflightNeedsHumanSkipsRunner(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title:    "issue8 reconcile",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:       ActionTypeRunWorkflow,
+			Prompt:     "/alice reconcile campaign camp_demo",
+			Workflow:   "code_army",
+			SessionKey: "chat_id:oc_chat|scene:work|thread:omt_alpha",
+			StateKey:   "code_army:camp_demo:heartbeat",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &workflowRunnerStub{result: WorkflowRunResult{Message: "workflow should not run"}}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.SetWorkflowPreflightHook(func(context.Context, Task) (WorkflowPreflightDecision, error) {
+		return WorkflowPreflightDecision{
+			Block:         true,
+			Message:       "campaign is still planning; generic reconcile worker was paused",
+			SignalKind:    taskSignalNeedsHuman,
+			SignalMessage: "campaign is still planning",
+			ForceCard:     true,
+		}, nil
+	})
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	runner.mu.Lock()
+	if runner.calls != 0 {
+		runner.mu.Unlock()
+		t.Fatalf("expected workflow runner to be skipped, got %d calls", runner.calls)
+	}
+	runner.mu.Unlock()
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if sender.sendCardCalls != 1 {
+		t.Fatalf("expected warning card, got %d cards", sender.sendCardCalls)
+	}
+	if !strings.Contains(sender.lastCard, "campaign is still planning") {
+		t.Fatalf("warning card missing reason: %q", sender.lastCard)
+	}
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.Status != TaskStatusPaused {
+		t.Fatalf("expected paused task, got %s", stored.Status)
+	}
+	if stored.LastResult != "needs_human: campaign is still planning" {
+		t.Fatalf("unexpected last result: %q", stored.LastResult)
+	}
+}
+
 func TestEngine_RunUserTask_RunWorkflow_SkipsAutomationTimeout(t *testing.T) {
 	sender := &senderStub{}
 	runner := &workflowRunnerStub{
