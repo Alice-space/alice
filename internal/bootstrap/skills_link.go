@@ -95,11 +95,7 @@ func EnsureBundledSkillsLinkedForCodexHome(codexHome string, allowedSkills []str
 }
 
 func resolveCodexHome() (string, error) {
-	codexHome := strings.TrimSpace(os.Getenv(config.EnvCodexHome))
-	if codexHome != "" {
-		return codexHome, nil
-	}
-	return config.DefaultCodexHome(), nil
+	return config.ResolveCodexHomeDir(""), nil
 }
 
 func hasEmbeddedSkillManifest(skillName string) bool {

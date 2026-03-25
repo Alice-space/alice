@@ -19,7 +19,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 ## Features
 
 - Multi-bot runtime from a single `config.yaml`
-- Per-bot isolated `workspace`, `SOUL.md`, prompts, and `CODEX_HOME`
+- Per-bot isolated `workspace`, `SOUL.md`, and prompts, with shared `CODEX_HOME` by default
 - Scene-aware routing for casual chat and explicit work threads
 - Runtime HTTP API for bundled skills and automation
 - Embedded prompts, skills, config example, and `SOUL.md` example
@@ -79,7 +79,8 @@ Important concepts:
 - `group_scenes.chat`: conversational scene for group chats
 - `group_scenes.work`: explicit task scene for work threads
 - `trigger_mode`: legacy fallback when both scenes are disabled
-- `workspace_dir` / `prompt_dir` / `codex_home`: per-bot runtime directories
+- `workspace_dir` / `prompt_dir`: per-bot runtime directories
+- `codex_home`: optional per-bot override for the shared `CODEX_HOME` (default: `~/.codex`)
 - `image_generation`: optional roleplay image generation pipeline
 
 Start from [config.example.yaml](./config.example.yaml).

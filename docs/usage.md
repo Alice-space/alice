@@ -7,7 +7,7 @@ This document explains how Alice is operated as a system, how `chat` and `work` 
 Alice is a Feishu long-connection connector with a multi-bot runtime model:
 
 - One `alice` process can host multiple bots from a single `config.yaml`.
-- Each bot owns its own workspace, prompts, `SOUL.md`, and isolated `CODEX_HOME`.
+- Each bot owns its own workspace, prompts, and `SOUL.md`; `CODEX_HOME` is shared by default unless a bot overrides it.
 - Each incoming message is routed into a scene, then into an LLM backend (`codex`, `claude`, `gemini`, or `kimi`).
 - Alice can also expose a local runtime HTTP API used by bundled skills such as `alice-message` and `alice-scheduler`.
 
@@ -25,7 +25,7 @@ For each bot, Alice resolves these paths:
 - `alice_home`: bot runtime root
 - `workspace_dir`: workspace files, including `SOUL.md`
 - `prompt_dir`: prompt templates
-- `codex_home`: isolated CLI home for Codex-compatible tools
+- `codex_home`: shared CLI home for Codex-compatible tools by default, with optional per-bot override
 - `runtime_http_addr`: local runtime API for skills and automation
 
 By default, a bot named `chat_bot` lives under:
@@ -33,6 +33,8 @@ By default, a bot named `chat_bot` lives under:
 ```text
 ${ALICE_HOME}/bots/chat_bot/
 ```
+
+If `bots.<id>.codex_home` is empty, Alice uses `CODEX_HOME` from the process environment or falls back to `~/.codex`.
 
 ## Operating Alice
 

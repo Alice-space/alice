@@ -18,7 +18,7 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 ## 功能特性
 
 - 单个 `config.yaml` 托管多个 bot
-- 每个 bot 拥有隔离的 `workspace`、`SOUL.md`、prompt 和 `CODEX_HOME`
+- 每个 bot 拥有隔离的 `workspace`、`SOUL.md` 和 prompt，默认共享 `CODEX_HOME`
 - 支持群聊里的 `chat` / `work` 两种场景路由
 - 提供 runtime HTTP API 给 skill 和自动化任务
 - 二进制内嵌 prompts、skills、配置示例和 `SOUL.md` 示例
@@ -78,7 +78,8 @@ Alice 现在使用纯多 bot 配置模型。
 - `group_scenes.chat`：群聊里的聊天场景
 - `group_scenes.work`：群聊里的任务场景
 - `trigger_mode`：两种 scene 都关闭时的旧触发回退
-- `workspace_dir` / `prompt_dir` / `codex_home`：每个 bot 的运行目录
+- `workspace_dir` / `prompt_dir`：每个 bot 的运行目录
+- `codex_home`：共享 `CODEX_HOME` 的可选 bot 级覆盖，默认是 `~/.codex`
 - `image_generation`：可选的角色生图链路
 
 从 [config.example.yaml](./config.example.yaml) 开始改最稳妥。

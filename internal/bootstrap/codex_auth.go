@@ -1,95 +1,74 @@
 package bootstrap
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"os"
-	"path/filepath"
+	"os/exec"
 	"strings"
+	"time"
 
 	"github.com/Alice-space/alice/internal/config"
 )
 
-type CodexAuthSyncReport struct {
-	Target string
-	Source string
-	Copied bool
+const codexLoginStatusTimeout = 15 * time.Second
+
+type CodexLoginStatusReport struct {
+	Command   string
+	CodexHome string
+	LoggedIn  bool
+	Output    string
 }
 
-func EnsureCodexAuthForCodexHome(targetCodexHome string, sourceCodexHomes ...string) (CodexAuthSyncReport, error) {
-	targetCodexHome = strings.TrimSpace(targetCodexHome)
-	if targetCodexHome == "" {
-		return CodexAuthSyncReport{}, fmt.Errorf("codex home is empty")
+func CheckCodexLoginForCodexHome(command, codexHome string) (CodexLoginStatusReport, error) {
+	command = strings.TrimSpace(command)
+	if command == "" {
+		return CodexLoginStatusReport{}, fmt.Errorf("codex command is empty")
+	}
+	codexHome = config.ResolveCodexHomeDir(codexHome)
+	if codexHome == "" {
+		return CodexLoginStatusReport{}, fmt.Errorf("codex home is empty")
 	}
 
-	targetPath := filepath.Join(targetCodexHome, "auth.json")
-	report := CodexAuthSyncReport{Target: targetPath}
+	ctx, cancel := context.WithTimeout(context.Background(), codexLoginStatusTimeout)
+	defer cancel()
 
-	info, err := os.Stat(targetPath)
-	switch {
-	case err == nil:
-		if info.IsDir() {
-			return report, fmt.Errorf("target auth path is a directory: %s", targetPath)
-		}
-		return report, nil
-	case !os.IsNotExist(err):
-		return report, fmt.Errorf("stat target auth failed: %w", err)
+	cmd := exec.CommandContext(ctx, command, "login", "status")
+	cmd.Env = envWithOverride(os.Environ(), config.EnvCodexHome, codexHome)
+	output, err := cmd.CombinedOutput()
+
+	report := CodexLoginStatusReport{
+		Command:   command,
+		CodexHome: codexHome,
+		Output:    strings.TrimSpace(string(output)),
 	}
-
-	if err := os.MkdirAll(targetCodexHome, 0o755); err != nil {
-		return report, fmt.Errorf("create codex home failed: %w", err)
-	}
-
-	for _, sourcePath := range codexAuthSourceCandidates(targetPath, sourceCodexHomes...) {
-		content, err := os.ReadFile(sourcePath)
-		if err != nil {
-			if os.IsNotExist(err) {
-				continue
-			}
-			return report, fmt.Errorf("read source auth %q failed: %w", sourcePath, err)
-		}
-		if err := os.WriteFile(targetPath, content, 0o600); err != nil {
-			return report, fmt.Errorf("write target auth failed: %w", err)
-		}
-		report.Source = sourcePath
-		report.Copied = true
+	if err == nil {
+		report.LoggedIn = true
 		return report, nil
 	}
-
-	return report, nil
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return report, fmt.Errorf("check codex login status timed out: %w", ctx.Err())
+	}
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		return report, nil
+	}
+	return report, fmt.Errorf("run %q login status failed: %w", command, err)
 }
 
-func codexAuthSourceCandidates(targetPath string, sourceCodexHomes ...string) []string {
-	candidates := make([]string, 0, len(sourceCodexHomes)+4)
-	seen := make(map[string]struct{}, len(sourceCodexHomes)+4)
-
-	add := func(path string) {
-		path = strings.TrimSpace(path)
-		if path == "" {
-			return
-		}
-		if filepath.Base(path) != "auth.json" {
-			path = filepath.Join(path, "auth.json")
-		}
-		path = filepath.Clean(path)
-		if path == targetPath {
-			return
-		}
-		if _, ok := seen[path]; ok {
-			return
-		}
-		seen[path] = struct{}{}
-		candidates = append(candidates, path)
+func envWithOverride(base []string, key, value string) []string {
+	if strings.TrimSpace(key) == "" {
+		return append([]string(nil), base...)
 	}
-
-	for _, sourceCodexHome := range sourceCodexHomes {
-		add(sourceCodexHome)
+	prefix := key + "="
+	env := make([]string, 0, len(base)+1)
+	for _, item := range base {
+		if strings.HasPrefix(item, prefix) {
+			continue
+		}
+		env = append(env, item)
 	}
-	add(os.Getenv(config.EnvCodexHome))
-	add(config.DefaultCodexHome())
-	if home, err := os.UserHomeDir(); err == nil && strings.TrimSpace(home) != "" {
-		add(filepath.Join(home, ".codex", "auth.json"))
-		add(filepath.Join(home, ".config", "codex", "auth.json"))
-	}
-
-	return candidates
+	env = append(env, prefix+value)
+	return env
 }

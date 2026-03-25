@@ -58,6 +58,7 @@ func TestDefaultRuntimePaths(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv(EnvAliceHome, "")
+	t.Setenv(EnvCodexHome, "")
 
 	aliceHome := filepath.Join(home, DefaultAliceHomeName())
 	if got := DefaultConfigPath(); got != filepath.Join(aliceHome, "config.yaml") {
@@ -81,8 +82,20 @@ func TestDefaultRuntimePaths(t *testing.T) {
 	if got := DefaultRuntimeBinaryPath(); got != filepath.Join(aliceHome, "bin", "alice") {
 		t.Fatalf("unexpected default runtime binary path: %q", got)
 	}
-	if got := DefaultCodexHome(); got != filepath.Join(aliceHome, ".codex") {
+	if got := DefaultCodexHome(); got != filepath.Join(home, ".codex") {
 		t.Fatalf("unexpected default codex home path: %q", got)
+	}
+}
+
+func TestDefaultCodexHome_UsesEnvOverride(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv(EnvCodexHome, "~/.codex-shared")
+
+	got := DefaultCodexHome()
+	want := filepath.Join(home, ".codex-shared")
+	if got != want {
+		t.Fatalf("unexpected default codex home got=%q want=%q", got, want)
 	}
 }
 

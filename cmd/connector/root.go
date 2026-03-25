@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -77,6 +78,7 @@ func newRootCmd() *cobra.Command {
 		},
 	})
 	root.AddCommand(newRuntimeCmd())
+	root.AddCommand(newSkillsCmd())
 	return root
 }
 
@@ -108,7 +110,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	if strings.TrimSpace(cfg.AliceHome) != "" {
 		_ = os.Setenv(config.EnvAliceHome, cfg.AliceHome)
 	}
-	codexHome := ensureIsolatedCodexHomeEnv(cfg.CodexHome)
+	codexHome := ensureCodexHomeEnv(cfg.CodexHome)
 	if !pidFileExplicit {
 		pidFilePath = config.PIDFilePathForAliceHome(cfg.AliceHome)
 	}
@@ -138,12 +140,8 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	if err != nil {
 		return err
 	}
-	authReport, authErr := bootstrap.EnsureCodexAuthForCodexHome(cfg.CodexHome)
-	if authErr != nil {
-		logging.Warnf("sync root Codex auth failed target=%s: %v", cfg.CodexHome, authErr)
-	} else if authReport.Copied {
-		logging.Infof("codex auth synced source=%s target=%s", authReport.Source, authReport.Target)
-	}
+	authChecks := map[string]*codexLoginCheck{}
+	skillPlans := map[string]*bundledSkillSyncPlan{}
 	for _, runtimeCfg := range runtimeConfigs {
 		if err := ensureWorkspaceDir(runtimeCfg.WorkspaceDir); err != nil {
 			return err
@@ -154,21 +152,77 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		} else if soulReport.Created {
 			logging.Infof("bot soul template created bot=%s path=%s", runtimeCfg.BotID, soulReport.Path)
 		}
-		authReport, authErr := bootstrap.EnsureCodexAuthForCodexHome(runtimeCfg.CodexHome, cfg.CodexHome)
-		if authErr != nil {
-			logging.Warnf("sync Codex auth failed bot=%s: %v", runtimeCfg.BotID, authErr)
-		} else if authReport.Copied {
-			logging.Infof("codex auth synced bot=%s source=%s target=%s", runtimeCfg.BotID, authReport.Source, authReport.Target)
+
+		if runtimeUsesCodex(runtimeCfg) {
+			key := runtimeCfg.CodexCommand + "\x00" + runtimeCfg.CodexHome
+			check, ok := authChecks[key]
+			if !ok {
+				check = &codexLoginCheck{
+					Command:   runtimeCfg.CodexCommand,
+					CodexHome: runtimeCfg.CodexHome,
+				}
+				authChecks[key] = check
+			}
+			check.Bots = append(check.Bots, runtimeCfg.BotID)
 		}
-		skillReport, skillErr := bootstrap.EnsureBundledSkillsLinkedForCodexHome(runtimeCfg.CodexHome, runtimeCfg.AllowedBundledSkills())
+
+		plan, ok := skillPlans[runtimeCfg.CodexHome]
+		if !ok {
+			plan = &bundledSkillSyncPlan{
+				CodexHome: runtimeCfg.CodexHome,
+				allowed:   map[string]struct{}{},
+			}
+			skillPlans[runtimeCfg.CodexHome] = plan
+		}
+		plan.Bots = append(plan.Bots, runtimeCfg.BotID)
+		for _, skill := range runtimeCfg.AllowedBundledSkills() {
+			skill = strings.TrimSpace(skill)
+			if skill == "" {
+				continue
+			}
+			plan.allowed[skill] = struct{}{}
+		}
+	}
+
+	authKeys := make([]string, 0, len(authChecks))
+	for key := range authChecks {
+		authKeys = append(authKeys, key)
+	}
+	sort.Strings(authKeys)
+	for _, key := range authKeys {
+		check := authChecks[key]
+		report, authErr := bootstrap.CheckCodexLoginForCodexHome(check.Command, check.CodexHome)
+		if authErr != nil {
+			return fmt.Errorf("check Codex login failed for bots %s: %w", check.botList(), authErr)
+		}
+		if !report.LoggedIn {
+			return fmt.Errorf(
+				"Codex login required for bots %s (command=%q, CODEX_HOME=%s): %s",
+				check.botList(),
+				report.Command,
+				report.CodexHome,
+				formatCodexLoginOutput(report.Command, report.Output),
+			)
+		}
+		logging.Infof("codex login verified bots=%s codex_home=%s command=%s", check.botList(), report.CodexHome, report.Command)
+	}
+
+	skillKeys := make([]string, 0, len(skillPlans))
+	for key := range skillPlans {
+		skillKeys = append(skillKeys, key)
+	}
+	sort.Strings(skillKeys)
+	for _, key := range skillKeys {
+		plan := skillPlans[key]
+		skillReport, skillErr := bootstrap.EnsureBundledSkillsLinkedForCodexHome(plan.CodexHome, plan.allowedSkills())
 		if skillErr != nil {
-			logging.Warnf("sync bundled skills failed bot=%s: %v", runtimeCfg.BotID, skillErr)
+			logging.Warnf("sync bundled skills failed bots=%s codex_home=%s: %v", plan.botList(), plan.CodexHome, skillErr)
 			continue
 		}
 		if skillReport.Discovered > 0 {
 			logging.Infof(
-				"bundled skills synced bot=%s codex_home=%s discovered=%d linked=%d updated=%d unchanged=%d failed=%d",
-				runtimeCfg.BotID,
+				"bundled skills synced bots=%s codex_home=%s discovered=%d linked=%d updated=%d unchanged=%d failed=%d",
+				plan.botList(),
 				skillReport.CodexHome,
 				skillReport.Discovered,
 				skillReport.Linked,
@@ -418,13 +472,64 @@ func ensureWorkspaceDir(path string) error {
 	return nil
 }
 
-func ensureIsolatedCodexHomeEnv(codexHome string) string {
-	target := strings.TrimSpace(codexHome)
-	if target == "" {
-		target = config.DefaultCodexHome()
-	}
+func ensureCodexHomeEnv(codexHome string) string {
+	target := config.ResolveCodexHomeDir(codexHome)
 	_ = os.Setenv(config.EnvCodexHome, target)
 	return target
+}
+
+type codexLoginCheck struct {
+	Command   string
+	CodexHome string
+	Bots      []string
+}
+
+func (c *codexLoginCheck) botList() string {
+	bots := append([]string(nil), c.Bots...)
+	sort.Strings(bots)
+	return strings.Join(bots, ",")
+}
+
+type bundledSkillSyncPlan struct {
+	CodexHome string
+	Bots      []string
+	allowed   map[string]struct{}
+}
+
+func (p *bundledSkillSyncPlan) allowedSkills() []string {
+	skills := make([]string, 0, len(p.allowed))
+	for skill := range p.allowed {
+		skills = append(skills, skill)
+	}
+	sort.Strings(skills)
+	return skills
+}
+
+func (p *bundledSkillSyncPlan) botList() string {
+	bots := append([]string(nil), p.Bots...)
+	sort.Strings(bots)
+	return strings.Join(bots, ",")
+}
+
+func runtimeUsesCodex(cfg config.Config) bool {
+	for _, provider := range cfg.ResolvedLLMProviders() {
+		if provider == config.DefaultLLMProvider {
+			return true
+		}
+	}
+	return false
+}
+
+func formatCodexLoginOutput(command, output string) string {
+	output = strings.Join(strings.Fields(strings.TrimSpace(output)), " ")
+	if output == "" {
+		command = strings.TrimSpace(command)
+		if command == "" {
+			command = "codex"
+		}
+		return fmt.Sprintf("run `%s login` (or `CODEX_HOME=<path> %s login`) first", command, command)
+	}
+	return output
 }
 
 func stringValue(value any) string {

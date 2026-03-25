@@ -97,11 +97,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	} else {
 		cfg.PromptDir = normalizeHomePath(cfg.PromptDir)
 	}
-	if cfg.CodexHome == "" {
-		cfg.CodexHome = CodexHomeForAliceHome(cfg.AliceHome)
-	} else {
-		cfg.CodexHome = normalizeHomePath(cfg.CodexHome)
-	}
+	cfg.CodexHome = ResolveCodexHomeDir(cfg.CodexHome)
 	if cfg.SoulPath == "" {
 		cfg.SoulPath = filepath.Join(cfg.WorkspaceDir, "SOUL.md")
 	} else if !filepath.IsAbs(cfg.SoulPath) {

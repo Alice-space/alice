@@ -3,11 +3,13 @@ package campaignrepo
 import "strings"
 
 func resolveExecutorRole(repo Repository, task TaskDocument) RoleConfig {
-	return resolveRoleConfig(defaultExecutorRoleConfig(), repo.Campaign.Frontmatter.DefaultExecutor, task.Frontmatter.Executor, "executor")
+	base := mergeRoleConfig(defaultExecutorRoleConfig(), repo.ConfigRoleDefaults.Executor)
+	return resolveRoleConfig(base, repo.Campaign.Frontmatter.DefaultExecutor, task.Frontmatter.Executor, "executor")
 }
 
 func resolveReviewerRole(repo Repository, task TaskDocument) RoleConfig {
-	return resolveRoleConfig(defaultReviewerRoleConfig(), repo.Campaign.Frontmatter.DefaultReviewer, task.Frontmatter.Reviewer, "reviewer")
+	base := mergeRoleConfig(defaultReviewerRoleConfig(), repo.ConfigRoleDefaults.Reviewer)
+	return resolveRoleConfig(base, repo.Campaign.Frontmatter.DefaultReviewer, task.Frontmatter.Reviewer, "reviewer")
 }
 
 func resolveRoleConfig(base RoleConfig, campaignDefault RoleConfig, taskOverride RoleConfig, kind string) RoleConfig {
@@ -103,11 +105,13 @@ func defaultPlannerReviewerRoleConfig() RoleConfig {
 }
 
 func resolvePlannerRole(repo Repository) RoleConfig {
-	return resolveRoleConfig(defaultPlannerRoleConfig(), repo.Campaign.Frontmatter.DefaultPlanner, RoleConfig{}, "planner")
+	base := mergeRoleConfig(defaultPlannerRoleConfig(), repo.ConfigRoleDefaults.Planner)
+	return resolveRoleConfig(base, repo.Campaign.Frontmatter.DefaultPlanner, RoleConfig{}, "planner")
 }
 
 func resolvePlannerReviewerRole(repo Repository) RoleConfig {
-	return resolveRoleConfig(defaultPlannerReviewerRoleConfig(), repo.Campaign.Frontmatter.DefaultPlannerReviewer, RoleConfig{}, "planner_reviewer")
+	base := mergeRoleConfig(defaultPlannerReviewerRoleConfig(), repo.ConfigRoleDefaults.PlannerReviewer)
+	return resolveRoleConfig(base, repo.Campaign.Frontmatter.DefaultPlannerReviewer, RoleConfig{}, "planner_reviewer")
 }
 
 func providerFromRole(role string) string {

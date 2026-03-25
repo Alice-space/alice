@@ -8,112 +8,85 @@ import (
 	"github.com/Alice-space/alice/internal/config"
 )
 
-func TestEnsureCodexAuthForCodexHome_CopiesFromExplicitSource(t *testing.T) {
-	sourceCodexHome := t.TempDir()
-	sourceAuthPath := filepath.Join(sourceCodexHome, "auth.json")
-	if err := os.WriteFile(sourceAuthPath, []byte("source-token"), 0o600); err != nil {
-		t.Fatalf("write source auth failed: %v", err)
-	}
+func TestCheckCodexLoginForCodexHome_LoggedIn(t *testing.T) {
+	home := t.TempDir()
+	targetCodexHome := filepath.Join(home, ".codex-shared")
+	t.Setenv("EXPECTED_CODEX_HOME", targetCodexHome)
 
-	targetCodexHome := filepath.Join(t.TempDir(), "bot", ".codex")
-	report, err := EnsureCodexAuthForCodexHome(targetCodexHome, sourceCodexHome)
-	if err != nil {
-		t.Fatalf("ensure auth failed: %v", err)
-	}
-	if !report.Copied {
-		t.Fatal("expected auth to be copied")
-	}
-	if report.Source != sourceAuthPath {
-		t.Fatalf("unexpected source path: %q", report.Source)
-	}
+	command := writeCodexStub(t, `#!/bin/sh
+if [ "$1" = "login" ] && [ "$2" = "status" ] && [ "$CODEX_HOME" = "$EXPECTED_CODEX_HOME" ]; then
+  printf 'Logged in using ChatGPT\n'
+  exit 0
+fi
+printf 'unexpected args=%s %s CODEX_HOME=%s\n' "$1" "$2" "$CODEX_HOME" >&2
+exit 99
+`)
 
-	content, err := os.ReadFile(filepath.Join(targetCodexHome, "auth.json"))
+	report, err := CheckCodexLoginForCodexHome(command, targetCodexHome)
 	if err != nil {
-		t.Fatalf("read target auth failed: %v", err)
+		t.Fatalf("check login failed: %v", err)
 	}
-	if string(content) != "source-token" {
-		t.Fatalf("unexpected target auth content: %q", string(content))
+	if !report.LoggedIn {
+		t.Fatalf("expected logged-in report, got %#v", report)
+	}
+	if report.CodexHome != targetCodexHome {
+		t.Fatalf("unexpected codex home: %q", report.CodexHome)
+	}
+	if report.Output != "Logged in using ChatGPT" {
+		t.Fatalf("unexpected output: %q", report.Output)
 	}
 }
 
-func TestEnsureCodexAuthForCodexHome_PreservesExistingTarget(t *testing.T) {
-	sourceCodexHome := t.TempDir()
-	if err := os.WriteFile(filepath.Join(sourceCodexHome, "auth.json"), []byte("source-token"), 0o600); err != nil {
-		t.Fatalf("write source auth failed: %v", err)
-	}
+func TestCheckCodexLoginForCodexHome_LoggedOut(t *testing.T) {
+	targetCodexHome := filepath.Join(t.TempDir(), ".codex-shared")
+	command := writeCodexStub(t, `#!/bin/sh
+printf 'Not logged in\n'
+exit 1
+`)
 
-	targetCodexHome := t.TempDir()
-	targetAuthPath := filepath.Join(targetCodexHome, "auth.json")
-	if err := os.WriteFile(targetAuthPath, []byte("target-token"), 0o600); err != nil {
-		t.Fatalf("write target auth failed: %v", err)
-	}
-
-	report, err := EnsureCodexAuthForCodexHome(targetCodexHome, sourceCodexHome)
+	report, err := CheckCodexLoginForCodexHome(command, targetCodexHome)
 	if err != nil {
-		t.Fatalf("ensure auth failed: %v", err)
+		t.Fatalf("check login failed: %v", err)
 	}
-	if report.Copied {
-		t.Fatal("expected existing auth to be preserved")
+	if report.LoggedIn {
+		t.Fatalf("expected logged-out report, got %#v", report)
 	}
-
-	content, err := os.ReadFile(targetAuthPath)
-	if err != nil {
-		t.Fatalf("read target auth failed: %v", err)
-	}
-	if string(content) != "target-token" {
-		t.Fatalf("unexpected target auth content: %q", string(content))
+	if report.Output != "Not logged in" {
+		t.Fatalf("unexpected output: %q", report.Output)
 	}
 }
 
-func TestEnsureCodexAuthForCodexHome_FallsBackToDefaultCodexHome(t *testing.T) {
+func TestCheckCodexLoginForCodexHome_UsesDefaultCodexHome(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv(config.EnvCodexHome, "")
+	t.Setenv("EXPECTED_CODEX_HOME", filepath.Join(home, ".codex"))
 
-	defaultCodexHomeAuthPath := filepath.Join(config.DefaultCodexHome(), "auth.json")
-	if err := os.MkdirAll(filepath.Dir(defaultCodexHomeAuthPath), 0o755); err != nil {
-		t.Fatalf("create default codex dir failed: %v", err)
-	}
-	if err := os.WriteFile(defaultCodexHomeAuthPath, []byte("default-token"), 0o600); err != nil {
-		t.Fatalf("write default auth failed: %v", err)
-	}
+	command := writeCodexStub(t, `#!/bin/sh
+if [ "$CODEX_HOME" = "$EXPECTED_CODEX_HOME" ]; then
+  printf 'Logged in using ChatGPT\n'
+  exit 0
+fi
+printf 'unexpected CODEX_HOME=%s\n' "$CODEX_HOME" >&2
+exit 2
+`)
 
-	targetCodexHome := filepath.Join(t.TempDir(), "bot", ".codex")
-	report, err := EnsureCodexAuthForCodexHome(targetCodexHome)
+	report, err := CheckCodexLoginForCodexHome(command, "")
 	if err != nil {
-		t.Fatalf("ensure auth failed: %v", err)
+		t.Fatalf("check login failed: %v", err)
 	}
-	if !report.Copied {
-		t.Fatal("expected auth to be copied from default codex dir")
-	}
-	if report.Source != defaultCodexHomeAuthPath {
-		t.Fatalf("unexpected source path: %q", report.Source)
+	if !report.LoggedIn {
+		t.Fatalf("expected logged-in report, got %#v", report)
 	}
 }
 
-func TestEnsureCodexAuthForCodexHome_FallsBackToLegacyHomeCodexAuth(t *testing.T) {
-	home := t.TempDir()
-	t.Setenv("HOME", home)
-	t.Setenv(config.EnvCodexHome, "")
-	t.Setenv(config.EnvAliceHome, filepath.Join(t.TempDir(), "alice-home-without-auth"))
+func writeCodexStub(t *testing.T, content string) string {
+	t.Helper()
 
-	legacyHomeAuthPath := filepath.Join(home, ".codex", "auth.json")
-	if err := os.MkdirAll(filepath.Dir(legacyHomeAuthPath), 0o755); err != nil {
-		t.Fatalf("create legacy home codex dir failed: %v", err)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "codex-stub.sh")
+	if err := os.WriteFile(path, []byte(content), 0o755); err != nil {
+		t.Fatalf("write codex stub failed: %v", err)
 	}
-	if err := os.WriteFile(legacyHomeAuthPath, []byte("legacy-home-token"), 0o600); err != nil {
-		t.Fatalf("write legacy home auth failed: %v", err)
-	}
-
-	targetCodexHome := filepath.Join(t.TempDir(), "bot", ".codex")
-	report, err := EnsureCodexAuthForCodexHome(targetCodexHome, filepath.Join(t.TempDir(), "missing-codex-home"))
-	if err != nil {
-		t.Fatalf("ensure auth failed: %v", err)
-	}
-	if !report.Copied {
-		t.Fatal("expected auth to be copied from legacy home codex dir")
-	}
-	if report.Source != legacyHomeAuthPath {
-		t.Fatalf("unexpected source path: %q", report.Source)
-	}
+	return path
 }

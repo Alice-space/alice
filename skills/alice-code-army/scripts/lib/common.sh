@@ -39,12 +39,14 @@ require_cmd() {
 }
 
 resolve_ihep_gitlab_helper() {
-  local script_dir candidate
+  local script_dir candidate shared_codex_home
   script_dir="$SCRIPT_DIR"
+  shared_codex_home="${CODEX_HOME:-$HOME/.codex}"
 
   for candidate in \
     "$script_dir/../../ihep-gitlab/scripts/ihep-gitlab.sh" \
     "$script_dir/../../../../IHEP-cluster-skill/skills/ihep-gitlab/scripts/ihep-gitlab.sh" \
+    "$shared_codex_home/skills/ihep-gitlab/scripts/ihep-gitlab.sh" \
     "$ALICE_HOME_DIR/.codex/skills/ihep-gitlab/scripts/ihep-gitlab.sh" \
     "$HOME/.alice/.codex/skills/ihep-gitlab/scripts/ihep-gitlab.sh"
   do
@@ -250,4 +252,3 @@ require_visible_create_payload() {
   [[ -n "$repo" ]] || die "visible campaign requires repo in create payload"
   [[ -n "$issue_iid" ]] || die "visible campaign requires issue_iid; create or bind a GitLab issue first"
 }
-

@@ -7,7 +7,7 @@
 Alice 是一个支持多 bot 的飞书长连接连接器：
 
 - 一个 `alice` 进程可以同时托管多个 bot
-- 每个 bot 都有自己的工作区、提示词目录、`SOUL.md` 和隔离的 `CODEX_HOME`
+- 每个 bot 都有自己的工作区、提示词目录和 `SOUL.md`，默认共享 `CODEX_HOME`
 - 每条飞书消息会先进入路由层，再被分到某个 scene，最后交给对应 LLM CLI
 - Alice 还会暴露本地 runtime HTTP API，给 `alice-message`、`alice-scheduler` 这类自带 skill 使用
 
@@ -25,7 +25,7 @@ Alice 是一个支持多 bot 的飞书长连接连接器：
 - `alice_home`：bot 运行根目录
 - `workspace_dir`：工作区，包含 `SOUL.md`
 - `prompt_dir`：prompt 模板目录
-- `codex_home`：给 Codex 类 CLI 用的隔离目录
+- `codex_home`：默认共享的 Codex 类 CLI 目录，也可以按 bot 单独覆盖
 - `runtime_http_addr`：本地 runtime API 地址
 
 例如 bot id 是 `chat_bot` 时，默认目录在：
@@ -33,6 +33,8 @@ Alice 是一个支持多 bot 的飞书长连接连接器：
 ```text
 ${ALICE_HOME}/bots/chat_bot/
 ```
+
+如果 `bots.<id>.codex_home` 留空，Alice 会先继承进程环境里的 `CODEX_HOME`，否则默认回退到 `~/.codex`。
 
 ## Alice 怎么用
 

@@ -1,18 +1,23 @@
 # Alice now uses a pure multi-bot config model.
 # There is no root single-bot compatibility layer anymore.
-# Each bot owns its own credentials, runtime state, workspace and CODEX_HOME.
+# Each bot owns its own credentials, runtime state, workspace and prompts.
+# By default, bots share one CODEX_HOME.
 #
 # Default bot directories:
 # - alice_home:   <ALICE_HOME>/bots/<bot_id>
 # - workspace:    <alice_home>/workspace
 # - prompts:      <alice_home>/prompts
-# - codex_home:   <alice_home>/.codex
+# - codex_home:   $CODEX_HOME or ~/.codex
 # - soul_path:    <workspace>/SOUL.md
 # Missing SOUL.md files are created from the embedded SOUL.md.example on startup.
 #
 # Process-level base home is still controlled by:
 # - CLI flag: `alice --alice-home /path/to/home`
 # - env var: `ALICE_HOME=/path/to/home`
+# Shared Codex home is controlled by:
+# - config: `bots.<id>.codex_home` (explicit override)
+# - env var: `CODEX_HOME=/path/to/codex-home`
+# - default: `~/.codex`
 
 bots:
   chat_bot:
@@ -23,7 +28,9 @@ bots:
     feishu_bot_open_id: ""
     feishu_bot_user_id: ""
 
-    # Optional runtime directories. Empty means use defaults under <ALICE_HOME>/bots/chat_bot.
+    # Optional runtime directories.
+    # Empty alice_home/workspace_dir/prompt_dir use defaults under <ALICE_HOME>/bots/chat_bot.
+    # Empty codex_home inherits shared CODEX_HOME or ~/.codex.
     alice_home: ""
     workspace_dir: ""
     prompt_dir: ""
@@ -39,7 +46,7 @@ bots:
 
     codex_command: "codex"
     codex_timeout_secs: 172800
-    # Optional. Empty means inherit Codex CLI default model from ~/.codex/config.toml.
+    # Optional. Empty means inherit the Codex CLI default model from the active CODEX_HOME config.
     codex_model: ""
     # Optional. Empty means inherit Codex CLI default reasoning effort.
     codex_model_reasoning_effort: ""
@@ -186,6 +193,24 @@ bots:
     worker_concurrency: 3
     automation_task_timeout_secs: 6000
 
+    # Optional campaign role defaults for code-army.
+    # These override the Go hardcoded defaults but can still be overridden
+    # by campaign.md frontmatter or task-level role config.
+    # Cascade: Go defaults → config.yaml → campaign.md → task frontmatter
+    # campaign_role_defaults:
+    #   executor:
+    #     provider: "codex"
+    #     model: ""
+    #   reviewer:
+    #     provider: "claude"
+    #     model: "claude-opus-4-6"
+    #   planner:
+    #     provider: "claude"
+    #     model: "claude-sonnet-4-6"
+    #   planner_reviewer:
+    #     provider: "claude"
+    #     model: "claude-opus-4-6"
+
   work_bot:
     name: "Alice Work"
     feishu_app_id: "cli_work_xxxxx"
@@ -225,6 +250,18 @@ bots:
         work:
           sandbox: "danger-full-access"
           ask_for_approval: "never"
+    campaign_role_defaults:
+      executor:
+        provider: "codex"
+      reviewer:
+        provider: "claude"
+        model: "claude-opus-4-6"
+      planner:
+        provider: "claude"
+        model: "claude-sonnet-4-6"
+      planner_reviewer:
+        provider: "claude"
+        model: "claude-opus-4-6"
 
 # debug | info | warn | error
 log_level: "info"
