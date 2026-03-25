@@ -281,7 +281,7 @@ func (r Runner) renderPrompt(threadID string, userText string, personality strin
 	if loader == nil {
 		loader = prompting.DefaultLoader()
 	}
-	promptPrefix, err := prompting.ComposePromptPrefix(loader, r.PromptPrefix, personality, noReplyToken)
+	promptPrefix, err := prompting.ComposePromptPrefix(r.PromptPrefix, personality, noReplyToken)
 	if err != nil {
 		return "", err
 	}

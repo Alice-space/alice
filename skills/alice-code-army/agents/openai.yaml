@@ -1,4 +1,4 @@
 interface:
   display_name: "Alice 代码军队"
-  short_description: "编排 GitLab 可见的 issue / MR / trial 优化闭环"
-  default_prompt: "使用 $alice-code-army 在当前 Alice 会话里组织一个 GitLab 可见的 issue / MR 多 trial 优化流程，缺少 issue / MR 时先补齐；尽可能利用所有允许且可用的资源并行推进，提高效率；对 heartbeat/reconcile 类任务，若有清晰且安全的下一步就直接动手，并在必要时实际调整，而不是只巡检不动作；如果自己做不到或继续做不安全，必须调用 `/alice needs-human ...`，并在最终回复里追加 `<alice_command>/alice needs-human ...</alice_command>` 让 runtime 暂停自动任务并发送警告卡；对绑定 issue 的工作维护 GitLab 工时统计，优先使用 `scripts/alice-code-army.sh time-estimate` / `time-spend` 直接走 GitLab time-tracking API，而不是把 `/estimate` / `/spend` 混在普通评论里；最后说明如何打断、比较、收敛和记录踩坑。"
+  short_description: "以 campaign 仓库为主事实源，编排多阶段、多任务、多 repo 协作"
+  default_prompt: "使用 $alice-code-army 在当前 Alice 会话里组织一个 repo-first 的 campaign 协作流程：优先创建或复用 campaign repo，把计划、阶段、任务、评审、报告都沉淀到 campaign repo 的 markdown/frontmatter 结构里；采用 Alice orchestrator + Codex executor + Claude reviewer 的角色边界，默认 executor 负责做 task、reviewer 只写 review 文件、Alice judge 应用 review verdict；计划阶段请先通过交互式会话和 repo 文件产出 proposal、合并 master plan、等待人工批准，再把 ready 子任务交给 runtime 自动执行；按依赖和 write scope 控制并行，长任务通过 scheduler 自动唤醒；Alice backend 会自动 reconcile campaign repo、刷新 live report、派发 executor/reviewer workflow，并同步 wake task；需要对人可见时再把摘要镜像到 GitLab issue / MR，但不要把 issue 当成主存储；最后说明当前 campaign repo、活跃 tasks、review queue、阻塞项、下一步，以及 live report / phase report / paper 的更新情况。"

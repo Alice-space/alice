@@ -183,7 +183,7 @@ func buildChatSceneSessionKey(receiveIDType, receiveID string) string {
 	if base == "" {
 		return ""
 	}
-	return base + "|scene:" + jobSceneChat
+	return base + chatSceneToken
 }
 
 func buildWorkSceneSessionKey(receiveIDType, receiveID, sourceMessageID string) string {
@@ -192,7 +192,7 @@ func buildWorkSceneSessionKey(receiveIDType, receiveID, sourceMessageID string) 
 	if base == "" || sourceMessageID == "" {
 		return ""
 	}
-	return base + "|scene:" + jobSceneWork + "|seed:" + sourceMessageID
+	return base + workSceneToken + workSceneSeedToken + sourceMessageID
 }
 
 func buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey string) string {
@@ -200,11 +200,11 @@ func buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey string) string {
 	if sessionKey == "" {
 		return ""
 	}
-	return strings.Replace(sessionKey, "|seed:", "|thread:", 1)
+	return strings.Replace(sessionKey, workSceneSeedToken, threadAliasToken, 1)
 }
 
 func isWorkSceneSessionKey(sessionKey string) bool {
-	return strings.Contains(strings.TrimSpace(sessionKey), "|scene:"+jobSceneWork)
+	return strings.Contains(strings.TrimSpace(sessionKey), workSceneToken)
 }
 
 func hasSceneTriggerTag(text, tag string) bool {

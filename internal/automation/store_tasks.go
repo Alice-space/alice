@@ -6,7 +6,12 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	bolt "go.etcd.io/bbolt"
 )
+
+const maxConsecutiveTaskFailures = 3
+const deletedTaskRetention = 30 * 24 * time.Hour
 
 func (s *Store) ListTasks(scope Scope, statusFilter string, limit int) ([]Task, error) {
 	if s == nil {
@@ -133,6 +138,7 @@ func (s *Store) CreateTask(task Task) (Task, error) {
 	if task.NextRunAt.IsZero() {
 		task.NextRunAt = NextRunAt(now, task.Schedule)
 	}
+	task = applyDeletedTaskState(task, now)
 	if err := ValidateTask(task); err != nil {
 		return Task{}, err
 	}
@@ -164,28 +170,32 @@ func (s *Store) PatchTask(taskID string, mutate func(task *Task) error) (Task, e
 		return Task{}, errors.New("mutate callback is nil")
 	}
 
+	db, err := s.dbOrOpen()
+	if err != nil {
+		return Task{}, err
+	}
+
 	var updated Task
-	err := s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
-		idx := findTaskIndex(snapshot.Tasks, taskID)
-		if idx < 0 {
-			return false, ErrTaskNotFound
+	err = db.Update(func(tx *bolt.Tx) error {
+		task, err := readTaskTx(tx, taskID)
+		if err != nil {
+			return err
 		}
-		task := NormalizeTask(snapshot.Tasks[idx])
 		if err := mutate(&task); err != nil {
-			return false, err
+			return err
 		}
 		task = NormalizeTask(task)
 		task.UpdatedAt = s.nowLocal()
 		task.Revision++
+		task = applyDeletedTaskState(task, task.UpdatedAt)
 		if task.NextRunAt.IsZero() && task.Status == TaskStatusActive {
 			task.NextRunAt = NextRunAt(task.UpdatedAt, task.Schedule)
 		}
 		if err := ValidateTask(task); err != nil {
-			return false, err
+			return err
 		}
-		snapshot.Tasks[idx] = task
 		updated = task
-		return true, nil
+		return writeTaskTx(tx, task)
 	})
 	if err != nil {
 		return Task{}, err
@@ -208,6 +218,18 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 	claimed := make([]Task, 0, limit)
 	err := s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
 		changed := false
+		cutoff := at.Add(-deletedTaskRetention)
+		retained := snapshot.Tasks[:0]
+		for _, raw := range snapshot.Tasks {
+			task := NormalizeTask(raw)
+			if shouldPurgeDeletedTask(task, cutoff) {
+				changed = true
+				continue
+			}
+			retained = append(retained, task)
+		}
+		snapshot.Tasks = retained
+
 		for idx := range snapshot.Tasks {
 			if len(claimed) >= limit {
 				break
@@ -277,6 +299,10 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 		if runErr != nil {
 			task.ConsecutiveFailures++
 			task.LastResult = "error: " + strings.TrimSpace(runErr.Error())
+			if task.ConsecutiveFailures >= maxConsecutiveTaskFailures {
+				task.Status = TaskStatusPaused
+				task.NextRunAt = time.Time{}
+			}
 		} else {
 			task.ConsecutiveFailures = 0
 			task.LastResult = "ok: " + at.Format(time.RFC3339)
@@ -287,6 +313,42 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 		return nil
 	}
 	return err
+}
+
+func applyDeletedTaskState(task Task, now time.Time) Task {
+	task = NormalizeTask(task)
+	if task.Status != TaskStatusDeleted {
+		task.DeletedAt = time.Time{}
+		return task
+	}
+	if task.DeletedAt.IsZero() {
+		switch {
+		case !now.IsZero():
+			task.DeletedAt = now.Local()
+		case !task.UpdatedAt.IsZero():
+			task.DeletedAt = task.UpdatedAt.Local()
+		default:
+			task.DeletedAt = time.Now().Local()
+		}
+	}
+	task.Running = false
+	task.NextRunAt = time.Time{}
+	return task
+}
+
+func shouldPurgeDeletedTask(task Task, cutoff time.Time) bool {
+	task = NormalizeTask(task)
+	if task.Status != TaskStatusDeleted {
+		return false
+	}
+	deletedAt := task.DeletedAt
+	if deletedAt.IsZero() {
+		deletedAt = task.UpdatedAt
+	}
+	if deletedAt.IsZero() || cutoff.IsZero() {
+		return false
+	}
+	return deletedAt.Before(cutoff)
 }
 
 func (s *Store) RecordTaskSignal(taskID string, at time.Time, kind, message string, pause bool) error {

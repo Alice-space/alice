@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -24,16 +25,21 @@ type replyImageDirectSender = messaging.ReplyImageDirectSender
 type replyFileSender = messaging.ReplyFileSender
 type replyFileDirectSender = messaging.ReplyFileDirectSender
 
+const runtimeAPIRequestBodyLimitBytes int64 = 1 << 20
+const runtimeAPIMaxListLimit = 200
+const runtimeAPIAuthRateLimit = 120
+
 type Server struct {
-	addr       string
-	token      string
-	sender     Sender
-	automation *automation.Store
-	campaigns  *campaign.Store
-	runtimeMu  sync.RWMutex
-	runtime    automationRuntimeConfig
-	engine     *gin.Engine
-	httpSrv    *http.Server
+	addr        string
+	token       string
+	sender      Sender
+	automation  *automation.Store
+	campaigns   *campaign.Store
+	runtimeMu   sync.RWMutex
+	runtime     automationRuntimeConfig
+	engine      *gin.Engine
+	httpSrv     *http.Server
+	authLimiter *authRateLimiter
 }
 
 type automationRuntimeConfig struct {
@@ -55,14 +61,16 @@ func NewServer(
 	engine.Use(gin.Recovery())
 
 	srv := &Server{
-		addr:       strings.TrimSpace(addr),
-		token:      strings.TrimSpace(token),
-		sender:     sender,
-		automation: automationStore,
-		campaigns:  campaignStore,
-		runtime:    newAutomationRuntimeConfig(cfg),
-		engine:     engine,
+		addr:        strings.TrimSpace(addr),
+		token:       strings.TrimSpace(token),
+		sender:      sender,
+		automation:  automationStore,
+		campaigns:   campaignStore,
+		runtime:     newAutomationRuntimeConfig(cfg),
+		engine:      engine,
+		authLimiter: newAuthRateLimiter(runtimeAPIAuthRateLimit, time.Minute),
 	}
+	engine.Use(srv.requestBodyLimitMiddleware(runtimeAPIRequestBodyLimitBytes))
 	engine.Use(srv.authMiddleware())
 	engine.GET("/healthz", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{"status": "ok"})
@@ -112,4 +120,28 @@ func (s *Server) Run(ctx context.Context) error {
 	case err := <-errCh:
 		return err
 	}
+}
+
+func (s *Server) requestBodyLimitMiddleware(limit int64) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if limit > 0 && c.Request != nil && c.Request.Body != nil {
+			c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, limit)
+		}
+		c.Next()
+	}
+}
+
+func parseListLimit(raw string, defaultLimit int) (int, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return defaultLimit, nil
+	}
+	limit, err := strconv.Atoi(raw)
+	if err != nil {
+		return 0, errors.New("invalid limit")
+	}
+	if limit <= 0 || limit > runtimeAPIMaxListLimit {
+		return 0, errors.New("limit must be between 1 and 200")
+	}
+	return limit, nil
 }

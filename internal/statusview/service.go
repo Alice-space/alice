@@ -6,6 +6,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/campaign"
+	"github.com/Alice-space/alice/internal/sessionkey"
 )
 
 const defaultLimit = 20
@@ -43,6 +44,26 @@ type Result struct {
 	UsageError    error
 }
 
+func (r Result) HasErrors() bool {
+	return r.TaskError != nil || r.CampaignError != nil || r.UsageError != nil
+}
+
+func (r Result) IsSuccess() bool {
+	return !r.HasErrors()
+}
+
+func (r Result) IsPartialSuccess() bool {
+	return r.HasErrors() && r.hasAnyData()
+}
+
+func (r Result) IsFailure() bool {
+	return r.HasErrors() && !r.hasAnyData()
+}
+
+func (r Result) hasAnyData() bool {
+	return r.TotalUsage.HasUsage() || len(r.BotUsages) > 0 || len(r.Tasks) > 0 || len(r.Campaigns) > 0
+}
+
 type Service struct {
 	Automation AutomationTaskStore
 	Campaigns  CampaignStore
@@ -58,8 +79,8 @@ func (s Service) Query(req Request) Result {
 	result := Result{
 		ScopeLabel: VisibilityKey(req),
 	}
-	if result.ScopeLabel == "" && strings.TrimSpace(req.ReceiveIDType) != "" && strings.TrimSpace(req.ReceiveID) != "" {
-		result.ScopeLabel = strings.TrimSpace(req.ReceiveIDType) + ":" + strings.TrimSpace(req.ReceiveID)
+	if result.ScopeLabel == "" {
+		result.ScopeLabel = sessionkey.Build(req.ReceiveIDType, req.ReceiveID)
 	}
 	if s.Usage != nil {
 		scopeKey := VisibilityKey(req)
@@ -90,19 +111,10 @@ func (s Service) Query(req Request) Result {
 }
 
 func VisibilityKey(req Request) string {
-	receiveIDType := strings.TrimSpace(req.ReceiveIDType)
-	receiveID := strings.TrimSpace(req.ReceiveID)
-	if receiveIDType != "" && receiveID != "" {
-		return receiveIDType + ":" + receiveID
+	if key := sessionkey.Build(req.ReceiveIDType, req.ReceiveID); key != "" {
+		return key
 	}
-	sessionKey := strings.TrimSpace(req.SessionKey)
-	if sessionKey == "" {
-		return ""
-	}
-	if idx := strings.Index(sessionKey, "|"); idx >= 0 {
-		return strings.TrimSpace(sessionKey[:idx])
-	}
-	return sessionKey
+	return sessionkey.VisibilityKey(req.SessionKey)
 }
 
 func AutomationScope(req Request) (automation.Scope, error) {

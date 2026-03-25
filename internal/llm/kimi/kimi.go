@@ -191,7 +191,7 @@ func (r Runner) renderPrompt(threadID string, userText string, personality strin
 	if loader == nil {
 		loader = prompting.DefaultLoader()
 	}
-	promptPrefix, err := prompting.ComposePromptPrefix(loader, r.PromptPrefix, personality, noReplyToken)
+	promptPrefix, err := prompting.ComposePromptPrefix(r.PromptPrefix, personality, noReplyToken)
 	if err != nil {
 		return "", err
 	}
@@ -217,7 +217,13 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 		}
 		indexByKey[item[:idx]] = i
 	}
-	for key, value := range overrides {
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := overrides[key]
 		pair := key + "=" + value
 		if idx, ok := indexByKey[key]; ok {
 			env[idx] = pair

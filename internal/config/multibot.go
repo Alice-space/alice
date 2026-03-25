@@ -18,13 +18,30 @@ const (
 	CodexApprovalNever     = "never"
 )
 
-var defaultBundledSkills = []string{
-	"alice-code-army",
-	"alice-memory",
-	"alice-message",
-	"alice-scheduler",
-	"feishu-task",
-	"file-printing",
+type bundledSkillSpec struct {
+	Name    string
+	Allowed func(Config) bool
+}
+
+var defaultBundledSkills = []bundledSkillSpec{
+	{Name: "alice-code-army", Allowed: allowRuntimeCampaignSkill},
+	{Name: "alice-memory"},
+	{Name: "alice-message", Allowed: allowRuntimeMessageSkill},
+	{Name: "alice-scheduler", Allowed: allowRuntimeAutomationSkill},
+	{Name: "feishu-task"},
+	{Name: "file-printing"},
+}
+
+func allowRuntimeMessageSkill(cfg Config) bool {
+	return cfg.Permissions.RuntimeMessage == nil || *cfg.Permissions.RuntimeMessage
+}
+
+func allowRuntimeAutomationSkill(cfg Config) bool {
+	return cfg.Permissions.RuntimeAutomation == nil || *cfg.Permissions.RuntimeAutomation
+}
+
+func allowRuntimeCampaignSkill(cfg Config) bool {
+	return cfg.Permissions.RuntimeCampaigns == nil || *cfg.Permissions.RuntimeCampaigns
 }
 
 func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
@@ -223,21 +240,10 @@ func (cfg Config) AllowedBundledSkills() []string {
 	}
 	allowed := make([]string, 0, len(defaultBundledSkills))
 	for _, skill := range defaultBundledSkills {
-		switch skill {
-		case "alice-message":
-			if cfg.Permissions.RuntimeMessage != nil && !*cfg.Permissions.RuntimeMessage {
-				continue
-			}
-		case "alice-scheduler":
-			if cfg.Permissions.RuntimeAutomation != nil && !*cfg.Permissions.RuntimeAutomation {
-				continue
-			}
-		case "alice-code-army":
-			if cfg.Permissions.RuntimeCampaigns != nil && !*cfg.Permissions.RuntimeCampaigns {
-				continue
-			}
+		if skill.Allowed != nil && !skill.Allowed(cfg) {
+			continue
 		}
-		allowed = append(allowed, skill)
+		allowed = append(allowed, skill.Name)
 	}
 	return allowed
 }

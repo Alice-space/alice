@@ -19,8 +19,10 @@ type LLMRunner interface {
 }
 
 type SystemTaskFunc func(ctx context.Context)
+type UserTaskCompletionHook func(task Task, err error)
 
 const defaultUserTaskTimeout = 10 * time.Minute
+const defaultWorkflowTaskTimeout = 24 * time.Hour
 
 const taskSignalNeedsHuman = "needs_human"
 
@@ -30,6 +32,7 @@ type Engine struct {
 	runtimeMu       sync.RWMutex
 	llmRunner       LLMRunner
 	workflowRunner  WorkflowRunner
+	userTaskHook    UserTaskCompletionHook
 	runEnv          map[string]string
 	userTaskTimeout time.Duration
 	tick            time.Duration

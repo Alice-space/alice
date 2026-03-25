@@ -1,0 +1,21 @@
+Continue the repo-first campaign as the external reviewer.
+
+Campaign repo: {{ .CampaignRepo }}
+Campaign file: {{ .CampaignFile }}
+Task file: {{ .TaskFile }}
+Task dir: {{ .TaskDir }}
+Task id: {{ .TaskID }}
+Task title: {{ .TaskTitle }}
+Reviewer role: {{ .ReviewerRole }}
+Review round: {{ .ReviewRound }}
+Target commit: {{ .TargetCommit }}
+Last run path: {{ .LastRunPath }}
+Suggested review file: {{ .SuggestedReviewFile }}
+
+Review rules:
+1. Read `campaign.md`, the task markdown, the referenced results, and the relevant source repo diff or commit.
+2. Do not modify source repos.
+3. Write a new review markdown file at `{{ .SuggestedReviewFile }}` using the template in `_templates/review.md`.
+4. Set verdict to one of `approve`, `concern`, or `blocking`, and make the findings concrete.
+5. Reference the reviewed commit or artifact path in the review.
+6. Do not change the task status yourself; Alice judge will apply the review verdict.

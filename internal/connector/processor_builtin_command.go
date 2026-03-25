@@ -294,6 +294,9 @@ func formatBuiltinStatusCampaignLine(item campaign.Campaign) string {
 	if repo := strings.TrimSpace(item.Repo); repo != "" {
 		parts = append(parts, fmt.Sprintf("repo `%s`", sanitizeInlineCode(repo)))
 	}
+	if campaignRepoPath := strings.TrimSpace(item.CampaignRepoPath); campaignRepoPath != "" {
+		parts = append(parts, fmt.Sprintf("campaign_repo `%s`", sanitizeInlineCode(campaignRepoPath)))
+	}
 	if issueIID := strings.TrimSpace(item.IssueIID); issueIID != "" {
 		parts = append(parts, fmt.Sprintf("issue `#%s`", sanitizeInlineCode(issueIID)))
 	}

@@ -2,7 +2,6 @@ package runtimeapi
 
 import (
 	"errors"
-	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -10,6 +9,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Alice-space/alice/internal/automation"
+	"github.com/Alice-space/alice/internal/logging"
 )
 
 func (s *Server) handleAutomationTaskList(c *gin.Context) {
@@ -26,12 +26,10 @@ func (s *Server) handleAutomationTaskList(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	limit := 20
-	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
-		if _, err := fmt.Sscanf(rawLimit, "%d", &limit); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
-			return
-		}
+	limit, err := parseListLimit(c.Query("limit"), 20)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
 	}
 	tasks, err := s.automation.ListTasks(scopeCtx.scope, c.Query("status"), limit)
 	if err != nil {
@@ -70,6 +68,7 @@ func (s *Server) handleAutomationTaskCreate(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=automation_task_create actor=%s task=%s scope=%s:%s", scopeCtx.actorID, created.ID, created.Scope.Kind, created.Scope.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "task": created})
 }
 
@@ -153,6 +152,7 @@ func (s *Server) handleAutomationTaskPatch(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=automation_task_patch actor=%s task=%s scope=%s:%s", scopeCtx.actorID, persisted.ID, persisted.Scope.Kind, persisted.Scope.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "task": persisted})
 }
 
@@ -190,5 +190,6 @@ func (s *Server) handleAutomationTaskDelete(c *gin.Context) {
 		c.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=automation_task_delete actor=%s task=%s scope=%s:%s", scopeCtx.actorID, deleted.ID, deleted.Scope.Kind, deleted.Scope.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "task": deleted})
 }

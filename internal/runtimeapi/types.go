@@ -48,6 +48,7 @@ type CreateCampaignRequest struct {
 	Title             string              `json:"title,omitempty"`
 	Objective         string              `json:"objective"`
 	Repo              string              `json:"repo,omitempty"`
+	CampaignRepoPath  string              `json:"campaign_repo_path,omitempty"`
 	IssueIID          string              `json:"issue_iid,omitempty"`
 	IssueURL          string              `json:"issue_url,omitempty"`
 	ManageMode        campaign.ManageMode `json:"manage_mode,omitempty"`

@@ -30,37 +30,72 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 	runCtx, cancel := e.userTaskContext(ctx, task)
 	defer cancel()
 
-	dispatch, err := e.executeUserTask(runCtx, task)
+	var (
+		dispatch taskDispatch
+		err      error
+	)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			err = fmt.Errorf("automation user task panic: %v", recovered)
+			logging.Errorf("automation user task panic id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, recovered)
+		}
+		e.recordUserTaskOutcome(task, dispatch, err)
+		e.notifyUserTaskCompletion(task, err)
+	}()
+
+	dispatch, err = e.executeUserTask(runCtx, task)
 	if err != nil {
 		logging.Errorf("run automation task failed id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, err)
 	}
-	if e.store != nil {
-		now := e.nowTime()
-		var recordErr error
-		switch {
-		case err != nil:
-			recordErr = e.store.RecordTaskResult(task.ID, now, err)
-		case dispatch.signal != nil:
-			recordErr = e.store.RecordTaskSignal(
-				task.ID,
-				now,
-				dispatch.signal.kind,
-				dispatch.signal.message,
-				dispatch.signal.pause,
-			)
-		default:
-			recordErr = e.store.RecordTaskResult(task.ID, now, nil)
-		}
-		if recordErr != nil {
-			logging.Errorf("record automation result failed id=%s err=%v", task.ID, recordErr)
-		}
+}
+
+func (e *Engine) recordUserTaskOutcome(task Task, dispatch taskDispatch, err error) {
+	if e.store == nil {
+		return
 	}
+	now := e.nowTime()
+	var recordErr error
+	switch {
+	case err != nil:
+		recordErr = e.store.RecordTaskResult(task.ID, now, err)
+	case dispatch.signal != nil:
+		recordErr = e.store.RecordTaskSignal(
+			task.ID,
+			now,
+			dispatch.signal.kind,
+			dispatch.signal.message,
+			dispatch.signal.pause,
+		)
+	default:
+		recordErr = e.store.RecordTaskResult(task.ID, now, nil)
+	}
+	if recordErr != nil {
+		logging.Errorf("record automation result failed id=%s err=%v", task.ID, recordErr)
+	}
+}
+
+func (e *Engine) notifyUserTaskCompletion(task Task, err error) {
+	hook := e.userTaskCompletionHookValue()
+	if hook == nil {
+		return
+	}
+	task = NormalizeTask(task)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			logging.Errorf("automation user task completion hook panic id=%s err=%v", task.ID, recovered)
+		}
+	}()
+	hook(task, err)
 }
 
 func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Context, context.CancelFunc) {
 	task = NormalizeTask(task)
 	if task.Action.Type == ActionTypeRunWorkflow {
-		return ctx, func() {}
+		timeout := e.userTaskTimeoutDuration()
+		if timeout < defaultWorkflowTaskTimeout {
+			timeout = defaultWorkflowTaskTimeout
+		}
+		return context.WithTimeout(ctx, timeout)
 	}
 	return context.WithTimeout(ctx, e.userTaskTimeoutDuration())
 }
@@ -87,7 +122,11 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 		return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
 	}
 	if taskPrefersCard(task) {
-		return dispatch, e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, buildTaskCardContent(task, dispatch.text))
+		cardContent, err := buildTaskCardContent(task, dispatch.text)
+		if err != nil {
+			return dispatch, err
+		}
+		return dispatch, e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, cardContent)
 	}
 	return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
 }
@@ -215,8 +254,12 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			signal: signal,
 		}
 		if signal != nil && signal.kind == taskSignalNeedsHuman {
+			cardContent, err := buildTaskWarningCardContent(task, text, signal.message)
+			if err != nil {
+				return taskDispatch{}, err
+			}
 			dispatch.forceCard = true
-			dispatch.cardContent = buildTaskWarningCardContent(task, text, signal.message)
+			dispatch.cardContent = cardContent
 		}
 		return dispatch, nil
 	default:

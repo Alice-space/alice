@@ -314,3 +314,72 @@ func TestStore_ResetRunningTasks(t *testing.T) {
 		t.Fatalf("expected running flag to be reset, task=%+v", task)
 	}
 }
+
+func TestStore_DeletedTaskRetention(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	expired, err := store.CreateTask(Task{
+		Title:    "过期已删除任务",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeSendText, Text: "old"},
+	})
+	if err != nil {
+		t.Fatalf("create expired task failed: %v", err)
+	}
+	recent, err := store.CreateTask(Task{
+		Title:    "近期已删除任务",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeSendText, Text: "recent"},
+	})
+	if err != nil {
+		t.Fatalf("create recent task failed: %v", err)
+	}
+
+	store.now = func() time.Time { return base.Add(time.Minute) }
+	if _, err := store.PatchTask(expired.ID, func(task *Task) error {
+		task.Status = TaskStatusDeleted
+		task.DeletedAt = base.Add(-deletedTaskRetention - time.Hour)
+		return nil
+	}); err != nil {
+		t.Fatalf("patch expired task failed: %v", err)
+	}
+	deletedRecent, err := store.PatchTask(recent.ID, func(task *Task) error {
+		task.Status = TaskStatusDeleted
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("patch recent task failed: %v", err)
+	}
+	if deletedRecent.DeletedAt.IsZero() {
+		t.Fatal("expected deleted_at to be recorded")
+	}
+	if !deletedRecent.NextRunAt.IsZero() {
+		t.Fatalf("expected deleted task next_run_at to be cleared, got %s", deletedRecent.NextRunAt.Format(time.RFC3339))
+	}
+
+	if _, err := store.ClaimDueTasks(base.Add(2*time.Minute), 10); err != nil {
+		t.Fatalf("claim due tasks failed: %v", err)
+	}
+
+	if _, err := store.GetTask(expired.ID); !errors.Is(err, ErrTaskNotFound) {
+		t.Fatalf("expected expired deleted task to be purged, got err=%v", err)
+	}
+	preserved, err := store.GetTask(recent.ID)
+	if err != nil {
+		t.Fatalf("get preserved deleted task failed: %v", err)
+	}
+	if preserved.Status != TaskStatusDeleted {
+		t.Fatalf("expected preserved task to stay deleted, got %s", preserved.Status)
+	}
+	if preserved.DeletedAt.IsZero() {
+		t.Fatal("expected preserved deleted task to keep deleted_at")
+	}
+}

@@ -5,6 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/sessionkey"
+	"github.com/Alice-space/alice/internal/storeutil"
 )
 
 type ManageMode string
@@ -60,19 +63,10 @@ type SessionRoute struct {
 }
 
 func (r SessionRoute) VisibilityKey() string {
-	receiveIDType := strings.ToLower(strings.TrimSpace(r.ReceiveIDType))
-	receiveID := strings.TrimSpace(r.ReceiveID)
-	if receiveIDType != "" && receiveID != "" {
-		return receiveIDType + ":" + receiveID
+	if key := sessionkey.Build(strings.ToLower(strings.TrimSpace(r.ReceiveIDType)), r.ReceiveID); key != "" {
+		return key
 	}
-	scopeKey := strings.TrimSpace(r.ScopeKey)
-	if scopeKey == "" {
-		return ""
-	}
-	if idx := strings.Index(scopeKey, "|"); idx >= 0 {
-		scopeKey = strings.TrimSpace(scopeKey[:idx])
-	}
-	return scopeKey
+	return sessionkey.VisibilityKey(r.ScopeKey)
 }
 
 type Actor struct {
@@ -167,6 +161,7 @@ type Campaign struct {
 	Title                string         `json:"title,omitempty"`
 	Objective            string         `json:"objective"`
 	Repo                 string         `json:"repo,omitempty"`
+	CampaignRepoPath     string         `json:"campaign_repo_path,omitempty"`
 	IssueIID             string         `json:"issue_iid,omitempty"`
 	IssueURL             string         `json:"issue_url,omitempty"`
 	Session              SessionRoute   `json:"session"`
@@ -198,6 +193,7 @@ func NormalizeCampaign(c Campaign) Campaign {
 	c.Title = strings.TrimSpace(c.Title)
 	c.Objective = strings.TrimSpace(c.Objective)
 	c.Repo = strings.TrimSpace(c.Repo)
+	c.CampaignRepoPath = strings.TrimSpace(c.CampaignRepoPath)
 	c.IssueIID = strings.TrimSpace(c.IssueIID)
 	c.IssueURL = strings.TrimSpace(c.IssueURL)
 	c.Session.ScopeKey = strings.TrimSpace(c.Session.ScopeKey)
@@ -211,7 +207,7 @@ func NormalizeCampaign(c Campaign) Campaign {
 	c.Status = CampaignStatus(strings.ToLower(strings.TrimSpace(string(c.Status))))
 	c.Summary = strings.TrimSpace(c.Summary)
 	c.CurrentWinnerTrialID = strings.TrimSpace(c.CurrentWinnerTrialID)
-	c.Tags = uniqueNonEmptyStrings(c.Tags)
+	c.Tags = storeutil.UniqueNonEmptyStrings(c.Tags)
 	if c.ManageMode == "" {
 		c.ManageMode = ManageModeCreatorOnly
 	}
@@ -316,6 +312,7 @@ func normalizeTrials(values []Trial) []Trial {
 		return nil
 	}
 	out := make([]Trial, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		value.ID = strings.TrimSpace(value.ID)
 		value.Title = strings.TrimSpace(value.Title)
@@ -328,7 +325,7 @@ func normalizeTrials(values []Trial) []Trial {
 		value.Status = TrialStatus(strings.ToLower(strings.TrimSpace(string(value.Status))))
 		value.Verdict = Verdict(strings.ToLower(strings.TrimSpace(string(value.Verdict))))
 		value.Summary = strings.TrimSpace(value.Summary)
-		value.Tags = uniqueNonEmptyStrings(value.Tags)
+		value.Tags = storeutil.UniqueNonEmptyStrings(value.Tags)
 		value.Metrics = normalizeMetrics(value.Metrics)
 		if value.Status == "" {
 			value.Status = TrialStatusPlanned
@@ -336,6 +333,10 @@ func normalizeTrials(values []Trial) []Trial {
 		if value.ID == "" {
 			continue
 		}
+		if _, exists := seen[value.ID]; exists {
+			continue
+		}
+		seen[value.ID] = struct{}{}
 		out = append(out, value)
 	}
 	return out
@@ -346,6 +347,7 @@ func normalizeGuidanceEntries(values []Guidance) []Guidance {
 		return nil
 	}
 	out := make([]Guidance, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		value.ID = strings.TrimSpace(value.ID)
 		value.Source = strings.TrimSpace(value.Source)
@@ -354,6 +356,10 @@ func normalizeGuidanceEntries(values []Guidance) []Guidance {
 		if value.ID == "" {
 			continue
 		}
+		if _, exists := seen[value.ID]; exists {
+			continue
+		}
+		seen[value.ID] = struct{}{}
 		out = append(out, value)
 	}
 	return out
@@ -364,6 +370,7 @@ func normalizeReviews(values []Review) []Review {
 		return nil
 	}
 	out := make([]Review, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		value.ID = strings.TrimSpace(value.ID)
 		value.ReviewerID = strings.TrimSpace(value.ReviewerID)
@@ -376,6 +383,10 @@ func normalizeReviews(values []Review) []Review {
 		if value.ID == "" {
 			continue
 		}
+		if _, exists := seen[value.ID]; exists {
+			continue
+		}
+		seen[value.ID] = struct{}{}
 		out = append(out, value)
 	}
 	return out
@@ -405,16 +416,21 @@ func normalizePitfalls(values []Pitfall) []Pitfall {
 		return nil
 	}
 	out := make([]Pitfall, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
 	for _, value := range values {
 		value.ID = strings.TrimSpace(value.ID)
 		value.Summary = strings.TrimSpace(value.Summary)
 		value.Reason = strings.TrimSpace(value.Reason)
 		value.RelatedTrialID = strings.TrimSpace(value.RelatedTrialID)
 		value.RetryIf = strings.TrimSpace(value.RetryIf)
-		value.Tags = uniqueNonEmptyStrings(value.Tags)
+		value.Tags = storeutil.UniqueNonEmptyStrings(value.Tags)
 		if value.ID == "" {
 			continue
 		}
+		if _, exists := seen[value.ID]; exists {
+			continue
+		}
+		seen[value.ID] = struct{}{}
 		out = append(out, value)
 	}
 	return out
@@ -431,24 +447,4 @@ func validateTrial(t Trial) error {
 		return fmt.Errorf("invalid trial status %q", t.Status)
 	}
 	return nil
-}
-
-func uniqueNonEmptyStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	seen := make(map[string]struct{}, len(values))
-	out := make([]string, 0, len(values))
-	for _, raw := range values {
-		trimmed := strings.TrimSpace(raw)
-		if trimmed == "" {
-			continue
-		}
-		if _, exists := seen[trimmed]; exists {
-			continue
-		}
-		seen[trimmed] = struct{}{}
-		out = append(out, trimmed)
-	}
-	return out
 }

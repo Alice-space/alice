@@ -1,6 +1,10 @@
 package connector
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/Alice-space/alice/internal/sessionkey"
+)
 
 func (p *Processor) resolveCanonicalSessionKeyLocked(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
@@ -31,10 +35,6 @@ func normalizeSessionAliases(aliases []string, canonicalKey string) []string {
 		}
 	}
 	return normalized
-}
-
-func appendSessionAlias(aliases []string, alias string) []string {
-	return appendSessionAliasWithLimit(aliases, alias, maxSessionAliases)
 }
 
 func appendSessionAliasWithLimit(aliases []string, alias string, limit int) []string {
@@ -151,12 +151,5 @@ func extractThreadIDFromAlias(alias string) string {
 }
 
 func scopeKeyFromSessionKey(sessionKey string) string {
-	sessionKey = strings.TrimSpace(sessionKey)
-	if sessionKey == "" {
-		return ""
-	}
-	if idx := strings.Index(sessionKey, "|"); idx >= 0 {
-		sessionKey = strings.TrimSpace(sessionKey[:idx])
-	}
-	return sessionKey
+	return sessionkey.VisibilityKey(sessionKey)
 }

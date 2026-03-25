@@ -24,31 +24,21 @@ type automationScopeContext struct {
 }
 
 func resolveAutomationScope(session mcpbridge.SessionContext) (automationScopeContext, error) {
-	if err := session.Validate(); err != nil {
+	runtimeCtx, err := resolveRuntimeSessionContext(session)
+	if err != nil {
 		return automationScopeContext{}, err
 	}
-	actorUserID := strings.TrimSpace(session.ActorUserID)
-	actorOpenID := strings.TrimSpace(session.ActorOpenID)
-	actorID := actorUserID
-	if actorID == "" {
-		actorID = actorOpenID
-	}
-	if actorID == "" {
-		return automationScopeContext{}, errors.New("missing actor id in runtime context")
-	}
-	chatType := strings.ToLower(strings.TrimSpace(session.ChatType))
-	isGroup := chatType == "group" || chatType == "topic_group"
 	ctx := automationScopeContext{
 		creator: automation.Actor{
-			UserID: actorUserID,
-			OpenID: actorOpenID,
+			UserID: runtimeCtx.actorUserID,
+			OpenID: runtimeCtx.actorOpenID,
 		},
-		actorID: actorID,
-		isGroup: isGroup,
+		actorID: runtimeCtx.actorID,
+		isGroup: runtimeCtx.isGroup,
 		session: session,
 	}
-	if isGroup {
-		receiveID := strings.TrimSpace(session.ReceiveID)
+	if runtimeCtx.isGroup {
+		receiveID := runtimeCtx.receiveID
 		if receiveID == "" {
 			return automationScopeContext{}, errors.New("missing chat_id for group automation scope")
 		}
@@ -56,15 +46,15 @@ func resolveAutomationScope(session mcpbridge.SessionContext) (automationScopeCo
 		ctx.route = automation.Route{ReceiveIDType: "chat_id", ReceiveID: receiveID}
 		return ctx, nil
 	}
-	ctx.scope = automation.Scope{Kind: automation.ScopeKindUser, ID: actorID}
-	if actorUserID != "" {
-		ctx.route = automation.Route{ReceiveIDType: "user_id", ReceiveID: actorUserID}
-	} else if actorOpenID != "" {
-		ctx.route = automation.Route{ReceiveIDType: "open_id", ReceiveID: actorOpenID}
+	ctx.scope = automation.Scope{Kind: automation.ScopeKindUser, ID: runtimeCtx.actorID}
+	if runtimeCtx.actorUserID != "" {
+		ctx.route = automation.Route{ReceiveIDType: "user_id", ReceiveID: runtimeCtx.actorUserID}
+	} else if runtimeCtx.actorOpenID != "" {
+		ctx.route = automation.Route{ReceiveIDType: "open_id", ReceiveID: runtimeCtx.actorOpenID}
 	} else {
 		ctx.route = automation.Route{
-			ReceiveIDType: strings.TrimSpace(session.ReceiveIDType),
-			ReceiveID:     strings.TrimSpace(session.ReceiveID),
+			ReceiveIDType: runtimeCtx.receiveIDType,
+			ReceiveID:     runtimeCtx.receiveID,
 		}
 	}
 	return ctx, nil
@@ -204,20 +194,6 @@ func applyTaskPatch(current automation.Task, patchBytes []byte, contentType stri
 		return automation.Task{}, err
 	}
 	return next, nil
-}
-
-func scopeSessionKey(session mcpbridge.SessionContext) string {
-	sessionKey := strings.TrimSpace(session.SessionKey)
-	if sessionKey != "" {
-		if idx := strings.Index(sessionKey, "|message:"); idx >= 0 {
-			sessionKey = strings.TrimSpace(sessionKey[:idx])
-		}
-		return sessionKey
-	}
-	if strings.TrimSpace(session.ReceiveIDType) == "" || strings.TrimSpace(session.ReceiveID) == "" {
-		return ""
-	}
-	return strings.TrimSpace(session.ReceiveIDType) + ":" + strings.TrimSpace(session.ReceiveID)
 }
 
 func validateMentionPermission(scopeCtx automationScopeContext, mentionUserIDs []string) error {

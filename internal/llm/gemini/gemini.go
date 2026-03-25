@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"sort"
 	"strings"
 	"time"
 
@@ -87,21 +88,17 @@ func (r Runner) RunWithThreadAndProgress(
 		return "", threadID, fmt.Errorf("start gemini process failed: %w", err)
 	}
 
-	var stdout bytes.Buffer
+	stdoutPreview := limitedBuffer{limit: 4096}
 	var stderr bytes.Buffer
-	stdoutDone := make(chan struct{})
 	stderrDone := make(chan struct{})
-	go func() {
-		_, _ = io.Copy(&stdout, stdoutPipe)
-		close(stdoutDone)
-	}()
 	go func() {
 		_, _ = io.Copy(&stderr, stderrPipe)
 		close(stderrDone)
 	}()
+	var response jsonResponse
+	decodeErr := json.NewDecoder(io.TeeReader(stdoutPipe, &stdoutPreview)).Decode(&response)
 
 	err = cmd.Wait()
-	<-stdoutDone
 	<-stderrDone
 
 	detail := strings.TrimSpace(stderr.String())
@@ -113,7 +110,7 @@ func (r Runner) RunWithThreadAndProgress(
 	}
 	if err != nil {
 		if detail == "" {
-			detail = strings.TrimSpace(stdout.String())
+			detail = strings.TrimSpace(stdoutPreview.String())
 		}
 		if len(detail) > 400 {
 			detail = detail[:400]
@@ -121,10 +118,12 @@ func (r Runner) RunWithThreadAndProgress(
 		runErr := fmt.Errorf("gemini exec failed: %w (%s)", err, detail)
 		return "", threadID, decorateNodeVersionError(runErr, detail)
 	}
+	if decodeErr != nil {
+		return "", threadID, fmt.Errorf("parse gemini json output failed: %w", decodeErr)
+	}
 
-	response, parseErr := parseJSONResponse(stdout.String())
-	if parseErr != nil {
-		return "", threadID, parseErr
+	if err := validateJSONResponse(response); err != nil {
+		return "", threadID, err
 	}
 	if onThinking != nil && strings.TrimSpace(response.Response) != "" {
 		onThinking(strings.TrimSpace(response.Response))
@@ -150,7 +149,7 @@ func (r Runner) renderPrompt(threadID string, userText string, personality strin
 	if loader == nil {
 		loader = prompting.DefaultLoader()
 	}
-	promptPrefix, err := prompting.ComposePromptPrefix(loader, r.PromptPrefix, personality, noReplyToken)
+	promptPrefix, err := prompting.ComposePromptPrefix(r.PromptPrefix, personality, noReplyToken)
 	if err != nil {
 		return "", err
 	}
@@ -163,19 +162,21 @@ func (r Runner) renderPrompt(threadID string, userText string, personality strin
 }
 
 func parseJSONResponse(raw string) (jsonResponse, error) {
-	trimmed := strings.TrimSpace(raw)
-	if trimmed == "" {
-		return jsonResponse{}, errors.New("gemini returned empty output")
-	}
-
 	var response jsonResponse
-	if err := json.Unmarshal([]byte(trimmed), &response); err != nil {
+	if err := json.NewDecoder(strings.NewReader(raw)).Decode(&response); err != nil {
 		return jsonResponse{}, fmt.Errorf("parse gemini json output failed: %w", err)
 	}
-	if strings.TrimSpace(response.Response) == "" {
-		return jsonResponse{}, errors.New("gemini returned no final response")
+	if err := validateJSONResponse(response); err != nil {
+		return jsonResponse{}, err
 	}
 	return response, nil
+}
+
+func validateJSONResponse(response jsonResponse) error {
+	if strings.TrimSpace(response.Response) == "" {
+		return errors.New("gemini returned no final response")
+	}
+	return nil
 }
 
 func mergeEnv(base []string, overrides map[string]string) []string {
@@ -193,7 +194,13 @@ func mergeEnv(base []string, overrides map[string]string) []string {
 		}
 		indexByKey[key] = i
 	}
-	for key, value := range overrides {
+	keys := make([]string, 0, len(overrides))
+	for key := range overrides {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		value := overrides[key]
 		pair := key + "=" + value
 		if idx, ok := indexByKey[key]; ok {
 			env[idx] = pair
@@ -218,4 +225,31 @@ func decorateNodeVersionError(runErr error, detail string) error {
 		return fmt.Errorf("%w; gemini CLI is using an older Node runtime from PATH, ensure Alice starts with Node >= 20 (for example via nvm PATH)", runErr)
 	}
 	return runErr
+}
+
+type limitedBuffer struct {
+	buffer bytes.Buffer
+	limit  int
+}
+
+func (b *limitedBuffer) Write(p []byte) (int, error) {
+	if b == nil {
+		return len(p), nil
+	}
+	remaining := b.limit - b.buffer.Len()
+	if remaining > 0 {
+		if len(p) > remaining {
+			_, _ = b.buffer.Write(p[:remaining])
+		} else {
+			_, _ = b.buffer.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (b *limitedBuffer) String() string {
+	if b == nil {
+		return ""
+	}
+	return b.buffer.String()
 }

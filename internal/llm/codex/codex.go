@@ -439,7 +439,7 @@ func (r Runner) renderPrompt(threadID string, userText string, personality strin
 	if loader == nil {
 		loader = prompting.DefaultLoader()
 	}
-	promptPrefix, err := r.composePromptPrefix(loader, personality, noReplyToken)
+	promptPrefix, err := r.composePromptPrefix(personality, noReplyToken)
 	if err != nil {
 		return "", err
 	}
@@ -451,8 +451,8 @@ func (r Runner) renderPrompt(threadID string, userText string, personality strin
 	})
 }
 
-func (r Runner) composePromptPrefix(loader *prompting.Loader, personality string, noReplyToken string) (string, error) {
-	return prompting.ComposePromptPrefix(loader, r.PromptPrefix, personality, noReplyToken)
+func (r Runner) composePromptPrefix(personality string, noReplyToken string) (string, error) {
+	return prompting.ComposePromptPrefix(r.PromptPrefix, personality, noReplyToken)
 }
 
 func errorString(err error) string {

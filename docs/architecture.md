@@ -28,6 +28,14 @@ This document describes the current target architecture after the runtime/skills
   Task persistence/execution for `send_text` and `run_llm`.
 - `internal/runtimeapi`
   Local authenticated HTTP server and client used by skills.
+- `internal/statusview`
+  Aggregates scoped usage, automation, and campaign snapshots for `/status` style views.
+- `internal/imagegen`
+  Image generation and editing adapters plus output safety guards.
+- `internal/messaging`
+  Narrow sender/uploader port definitions shared by runtime and connector layers.
+- `internal/storeutil`
+  Shared helpers for bbolt open/version/parent-dir handling.
 - `skills/`
   Runtime-facing operational skills such as `alice-memory`, `alice-message`, `alice-scheduler`, and `alice-code-army`.
 
@@ -44,6 +52,9 @@ Prompts are no longer embedded as large string literals in code paths.
   - `prompts/connector/runtime_skill_hint.md.tmpl`
   - `prompts/connector/idle_summary.md.tmpl`
   - `prompts/connector/synthetic_mention.md.tmpl`
+- Campaign repo workflow templates:
+  - `prompts/campaignrepo/executor_dispatch.md.tmpl`
+  - `prompts/campaignrepo/reviewer_dispatch.md.tmpl`
 
 `internal/prompting` loads templates from disk, caches compiled templates with `xxhash`, and exposes `sprig` helpers.
 
@@ -89,6 +100,39 @@ Configuration:
 
 If `runtime_http_token` is omitted, the connector generates a per-process token and injects it into agent environments.
 
+Current runtime hardening:
+
+- Request bodies are capped to a small JSON-sized limit because runtime API endpoints pass paths/metadata, not bulk file data.
+- Bearer-authenticated requests are rate-limited in-process to reduce brute-force pressure on the local token.
+- Attachment payloads are uploaded from local paths instead of posting raw file bytes through the API.
+
+## Session key routing
+
+Alice routes work by a canonical session key with optional aliases.
+
+Common format:
+
+- `{receive_id_type}:{receive_id}`
+- `{receive_id_type}:{receive_id}|scene:{scene}`
+- `{receive_id_type}:{receive_id}|scene:{scene}|thread:{thread_id}`
+- `{receive_id_type}:{receive_id}|scene:{scene}|message:{message_id}`
+
+Special cases:
+
+- work-scene seed key: `{receive_id_type}:{receive_id}|scene:work|seed:{source_message_id}`
+- chat reset alias: append `|reset:{message_id}` when rotating a chat-scoped session
+
+These aliases let Alice resume the same logical session when later Feishu events arrive as root messages, replies, or thread replies.
+
+## Codex execution policy defaults
+
+The bundled default for Codex work-scene runs is intentionally powerful:
+
+- sandbox: `danger-full-access`
+- approval mode: `never`
+
+This is a deliberate tradeoff so work-scene agents can edit the workspace and run local tooling without interactive approval loops. It should only be enabled for trusted local workspaces and trusted bundled skills; operators who need a stricter posture should override the Codex scene policy in config.
+
 ## Skills model
 
 Operational modules are now exposed as skills instead of being reachable only through MCP tools:
@@ -100,7 +144,7 @@ Operational modules are now exposed as skills instead of being reachable only th
 - `skills/alice-scheduler`
   Manage automation tasks through `alice runtime automation ...`.
 - `skills/alice-code-army`
-  Acts as the long-running optimization orchestration skill, using `alice runtime campaigns ...` to manage multi-trial campaign state before deeper GitLab/cluster integrations.
+  Acts as the long-running optimization orchestration skill, using `alice runtime campaigns ...` as a lightweight campaign index while the campaign repository's markdown/frontmatter structure serves as the primary source of truth; Alice backend periodically reconciles the campaign repo to refresh live-report and wake tasks, while GitLab/cluster integrations remain optional mirrors and execution surfaces.
 
 These skills rely on:
 

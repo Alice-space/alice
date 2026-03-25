@@ -1,218 +1,164 @@
 ---
 name: alice-code-army
-description: 用 GitLab issue / branch / MR、Alice 调度、集群执行和多模型 reviewer 组织多 trial 优化闭环。适用于在当前会话中启动、推进、暂停、取消、改向、比较和收敛代码或模型优化实验，并默认要求关键操作在 GitLab 上可见，维护共享实验记录避免重复踩坑。
+description: 以 campaign 仓库为主事实源，结合 Alice 调度、多模型执行与审阅，组织长期代码/研究协作。适用于多阶段、多子任务、多 repo 的并行推进，以及 repo-native 的计划、进度、评审与报告收敛。
 ---
 
 # Alice 代码军队
 
-`alice-code-army` 是一套长期优化任务的编排约定：
+`alice-code-army` 现在采用 repo-first 约定：
+
+- `campaign repo` 做主事实源：计划、阶段、任务、评审、报告都以仓库里的 markdown/frontmatter 为主。
+- `Alice runtime` 做轻量索引层：记录当前会话绑定哪个 campaign、当前 scheduler task、当前运行态。
+- `source repos` 做真实代码变更面：task 改的代码仍落在原始代码仓库，而不是复制到 campaign repo。
+- `GitLab issue / MR` 做可选镜像面：需要对人可见时再同步，不再是默认主存储。
+- Alice backend 会周期扫描 `campaign repo`：自动刷新 `reports/live-report.md`，并把 task 的 `wake_at` / `wake_prompt` 同步成真正的 automation wake task。
+- 当前 runtime 自动化只覆盖 executor/reviewer dispatch、review verdict 应用、wake task 和 reconcile；plan 阶段的 proposal / merge / human gate 仍以 repo 文件和人工/交互式流程为主，尚未有独立 planner runtime 调度。
 
 优先使用 `scripts/alice-code-army.sh` 管理当前会话下的 campaign。脚本会自动使用 Alice 注入的当前 thread/session 上下文和 runtime HTTP API。
 
 维护约束：当前会话里 `.codex/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
 
-- `GitLab` 做记录面：目标、trial、MR、review、CI、工时、结论都优先落在 issue / MR。
-- `Cluster` 做执行面：本地 GPU、IHEP、IHEPAI 等资源负责跑任务、查状态、取日志。
-- `Alice` 做编排面：提出假设、开 trial、汇报进度、收集 reviewer 意见、推动收敛。
-- `Kimi` / `DeepSeek` / 其他模型做 reviewer：负责讨论、审核、挑错、补建议。
-
 ## 何时使用
 
-- 用户要做长期优化、并行多 trial、性能调优、代码试验、实验收敛。
-- 用户提到 issue、MR、branch、pipeline、review、merge、reject、共享实验记录、踩坑复用。
-- 用户希望能在 Feishu 或 GitLab 里打断、暂停、取消、改方向。
-- 用户希望把别的模型拉进来一起讨论、审核和提建议。
+- 用户要做长期优化、研究协作、并行多 task、多 repo 任务推进。
+- 用户要把计划、任务、评审、报告沉淀在一个 campaign repo 里。
+- 用户希望让强模型做规划/审阅，让小模型做子任务执行。
+- 用户希望长任务能自动唤醒、周期汇报、持续收敛。
 
-## 可见性约束
+## 主数据面
 
-- 默认要求 `campaign` 绑定一个 GitLab `issue`；如果还没有 `issue_iid`，先创建或绑定 issue，再继续后续操作。
-- 默认要求关键状态变更在 GitLab 上可见：
-  `campaign` 创建后应在同一轮内创建/绑定 issue，并把当前摘要同步到 issue。
-  `trial` 创建后应在 GitLab 上可见，通常至少要在 issue 中出现；进入实现阶段后再创建 branch / MR。
-  `guidance`、`review`、`pitfall`、`hold`、`cancel`、`accept`、`steer` 等状态变化，应在同一轮或紧接着同步到 issue / MR。
-- 不允许把“只存在本地 runtime、GitLab 不可见”的状态当作默认完成态。
-- 只有当用户明确允许“暂时不落 GitLab / 先本地草稿”时，才可以保留本地不可见状态；否则应把缺失的 issue / MR 视为阻塞项，而不是静默继续。
+默认约定：
 
-## 资源与 Heartbeat 约束
+- `campaign.md`：总目标、gate、方向、阶段、当前结论。
+- `plans/`：多模型 proposal、人类意见、merged plan。
+- `phases/Pxx/phase.md`：阶段定义。
+- `phases/Pxx/tasks/Txxx.md`：任务定义、依赖、状态、write scope、唤醒信息。
+- `reviews/`：审阅记录。
+- `reports/`：live report、phase report、final report。
+- `paper/`：论文或最终文档。
+- `repos/*.md`：source repo 引用信息，包括本地路径、远端、默认分支、工作分支。
+- `docs/research-contract.md` / `findings.md` / `EXPERIMENT_LOG.md`：研究约束、关键发现、实验日志。
 
-- 默认应尽可能利用所有允许且当前可用的资源；只要试验彼此不冲突、风险可控、资源空闲，就应尽可能并行推进，提高效率，避免无谓串行等待。
-- `heartbeat` / `reconcile` / 周期 `run_workflow` 任务默认是推进任务，不是纯巡检任务。若已经识别出清晰且安全的下一步，应在同一轮里实际动手，例如起/补 `trial`、补 control、做小范围安全修复、同步 `campaign` / `issue` / `MR`、调整优先级或资源分配。
-- 如果确实需要调整，就应当实际调整，不能只看不动、只写建议不执行。只有在缺少前提、权限、资源，或存在明显风险时，才可以停留在观察和汇报；此时必须明确写出 blocker、风险边界，并发出正式的 `/alice needs-human ...` 指令，而不是只口头说需要人工。
-- 对自动化 `run_workflow` / heartbeat：
-  能安全做、自己能完成的动作必须直接做。
-  做不到或不安全的动作，必须在同一轮里同时完成两件事：
-  `scripts/alice-code-army.sh apply-command camp_xxx '/alice needs-human <blocker>; next: <human action>' codex-reconcile`
-  在最终回复里追加隐藏指令块：`<alice_command>/alice needs-human <blocker>; next: <human action></alice_command>`
-  runtime 会解析这条指令，暂停对应自动任务，并在飞书发送警告卡片。
+## Task 约定
 
-## 工时统计约束
+一个 task 不只是单个 markdown，而是一个小工作包。常见内容包括：
 
-- 绑定 GitLab `issue` 的 campaign，默认也要维护 issue 工时统计。范围清晰后，应补一个合理的 `estimate`；每轮有实际推进动作时，应同步记录本轮 `spent time`。
-- 优先使用 `scripts/alice-code-army.sh time-estimate` / `time-spend` 直接调用 GitLab issue time-tracking API，不要把 `/estimate` / `/spend` 混在普通 issue 评论里赌解析是否成功；必要时可修正错误记录，但不要让 estimate 长期失真。
-- `heartbeat` / `reconcile` 任务只有在本轮确实动手推进时才记工时，例如改代码、起实验、修任务、同步关键状态、处理 review、排查并完成具体修复；如果只是观察、等待或纯汇报，不要虚记工时。
-- 工时记录应尽量与 issue 可见的工作摘要一起落在同一轮评论里，说明时间花在什么 trial / 变更 / 排障上，避免只累计数字不写上下文。
+- `task.md`：任务元数据与目标
+- `plan.md`：执行方案
+- `progress.md`：执行日志
+- `review/*.md`：审阅记录
+- `results/*.md`：结果摘要、指标、产物路径
+- `scripts/`：task 专属小脚本
+
+真实业务代码继续放在 source repo。大数据和大产物只记录路径、checksum、摘要，不默认进 git。
+
+task frontmatter 现在默认带两类角色：
+
+- `executor`：默认 `executor.codex`
+- `reviewer`：默认 `reviewer.claude`
+
+并带这类执行态字段：
+
+- `dispatch_state`
+- `review_status`
+- `execution_round`
+- `review_round`
+- `base_commit`
+- `head_commit`
+- `last_run_path`
+- `last_review_path`
+
+## 并行与防冲突
+
+并行的基本规则：
+
+- 同一个 task 必须有独立 `owner_agent`、`lease_until`、`working_branch`、`write_scope`。
+- 同一个 source repo 可以并行多个 task，但只有在 `write_scope` 不重叠时才允许。
+- 同文件或同模块的重叠改动，不应并行；要么改成依赖链，要么合并成一个 task。
+- 开发分支可以并行，回主线集成应串行。
+
+长任务约定：
+
+- task 可以写 `wake_at` / `wake_prompt`
+- reconcile 读到后，应通过 `alice-scheduler` 创建或更新唤醒任务
+- 到时间后自动恢复该 task，而不是靠人工记忆
 
 ## 核心流程
 
-1. 找到或创建目标 `issue`，写清 baseline、目标、硬门槛、当前计划；若 issue 不存在，先创建并绑定到 campaign。
-2. 把每个 `trial` 映射到一个 `branch`，通常再配一个 `MR`。
-3. 用本地或集群资源执行 trial，并把结果回写到 `MR` / `issue`；不要只停留在本地 campaign JSON。
-4. 把同一批上下文交给 reviewer 模型，让它们审代码、审实验设计、审结果解释。
-5. 汇总结果，给出 `merge` / `reject` / `hold` / `needs-more-evidence` 结论。
-6. 追加共享实验记录，避免后续重复踩同一个坑。
-7. 当 campaign 进入终态时，清理当前会话里与该 campaign 绑定的自动化任务，避免 `merged` / `rejected` 后 scheduler 还继续 heartbeat 或发日报。
+1. 新建 campaign，并直接 scaffold 一个 campaign repo。
+2. 通过人工或交互式会话让 `Claude Code` / `GPT` / `Gemini Code` 分别产出 proposal，同时保留人工输入文件。
+3. 人工合并 proposal，生成 merged plan。
+4. 按 merged plan 展开阶段和 task 文件树。
+5. runtime reconcile 只派发依赖满足、write scope 不冲突的 ready tasks。
+6. Alice judge 先读取 review 文件并把 verdict 回写成 `accepted / rework / blocked / rejected`。
+7. executor 在 source repo 分支/worktree 上执行，并把 task 状态推进到 `review_pending / waiting_external / blocked`。
+8. reviewer 只写 `reviews/Txxx/Rxxx.md`，不直接改 source repo。
+9. curator / reporter 汇总为 live report、phase report、paper。
+10. Alice 后台 system task 会持续做 repo reconcile、executor/reviewer dispatch 和 wake task 同步，不需要每次都靠人工重跑一遍脚本。
+
+## 角色边界
+
+- `Alice`：orchestrator / judge / integrator
+- `Codex executor`：执行 task，可写 source repo 和 task 目录
+- `Claude reviewer`：外部审阅者，只写 review 文件和审阅结论
+
+硬规则：
+
+- reviewer 不直接改 source repo
+- executor 不直接裁决自己是否通过
+- task 进入 `review_pending` 后，review round 由 Alice 派发 reviewer
+- review verdict 由 Alice judge 应用到 task frontmatter
 
 ## 常用命令
 
 - 列出当前 thread 下的 campaign：
   `scripts/alice-code-army.sh list`
-- 新建 campaign：
+- 新建 campaign，并默认直接 scaffold campaign repo：
   `scripts/alice-code-army.sh create <<'JSON'`
-  `{ "title": "Optimize Model-X", "objective": "速度提升且质量上升", "repo": "group/model-x", "issue_iid": "218", "max_parallel_trials": 3 }`
+  `{ "title": "Detector Scan", "objective": "完成 repo-native 的多阶段研究协作", "repo": "group/source-repo", "campaign_repo_path": "./campaigns/detector-scan", "max_parallel_trials": 6 }`
   `JSON`
-  若没有 `issue_iid`，应先用 GitLab 创建 issue，再回填到 campaign；不要让 campaign 长时间处于“不可见”状态。
+- 为已有 campaign 手动初始化或补建 campaign repo：
+  `scripts/alice-code-army.sh init-repo camp_xxx ./campaigns/detector-scan`
+- 扫描 campaign repo，查看当前 ready / blocked / wake 状态：
+  `scripts/alice-code-army.sh repo-scan camp_xxx`
+- 手动触发一次 repo reconcile，并刷新 live report / runtime summary：
+  `scripts/alice-code-army.sh repo-reconcile camp_xxx`
 - 查看单个 campaign：
   `scripts/alice-code-army.sh get camp_xxx`
 - Patch campaign：
-  `scripts/alice-code-army.sh patch camp_xxx '{"status":"hold","summary":"waiting for user guidance"}'`
+  `scripts/alice-code-army.sh patch camp_xxx '{"summary":"direction updated"}'`
 - 新增或更新 trial：
-  `scripts/alice-code-army.sh upsert-trial camp_xxx '{"trial":{"id":"trial-1","hypothesis":"蒸馏小模型","status":"running"}}'`
+  `scripts/alice-code-army.sh upsert-trial camp_xxx '{"trial":{"id":"trial-1","title":"repo-a baseline","status":"running"}}'`
 - 追加 guidance：
   `scripts/alice-code-army.sh add-guidance camp_xxx '{"guidance":{"source":"feishu","command":"/alice hold"}}'`
 - 追加 review：
-  `scripts/alice-code-army.sh add-review camp_xxx '{"review":{"reviewer_id":"experiment-reviewer","verdict":"concern","summary":"需要复验"}}'`
+  `scripts/alice-code-army.sh add-review camp_xxx '{"review":{"reviewer_id":"repo-reviewer","verdict":"concern","summary":"write scope overlaps with T012"}}'`
 - 追加 pitfall：
-  `scripts/alice-code-army.sh add-pitfall camp_xxx '{"pitfall":{"summary":"spec decoding 长上下文退化","related_trial_id":"trial-2"}}'`
-- 应用一条 `/alice ...` 指令到当前 campaign：
-  `scripts/alice-code-army.sh apply-command camp_xxx '/alice cancel trial-2' issue`
-- 请求人工介入并暂停自动化：
-  `scripts/alice-code-army.sh apply-command camp_xxx '/alice needs-human official dataset staging required; next: provide approved source path' codex-reconcile`
-- 渲染发往 issue 的 markdown 摘要：
-  `scripts/alice-code-army.sh render-issue-note camp_xxx`
-- 渲染单个 trial 发往 MR 的 markdown 摘要：
-  `scripts/alice-code-army.sh render-trial-note camp_xxx trial-1`
-- 查看绑定 issue 当前工时：
-  `scripts/alice-code-army.sh time-stats camp_xxx`
-- 设置绑定 issue 总预估工时：
-  `scripts/alice-code-army.sh time-estimate camp_xxx 1d`
-- 为绑定 issue 追加已花工时：
-  `scripts/alice-code-army.sh time-spend camp_xxx '30m' 'resubmitted ds2 smoke and synced V100 status'`
-- 同步一条 issue 摘要到 GitLab：
-  `scripts/alice-code-army.sh sync-issue camp_xxx`
-- 同步单个 trial 摘要到 GitLab MR：
-  `scripts/alice-code-army.sh sync-trial camp_xxx trial-1`
-- 同步 issue 和所有带 MR 的 trial：
-  `scripts/alice-code-army.sh sync-all camp_xxx`
+  `scripts/alice-code-army.sh add-pitfall camp_xxx '{"pitfall":{"summary":"two tasks touched same module","related_trial_id":"trial-2"}}'`
+- 应用一条 `/alice ...` 指令：
+  `scripts/alice-code-army.sh apply-command camp_xxx '/alice hold' feishu`
 
-## 控制通道
+## GitLab 镜像
 
-- `Feishu`：即时控制，优先用于“马上停掉”“先别继续开新 trial”这类动作。
-- `issue` / `MR` 评论：持久控制，适合留痕与协作。
-- 初版优先使用明确命令，减少歧义，例如：
-  `/alice hold`
-  `/alice cancel trial-2`
-  `/alice steer primary_metric=decode_latency accuracy_budget=0.1%`
-  `/alice accept trial-1`
-  `/alice needs-human official dataset staging required; next: provide source path`
-- 用户在 Feishu 给出关键指令后，如果 repo / issue 已知，应把决定同步回 GitLab 评论留痕。
+GitLab 现在是可选镜像，不是主事实源。
 
-建议语义：
+- 若用户需要 issue / MR 对人可见，可手动使用：
+  `render-issue-note`
+  `render-trial-note`
+  `sync-issue`
+  `sync-trial`
+  `sync-all`
+- 若没有 issue / MR，不再视为默认阻塞项。
+- 若 issue 已存在，仍可把 campaign repo 摘要镜像到 issue / MR，但不要把它当唯一状态源。
 
-- `hold`：不再启动新任务，已在跑的允许先跑完。
-- `cancel trial-x`：终止指定 trial，对应 job 取消，MR 标记为 `aborted`。
-- `steer ...`：修改目标、预算或方向；根据策略决定是否立即停掉正在跑的任务。
-- `accept trial-x`：把某个 trial 提升为当前候选赢家，进入复验或合并判断。
-- `needs-human ...`：明确宣布“自动化到这里为止”。应写清 blocker、风险边界和下一步需要人类做什么；默认把 campaign 置为 `hold`，同步 issue，并让 runtime 暂停对应 heartbeat / reconcile 任务并发告警卡。
+## 自动化与回复模式
 
-当前脚本已经内置一层轻量落地：
-
-- `apply-command` 会把 `/alice hold`、`/alice cancel trial-x`、`/alice accept trial-x`、`/alice steer ...`、`/alice needs-human ...` 写入 guidance，并同步 patch campaign / trial 状态。
-- `render-issue-note` / `render-trial-note` 会把 campaign JSON 渲染成适合发到 GitLab 的 markdown。
-- `sync-issue` / `sync-trial` / `sync-all` 优先复用环境里的 `ihep-gitlab` helper；若 helper 启用了 note 去重，可避免短时间内重复发送相同摘要。
-- `sync-issue` / `sync-trial` 在同步前会对 campaign 内的完全重复 `guidance` / `review` / `pitfall` 记录做一次精确去重，避免同一轮 reconcile 或重试把同一条状态反复写入 campaign 与 issue / MR。
-- 当前 GitLab sync 只发纯文本 markdown，不上传附件文件。
-- 因此默认动作应是：
-  创建/更新 campaign -> 绑定或创建 issue -> `sync-issue`
-  创建/更新 trial -> issue 可见 -> 若有 MR 则 `sync-trial`
-
-## 评价规则
-
-- 先设硬门槛，再比较谁更好。
-- 硬门槛通常包括：
-  速度或主目标必须提升。
-  质量下降不能超过预算。
-  显存、资源或复杂度不能越界。
-  结果要可复现。
-  reviewer 不能有未解决的阻塞意见。
-- 只有通过硬门槛的 trial 才进入比较。
-- 比较顺序通常是：主目标 -> 副目标 -> 工程风险 / 维护成本。
-
-## 结论规则
-
-- `merge`
-  通过全部硬门槛；在同批 trial 中最优或最稳；至少有一次确认复验；没有未解决的 blocking review。
-- `reject`
-  未过硬门槛；明显差于 sibling trial；重复已知坑且没有新前提；或用户明确取消。
-- `needs-more-evidence`
-  有潜力但证据不足，保留 MR，不立即合并或拒绝。
-- `hold`
-  方向暂不清晰、资源受限、等待人工决策或外部依赖。
-
-## 收尾与自动化清理
-
-- `merged`、`rejected`、`aborted` 默认都视为终态；`hold` 只有在用户明确说“本轮先结束”时，才按终态收尾处理。
-- 终态收尾时，优先用 `../alice-scheduler/scripts/alice-scheduler.sh list` 找出当前 scope 下与该 campaign 相关的任务；重点看：
-  `action.workflow=code_army`
-  `action.state_key` 含 campaign id
-  `title` / `prompt` 明确引用该 campaign、issue 或 repo
-- 默认动作：
-  `reconcile` / `run_workflow` 心跳任务应立刻 `patch ... '{"status":"paused"}'`
-  campaign 专属日报、rollup、巡检任务若不再需要，也应立刻 `patch ... '{"status":"paused"}'`
-  已完成的一次性任务可以保留 `paused`，也可以删除；重点是不要留下还会继续触发的任务
-- 若用户明确要求保留某个汇报类任务，才可以不暂停；此时要在回复里明确说明保留原因和 `next_run_at`。
-- 把“终态清理 scheduler”视为 done 条件的一部分；不要把 campaign 宣布为已收尾，却仍留下相关自动化任务继续运行。
-
-## 共享实验记录
-
-- 不要只依赖聊天记忆或零散评论。
-- 保留一层轻量结构化记录，既可放在 GitLab issue 总结表，也可放在仓库文件，例如：
-  `experiments/index.yaml`
-  `experiments/pitfalls.md`
-- 每个 trial 至少记录：
-  issue、branch、MR、假设、资源、结果、结论、原因、标签。
-- 新开 trial 前，先读最近相关的失败记录；若只是重复旧坑且没有新证据，应先提醒用户，而不是直接重跑。
-
-## 工具优先级
-
-- 调度：`../alice-scheduler/scripts/alice-scheduler.sh`
-- GitLab：若环境里有 `ihep-gitlab`，优先用它操作 issue / MR / CI。
-- 集群：若环境里有 `ihep-main-cluster` / `ihep-ai-cluster`，优先用它们提交、查询、取消和取日志。
-- 附件：只有发图片或文件时才使用 `alice-message`；纯文本继续走主回复链路。
-- reviewer：主执行模型和 reviewer 模型不必相同。
-- 若没有 GitLab issue / MR 可见面，优先补齐 GitLab 可见性，再继续 trial 编排。
-
-## 简例
-
-同一个优化 issue 下，可以并行开 3 个 trial，并在 issue 中维护总表：
-
-```text
-trial     branch                 MR      resource        status
-trial-1   opt/128-fuse-kernel    !201    IHEPAI-5090-1   running
-trial-2   opt/128-kv-cache       !202    IHEPAI-5090-2   running
-trial-3   opt/128-int8           !203    local/V100      queued
-```
-
-如果用户评论 `/alice cancel trial-3`，应：
-
-- 取消该 trial 的 job；
-- 在 issue 和 MR 里记录原因；
-- 把 `trial-3` 标记为 `aborted`；
-- 继续比较 `trial-1` 和 `trial-2`。
-
-## 回复模式
-
-- 始终说明：目标 issue、活跃 trial、当前 winner / no-winner、阻塞项、下一步。
-- 当状态变化时，明确写出是 `hold`、`cancel`、`steer`、`merge`、`reject` 还是 `needs-more-evidence`。
-- 在 `merge` / `reject` / `aborted` 时，追加一条可复用的共享记录摘要。
-- 当 campaign 到达终态时，明确说明哪些 scheduler 任务已暂停/删除；若仍保留任务，说明理由和下一次运行时间。
-- 若当前还没有 GitLab issue / MR，可直接说明这是阻塞项，并优先补齐；不要把本地不可见 campaign 伪装成已完成落地。
+- reconcile / heartbeat 默认应该推进任务，而不是只汇报。
+- 对做不到或继续做不安全的动作，仍应发 `/alice needs-human ...`。
+- 回复中优先说明：
+  `campaign repo`
+  `当前阶段`
+  `活跃 tasks`
+  `阻塞项`
+  `下一步`
+- 当用户要求看报告时，优先更新 `reports/live-report.md` 或相应阶段报告，而不是只口头描述。

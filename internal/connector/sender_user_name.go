@@ -6,15 +6,111 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	larkcontact "github.com/larksuite/oapi-sdk-go/v3/service/contact/v3"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-var (
-	userNameCache       sync.Map
-	chatMemberNameCache sync.Map
+const (
+	userNameCacheTTL          = 6 * time.Hour
+	userNameCacheMaxEntries   = 1024
+	chatMemberCacheMaxEntries = 2048
 )
+
+var (
+	userNameCache       = newNameCache(userNameCacheMaxEntries, userNameCacheTTL)
+	chatMemberNameCache = newNameCache(chatMemberCacheMaxEntries, userNameCacheTTL)
+)
+
+type nameCacheEntry struct {
+	name      string
+	expiresAt time.Time
+	touchedAt time.Time
+}
+
+type nameCache struct {
+	mu         sync.Mutex
+	ttl        time.Duration
+	maxEntries int
+	now        func() time.Time
+	items      map[string]nameCacheEntry
+}
+
+func newNameCache(maxEntries int, ttl time.Duration) *nameCache {
+	return &nameCache{
+		ttl:        ttl,
+		maxEntries: maxEntries,
+		now:        time.Now,
+		items:      make(map[string]nameCacheEntry),
+	}
+}
+
+func (c *nameCache) Load(key string) (string, bool) {
+	if c == nil {
+		return "", false
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		return "", false
+	}
+	now := c.now().Local()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	entry, ok := c.items[key]
+	if !ok {
+		return "", false
+	}
+	if !entry.expiresAt.IsZero() && entry.expiresAt.Before(now) {
+		delete(c.items, key)
+		return "", false
+	}
+	entry.touchedAt = now
+	c.items[key] = entry
+	return strings.TrimSpace(entry.name), strings.TrimSpace(entry.name) != ""
+}
+
+func (c *nameCache) Store(key, value string) {
+	if c == nil {
+		return
+	}
+	key = strings.TrimSpace(key)
+	value = strings.TrimSpace(value)
+	if key == "" || value == "" {
+		return
+	}
+	now := c.now().Local()
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.items[key] = nameCacheEntry{
+		name:      value,
+		expiresAt: now.Add(c.ttl),
+		touchedAt: now,
+	}
+	c.evictLocked(now)
+}
+
+func (c *nameCache) evictLocked(now time.Time) {
+	for key, entry := range c.items {
+		if !entry.expiresAt.IsZero() && entry.expiresAt.Before(now) {
+			delete(c.items, key)
+		}
+	}
+	for c.maxEntries > 0 && len(c.items) > c.maxEntries {
+		oldestKey := ""
+		oldestAt := time.Time{}
+		for key, entry := range c.items {
+			if oldestKey == "" || entry.touchedAt.Before(oldestAt) {
+				oldestKey = key
+				oldestAt = entry.touchedAt
+			}
+		}
+		if oldestKey == "" {
+			return
+		}
+		delete(c.items, oldestKey)
+	}
+}
 
 func (s *LarkSender) ResolveUserName(ctx context.Context, openID, userID string) (string, error) {
 	candidates := []struct {
@@ -31,10 +127,8 @@ func (s *LarkSender) ResolveUserName(ctx context.Context, openID, userID string)
 			continue
 		}
 		cacheKey := candidate.idType + ":" + candidate.id
-		if cachedName, ok := userNameCache.Load(cacheKey); ok {
-			if name, ok := cachedName.(string); ok && strings.TrimSpace(name) != "" {
-				return strings.TrimSpace(name), nil
-			}
+		if name, ok := userNameCache.Load(cacheKey); ok {
+			return name, nil
 		}
 
 		name, err := s.fetchUserName(ctx, candidate.idType, candidate.id)
@@ -93,10 +187,8 @@ func (s *LarkSender) ResolveChatMemberName(ctx context.Context, chatID, openID, 
 			continue
 		}
 		cacheKey := chatMemberCacheKey(chatID, candidate.idType, candidate.id)
-		if cachedName, ok := chatMemberNameCache.Load(cacheKey); ok {
-			if name, ok := cachedName.(string); ok && strings.TrimSpace(name) != "" {
-				return strings.TrimSpace(name), nil
-			}
+		if name, ok := chatMemberNameCache.Load(cacheKey); ok {
+			return name, nil
 		}
 
 		name, err := s.fetchChatMemberName(ctx, chatID, candidate.idType, candidate.id)
@@ -154,10 +246,8 @@ func (s *LarkSender) fetchChatMemberName(ctx context.Context, chatID, memberIDTy
 				candidateName,
 			)
 		}
-		if cachedName, ok := chatMemberNameCache.Load(chatMemberCacheKey(chatID, memberIDType, memberID)); ok {
-			if name, ok := cachedName.(string); ok && strings.TrimSpace(name) != "" {
-				return strings.TrimSpace(name), nil
-			}
+		if name, ok := chatMemberNameCache.Load(chatMemberCacheKey(chatID, memberIDType, memberID)); ok {
+			return name, nil
 		}
 
 		hasMore := resp.Data.HasMore != nil && *resp.Data.HasMore

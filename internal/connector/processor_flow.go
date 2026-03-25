@@ -268,5 +268,5 @@ func (p *Processor) rememberReplySessionMessage(job Job, messageID string) {
 	if baseKey == "" || sessionKey == "" {
 		return
 	}
-	p.rememberSessionAliases(sessionKey, baseKey+"|message:"+messageID)
+	p.rememberSessionAliases(sessionKey, baseKey+messageAliasToken+messageID)
 }

@@ -71,20 +71,20 @@ func buildSessionKeyCandidatesForMessage(receiveIDType, receiveID string, messag
 		sourceMessageID := strings.TrimSpace(deref(message.MessageId))
 
 		if threadID != "" {
-			appendSessionKeyCandidate(&candidates, base+"|thread:"+threadID)
+			appendSessionKeyCandidate(&candidates, base+threadAliasToken+threadID)
 		} else if rootID != "" {
-			appendSessionKeyCandidate(&candidates, base+"|thread:"+rootID)
+			appendSessionKeyCandidate(&candidates, base+threadAliasToken+rootID)
 		}
 		if parentID != "" {
-			appendSessionKeyCandidate(&candidates, base+"|message:"+parentID)
+			appendSessionKeyCandidate(&candidates, base+messageAliasToken+parentID)
 		}
 		if threadID != "" || rootID != "" {
 			if rootID != "" {
-				appendSessionKeyCandidate(&candidates, base+"|message:"+rootID)
+				appendSessionKeyCandidate(&candidates, base+messageAliasToken+rootID)
 			}
 		}
 		if isGroupMessage && sourceMessageID != "" {
-			appendSessionKeyCandidate(&candidates, base+"|message:"+sourceMessageID)
+			appendSessionKeyCandidate(&candidates, base+messageAliasToken+sourceMessageID)
 		}
 	}
 

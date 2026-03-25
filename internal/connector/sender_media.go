@@ -13,6 +13,7 @@ import (
 )
 
 const feishuImageUploadMaxSize = 10 * 1024 * 1024
+const feishuFileUploadMaxSize = 10 * 1024 * 1024
 
 func (s *LarkSender) SendImage(ctx context.Context, receiveIDType, receiveID, imageKey string) error {
 	imageKey = strings.TrimSpace(imageKey)
@@ -185,9 +186,12 @@ func (s *LarkSender) UploadImage(ctx context.Context, localPath string) (string,
 }
 
 func (s *LarkSender) UploadFile(ctx context.Context, localPath, fileName string) (string, error) {
-	resolvedPath, _, err := s.resolveUploadPath(localPath)
+	resolvedPath, fileInfo, err := s.resolveUploadPath(localPath)
 	if err != nil {
 		return "", err
+	}
+	if fileInfo.Size() > feishuFileUploadMaxSize {
+		return "", fmt.Errorf("file exceeds 10MB limit: %s", resolvedPath)
 	}
 
 	file, err := os.Open(resolvedPath)

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/Alice-space/alice/internal/storeutil"
 	bolt "go.etcd.io/bbolt"
@@ -135,6 +136,55 @@ func writeSnapshotVersion(tx *bolt.Tx, version int) error {
 	}
 	if err := storeutil.WriteVersion(metaBucket, snapshotVersionKey, version, defaultSnapshotVersion); err != nil {
 		return fmt.Errorf("write automation snapshot version failed: %w", err)
+	}
+	return nil
+}
+
+func readTaskTx(tx *bolt.Tx, taskID string) (Task, error) {
+	if tx == nil {
+		return Task{}, errors.New("automation transaction is nil")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return Task{}, errors.New("task id is empty")
+	}
+	tasksBucket := tx.Bucket(automationTasksBucket)
+	if tasksBucket == nil {
+		return Task{}, ErrTaskNotFound
+	}
+	raw := tasksBucket.Get([]byte(taskID))
+	if len(raw) == 0 {
+		return Task{}, ErrTaskNotFound
+	}
+	var task Task
+	if err := json.Unmarshal(raw, &task); err != nil {
+		return Task{}, fmt.Errorf("parse automation task failed: %w", err)
+	}
+	task = NormalizeTask(task)
+	if task.ID == "" {
+		return Task{}, ErrTaskNotFound
+	}
+	return task, nil
+}
+
+func writeTaskTx(tx *bolt.Tx, task Task) error {
+	if tx == nil {
+		return errors.New("automation transaction is nil")
+	}
+	task = NormalizeTask(task)
+	if task.ID == "" {
+		return errors.New("task id is empty")
+	}
+	tasksBucket := tx.Bucket(automationTasksBucket)
+	if tasksBucket == nil {
+		return errors.New("automation tasks bucket is missing")
+	}
+	raw, err := json.Marshal(task)
+	if err != nil {
+		return fmt.Errorf("marshal automation task failed: %w", err)
+	}
+	if err := tasksBucket.Put([]byte(task.ID), raw); err != nil {
+		return fmt.Errorf("write automation task failed: %w", err)
 	}
 	return nil
 }

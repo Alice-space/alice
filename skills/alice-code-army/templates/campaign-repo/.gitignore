@@ -1,0 +1,5 @@
+artifacts/
+tmp/
+logs/
+*.log
+*.tmp

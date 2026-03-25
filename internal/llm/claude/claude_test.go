@@ -136,7 +136,7 @@ func TestBuildPrompt_NewThreadIgnoresPersonalityText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
-	if prompt != "你好" {
+	if prompt != "Preferred response style/personality: friendly.\n\nIf no reply is appropriate, return exactly this token and nothing else: [[NO_REPLY]]\n\n你好" {
 		t.Fatalf("unexpected prompt: %q", prompt)
 	}
 }

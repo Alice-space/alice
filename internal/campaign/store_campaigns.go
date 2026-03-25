@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/Alice-space/alice/internal/storeutil"
 )
 
 func (s *Store) ListCampaigns(visibilityKey, statusFilter string, limit int) ([]Campaign, error) {
@@ -45,6 +47,51 @@ func (s *Store) ListCampaigns(visibilityKey, statusFilter string, limit int) ([]
 			return left.ID > right.ID
 		})
 		if len(filtered) > limit {
+			filtered = filtered[:limit]
+		}
+		campaigns = filtered
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return campaigns, nil
+}
+
+func (s *Store) ListAllCampaigns(statusFilter string, limit int) ([]Campaign, error) {
+	if s == nil {
+		return nil, errors.New("store is nil")
+	}
+	statusFilter = strings.ToLower(strings.TrimSpace(statusFilter))
+	unlimited := limit < 0
+	if !unlimited {
+		if limit <= 0 {
+			limit = defaultListLimit
+		}
+		if limit > maxListLimit {
+			limit = maxListLimit
+		}
+	}
+
+	var campaigns []Campaign
+	err := s.viewSnapshot(func(snapshot Snapshot) error {
+		filtered := make([]Campaign, 0, len(snapshot.Campaigns))
+		for _, raw := range snapshot.Campaigns {
+			item := NormalizeCampaign(raw)
+			if statusFilter != "" && statusFilter != "all" && string(item.Status) != statusFilter {
+				continue
+			}
+			filtered = append(filtered, item)
+		}
+		sort.Slice(filtered, func(i, j int) bool {
+			left := filtered[i]
+			right := filtered[j]
+			if !left.CreatedAt.Equal(right.CreatedAt) {
+				return left.CreatedAt.After(right.CreatedAt)
+			}
+			return left.ID > right.ID
+		})
+		if !unlimited && len(filtered) > limit {
 			filtered = filtered[:limit]
 		}
 		campaigns = filtered
@@ -251,7 +298,7 @@ func (s *Store) AppendPitfall(campaignID string, pitfall Pitfall) (Campaign, Pit
 	pitfall.Reason = strings.TrimSpace(pitfall.Reason)
 	pitfall.RelatedTrialID = strings.TrimSpace(pitfall.RelatedTrialID)
 	pitfall.RetryIf = strings.TrimSpace(pitfall.RetryIf)
-	pitfall.Tags = uniqueNonEmptyStrings(pitfall.Tags)
+	pitfall.Tags = storeutil.UniqueNonEmptyStrings(pitfall.Tags)
 	if pitfall.ID == "" {
 		pitfall.ID = newID("pitfall", now)
 	}

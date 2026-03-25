@@ -2,6 +2,8 @@ package runtimeapi
 
 import (
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 
@@ -14,6 +16,10 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 			c.Next()
 			return
 		}
+		if s.authLimiter != nil && !s.authLimiter.Allow(authRateKey(c), time.Now()) {
+			c.AbortWithStatusJSON(429, gin.H{"error": "too many requests"})
+			return
+		}
 		auth := strings.TrimSpace(c.GetHeader("Authorization"))
 		if auth != "Bearer "+s.token {
 			c.AbortWithStatusJSON(401, gin.H{"error": "unauthorized"})
@@ -21,6 +27,67 @@ func (s *Server) authMiddleware() gin.HandlerFunc {
 		}
 		c.Next()
 	}
+}
+
+type authRateLimiter struct {
+	mu     sync.Mutex
+	limit  int
+	window time.Duration
+	items  map[string]authRateWindow
+}
+
+type authRateWindow struct {
+	start time.Time
+	count int
+}
+
+func newAuthRateLimiter(limit int, window time.Duration) *authRateLimiter {
+	if limit <= 0 || window <= 0 {
+		return nil
+	}
+	return &authRateLimiter{
+		limit:  limit,
+		window: window,
+		items:  make(map[string]authRateWindow),
+	}
+}
+
+func (l *authRateLimiter) Allow(key string, now time.Time) bool {
+	if l == nil {
+		return true
+	}
+	key = strings.TrimSpace(key)
+	if key == "" {
+		key = "unknown"
+	}
+	now = now.Local()
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	for itemKey, item := range l.items {
+		if now.Sub(item.start) >= l.window {
+			delete(l.items, itemKey)
+		}
+	}
+	item := l.items[key]
+	if item.start.IsZero() || now.Sub(item.start) >= l.window {
+		item = authRateWindow{start: now}
+	}
+	item.count++
+	l.items[key] = item
+	return item.count <= l.limit
+}
+
+func authRateKey(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	if clientIP := strings.TrimSpace(c.ClientIP()); clientIP != "" {
+		return clientIP
+	}
+	if c.Request == nil {
+		return ""
+	}
+	return strings.TrimSpace(c.Request.RemoteAddr)
 }
 
 func sessionContextFromHeaders(c *gin.Context) (mcpbridge.SessionContext, error) {

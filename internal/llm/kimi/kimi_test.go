@@ -60,7 +60,7 @@ func TestBuildPrompt_IgnoresPersonalityText(t *testing.T) {
 	if err != nil {
 		t.Fatalf("render prompt failed: %v", err)
 	}
-	if prompt != "你好" {
+	if prompt != "Preferred response style/personality: pragmatic.\n\n你好" {
 		t.Fatalf("unexpected prompt: %q", prompt)
 	}
 }

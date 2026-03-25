@@ -14,27 +14,6 @@ func newAutomationRuntimeConfig(cfg config.Config) automationRuntimeConfig {
 	}
 }
 
-func (s *Server) Addr() string {
-	if s == nil {
-		return ""
-	}
-	return s.addr
-}
-
-func (s *Server) BaseURL() string {
-	if s == nil {
-		return ""
-	}
-	return BaseURL(s.addr)
-}
-
-func (s *Server) Token() string {
-	if s == nil {
-		return ""
-	}
-	return s.token
-}
-
 func (s *Server) UpdateRuntimeConfig(cfg config.Config) {
 	if s == nil {
 		return

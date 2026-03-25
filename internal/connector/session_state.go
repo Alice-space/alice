@@ -27,7 +27,10 @@ type sessionStateSnapshot struct {
 }
 
 const maxSessionAliases = 32
-const workSceneSeedKeyToken = "|scene:work|seed:"
+const chatSceneToken = "|scene:" + jobSceneChat
+const workSceneToken = "|scene:" + jobSceneWork
+const workSceneSeedToken = "|seed:"
+const workSceneSeedKeyToken = workSceneToken + workSceneSeedToken
 const messageAliasToken = "|message:"
 const threadAliasToken = "|thread:"
 const chatSceneResetToken = "|reset:"

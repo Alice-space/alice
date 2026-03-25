@@ -13,7 +13,7 @@ func taskPrefersCard(task Task) bool {
 	return strings.Contains(task.Action.SessionKey, "|scene:work")
 }
 
-func buildTaskCardContent(task Task, markdown string) string {
+func buildTaskCardContent(task Task, markdown string) (string, error) {
 	task = NormalizeTask(task)
 	reply := strings.TrimSpace(markdown)
 	if reply == "" {
@@ -41,11 +41,14 @@ func buildTaskCardContent(task Task, markdown string) string {
 			},
 		},
 	}
-	raw, _ := json.Marshal(card)
-	return string(raw)
+	raw, err := json.Marshal(card)
+	if err != nil {
+		return "", fmt.Errorf("marshal task card failed: %w", err)
+	}
+	return string(raw), nil
 }
 
-func buildTaskWarningCardContent(task Task, markdown string, reason string) string {
+func buildTaskWarningCardContent(task Task, markdown string, reason string) (string, error) {
 	reply := strings.TrimSpace(markdown)
 	if reply == "" {
 		reply = "自动任务已暂停，等待人工介入。"
@@ -75,8 +78,11 @@ func buildTaskWarningCardContent(task Task, markdown string, reason string) stri
 			"elements": elements,
 		},
 	}
-	raw, _ := json.Marshal(card)
-	return string(raw)
+	raw, err := json.Marshal(card)
+	if err != nil {
+		return "", fmt.Errorf("marshal warning card failed: %w", err)
+	}
+	return string(raw), nil
 }
 
 func taskCardMarkdown(content string) map[string]any {

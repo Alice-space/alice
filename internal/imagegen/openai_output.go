@@ -14,6 +14,8 @@ import (
 	"github.com/openai/openai-go/v3"
 )
 
+const openAIImageOutputMaxBytes = 20 * 1024 * 1024
+
 func extractImageOutputs(resp *openai.ImagesResponse) ([]imageOutput, string, error) {
 	if resp == nil {
 		return nil, "", errors.New("openai image response is nil")
@@ -76,6 +78,9 @@ func writeBase64Image(outputPath, imageData string) error {
 	if err != nil {
 		return fmt.Errorf("decode openai image failed: %w", err)
 	}
+	if len(decoded) > openAIImageOutputMaxBytes {
+		return fmt.Errorf("decoded openai image exceeds %d bytes", openAIImageOutputMaxBytes)
+	}
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return fmt.Errorf("prepare image output dir failed: %w", err)
 	}
@@ -102,6 +107,9 @@ func (p *openAIProvider) downloadImageURL(ctx context.Context, rawURL, outputPat
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("download openai image url failed: status=%d body=%s", resp.StatusCode, strings.TrimSpace(string(body)))
 	}
+	if resp.ContentLength > openAIImageOutputMaxBytes {
+		return fmt.Errorf("downloaded openai image exceeds %d bytes", openAIImageOutputMaxBytes)
+	}
 	if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 		return fmt.Errorf("prepare image output dir failed: %w", err)
 	}
@@ -110,8 +118,12 @@ func (p *openAIProvider) downloadImageURL(ctx context.Context, rawURL, outputPat
 		return fmt.Errorf("create generated image failed: %w", err)
 	}
 	defer file.Close()
-	if _, err := io.Copy(file, resp.Body); err != nil {
+	written, err := io.Copy(file, io.LimitReader(resp.Body, openAIImageOutputMaxBytes+1))
+	if err != nil {
 		return fmt.Errorf("write generated image failed: %w", err)
+	}
+	if written > openAIImageOutputMaxBytes {
+		return fmt.Errorf("downloaded openai image exceeds %d bytes", openAIImageOutputMaxBytes)
 	}
 	return nil
 }

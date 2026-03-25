@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+
+	"github.com/Alice-space/alice/internal/logging"
 )
 
 var (
@@ -14,7 +16,11 @@ var (
 
 func DefaultLoader() *Loader {
 	defaultLoaderOnce.Do(func() {
-		defaultLoader = NewLoader(findDefaultPromptRoot())
+		root := findDefaultPromptRoot()
+		if root == "" {
+			logging.Warnf("prompt root not found; default loader will rely on embedded prompts")
+		}
+		defaultLoader = NewLoader(root)
 	})
 	return defaultLoader
 }

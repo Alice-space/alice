@@ -11,6 +11,7 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Alice-space/alice/internal/campaign"
+	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 )
 
@@ -22,25 +23,14 @@ type campaignScopeContext struct {
 }
 
 func (s *Server) handleCampaignList(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
+	limit, err := parseListLimit(c.Query("limit"), 20)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
-	}
-	limit := 20
-	if rawLimit := strings.TrimSpace(c.Query("limit")); rawLimit != "" {
-		if _, err := fmt.Sscanf(rawLimit, "%d", &limit); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid limit"})
-			return
-		}
 	}
 	items, err := s.campaigns.ListCampaigns(scopeCtx.session.VisibilityKey(), c.Query("status"), limit)
 	if err != nil {
@@ -51,17 +41,8 @@ func (s *Server) handleCampaignList(c *gin.Context) {
 }
 
 func (s *Server) handleCampaignCreate(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
-		return
-	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
 	var req CreateCampaignRequest
@@ -79,69 +60,30 @@ func (s *Server) handleCampaignCreate(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=campaign_create actor=%s campaign=%s scope=%s", scopeCtx.actorID, created.ID, created.Session.ScopeKey)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": created})
 }
 
 func (s *Server) handleCampaignGet(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	item, err := s.campaigns.GetCampaign(strings.TrimSpace(c.Param("campaignID")))
-	if err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, campaign.ErrCampaignNotFound) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	if !campaignVisibleToSession(item, scopeCtx.session) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
+	item, ok := s.loadScopedCampaign(c, scopeCtx, strings.TrimSpace(c.Param("campaignID")), "")
+	if !ok {
 		return
 	}
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": item})
 }
 
 func (s *Server) handleCampaignPatch(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
-		return
-	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
 	campaignID := strings.TrimSpace(c.Param("campaignID"))
-	current, err := s.campaigns.GetCampaign(campaignID)
-	if err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, campaign.ErrCampaignNotFound) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	if !campaignVisibleToSession(current, scopeCtx.session) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
-		return
-	}
-	if !canManageCampaign(current, scopeCtx.actorID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied for campaign update"})
+	current, ok := s.loadScopedCampaign(c, scopeCtx, campaignID, "campaign update")
+	if !ok {
 		return
 	}
 	patchBytes, err := c.GetRawData()
@@ -162,39 +104,17 @@ func (s *Server) handleCampaignPatch(c *gin.Context) {
 		c.JSON(http.StatusBadGateway, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=campaign_patch actor=%s campaign=%s scope=%s", scopeCtx.actorID, persisted.ID, persisted.Session.ScopeKey)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": persisted})
 }
 
 func (s *Server) handleCampaignTrialUpsert(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
-		return
-	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
 	campaignID := strings.TrimSpace(c.Param("campaignID"))
-	current, err := s.campaigns.GetCampaign(campaignID)
-	if err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, campaign.ErrCampaignNotFound) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	if !campaignVisibleToSession(current, scopeCtx.session) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
-		return
-	}
-	if !canManageCampaign(current, scopeCtx.actorID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied for trial update"})
+	if _, ok := s.loadScopedCampaign(c, scopeCtx, campaignID, "trial update"); !ok {
 		return
 	}
 	var req UpsertTrialRequest
@@ -207,39 +127,17 @@ func (s *Server) handleCampaignTrialUpsert(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=campaign_trial_upsert actor=%s campaign=%s trial=%s", scopeCtx.actorID, updated.ID, trial.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": updated, "trial": trial})
 }
 
 func (s *Server) handleCampaignGuidanceAdd(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
-		return
-	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
 	campaignID := strings.TrimSpace(c.Param("campaignID"))
-	current, err := s.campaigns.GetCampaign(campaignID)
-	if err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, campaign.ErrCampaignNotFound) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	if !campaignVisibleToSession(current, scopeCtx.session) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
-		return
-	}
-	if !canManageCampaign(current, scopeCtx.actorID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied for guidance update"})
+	if _, ok := s.loadScopedCampaign(c, scopeCtx, campaignID, "guidance update"); !ok {
 		return
 	}
 	var req AddGuidanceRequest
@@ -252,39 +150,17 @@ func (s *Server) handleCampaignGuidanceAdd(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=campaign_guidance_add actor=%s campaign=%s guidance=%s", scopeCtx.actorID, updated.ID, guidance.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": updated, "guidance": guidance})
 }
 
 func (s *Server) handleCampaignReviewAdd(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
-		return
-	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
 	campaignID := strings.TrimSpace(c.Param("campaignID"))
-	current, err := s.campaigns.GetCampaign(campaignID)
-	if err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, campaign.ErrCampaignNotFound) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	if !campaignVisibleToSession(current, scopeCtx.session) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
-		return
-	}
-	if !canManageCampaign(current, scopeCtx.actorID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied for review update"})
+	if _, ok := s.loadScopedCampaign(c, scopeCtx, campaignID, "review update"); !ok {
 		return
 	}
 	var req AddReviewRequest
@@ -297,39 +173,17 @@ func (s *Server) handleCampaignReviewAdd(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=campaign_review_add actor=%s campaign=%s review=%s", scopeCtx.actorID, updated.ID, review.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": updated, "review": review})
 }
 
 func (s *Server) handleCampaignPitfallAdd(c *gin.Context) {
-	if !s.allowRuntimeCampaigns() {
-		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
-		return
-	}
-	if s.campaigns == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
-		return
-	}
-	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	scopeCtx, ok := s.resolveCampaignRequestScope(c)
+	if !ok {
 		return
 	}
 	campaignID := strings.TrimSpace(c.Param("campaignID"))
-	current, err := s.campaigns.GetCampaign(campaignID)
-	if err != nil {
-		status := http.StatusBadGateway
-		if errors.Is(err, campaign.ErrCampaignNotFound) {
-			status = http.StatusNotFound
-		}
-		c.JSON(status, gin.H{"error": err.Error()})
-		return
-	}
-	if !campaignVisibleToSession(current, scopeCtx.session) {
-		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
-		return
-	}
-	if !canManageCampaign(current, scopeCtx.actorID) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied for pitfall update"})
+	if _, ok := s.loadScopedCampaign(c, scopeCtx, campaignID, "pitfall update"); !ok {
 		return
 	}
 	var req AddPitfallRequest
@@ -342,41 +196,69 @@ func (s *Server) handleCampaignPitfallAdd(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
+	logging.Infof("runtime api audit action=campaign_pitfall_add actor=%s campaign=%s pitfall=%s", scopeCtx.actorID, updated.ID, pitfall.ID)
 	c.JSON(http.StatusOK, gin.H{"status": "ok", "campaign": updated, "pitfall": pitfall})
 }
 
+func (s *Server) resolveCampaignRequestScope(c *gin.Context) (campaignScopeContext, bool) {
+	if !s.allowRuntimeCampaigns() {
+		c.JSON(http.StatusForbidden, gin.H{"error": "runtime campaigns are disabled for this bot"})
+		return campaignScopeContext{}, false
+	}
+	if s.campaigns == nil {
+		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "campaign store is unavailable"})
+		return campaignScopeContext{}, false
+	}
+	scopeCtx, err := resolveCampaignScope(sessionContextFromHeadersNoError(c))
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return campaignScopeContext{}, false
+	}
+	return scopeCtx, true
+}
+
+func (s *Server) loadScopedCampaign(c *gin.Context, scopeCtx campaignScopeContext, campaignID, manageAction string) (campaign.Campaign, bool) {
+	item, err := s.campaigns.GetCampaign(strings.TrimSpace(campaignID))
+	if err != nil {
+		status := http.StatusBadGateway
+		if errors.Is(err, campaign.ErrCampaignNotFound) {
+			status = http.StatusNotFound
+		}
+		c.JSON(status, gin.H{"error": err.Error()})
+		return campaign.Campaign{}, false
+	}
+	if !campaignVisibleToSession(item, scopeCtx.session) {
+		c.JSON(http.StatusNotFound, gin.H{"error": "campaign not found in current scope"})
+		return campaign.Campaign{}, false
+	}
+	if strings.TrimSpace(manageAction) != "" && !canManageCampaign(item, scopeCtx.actorID) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "permission denied for " + strings.TrimSpace(manageAction)})
+		return campaign.Campaign{}, false
+	}
+	return item, true
+}
+
 func resolveCampaignScope(session mcpbridge.SessionContext) (campaignScopeContext, error) {
-	if err := session.Validate(); err != nil {
+	runtimeCtx, err := resolveRuntimeSessionContext(session)
+	if err != nil {
 		return campaignScopeContext{}, err
 	}
-	actorUserID := strings.TrimSpace(session.ActorUserID)
-	actorOpenID := strings.TrimSpace(session.ActorOpenID)
-	actorID := actorUserID
-	if actorID == "" {
-		actorID = actorOpenID
-	}
-	if actorID == "" {
-		return campaignScopeContext{}, errors.New("missing actor id in runtime context")
-	}
-	scopeKey := scopeSessionKey(session)
-	if scopeKey == "" {
+	if runtimeCtx.scopeKey == "" {
 		return campaignScopeContext{}, errors.New("missing scope session key in runtime context")
 	}
-	chatType := strings.ToLower(strings.TrimSpace(session.ChatType))
-	isGroup := chatType == "group" || chatType == "topic_group"
 	return campaignScopeContext{
 		session: campaign.SessionRoute{
-			ScopeKey:      scopeKey,
-			ReceiveIDType: strings.TrimSpace(session.ReceiveIDType),
-			ReceiveID:     strings.TrimSpace(session.ReceiveID),
-			ChatType:      chatType,
+			ScopeKey:      runtimeCtx.scopeKey,
+			ReceiveIDType: runtimeCtx.receiveIDType,
+			ReceiveID:     runtimeCtx.receiveID,
+			ChatType:      runtimeCtx.chatType,
 		},
 		creator: campaign.Actor{
-			UserID: actorUserID,
-			OpenID: actorOpenID,
+			UserID: runtimeCtx.actorUserID,
+			OpenID: runtimeCtx.actorOpenID,
 		},
-		actorID: actorID,
-		isGroup: isGroup,
+		actorID: runtimeCtx.actorID,
+		isGroup: runtimeCtx.isGroup,
 	}, nil
 }
 
@@ -385,6 +267,7 @@ func buildCampaignFromRequest(req CreateCampaignRequest, scopeCtx campaignScopeC
 		Title:             strings.TrimSpace(req.Title),
 		Objective:         strings.TrimSpace(req.Objective),
 		Repo:              strings.TrimSpace(req.Repo),
+		CampaignRepoPath:  strings.TrimSpace(req.CampaignRepoPath),
 		IssueIID:          strings.TrimSpace(req.IssueIID),
 		IssueURL:          strings.TrimSpace(req.IssueURL),
 		Session:           scopeCtx.session,

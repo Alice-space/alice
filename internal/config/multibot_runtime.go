@@ -29,6 +29,9 @@ func (cfg Config) RuntimeConfigs() ([]Config, error) {
 		}
 		runtimes = append(runtimes, runtime)
 	}
+	if err := validateUniqueRuntimeHTTPAddrs(runtimes); err != nil {
+		return nil, err
+	}
 	return runtimes, nil
 }
 
@@ -43,16 +46,14 @@ func (cfg Config) RuntimeConfigForBot(botID string) (Config, error) {
 		}
 		return Config{}, fmt.Errorf("bot %q is undefined", botID)
 	}
-	bot, ok := cfg.Bots[botID]
-	if !ok {
-		return Config{}, fmt.Errorf("bot %q is undefined", botID)
+	runtimes, err := cfg.RuntimeConfigs()
+	if err != nil {
+		return Config{}, err
 	}
-	ordered := orderBotIDs(cfg.Bots)
-	for idx, orderedID := range ordered {
-		if orderedID != botID {
-			continue
+	for _, runtime := range runtimes {
+		if runtime.BotID == botID {
+			return runtime, nil
 		}
-		return cfg.deriveBotRuntimeConfig(botID, bot, idx)
 	}
 	return Config{}, fmt.Errorf("bot %q is undefined", botID)
 }
@@ -80,6 +81,7 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 		Permissions:     normalizeBotPermissions(BotPermissionsConfig{}),
 		RuntimeHTTPAddr: "",
 	}
+	var err error
 	if bot.Name != "" {
 		runtime.BotName = bot.Name
 	} else {
@@ -114,7 +116,10 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.KimiCommand = bot.KimiCommand
 	runtime.KimiTimeoutSecs = bot.KimiTimeoutSecs
 	runtime.KimiPromptPrefix = bot.KimiPromptPrefix
-	runtime.RuntimeHTTPAddr = deriveBotRuntimeHTTPAddr(bot, index)
+	runtime.RuntimeHTTPAddr, err = deriveBotRuntimeHTTPAddr(bot, index)
+	if err != nil {
+		return Config{}, fmt.Errorf("bots.%s: derive runtime_http_addr failed: %w", runtime.BotID, err)
+	}
 	runtime.RuntimeHTTPToken = bot.RuntimeHTTPToken
 	runtime.FailureMessage = bot.FailureMessage
 	runtime.ThinkingMessage = bot.ThinkingMessage
@@ -130,7 +135,7 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs
 	runtime.Permissions = mergeBotPermissions(BotPermissionsConfig{}, bot.Permissions)
 
-	runtime, err := finalizeConfig(runtime, true)
+	runtime, err = finalizeConfig(runtime, true)
 	if err != nil {
 		return Config{}, fmt.Errorf("bots.%s: %w", runtime.BotID, err)
 	}
@@ -175,15 +180,11 @@ func deriveBotSoulPath(bot BotConfig, workspaceDir string) string {
 	return filepath.Join(workspaceDir, "SOUL.md")
 }
 
-func deriveBotRuntimeHTTPAddr(bot BotConfig, index int) string {
+func deriveBotRuntimeHTTPAddr(bot BotConfig, index int) (string, error) {
 	if bot.RuntimeHTTPAddr != "" {
-		return bot.RuntimeHTTPAddr
+		return strings.TrimSpace(bot.RuntimeHTTPAddr), nil
 	}
-	addr, err := incrementHostPort(DefaultRuntimeHTTPAddr, index)
-	if err != nil {
-		return DefaultRuntimeHTTPAddr
-	}
-	return addr
+	return incrementHostPort(DefaultRuntimeHTTPAddr, index)
 }
 
 func incrementHostPort(addr string, delta int) (string, error) {
@@ -196,6 +197,21 @@ func incrementHostPort(addr string, delta int) (string, error) {
 		return "", err
 	}
 	return net.JoinHostPort(host, fmt.Sprintf("%d", basePort+delta)), nil
+}
+
+func validateUniqueRuntimeHTTPAddrs(runtimes []Config) error {
+	seen := make(map[string]string, len(runtimes))
+	for _, runtime := range runtimes {
+		addr := strings.TrimSpace(runtime.RuntimeHTTPAddr)
+		if addr == "" {
+			continue
+		}
+		if existing, ok := seen[addr]; ok {
+			return fmt.Errorf("runtime_http_addr %q is duplicated between bots %q and %q", addr, existing, runtime.BotID)
+		}
+		seen[addr] = runtime.BotID
+	}
+	return nil
 }
 
 func mergeLLMProfiles(base, override map[string]LLMProfileConfig) map[string]LLMProfileConfig {

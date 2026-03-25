@@ -58,14 +58,12 @@ func TestLoaderRejectsEscapingTemplateNames(t *testing.T) {
 	}
 }
 
-func TestComposePromptPrefix_IgnoresPersonalityText(t *testing.T) {
-	loader := NewLoader(filepath.Join("..", "..", "prompts"))
-
-	got, err := ComposePromptPrefix(loader, "你是 Alice。", "friendly", "[[NO_REPLY]]")
+func TestComposePromptPrefix_ComposesPersonalityAndNoReplyToken(t *testing.T) {
+	got, err := ComposePromptPrefix("你是 Alice。", "friendly", "[[NO_REPLY]]")
 	if err != nil {
 		t.Fatalf("compose prompt prefix failed: %v", err)
 	}
-	if got != "你是 Alice。" {
+	if !strings.Contains(got, "你是 Alice。") || !strings.Contains(got, "friendly") || !strings.Contains(got, "[[NO_REPLY]]") {
 		t.Fatalf("unexpected composed prompt: %q", got)
 	}
 }

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/mcpbridge"
+	"github.com/Alice-space/alice/internal/sessionkey"
 )
 
 func (e *Engine) SetLLMRunner(runner LLMRunner) {
@@ -23,6 +24,15 @@ func (e *Engine) SetWorkflowRunner(runner WorkflowRunner) {
 	e.runtimeMu.Lock()
 	defer e.runtimeMu.Unlock()
 	e.workflowRunner = runner
+}
+
+func (e *Engine) SetUserTaskCompletionHook(hook UserTaskCompletionHook) {
+	if e == nil {
+		return
+	}
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
+	e.userTaskHook = hook
 }
 
 func (e *Engine) SetRunEnv(env map[string]string) {
@@ -135,6 +145,15 @@ func (e *Engine) workflowRunnerValue() WorkflowRunner {
 	return e.workflowRunner
 }
 
+func (e *Engine) userTaskCompletionHookValue() UserTaskCompletionHook {
+	if e == nil {
+		return nil
+	}
+	e.runtimeMu.RLock()
+	defer e.runtimeMu.RUnlock()
+	return e.userTaskHook
+}
+
 func (e *Engine) runEnvSnapshot() map[string]string {
 	if e == nil {
 		return nil
@@ -156,10 +175,7 @@ func taskSessionKey(task Task) string {
 	if sessionKey := strings.TrimSpace(task.Action.SessionKey); sessionKey != "" {
 		return sessionKey
 	}
-	if strings.TrimSpace(task.Route.ReceiveIDType) == "" || strings.TrimSpace(task.Route.ReceiveID) == "" {
-		return ""
-	}
-	return strings.TrimSpace(task.Route.ReceiveIDType) + ":" + strings.TrimSpace(task.Route.ReceiveID)
+	return sessionkey.Build(task.Route.ReceiveIDType, task.Route.ReceiveID)
 }
 
 func taskScene(task Task) string {

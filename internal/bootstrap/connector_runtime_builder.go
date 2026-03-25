@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"time"
 
 	lark "github.com/larksuite/oapi-sdk-go/v3"
@@ -41,6 +42,7 @@ type connectorRuntimeBuilder struct {
 	automationStore  *automation.Store
 	campaignStore    *campaign.Store
 	automationEngine *automation.Engine
+	campaignRepoMu   sync.Mutex
 	promptLoader     *prompting.Loader
 	apiServer        *runtimeapi.Server
 	apiToken         string
@@ -171,6 +173,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 		runtimeapi.EnvToken:   b.resolveRuntimeAPIToken(),
 		runtimeapi.EnvBin:     ResolveRuntimeBinary(b.cfg.WorkspaceDir),
 	})
+	automationEngine.SetUserTaskCompletionHook(b.handleCampaignRepoAutomationTaskCompletion)
 
 	if err := automationEngine.RegisterSystemTask("system.state_flush", 1*time.Second, func(context.Context) {
 		if err := b.processor.FlushSessionStateIfDirty(); err != nil {
@@ -180,6 +183,9 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 			logging.Warnf("flush runtime state failed: %v", err)
 		}
 	}); err != nil {
+		return err
+	}
+	if err := b.registerCampaignRepoSystemTask(); err != nil {
 		return err
 	}
 

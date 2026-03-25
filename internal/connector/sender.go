@@ -139,12 +139,35 @@ func (s *LarkSender) replyMessagePreferThread(
 	if err == nil {
 		return messageID, nil
 	}
-
-	var apiErr *feishuAPIError
-	if !errors.As(err, &apiErr) {
+	if !shouldFallbackThreadReply(err) {
 		return "", err
 	}
 	return s.replyMessage(ctx, sourceMessageID, msgType, content, false, emptyMessageIDErr)
+}
+
+func shouldFallbackThreadReply(err error) bool {
+	var apiErr *feishuAPIError
+	if !errors.As(err, &apiErr) {
+		return false
+	}
+	return isThreadReplyUnsupportedFeishuError(apiErr)
+}
+
+func isThreadReplyUnsupportedFeishuError(err *feishuAPIError) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(strings.TrimSpace(err.Msg))
+	switch {
+	case strings.Contains(msg, "reply in thread") && strings.Contains(msg, "not support"):
+		return true
+	case strings.Contains(msg, "reply in thread") && strings.Contains(msg, "unsupported"):
+		return true
+	case strings.Contains(msg, "thread") && strings.Contains(msg, "not support"):
+		return true
+	default:
+		return false
+	}
 }
 
 func (s *LarkSender) replyMessage(

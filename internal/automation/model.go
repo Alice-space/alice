@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/storeutil"
 )
 
 type ScopeKind string
@@ -104,6 +106,7 @@ type Task struct {
 	UpdatedAt           time.Time  `json:"updated_at"`
 	NextRunAt           time.Time  `json:"next_run_at"`
 	LastRunAt           time.Time  `json:"last_run_at,omitempty"`
+	DeletedAt           time.Time  `json:"deleted_at,omitempty"`
 	Running             bool       `json:"running,omitempty"`
 	LastResult          string     `json:"last_result,omitempty"`
 	ConsecutiveFailures int        `json:"consecutive_failures,omitempty"`
@@ -139,7 +142,7 @@ func NormalizeTask(task Task) Task {
 	task.Action.SessionKey = strings.TrimSpace(task.Action.SessionKey)
 	task.Action.ReasoningEffort = strings.ToLower(strings.TrimSpace(task.Action.ReasoningEffort))
 	task.Action.Personality = strings.ToLower(strings.TrimSpace(task.Action.Personality))
-	task.Action.MentionUserIDs = uniqueNonEmptyStrings(task.Action.MentionUserIDs)
+	task.Action.MentionUserIDs = storeutil.UniqueNonEmptyStrings(task.Action.MentionUserIDs)
 	task.Status = TaskStatus(strings.ToLower(strings.TrimSpace(string(task.Status))))
 	task.LastResult = strings.TrimSpace(task.LastResult)
 
@@ -154,6 +157,9 @@ func NormalizeTask(task Task) Task {
 	}
 	if task.Status == "" {
 		task.Status = TaskStatusActive
+	}
+	if task.Status != TaskStatusDeleted {
+		task.DeletedAt = time.Time{}
 	}
 	return task
 }
@@ -312,27 +318,4 @@ func ParseStatusFilter(raw string) (TaskStatus, bool, error) {
 	default:
 		return "", false, fmt.Errorf("invalid status filter %q", raw)
 	}
-}
-
-func uniqueNonEmptyStrings(values []string) []string {
-	if len(values) == 0 {
-		return nil
-	}
-	out := make([]string, 0, len(values))
-	seen := make(map[string]struct{}, len(values))
-	for _, raw := range values {
-		value := strings.TrimSpace(raw)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	if len(out) == 0 {
-		return nil
-	}
-	return out
 }

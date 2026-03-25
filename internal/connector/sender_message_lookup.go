@@ -76,5 +76,5 @@ func (s *LarkSender) GetMessageText(ctx context.Context, messageID string) (stri
 			}
 		}
 	}
-	return clipText(content, 1200), nil
+	return "", nil
 }

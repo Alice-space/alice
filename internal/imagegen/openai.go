@@ -13,6 +13,8 @@ import (
 	"github.com/Alice-space/alice/internal/config"
 )
 
+const openAIReferenceImageLimit = 16
+
 type openAIProvider struct {
 	httpClient        *http.Client
 	client            openai.Client
@@ -121,7 +123,7 @@ func (p *openAIProvider) Generate(ctx context.Context, req Request) (Result, err
 		revisedPrompt string
 		err           error
 	)
-	references := compactExistingPaths(req.ReferenceImages, 16)
+	references := compactExistingPaths(req.ReferenceImages, openAIReferenceImageLimit)
 	if len(references) > 0 {
 		payloads, revisedPrompt, err = p.editImage(ctx, req, references)
 	} else {
