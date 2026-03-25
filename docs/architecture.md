@@ -144,7 +144,7 @@ Operational modules are now exposed as skills instead of being reachable only th
 - `skills/alice-scheduler`
   Manage automation tasks through `alice runtime automation ...`.
 - `skills/alice-code-army`
-  Acts as the long-running optimization orchestration skill, using `alice runtime campaigns ...` as a lightweight campaign index while the campaign repository's markdown/frontmatter structure serves as the primary source of truth; Alice backend periodically reconciles the campaign repo to refresh live-report and wake tasks, while GitLab/cluster integrations remain optional mirrors and execution surfaces.
+  Acts as the long-running optimization orchestration skill, using `alice runtime campaigns ...` as a lightweight campaign index while the campaign repository's markdown/frontmatter structure serves as the primary source of truth; Alice backend periodically reconciles the campaign repo to refresh live-report and wake tasks, and runtime-dispatched planner/executor/reviewer workflows operate directly against that repo-first state.
 
 These skills rely on:
 

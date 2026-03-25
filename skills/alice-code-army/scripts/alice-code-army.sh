@@ -3,15 +3,12 @@ set -euo pipefail
 
 PROGRAM="$(basename "$0")"
 ALICE_HOME_DIR="${ALICE_HOME:-$HOME/.alice}"
-DEFAULT_GITLAB_HOST="${ALICE_CODE_ARMY_GITLAB_HOST:-code.ihep.ac.cn}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 for lib in \
   "$SCRIPT_DIR/lib/common.sh" \
   "$SCRIPT_DIR/lib/repo.sh" \
   "$SCRIPT_DIR/lib/bootstrap.sh" \
-  "$SCRIPT_DIR/lib/gitlab.sh" \
-  "$SCRIPT_DIR/lib/render.sh" \
   "$SCRIPT_DIR/lib/commands.sh"
 do
   [[ -f "$lib" ]] || {
@@ -77,38 +74,6 @@ main() {
     add-pitfall)
       [[ $# -eq 3 ]] || die "usage: $PROGRAM add-pitfall CAMPAIGN_ID PITFALL_PAYLOAD_JSON"
       mutate_campaign_and_return "add-pitfall" "$2" "$3"
-      ;;
-    render-issue-note)
-      [[ $# -eq 2 ]] || die "usage: $PROGRAM render-issue-note CAMPAIGN_ID"
-      render_issue_note "$2"
-      ;;
-    render-trial-note)
-      [[ $# -eq 3 ]] || die "usage: $PROGRAM render-trial-note CAMPAIGN_ID TRIAL_ID"
-      render_trial_note "$2" "$3"
-      ;;
-    time-stats)
-      [[ $# -eq 2 ]] || die "usage: $PROGRAM time-stats CAMPAIGN_ID"
-      time_stats "$2"
-      ;;
-    time-estimate)
-      [[ $# -eq 3 ]] || die "usage: $PROGRAM time-estimate CAMPAIGN_ID DURATION"
-      time_estimate "$2" "$3"
-      ;;
-    time-spend)
-      [[ $# -ge 3 && $# -le 4 ]] || die "usage: $PROGRAM time-spend CAMPAIGN_ID DURATION [SUMMARY]"
-      time_spend "$2" "$3" "${4:-}"
-      ;;
-    sync-issue)
-      [[ $# -eq 2 ]] || die "usage: $PROGRAM sync-issue CAMPAIGN_ID"
-      sync_issue "$2"
-      ;;
-    sync-trial)
-      [[ $# -eq 3 ]] || die "usage: $PROGRAM sync-trial CAMPAIGN_ID TRIAL_ID"
-      sync_trial "$2" "$3"
-      ;;
-    sync-all)
-      [[ $# -eq 2 ]] || die "usage: $PROGRAM sync-all CAMPAIGN_ID"
-      sync_all "$2"
       ;;
     approve-plan)
       [[ $# -eq 2 ]] || die "usage: $PROGRAM approve-plan CAMPAIGN_ID"

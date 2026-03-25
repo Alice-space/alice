@@ -94,6 +94,9 @@ wake_prompt: "resume the cluster job"
 	if len(summary.WakeTasks) != 1 || !strings.Contains(summary.WakeTasks[0].Prompt, "resume the cluster job") {
 		t.Fatalf("unexpected wake task specs: %+v", summary.WakeTasks)
 	}
+	if !strings.Contains(summary.WakeTasks[0].Prompt, "Scheduled wake_at: 2026-03-24T10:00:00+08:00") {
+		t.Fatalf("expected wake prompt to come from template, got %+v", summary.WakeTasks[0])
+	}
 
 	reportPath, err := WriteLiveReport(root, summary)
 	if err != nil {

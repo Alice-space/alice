@@ -8,6 +8,8 @@ import (
 	"time"
 )
 
+const campaignRepoPromptWakeDispatch = "campaignrepo/wake_dispatch.md.tmpl"
+
 func (s Summary) LiveReportMarkdown() string {
 	var lines []string
 	lines = append(lines,
@@ -79,6 +81,18 @@ func WriteLiveReport(root string, summary Summary) (string, error) {
 }
 
 func buildWakePrompt(repo Repository, task TaskDocument) string {
+	prompt, err := renderCampaignPrompt(campaignRepoPromptWakeDispatch, map[string]any{
+		"CampaignRepo": repo.Root,
+		"CampaignFile": repo.Campaign.Path,
+		"TaskFile":     filepath.ToSlash(task.Path),
+		"TaskID":       task.Frontmatter.TaskID,
+		"TaskTitle":    task.Frontmatter.Title,
+		"WakeAt":       task.WakeAt.Format(time.RFC3339),
+		"WakePrompt":   task.Frontmatter.WakePrompt,
+	})
+	if err == nil {
+		return prompt
+	}
 	return strings.TrimSpace(fmt.Sprintf(
 		"Continue the repo-first campaign.\nCampaign repo: %s\nCampaign file: %s\nTask file: %s\nTask id: %s\nTask title: %s\nScheduled wake_at: %s\nWake prompt: %s\nRead the task context from the campaign repo, continue from the recorded state, then update the task files and live report. If the task is still blocked, explain the blocker clearly and request human help if needed.",
 		repo.Root,

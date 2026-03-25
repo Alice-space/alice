@@ -165,6 +165,18 @@ func TestEnsureBundledSkillsLinked_AliceCodeArmyTemplateLeavesPhaseCountToPlanne
 	if !strings.Contains(content, "phase 数量由 planner") {
 		t.Fatalf("master plan template should defer phase count to planner, got %q", content)
 	}
+
+	readmeRaw, err := os.ReadFile(filepath.Join(skillRoot, "README.md"))
+	if err != nil {
+		t.Fatalf("read campaign repo README failed: %v", err)
+	}
+	readme := string(readmeRaw)
+	if !strings.Contains(readme, "新 Agent 先按这个顺序读") {
+		t.Fatalf("campaign repo README should guide new agents how to read the repo, got %q", readme)
+	}
+	if !strings.Contains(readme, "`campaign.md`") || !strings.Contains(readme, "`reports/live-report.md`") {
+		t.Fatalf("campaign repo README should point agents to core files first, got %q", readme)
+	}
 }
 
 func TestEnsureBundledSkillsLinked_AliceCodeArmyTemplatesUseRuntimeDispatchedGenericRoles(t *testing.T) {
@@ -193,6 +205,49 @@ func TestEnsureBundledSkillsLinked_AliceCodeArmyTemplatesUseRuntimeDispatchedGen
 		}
 		if !strings.Contains(content, "role: executor") && !strings.Contains(content, "role: reviewer") && !strings.Contains(content, "role: planner") {
 			t.Fatalf("template %s should use generic runtime-dispatched roles, got %q", path, content)
+		}
+	}
+}
+
+func TestEnsureBundledSkillsLinked_AliceCodeArmyScriptIsRepoBasedOnly(t *testing.T) {
+	home := t.TempDir()
+	aliceHome := filepath.Join(home, ".alice")
+	t.Setenv("HOME", home)
+	t.Setenv(config.EnvAliceHome, aliceHome)
+
+	if _, err := EnsureBundledSkillsLinked(t.TempDir()); err != nil {
+		t.Fatalf("sync bundled skills failed: %v", err)
+	}
+
+	skillRoot := filepath.Join(aliceHome, "skills", "alice-code-army")
+	for _, path := range []string{
+		filepath.Join(skillRoot, "scripts", "lib", "gitlab.sh"),
+		filepath.Join(skillRoot, "scripts", "lib", "render.sh"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("expected GitLab-era helper %s to be absent, err=%v", path, err)
+		}
+	}
+
+	raw, err := os.ReadFile(filepath.Join(skillRoot, "scripts", "alice-code-army.sh"))
+	if err != nil {
+		t.Fatalf("read installed script failed: %v", err)
+	}
+	content := string(raw)
+	for _, needle := range []string{
+		"render-issue-note",
+		"render-trial-note",
+		"sync-issue",
+		"sync-trial",
+		"sync-all",
+		"time-stats",
+		"time-estimate",
+		"time-spend",
+		"gitlab.sh",
+		"render.sh",
+	} {
+		if strings.Contains(content, needle) {
+			t.Fatalf("installed script should not reference legacy GitLab command %q, got %q", needle, content)
 		}
 	}
 }

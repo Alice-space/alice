@@ -54,7 +54,6 @@ flowchart LR
 - `runtime campaign` 只存轻量索引、summary、会话范围内的管理信息。
 - `campaign repo` 才是长期协作的主事实源。
 - `source repos` 才是真正改业务代码的地方。
-- `GitLab issue / MR` 只是可选镜像，不是主状态源。
 
 ## CodeArmy 由哪些部分组成
 
@@ -75,7 +74,6 @@ flowchart LR
 - `campaign repo` 做主事实源：计划、阶段、任务、评审、报告都放在这里。
 - `Alice runtime` 做轻量索引层：只记录当前会话绑定哪个 campaign、当前 summary、当前可见范围。
 - `source repos` 做真实代码变更面：task 改的是源仓库，不是把代码复制进 campaign repo。
-- `GitLab issue / MR` 做可选镜像面：需要给人看时再同步，不是默认真相源。
 
 可以把状态拆成三层看：
 
@@ -90,12 +88,19 @@ flowchart LR
 - 你要查“完整发生了什么”，去看 campaign repo。
 - 你要查“当前会话里有哪些 campaign、summary 是什么”，去看 runtime campaign。
 
+补充一点：
+
+- 文档里把 runtime campaign 叫“轻量索引层”，主要是强调它不是 task/review 的主事实源。
+- 但当前实现里 runtime campaign 仍然会持久化 `trials`、`guidance`、`reviews`、`pitfalls` 这类辅助记录；不要把这些兼容记录误认为已经替代了 repo 里的 task tree。
+
 ## Campaign Repo 一般长什么样
 
 新建 campaign 后，模板通常会生成下面这类结构：
 
 ```text
 campaign-repo/
+  .gitignore
+  README.md
   campaign.md
   findings.md
   EXPERIMENT_LOG.md
@@ -107,10 +112,8 @@ campaign-repo/
   plans/
     proposals/
       README.md
-      round-001-plan.md
     reviews/
       README.md
-      round-001-review.md
     merged/
       master-plan.md
   phases/
@@ -118,14 +121,12 @@ campaign-repo/
       phase.md
       tasks/
         README.md
-        T001.md
-        T002.md
   reviews/
-    T001/
-      R001.md
+    README.md
   reports/
     live-report.md
     phase-reports/
+      README.md
     final-report.md
   _templates/
     task.md
@@ -139,10 +140,13 @@ campaign-repo/
 
 初始化模板只保留 `P01` 作为 phase 目录示例；实际需要多少个 phase，应该由 planner 在 proposal 和 merged plan 里决定，而不是由模板预设死。
 
+像 `plans/proposals/round-001-plan.md`、`plans/reviews/round-001-review.md`、`phases/Pxx/tasks/Txxx.md`、`reviews/Txxx/Rxxx.md` 这些具体文件，通常是在后续 workflow 里按需要生成，不是初始 scaffold 就全部带好。
+
 最常看的几个位置：
 
 | 文件/目录 | 作用 | 排障时先看什么 |
 | --- | --- | --- |
+| `README.md` | 给新 agent 的入场说明和推荐阅读顺序 | 应该先看哪些文件、哪些约定不能踩 |
 | `campaign.md` | 总目标、当前 phase、默认角色、`plan_status`、`source_repos` | 当前在第几轮 planning、默认谁来干活 |
 | `repos/*.md` | source repo 的本地路径、远端、分支信息 | 真正代码仓库在哪 |
 | `plans/proposals/` | planner 产出的 proposal | 当前计划到底写了什么 |
@@ -279,7 +283,7 @@ planner / planner reviewer 当前实际会做的事：
 - `planning` 且本轮还没有 `submitted` proposal 时，系统会生成 planner dispatch task。
 - `plan_review_pending` 且本轮还没有 review 文件时，系统会生成 planner reviewer dispatch task。
 - planner reviewer 给出 `approve` 后，系统会把 proposal 提升为 `plans/merged/master-plan.md`，并把 `plan_status` 设为 `plan_approved`。
-- 人类执行 `approve-plan` 后，`plan_status` 会进入 `human_approved`；下一次 reconcile 才会把 `draft` task 升成 `ready`。
+- 按约定应在 planner reviewer 已通过后再执行 `approve-plan`；但当前脚本实现不会强制校验 gate，只是把 `plan_status` 直接改到 `human_approved`。下一次 reconcile 才会把 `draft` task 升成 `ready`。
 
 ## 执行阶段状态机
 
@@ -306,7 +310,7 @@ flowchart LR
 - `executing -> review_pending`：执行完成，等待 reviewer。
 - `review_pending -> reviewing`：被 reconcile 选中进入审阅队列。
 - `reviewing -> accepted/rework/blocked/rejected`：Alice 读取 review 文件后应用 verdict。
-- `waiting_external -> executing`：wake task 到点或人工恢复后重新继续。
+- `waiting_external -> executing`：wake task 到点后会触发继续该 task 的 workflow；通常由这次继续执行把状态显式推进回 `executing`，不是 runtime 先把 frontmatter 自动改好。
 
 一个非常重要的当前实现细节：
 
@@ -410,6 +414,7 @@ $HOME/.agents/skills/alice-code-army/scripts/alice-code-army.sh approve-plan cam
 
 - 把 runtime campaign 的 `status` 补成 `running`
 - 把 campaign repo 里的 `plan_status` 改成 `human_approved`
+- 当前不会检查 proposal / plan review / merged plan 是否已经齐全，所以使用上仍应把它当人工 gate，而不是脚本级硬校验。
 
 但它不会立刻把所有 task 变成 `ready`。还要再来一次 reconcile。
 
@@ -471,7 +476,9 @@ reviews/T001/R001.md
 - `wake_at: 2026-03-26T10:00:00+08:00`
 - `wake_prompt: 重新检查训练结果并继续推进`
 
-后台会把它同步成真正的 wake automation task。到点后会自动恢复，不靠人记忆。
+后台会把它同步成真正的 wake automation task。到点后会自动继续该 task 的 workflow，不靠人记忆。
+
+更准确地说，自动化层会在 `wake_at` 到点后再次唤起对应 workflow，并把 task 文件路径、wake prompt 等上下文传给 agent；是否把状态改回 `executing`，仍由这次继续执行过程显式落盘。
 
 ## 命令速查
 
@@ -498,16 +505,14 @@ reviews/T001/R001.md
 | `add-guidance` | 追加指导记录 |
 | `add-review` | 追加 runtime review 记录 |
 | `add-pitfall` | 追加 pitfall 记录 |
-| `render-issue-note` / `render-trial-note` | 渲染 GitLab 镜像备注 |
-| `sync-issue` / `sync-trial` / `sync-all` | 把摘要同步到 GitLab issue / MR |
-| `time-stats` / `time-estimate` / `time-spend` | 走 GitLab issue time tracking |
 
-### `repo-reconcile` 的两个调试开关
+### `repo-reconcile` 的三个调试开关
 
 运行时命令层支持：
 
 - `--write-report=false`
 - `--update-runtime=false`
+- `--sync-dispatch=false`
 
 它们适合排障时“只做 reconcile，不落 live-report”或者“只看 repo 状态，不回写 runtime summary”的场景。
 
@@ -548,6 +553,11 @@ reviews/T001/R001.md
 - 后台自动 reconcile 是“事件驱动 + 兜底轮询”的组合。
 
 ## 并行与冲突规则
+
+补充一点：
+
+- 当前还没有独立的 `repo-lint` / `campaignrepo.Validate` 命令。
+- 也就是说，很多 repo 结构约定现在仍主要靠模板、prompt 和人工检查维持，而不是在加载阶段全部被硬性拒绝。
 
 ### `depends_on`
 
@@ -612,9 +622,10 @@ reviews/T001/R001.md
 - 谁在审
 - 谁在应用 verdict
 
-### 误区 6：GitLab issue / MR 里已经有记录了，为什么还要看 campaign repo
+再精确一点：
 
-因为 GitLab 在这里是镜像面，不是主事实源。真正完整、可机读、可 reconcile 的状态都在 campaign repo。
+- 这条现在主要由 reviewer dispatch prompt 和流程约定来约束。
+- runtime 侧目前还没有单独的“reviewer 写 source repo 就硬拦截”保护。
 
 ## 推荐的最小使用姿势
 

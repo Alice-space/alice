@@ -1,5 +1,12 @@
 # shellcheck shell=bash
 
+find_trial_json() {
+  local campaign_payload="$1" trial_id="$2"
+  jq -ce --arg trial_id "$trial_id" '
+    .campaign.trials[] | select(.id == $trial_id)
+  ' <<<"$campaign_payload"
+}
+
 append_guidance() {
   local campaign_id="$1" source="$2" command_text="$3" summary="$4"
   local payload
@@ -23,26 +30,9 @@ upsert_trial_json() {
   run_campaigns upsert-trial "$campaign_id" "$payload" >/dev/null
 }
 
-mutate_campaign_and_sync_issue() {
-  local subcmd="$1" campaign_id="$2" payload_json="$3"
-  run_campaigns "$subcmd" "$campaign_id" "$payload_json" >/dev/null
-  sync_issue "$campaign_id" >/dev/null
-  campaign_json "$campaign_id"
-}
-
 mutate_campaign_and_return() {
   local subcmd="$1" campaign_id="$2" payload_json="$3"
   run_campaigns "$subcmd" "$campaign_id" "$payload_json" >/dev/null
-  campaign_json "$campaign_id"
-}
-
-create_visible() {
-  local create_json="$1" created campaign_id
-  require_visible_create_payload "$create_json"
-  created="$(run_campaigns create "$create_json")"
-  campaign_id="$(jq -r '.campaign.id // ""' <<<"$created")"
-  [[ -n "$campaign_id" ]] || die "failed to extract campaign id from create response"
-  sync_issue "$campaign_id" >/dev/null
   campaign_json "$campaign_id"
 }
 
@@ -55,23 +45,6 @@ create_repo_first() {
   init_campaign_repo "$campaign_id" "$requested_path"
 }
 
-upsert_trial_and_sync() {
-  local campaign_id="$1" payload_json="$2" trial_id payload merge_request
-  trial_id="$(jq -r '.trial.id // ""' <<<"$payload_json")"
-  [[ -n "$trial_id" ]] || die "trial payload missing trial.id"
-  run_campaigns upsert-trial "$campaign_id" "$payload_json" >/dev/null
-  sync_issue "$campaign_id" >/dev/null
-  payload="$(campaign_json "$campaign_id")"
-  merge_request="$(jq -r --arg trial_id "$trial_id" '
-    .campaign.trials[]? | select(.id == $trial_id) | .merge_request | if . == null then "" else tostring end
-  ' <<<"$payload")"
-  if [[ -n "$merge_request" ]]; then
-    sync_trial "$campaign_id" "$trial_id" >/dev/null
-    payload="$(campaign_json "$campaign_id")"
-  fi
-  printf '%s\n' "$payload"
-}
-
 upsert_trial_and_return() {
   local campaign_id="$1" payload_json="$2" trial_id
   trial_id="$(jq -r '.trial.id // ""' <<<"$payload_json")"
@@ -82,7 +55,7 @@ upsert_trial_and_return() {
 
 apply_command() {
   local campaign_id="$1" command_text="$2" source="${3:-manual}"
-  local payload trial_id current trial_json updated_trial patch_json winner_id summary merge_request
+  local payload trial_id trial_json updated_trial patch_json winner_id summary
   payload="$(campaign_json "$campaign_id")"
   command_text="${command_text#"${command_text%%[![:space:]]*}"}"
   command_text="${command_text%"${command_text##*[![:space:]]}"}"
@@ -186,51 +159,6 @@ apply_command() {
   run_campaigns get "$campaign_id"
 }
 
-sync_issue() {
-  local campaign_id="$1" payload repo issue_iid body marker legacy_match
-  payload="$(ensure_campaign_exact_entries_deduped "$campaign_id")"
-  repo="$(campaign_repo "$payload")"
-  issue_iid="$(campaign_issue_iid "$payload")"
-  [[ -n "$repo" ]] || die "campaign repo is empty"
-  [[ -n "$issue_iid" ]] || die "campaign ${campaign_id} is not GitLab-visible yet: missing issue_iid"
-  body="$(render_issue_note "$campaign_id")"
-  marker="$(campaign_issue_sync_marker "$campaign_id")"
-  legacy_match="$(campaign_issue_legacy_match "$campaign_id")"
-  body="$(prepend_managed_note_marker "$marker" "$body")"
-  gitlab_note_issue "$repo" "$issue_iid" "$body" "$marker" "$legacy_match"
-}
-
-sync_trial() {
-  local campaign_id="$1" trial_id="$2" payload repo merge_request mr_iid body marker legacy_match
-  payload="$(ensure_campaign_exact_entries_deduped "$campaign_id")"
-  repo="$(jq -r '.campaign.repo // ""' <<<"$payload")"
-  [[ -n "$repo" ]] || die "campaign repo is empty"
-  merge_request="$(jq -r --arg trial_id "$trial_id" '
-    .campaign.trials[] | select(.id == $trial_id) | .merge_request // ""
-  ' <<<"$payload")"
-  [[ -n "$merge_request" ]] || die "trial ${trial_id} has no merge_request"
-  mr_iid="$(extract_mr_iid "$merge_request")"
-  body="$(render_trial_note "$campaign_id" "$trial_id")"
-  marker="$(trial_sync_marker "$campaign_id" "$trial_id")"
-  legacy_match="$(trial_sync_legacy_match "$campaign_id" "$trial_id")"
-  body="$(prepend_managed_note_marker "$marker" "$body")"
-  gitlab_note_mr "$repo" "$mr_iid" "$body" "$marker" "$legacy_match"
-}
-
-sync_all() {
-  local campaign_id="$1" payload trial_ids trial_id
-  sync_issue "$campaign_id"
-  payload="$(campaign_json "$campaign_id")"
-  mapfile -t trial_ids < <(jq -r '
-    .campaign.trials[]
-    | select((.merge_request // "") != "")
-    | .id
-  ' <<<"$payload")
-  for trial_id in "${trial_ids[@]}"; do
-    sync_trial "$campaign_id" "$trial_id"
-  done
-}
-
 approve_plan() {
   local campaign_id="$1"
   apply_command "$campaign_id" "/alice approve-plan" "manual"
@@ -261,4 +189,3 @@ update_campaign_plan_status() {
     sed -i "s/^plan_status:.*/plan_status: ${new_status}/" "$campaign_file"
   fi
 }
-

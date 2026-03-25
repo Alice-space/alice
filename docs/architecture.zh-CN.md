@@ -144,7 +144,7 @@ memory 和定时任务能力现在以外置 skill 的形式暴露，而不是只
 - `skills/alice-scheduler`
   通过 `alice runtime automation ...` 管理 automation task。
 - `skills/alice-code-army`
-  作为长期优化任务的编排 skill，当前通过 `alice runtime campaigns ...` 管理轻量 campaign 索引，并以 campaign 仓库中的 markdown/frontmatter 结构做主事实源；Alice backend 会周期性 reconcile campaign repo，刷新 live-report 和 wake task；GitLab/集群联动继续作为可选镜像与执行面。
+  作为长期优化任务的编排 skill，当前通过 `alice runtime campaigns ...` 管理轻量 campaign 索引，并以 campaign 仓库中的 markdown/frontmatter 结构做主事实源；Alice backend 会周期性 reconcile campaign repo，刷新 live-report 和 wake task；planner / executor / reviewer workflow 也直接围绕这套 repo-first 状态运行。
 
 这些 skill 依赖的运行时环境变量：
 
