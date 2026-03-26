@@ -170,5 +170,5 @@ func formatOptionalTime(value time.Time) string {
 	if value.IsZero() {
 		return ""
 	}
-	return value.Local().Format(time.RFC3339)
+	return value.Format(time.RFC3339)
 }

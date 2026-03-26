@@ -9,6 +9,12 @@ import (
 )
 
 func TestScanFromPath(t *testing.T) {
+	oldLocal := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() {
+		time.Local = oldLocal
+	})
+
 	root := t.TempDir()
 	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
 campaign_id: camp_demo
@@ -111,6 +117,38 @@ wake_prompt: "resume the cluster job"
 	}
 	if !strings.Contains(string(reportContent), "dispatch executor for `T002`") {
 		t.Fatalf("expected live report to mention selected task, got %s", string(reportContent))
+	}
+}
+
+func TestNormalizeTaskDocumentPreservesExplicitTimeOffset(t *testing.T) {
+	oldLocal := time.Local
+	time.Local = time.UTC
+	t.Cleanup(func() {
+		time.Local = oldLocal
+	})
+
+	raw := "2026-03-24T10:00:00+08:00"
+	parsed, err := parseFlexibleTime(raw)
+	if err != nil {
+		t.Fatalf("parse flexible time failed: %v", err)
+	}
+
+	task := normalizeTaskDocument(TaskDocument{
+		Path:       "phases/P01/tasks/T001/task.md",
+		Dir:        "phases/P01/tasks/T001",
+		LeaseUntil: parsed,
+		WakeAt:     parsed,
+		Frontmatter: TaskFrontmatter{
+			TaskID: "T001",
+			Phase:  "P01",
+		},
+	})
+
+	if task.Frontmatter.LeaseUntilRaw != raw {
+		t.Fatalf("expected lease_until to preserve offset, got %q", task.Frontmatter.LeaseUntilRaw)
+	}
+	if task.Frontmatter.WakeAtRaw != raw {
+		t.Fatalf("expected wake_at to preserve offset, got %q", task.Frontmatter.WakeAtRaw)
 	}
 }
 

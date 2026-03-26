@@ -426,7 +426,7 @@ func parseFlexibleTime(raw string) (time.Time, error) {
 			parsed, err = time.ParseInLocation(layout, raw, time.Local)
 		}
 		if err == nil {
-			return parsed.Local(), nil
+			return parsed, nil
 		}
 		lastErr = err
 	}
