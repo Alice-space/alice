@@ -61,6 +61,17 @@ bots:
     #   personality:       Codex personality preset (e.g. "friendly", "pragmatic")
     #   prompt_prefix:     prepended to every prompt sent to this backend
     #   permissions:       sandbox + approval policy for this profile
+    #                      provider handling today:
+    #                      - codex: permissions are passed through to codex CLI
+    #                      - claude: Alice always launches Claude with
+    #                                `--permission-mode bypassPermissions`;
+    #                                keep `danger-full-access` + `never` here
+    #                                to reflect real behavior
+    #                      - kimi: Alice runs `kimi --print`; current Kimi CLI
+    #                              says print mode implicitly enables `--yolo`,
+    #                              so approval is effectively `never`. Keep
+    #                              `danger-full-access` + `never` here to
+    #                              reflect the current default behavior
     #     sandbox:         read-only | workspace-write | danger-full-access
     #     ask_for_approval: untrusted | on-request | never
     #     add_dirs:        extra directories to expose to the sandbox
@@ -79,6 +90,8 @@ bots:
     #   claude-sonnet-4-6        — recommended balance of speed and quality
     #   claude-sonnet-4-20250514 — Sonnet 4 (older date-based alias)
     #   claude-haiku-4-5-20251001 — fast and lightweight
+    #   note: Claude currently ignores the YAML permission values and is always
+    #         launched with bypassPermissions by Alice
     #
     # Gemini models (passed as --model to gemini CLI):
     #   gemini-2.5-pro   — most capable
@@ -87,6 +100,8 @@ bots:
     #
     # Kimi models (passed as --model to kimi CLI):
     #   (refer to Kimi CLI documentation for available model names)
+    #   note: Alice uses `kimi --print`; current Kimi CLI says print mode
+    #         implicitly adds `--yolo`, so Kimi runs without approval prompts
     llm_profiles:
       chat:
         provider: "codex"

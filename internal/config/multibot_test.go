@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"testing"
+	"time"
 )
 
 func TestRuntimeConfigs_MultiBotUsesSharedCodexHomeByDefault(t *testing.T) {
@@ -139,6 +140,48 @@ func TestAllowedBundledSkills_RespectsRuntimePermissions(t *testing.T) {
 	}
 	if !containsString(got, "alice-message") {
 		t.Fatalf("chat-only skills should keep alice-message, got %#v", got)
+	}
+}
+
+func TestFinalizeLLMProfiles_DefaultPermissionsFollowProviderBehavior(t *testing.T) {
+	profiles := finalizeLLMProfiles(map[string]LLMProfileConfig{
+		"codex": {
+			Provider: "codex",
+		},
+		"claude": {
+			Provider: "claude",
+		},
+		"kimi": {
+			Provider: "kimi",
+		},
+		"claude_partial": {
+			Provider: "claude",
+			Permissions: &CodexExecPolicyConfig{
+				AskForApproval: CodexApprovalOnRequest,
+			},
+		},
+	})
+
+	if profiles["codex"].Permissions == nil || profiles["codex"].Permissions.Sandbox != CodexSandboxWorkspaceWrite {
+		t.Fatalf("codex default sandbox should stay workspace-write, got %#v", profiles["codex"].Permissions)
+	}
+	if profiles["claude"].Permissions == nil || profiles["claude"].Permissions.Sandbox != CodexSandboxDangerFullAccess {
+		t.Fatalf("claude default sandbox should reflect bypass behavior, got %#v", profiles["claude"].Permissions)
+	}
+	if profiles["kimi"].Permissions == nil || profiles["kimi"].Permissions.Sandbox != CodexSandboxDangerFullAccess {
+		t.Fatalf("kimi default sandbox should reflect yolo behavior, got %#v", profiles["kimi"].Permissions)
+	}
+	if profiles["claude_partial"].Permissions == nil {
+		t.Fatal("claude partial permissions should be preserved")
+	}
+	if profiles["claude_partial"].Permissions.Sandbox != CodexSandboxDangerFullAccess {
+		t.Fatalf("claude partial sandbox should default to danger-full-access, got %#v", profiles["claude_partial"].Permissions)
+	}
+	if profiles["claude_partial"].Permissions.AskForApproval != CodexApprovalOnRequest {
+		t.Fatalf("explicit ask_for_approval should be preserved, got %#v", profiles["claude_partial"].Permissions)
+	}
+	if profiles["codex"].Timeout != time.Duration(DefaultLLMTimeoutSecs)*time.Second {
+		t.Fatalf("finalize should still populate timeout, got %s", profiles["codex"].Timeout)
 	}
 }
 

@@ -139,3 +139,28 @@ func TestResolvePlannerRole_DoesNotInventReasoningOrPersonality(t *testing.T) {
 		t.Fatalf("planner personality should stay empty unless explicitly configured, got=%q", cfg.Personality)
 	}
 }
+
+func TestResolveRoleConfig_NormalizesLegacyCodeArmyWorkflowAliases(t *testing.T) {
+	tests := []struct {
+		name     string
+		workflow string
+	}{
+		{name: "code", workflow: "code"},
+		{name: "code review", workflow: "code-review"},
+		{name: "code review underscore", workflow: "code_review"},
+		{name: "code army hyphen", workflow: "code-army"},
+		{name: "code army compact", workflow: "codearmy"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := resolveRoleConfig(RoleConfig{}, RoleConfig{
+				Role:     "executor",
+				Workflow: tt.workflow,
+			}, "executor")
+			if cfg.Workflow != "code_army" {
+				t.Fatalf("expected workflow alias %q to normalize to code_army, got %q", tt.workflow, cfg.Workflow)
+			}
+		})
+	}
+}

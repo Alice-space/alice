@@ -79,7 +79,7 @@ make fmt
 - 关键路径可运行（至少验证一次启动命令）：
 
 ```bash
-go run ./cmd/connector
+go run ./cmd/connector --feishu-websocket
 ```
 
 - 文档与示例命令已同步更新。

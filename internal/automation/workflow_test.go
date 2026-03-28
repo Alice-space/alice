@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/Alice-space/alice/internal/llm"
@@ -94,5 +95,38 @@ func TestPromptWorkflowRunner_DoesNotForwardSyntheticStateKeyToClaude(t *testing
 	}
 	if backend.lastReq.ThreadID != "" {
 		t.Fatalf("claude should not receive synthetic workflow thread id, got %q", backend.lastReq.ThreadID)
+	}
+}
+
+func TestPromptWorkflowRunner_AddsCodeArmySkillHintWhenRuntimeEnvPresent(t *testing.T) {
+	backend := &capturingWorkflowBackendStub{
+		result: llm.RunResult{Reply: "done"},
+	}
+	runner := NewPromptWorkflowRunner(backend)
+
+	_, err := runner.Run(context.Background(), WorkflowRunRequest{
+		Workflow: "code_army",
+		Prompt:   "run",
+		Env: map[string]string{
+			"ALICE_RUNTIME_BIN": "/tmp/alice",
+		},
+	})
+	if err != nil {
+		t.Fatalf("run workflow failed: %v", err)
+	}
+	if !strings.Contains(backend.lastReq.UserText, "`alice-code-army`") {
+		t.Fatalf("expected skill hint in workflow prompt, got %q", backend.lastReq.UserText)
+	}
+	if !strings.Contains(backend.lastReq.UserText, "`$ALICE_RUNTIME_BIN runtime campaigns ...`") {
+		t.Fatalf("expected runtime cli fallback in workflow prompt, got %q", backend.lastReq.UserText)
+	}
+	if !strings.Contains(backend.lastReq.UserText, "Do the file updates yourself") {
+		t.Fatalf("expected execution contract in workflow prompt, got %q", backend.lastReq.UserText)
+	}
+	if !strings.Contains(backend.lastReq.UserText, "short public summary") {
+		t.Fatalf("expected completion contract in workflow prompt, got %q", backend.lastReq.UserText)
+	}
+	if !strings.HasSuffix(backend.lastReq.UserText, "\n\nrun") {
+		t.Fatalf("expected original prompt to be preserved, got %q", backend.lastReq.UserText)
 	}
 }

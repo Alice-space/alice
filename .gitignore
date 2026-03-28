@@ -12,3 +12,4 @@ coverage.out
 .DS_Store
 .memory
 codex-home
+.tmp/

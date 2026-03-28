@@ -7,7 +7,7 @@ import (
 
 // PromptFS exposes the bundled prompt templates from the repository's prompts directory.
 //
-//go:embed prompts skills config.example.yaml SOUL.md.example
+//go:embed all:prompts all:skills config.example.yaml SOUL.md.example
 var embeddedFiles embed.FS
 
 var PromptFS = mustSub(embeddedFiles, "prompts")

@@ -45,8 +45,30 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 
 	dispatch, err = e.executeUserTask(runCtx, task)
 	if err != nil {
+		if shouldIgnoreInternalWorkflowDeliveryError(task, dispatch, err) {
+			logging.Warnf(
+				"ignore automation delivery error after successful internal workflow id=%s state_key=%s err=%v",
+				task.ID,
+				task.Action.StateKey,
+				err,
+			)
+			err = nil
+			return
+		}
 		logging.Errorf("run automation task failed id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, err)
 	}
+}
+
+func shouldIgnoreInternalWorkflowDeliveryError(task Task, dispatch taskDispatch, err error) bool {
+	if err == nil {
+		return false
+	}
+	task = NormalizeTask(task)
+	if task.Action.Type != ActionTypeRunWorkflow || !dispatch.completed {
+		return false
+	}
+	stateKey := strings.TrimSpace(task.Action.StateKey)
+	return strings.HasPrefix(stateKey, "campaign_dispatch:") || strings.HasPrefix(stateKey, "campaign_wake:")
 }
 
 func (e *Engine) recordUserTaskOutcome(task Task, dispatch taskDispatch, err error) {
@@ -302,9 +324,10 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			return taskDispatch{}, err
 		}
 		dispatch := taskDispatch{
-			text:    text,
-			signal:  signal,
-			signals: signals,
+			text:      text,
+			signal:    signal,
+			signals:   signals,
+			completed: true,
 		}
 		if signal != nil {
 			var cardContent string

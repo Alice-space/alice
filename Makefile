@@ -6,7 +6,7 @@ build:
 	go build -o bin/alice ./cmd/connector
 
 run:
-	go run ./cmd/connector
+	go run ./cmd/connector --feishu-websocket
 
 fmt:
 	gofmt -w $(shell find . -name '*.go' -type f)

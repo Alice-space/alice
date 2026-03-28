@@ -2,7 +2,7 @@
 
 materialize_campaign_repo_template() {
   local payload="$1" dest="$2" template_root
-  local campaign_id campaign_title campaign_objective escaped_id escaped_title escaped_objective escaped_repo_path
+  local campaign_id campaign_title campaign_objective escaped_id escaped_title escaped_objective escaped_repo_path existing_campaign_id
 
   template_root="$(campaign_repo_template_root)"
   [[ -d "$template_root" ]] || die "missing embedded campaign repo template at ${template_root}"
@@ -13,6 +13,10 @@ materialize_campaign_repo_template() {
 
   if [[ -d "$dest" ]]; then
     if [[ -f "$dest/campaign.md" ]]; then
+      existing_campaign_id="$(sed -n 's/^campaign_id:[[:space:]]*//p' "$dest/campaign.md" | head -1 | tr -d '"' | tr -d "'")"
+      if [[ -n "$existing_campaign_id" && "$existing_campaign_id" != "$campaign_id" ]]; then
+        die "campaign repo ${dest} already belongs to ${existing_campaign_id}; refusing to attach new campaign ${campaign_id}"
+      fi
       return 0
     fi
     if find "$dest" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then

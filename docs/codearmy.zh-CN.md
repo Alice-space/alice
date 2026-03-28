@@ -324,6 +324,245 @@ flowchart LR
 - `depends_on` 只把依赖任务的 `done` 视为真正完成。
 - 所以一个 task 即使已经评审通过，如果你希望它解除下游依赖，仍要把它推进到 `done`。
 
+## 每个流程实际收到的 prompt
+
+如果你想排查“为什么 agent 会这样做”，这里要区分两层：
+
+- 第一层是 `prompts/campaignrepo/*.md.tmpl` 里的 workflow 模板。
+- 第二层是 `internal/automation/workflow.go` 在运行 `code_army` workflow 时，可能会自动加在模板前面的 runtime skill hint。
+
+### 公共前缀：runtime skill hint
+
+当 runtime 注入了 `ALICE_RUNTIME_BIN` 或 `ALICE_RUNTIME_API_BASE_URL` 时，`code_army` workflow 会在每个模板前自动加上这段前缀：
+
+```text
+Runtime: session/auth are injected; use `alice-code-army` or `$ALICE_RUNTIME_BIN runtime campaigns ...` for campaign ops. Do the file updates yourself, then end with a short public summary.
+```
+
+也就是说，最终发给 agent 的 prompt 通常是：
+
+```text
+<runtime skill hint>
+
+<具体 workflow 模板渲染结果>
+```
+
+如果 runtime 环境变量没注入，就只下发下面这些模板正文。
+
+### 1. Planner dispatch
+
+触发条件：
+
+- `plan_status == planning`
+- 当前 `plan_round` 还没有 `status: submitted` 的 proposal
+
+模板来源：
+
+- `prompts/campaignrepo/planner_dispatch.md.tmpl`
+
+模板正文：
+
+```text
+Plan round {{ .PlanRound }} for campaign repo `{{ .CampaignRepo }}`.
+Campaign ID: {{ .CampaignID }}.
+All paths below are relative to that repo.
+
+Read `campaign.md`, `repos/*.md`, `findings.md` when present, and the source repos from each repo ref `local_path`.
+Write:
+- `plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md` with `proposal_id: "plan-r{{ .PlanRound }}"`, `plan_round: {{ .PlanRound }}`, `status: submitted`, plus analysis/phases/tasks/risks
+- `plans/merged/master-plan.md`
+- `phases/Pxx/phase.md`
+- `phases/Pxx/tasks/Txxx/{task.md,context.md,plan.md,progress.md,results/README.md,reviews/README.md}`
+
+Rules:
+- Keep proposal/master-plan/phases/tasks consistent on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism.
+- Preserve required headings from `_templates/`: `task.md` Goal/Background/Acceptance/Deliverables, `context.md` Context/Relevant Repos/Relevant Files/Dependencies, `plan.md` Execution Steps/Validation/Handoff.
+- Task packages must be executor-ready. Keep validation inside each task's `write_scope`. Verify claims from files or command output.
+- Standard executor/reviewer blocks use `workflow: code_army`. Keep task/review role blocks to `role` + `workflow` unless a local override is intentional. Never add `default_*` to `campaign.md`.
+- Do not modify source repos, `campaign.md`, or `reports/live-report.md`.
+- Run `alice-code-army repo-lint {{ .CampaignID }}` or `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`, fix failures, then give a short public summary.
+```
+
+这也是为什么当前 planner 不只是写 proposal，还会同时细化 `master-plan`、phase 文档和 executor-ready 的 task package。
+
+### 2. Planner reviewer dispatch
+
+触发条件：
+
+- `plan_status == plan_review_pending`
+- 当前 `plan_round` 还没有 review 文件
+
+模板来源：
+
+- `prompts/campaignrepo/planner_reviewer_dispatch.md.tmpl`
+
+模板正文：
+
+```text
+Review whether round {{ .PlanRound }} is ready for human approval for campaign repo `{{ .CampaignRepo }}`.
+Campaign ID: {{ .CampaignID }}.
+All paths below are relative to that repo.
+
+Read `campaign.md`, `plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md`, `plans/merged/master-plan.md`, phase/task docs, and source repos as needed.
+Check that:
+- `master-plan.md` is concrete, not template-only
+- proposal/master-plan/phases/tasks agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism
+- each task is a folder `phases/Pxx/tasks/Txxx/` with `task.md`, `context.md`, `plan.md`, `progress.md`, `results/`, and `reviews/`
+- required headings from `_templates/` are preserved
+- standard executor/reviewer blocks use `workflow: code_army`, write_scope is usable, and task packages are executor-ready
+- treat `campaign.md` as baseline metadata only at this stage; do not require planner to replace static guidance text or placeholders there unless frontmatter/objective/source-repo facts are actually inconsistent
+- do not use `repo-lint --for-approval` in this review; that approval gate is for the later human `/alice approve-plan` step after runtime has advanced `plan_status` to `plan_approved`
+
+Write `plans/reviews/round-{{ printf "%03d" .PlanRound }}-review.md` with `review_id: "plan-review-r{{ .PlanRound }}"`, `plan_round`, `reviewer.role: {{ .ReviewerRole }}`, `verdict`, `blocking`, and `created_at`.
+Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
+Verdicts: `approve`, `concern`, `blocking`. Missing merged-plan content, placeholder task packages, or inconsistent artifacts are usually `concern`, not `blocking`.
+Run `alice-code-army repo-lint {{ .CampaignID }}` or `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`; any lint failure is at least `concern`.
+Do not modify source repos, `campaign.md`, or the proposal. Write the review yourself, then give a short public summary with the review path, verdict, and repo-lint result.
+```
+
+这里一个容易误解的点是：planner reviewer 不负责做人类审批 gate，它只负责给本轮计划写 review；真正更严格的 `repo-lint --for-approval` 在后面的人工 `/alice approve-plan`。
+
+### 3. Executor dispatch
+
+触发条件：
+
+- task `status == executing`
+- `execution_round > 0`
+
+模板来源：
+
+- `prompts/campaignrepo/executor_dispatch.md.tmpl`
+
+模板正文：
+
+```text
+Continue the repo-first campaign as the executor.
+
+Campaign repo: {{ .CampaignRepo }}
+Task file: {{ .TaskFile }}
+Task dir: {{ .TaskDir }}
+Task id: {{ .TaskID }}
+Task title: {{ .TaskTitle }}
+Executor role: {{ .ExecutorRole }}
+Execution round: {{ .ExecutionRound }}
+Target repos: {{ .TargetRepos | join ", " | default "-" }}
+Source repos:
+{{- if .SourceRepoRefs }}
+{{- range .SourceRepoRefs }}
+- {{ .RepoID }}: local_path={{ .LocalPath | default "-" }}, default_branch={{ .DefaultBranch | default "-" }}, repo_doc={{ .DocPath }}
+{{- end }}
+{{- else }}
+- none declared
+{{- end }}
+Working branches: {{ .WorkingBranches | join ", " | default "-" }}
+Write scope: {{ .WriteScope | join ", " | default "-" }}
+Reviewer role: {{ .ReviewerRole }}
+Report snippet: {{ .ReportSnippet }}
+Review status: {{ .ReviewStatus }}
+Last review path: {{ .LastReviewPath }}
+
+Execution rules:
+1. Read `campaign.md`, the task markdown in the task dir, and the referenced source repos.
+2. You may modify the source repos listed in `target_repos` and the task directory for this task.
+3. Do not edit `reports/live-report.md` or unrelated task directories.
+4. Treat the task folder as the contract surface. Read `task.md`, `context.md`, and `plan.md` first. If `review_status` is not `pending` or `last_review_path` is set, read that review before touching the source repo and address its findings in this execution round.
+5. Before setting `review_pending`, verify the source-repo branch/commit yourself. Record the real reachable git commit from the target repo in `head_commit`, keep `last_run_path` pointing at a real task-local result file, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and do not claim success without source-repo changes.
+6. If the task is waiting on a long-running external job, switch to `waiting_external`, clear `owner_agent` and `lease_until`, then set `wake_at` and `wake_prompt`.
+7. If the task is blocked, set status to `blocked`, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and state the blocker clearly in the task files.
+8. Keep the campaign repo as the source of truth.
+9. Apply the required source-repo and task-file updates yourself, then emit a short public summary listing changed files, validation, and the final task status.
+```
+
+这个 prompt 把 executor 的职责边界卡得很明确：
+
+- 可以改 `target_repos` 对应的 source repo
+- 可以改当前 task 目录
+- 不能碰 `reports/live-report.md`
+- 进入 `review_pending` 前必须自己核实 commit、结果文件和真实改动
+
+### 4. Reviewer dispatch
+
+触发条件：
+
+- task `status == reviewing`
+- `review_round > 0`
+
+模板来源：
+
+- `prompts/campaignrepo/reviewer_dispatch.md.tmpl`
+
+模板正文：
+
+```text
+Continue the repo-first campaign as the external reviewer.
+
+Campaign repo: {{ .CampaignRepo }}
+Task file: {{ .TaskFile }}
+Task dir: {{ .TaskDir }}
+Task id: {{ .TaskID }}
+Task title: {{ .TaskTitle }}
+Reviewer role: {{ .ReviewerRole }}
+Review round: {{ .ReviewRound }}
+Target commit: {{ .TargetCommit }}
+Last run path: {{ .LastRunPath }}
+Write scope: {{ .WriteScope | join ", " | default "-" }}
+Source repos:
+{{- if .SourceRepoRefs }}
+{{- range .SourceRepoRefs }}
+- {{ .RepoID }}: local_path={{ .LocalPath | default "-" }}, default_branch={{ .DefaultBranch | default "-" }}, repo_doc={{ .DocPath }}
+{{- end }}
+{{- else }}
+- none declared
+{{- end }}
+Suggested review file: {{ .SuggestedReviewFile }}
+
+Review rules:
+1. Read `campaign.md`, the task markdown, the referenced results, and the relevant source repo diff or commit from the listed local paths.
+2. Do not modify source repos.
+3. Write a new review markdown file at `{{ .SuggestedReviewFile }}` inside the task-local `reviews/` directory, using the template in `_templates/review.md`.
+4. Set verdict to one of `approve`, `concern`, or `blocking`, and make the findings concrete.
+   - Use `concern` for issues the executor can fix in the normal rework loop: acceptance gaps, missing tests, incorrect output, local code quality problems, or incomplete task-local artifacts.
+   - Use `blocking` only when the task cannot safely continue without human intervention, external dependency changes, task contract correction, or campaign-level replanning.
+5. Verify that `target_commit`, `working_branches`, and `last_run_path` resolve in the source repo / campaign repo, and that the reviewed diff stays inside `write_scope`, before approving. If commit or artifact references do not resolve, or the diff escapes `write_scope`, that is at least `concern`.
+6. Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
+7. Do not change the task status yourself; Alice judge will apply the review verdict.
+8. Write the review file yourself, then emit a short public summary with the review file path, verdict, and key findings.
+```
+
+这也是为什么 reviewer 当前被明确定义成“只写 review 文件，不直接改 source repo，也不自己改 task 状态”。
+
+### 5. Wake dispatch
+
+触发条件：
+
+- task 处于 `waiting_external`
+- `wake_at` 到期后，runtime 先恢复 task 到 `executing`，再继续 workflow
+
+模板来源：
+
+- `prompts/campaignrepo/wake_dispatch.md.tmpl`
+
+模板正文：
+
+```text
+Continue the repo-first campaign.
+
+Campaign repo: {{ .CampaignRepo }}
+Task file: {{ .TaskFile }}
+Task id: {{ .TaskID }}
+Task title: {{ .TaskTitle }}
+Scheduled wake_at: {{ .WakeAt }}
+Wake prompt: {{ .WakePrompt }}
+
+Read the task context from the campaign repo, continue from the recorded state, then update the task files. If the task is still blocked, explain the blocker clearly and request human help if needed.
+Before exiting, emit a short public summary listing the files you updated and the task's current status.
+```
+
+补充一点：
+
+- wake flow 正常情况走上面这个模板。
+- 如果模板渲染失败，runtime 里还有一段语义接近的 fallback 文本，核心要求仍然是“继续 task、更新 task 文件、必要时明确 blocker 并请求人工帮助”。
+
 ## 从 0 到 1 最稳的使用路径
 
 ### 1. 创建 campaign

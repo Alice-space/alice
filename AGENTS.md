@@ -40,6 +40,14 @@ journalctl --user-unit alice.service -n 200 --no-pager
 journalctl --user-unit alice.service --since "30 min ago" --no-pager
 ```
 
+If task involves isolated debugging or temporary rerun runtimes:
+
+- Connector startup mode is explicit: use `--feishu-websocket` for the real Feishu connector, or `--runtime-only` for local runtime/API-only execution.
+- Any temporary `alice-headless` runtime must be started with explicit `--runtime-only`.
+- Do not allow isolated test runtimes to connect to the real Feishu websocket.
+- After startup, verify logs show `runtime-only mode enabled; Feishu websocket connector disabled`.
+- If logs show `feishu-codex connector started (long connection mode)` for an isolated runtime, stop it immediately and treat that as an incident.
+
 ## 4. Mandatory Validation Gates
 
 All required checks must pass before commit:

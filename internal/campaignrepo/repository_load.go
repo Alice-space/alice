@@ -406,29 +406,55 @@ func parseFlexibleTime(raw string) (time.Time, error) {
 	if raw == "" {
 		return time.Time{}, nil
 	}
+	candidates := []string{raw}
+	if normalized := normalizeCompactTimeOffset(raw); normalized != raw {
+		candidates = append(candidates, normalized)
+	}
 	layouts := []string{
+		time.RFC3339Nano,
 		time.RFC3339,
 		"2006-01-02 15:04:05",
 		"2006-01-02 15:04",
 		"2006-01-02",
 	}
 	var lastErr error
-	for _, layout := range layouts {
-		var (
-			parsed time.Time
-			err    error
-		)
-		if strings.Contains(layout, "Z07") {
-			parsed, err = time.Parse(layout, raw)
-		} else {
-			parsed, err = time.ParseInLocation(layout, raw, time.Local)
+	for _, candidate := range candidates {
+		for _, layout := range layouts {
+			var (
+				parsed time.Time
+				err    error
+			)
+			if strings.Contains(layout, "Z07") {
+				parsed, err = time.Parse(layout, candidate)
+			} else {
+				parsed, err = time.ParseInLocation(layout, candidate, time.Local)
+			}
+			if err == nil {
+				return parsed, nil
+			}
+			lastErr = err
 		}
-		if err == nil {
-			return parsed, nil
-		}
-		lastErr = err
 	}
 	return time.Time{}, lastErr
+}
+
+func normalizeCompactTimeOffset(raw string) string {
+	if len(raw) < 5 {
+		return raw
+	}
+	offsetStart := len(raw) - 5
+	if !strings.Contains(raw, "T") {
+		return raw
+	}
+	if raw[offsetStart] != '+' && raw[offsetStart] != '-' {
+		return raw
+	}
+	for _, ch := range raw[offsetStart+1:] {
+		if ch < '0' || ch > '9' {
+			return raw
+		}
+	}
+	return raw[:len(raw)-2] + ":" + raw[len(raw)-2:]
 }
 
 func loadPlanProposalDocuments(root string) ([]PlanProposalDocument, error) {

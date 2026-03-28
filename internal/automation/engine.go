@@ -70,6 +70,7 @@ type taskDispatch struct {
 	forceCard   bool
 	signal      *taskSignal
 	signals     []taskSignal
+	completed   bool
 }
 
 func primaryWorkflowSignal(signals []taskSignal) *taskSignal {

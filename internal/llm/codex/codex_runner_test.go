@@ -69,6 +69,27 @@ EOF
 	}
 }
 
+func TestDefaultIdleTimeoutForReasoningEffort(t *testing.T) {
+	cases := []struct {
+		name            string
+		reasoningEffort string
+		want            time.Duration
+	}{
+		{name: "empty", reasoningEffort: "", want: defaultIdleTimeout},
+		{name: "medium", reasoningEffort: "medium", want: defaultIdleTimeout},
+		{name: "high", reasoningEffort: "high", want: highIdleTimeout},
+		{name: "xhigh", reasoningEffort: "xhigh", want: xhighIdleTimeout},
+		{name: "trimmed case-insensitive", reasoningEffort: " XHIGH ", want: xhighIdleTimeout},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := defaultIdleTimeoutForReasoningEffort(tc.reasoningEffort); got != tc.want {
+				t.Fatalf("defaultIdleTimeoutForReasoningEffort(%q)=%s want %s", tc.reasoningEffort, got, tc.want)
+			}
+		})
+	}
+}
+
 func TestRunnerRunWithThreadAndProgress_NewWorkSceneUsesDangerousBypass(t *testing.T) {
 	tempDir := t.TempDir()
 	fakeCodexPath := filepath.Join(tempDir, "fake-codex.sh")
@@ -260,5 +281,115 @@ EOF
 	}
 	if !slices.Contains(updates, "最终答复") {
 		t.Fatalf("final agent message should be synced, got: %#v", updates)
+	}
+}
+
+func TestRunnerRunWithThreadAndProgress_IdleTimeoutReturnsErrorWithoutThread(t *testing.T) {
+	tempDir := t.TempDir()
+	fakeCodexPath := filepath.Join(tempDir, "fake-codex.sh")
+	script := `#!/bin/sh
+cat <<'EOF'
+{"type":"item.completed","item":{"type":"agent_message","text":"阶段提示"}}
+EOF
+sleep 2
+`
+	if err := os.WriteFile(fakeCodexPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex script failed: %v", err)
+	}
+
+	runner := Runner{
+		Command:      fakeCodexPath,
+		Timeout:      3 * time.Second,
+		IdleTimeout:  200 * time.Millisecond,
+		PromptPrefix: "你是助手Alice。",
+	}
+
+	startedAt := time.Now()
+	_, _, err := runner.RunWithThreadAndProgress(
+		context.Background(),
+		"",
+		"assistant",
+		"你好",
+		ExecPolicyConfig{},
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err == nil || !strings.Contains(err.Error(), "codex idle timeout") {
+		t.Fatalf("expected codex idle timeout, got err=%v", err)
+	}
+	if elapsed := time.Since(startedAt); elapsed >= 2*time.Second {
+		t.Fatalf("idle timeout should stop the run early, elapsed=%s", elapsed)
+	}
+}
+
+func TestRunnerRunWithThreadAndProgress_IdleTimeoutRetriesExistingThreadOnce(t *testing.T) {
+	tempDir := t.TempDir()
+	fakeCodexPath := filepath.Join(tempDir, "fake-codex.sh")
+	attemptFile := filepath.Join(tempDir, "attempt.txt")
+	script := `#!/bin/sh
+count=0
+if [ -f "` + attemptFile + `" ]; then
+	count=$(cat "` + attemptFile + `")
+fi
+count=$((count + 1))
+printf '%s' "$count" > "` + attemptFile + `"
+if [ "$count" -eq 1 ]; then
+cat <<'EOF'
+{"type":"item.completed","item":{"type":"agent_message","text":"阶段提示"}}
+EOF
+sleep 2
+exit 0
+fi
+cat <<'EOF'
+{"type":"item.completed","item":{"type":"agent_message","text":"最终答复"}}
+EOF
+`
+	if err := os.WriteFile(fakeCodexPath, []byte(script), 0o755); err != nil {
+		t.Fatalf("write fake codex script failed: %v", err)
+	}
+
+	runner := Runner{
+		Command:      fakeCodexPath,
+		Timeout:      3 * time.Second,
+		IdleTimeout:  200 * time.Millisecond,
+		PromptPrefix: "你是助手Alice。",
+	}
+
+	reply, nextThreadID, err := runner.RunWithThreadAndProgress(
+		context.Background(),
+		"thread_123",
+		"assistant",
+		"你好",
+		ExecPolicyConfig{},
+		"",
+		"",
+		"",
+		"",
+		"",
+		"",
+		nil,
+		nil,
+	)
+	if err != nil {
+		t.Fatalf("expected idle-timeout retry to recover, got err=%v", err)
+	}
+	if reply != "最终答复" {
+		t.Fatalf("unexpected reply after retry: %q", reply)
+	}
+	if nextThreadID != "thread_123" {
+		t.Fatalf("unexpected thread id after retry: %q", nextThreadID)
+	}
+	rawAttempts, err := os.ReadFile(attemptFile)
+	if err != nil {
+		t.Fatalf("read attempt file failed: %v", err)
+	}
+	if strings.TrimSpace(string(rawAttempts)) != "2" {
+		t.Fatalf("expected two attempts, got %q", string(rawAttempts))
 	}
 }

@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -347,6 +348,58 @@ func TestEngine_RunUserTask_RunWorkflow_UsesConfiguredAutomationTimeout(t *testi
 	remaining := runner.deadline.Sub(start)
 	if remaining < 2*time.Minute-time.Minute || remaining > 2*time.Minute+time.Minute {
 		t.Fatalf("unexpected workflow timeout window: %s", remaining)
+	}
+}
+
+func TestEngine_RunUserTask_RunWorkflow_InternalCampaignDeliveryFailureDoesNotFailTask(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 2, 3, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title:    "issue8 reconcile",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:       ActionTypeRunWorkflow,
+			Prompt:     "请推进代码军队流程",
+			Workflow:   "code_army",
+			SessionKey: "chat_id:oc_chat|scene:work|thread:omt_alpha",
+			StateKey:   "campaign_dispatch:camp_demo:executor:T001:x1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_workflow task failed: %v", err)
+	}
+
+	sender := &senderStub{sendCardErr: errors.New("feishu api error code=230001 msg=invalid receive_id")}
+	runner := &workflowRunnerStub{
+		result: WorkflowRunResult{Message: "workflow 已完成"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetWorkflowRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 150*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	sender.mu.Lock()
+	if sender.sendCardCalls != 1 {
+		sender.mu.Unlock()
+		t.Fatalf("expected one card send attempt, got %d", sender.sendCardCalls)
+	}
+	sender.mu.Unlock()
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if !strings.HasPrefix(stored.LastResult, "ok: ") {
+		t.Fatalf("expected delivery failure to be ignored for internal campaign task, got %q", stored.LastResult)
 	}
 }
 

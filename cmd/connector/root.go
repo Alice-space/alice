@@ -30,6 +30,8 @@ func newRootCmd() *cobra.Command {
 	pidFilePath := config.DefaultPIDFilePath()
 	aliceHome := ""
 	showVersion := false
+	runtimeOnly := false
+	feishuWebsocket := false
 	executeConnector := func(cmd *cobra.Command) error {
 		if showVersion {
 			_, err := fmt.Fprintln(cmd.OutOrStdout(), buildinfo.CurrentVersion())
@@ -48,7 +50,16 @@ func newRootCmd() *cobra.Command {
 		if !pidFileExplicit {
 			effectivePIDFilePath = config.DefaultPIDFilePath()
 		}
-		return runConnector(effectiveConfigPath, effectivePIDFilePath, pidFileExplicit)
+		effectiveRuntimeOnly, err := resolveConnectorStartupMode(
+			cmd,
+			runtimeOnly,
+			feishuWebsocket,
+			os.Args,
+		)
+		if err != nil {
+			return err
+		}
+		return runConnector(effectiveConfigPath, effectivePIDFilePath, pidFileExplicit, effectiveRuntimeOnly)
 	}
 	root := &cobra.Command{
 		Use:           "alice",
@@ -67,6 +78,8 @@ func newRootCmd() *cobra.Command {
 		fmt.Sprintf("alice runtime home dir (default: ~/%s)", config.DefaultAliceHomeName()),
 	)
 	root.Flags().BoolVar(&showVersion, "version", false, "print Alice version and exit")
+	root.PersistentFlags().BoolVar(&runtimeOnly, "runtime-only", false, "start automation/runtime API without connecting to Feishu websocket")
+	root.PersistentFlags().BoolVar(&feishuWebsocket, "feishu-websocket", false, "connect to Feishu websocket and process messages")
 	root.PersistentFlags().StringVarP(&configPath, "config", "c", config.DefaultConfigPath(), "path to config yaml")
 	root.PersistentFlags().StringVar(&pidFilePath, "pid-file", config.DefaultPIDFilePath(), "path to pid file (empty disables pid lock)")
 	root.AddCommand(&cobra.Command{
@@ -82,7 +95,78 @@ func newRootCmd() *cobra.Command {
 	return root
 }
 
-func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
+func resolveConnectorStartupMode(cmd *cobra.Command, runtimeOnly bool, feishuWebsocket bool, argv []string) (bool, error) {
+	runtimeOnlySelected := boolFlagSelected(cmd, "runtime-only", runtimeOnly)
+	feishuWebsocketSelected := boolFlagSelected(cmd, "feishu-websocket", feishuWebsocket)
+	if runtimeOnlySelected && feishuWebsocketSelected {
+		return false, errors.New("choose exactly one connector startup mode: --runtime-only or --feishu-websocket")
+	}
+	if isHeadlessExecutable(argv) {
+		base := pathDisplayBase(firstArg(argv))
+		if base == "" {
+			base = "headless executable"
+		}
+		if feishuWebsocketSelected {
+			return false, fmt.Errorf("%q only supports --runtime-only", base)
+		}
+		if !runtimeOnlySelected {
+			return false, fmt.Errorf("%q requires --runtime-only", base)
+		}
+		return true, nil
+	}
+	switch {
+	case runtimeOnlySelected:
+		return true, nil
+	case feishuWebsocketSelected:
+		return false, nil
+	default:
+		return false, errors.New("select a connector startup mode: pass --runtime-only for local runtime API only, or --feishu-websocket to connect to Feishu")
+	}
+}
+
+func boolFlagSelected(cmd *cobra.Command, name string, value bool) bool {
+	if cmd == nil {
+		return value
+	}
+	return cmd.Flags().Changed(name) && value
+}
+
+func isHeadlessExecutable(argv []string) bool {
+	if len(argv) == 0 {
+		return false
+	}
+	base := strings.TrimSpace(argv[0])
+	base = strings.TrimRight(base, `/\`)
+	if idx := strings.LastIndexAny(base, `/\`); idx >= 0 {
+		base = base[idx+1:]
+	}
+	if base == "" {
+		return false
+	}
+	stem := strings.TrimSuffix(strings.ToLower(base), strings.ToLower(filepath.Ext(base)))
+	return stem == "alice-headless" || strings.HasSuffix(stem, "-headless")
+}
+
+func firstArg(argv []string) string {
+	if len(argv) == 0 {
+		return ""
+	}
+	return argv[0]
+}
+
+func pathDisplayBase(path string) string {
+	path = strings.TrimSpace(path)
+	path = strings.TrimRight(path, `/\`)
+	if path == "" {
+		return ""
+	}
+	if idx := strings.LastIndexAny(path, `/\`); idx >= 0 {
+		path = path[idx+1:]
+	}
+	return path
+}
+
+func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeOnly bool) error {
 	configPath = bootstrap.ResolveConfigPath(configPath)
 	created, err := ensureConfigFileExists(configPath)
 	if err != nil {
@@ -93,14 +177,16 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		fmt.Printf("[alice] please edit bots.*.feishu_app_id/bots.*.feishu_app_secret, then restart service\n")
 		return nil
 	}
-	ready, err := configHasRequiredCredentials(configPath)
-	if err != nil {
-		return err
-	}
-	if !ready {
-		fmt.Printf("[alice] config found but bots.*.feishu_app_id/feishu_app_secret are empty: %s\n", configPath)
-		fmt.Printf("[alice] please edit config and restart service\n")
-		return nil
+	if !runtimeOnly {
+		ready, err := configHasRequiredCredentials(configPath)
+		if err != nil {
+			return err
+		}
+		if !ready {
+			fmt.Printf("[alice] config found but bots.*.feishu_app_id/feishu_app_secret are empty: %s\n", configPath)
+			fmt.Printf("[alice] please edit config and restart service\n")
+			return nil
+		}
 	}
 
 	cfg, err := config.LoadFromFile(configPath)
@@ -140,7 +226,8 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 	if err != nil {
 		return err
 	}
-	authChecks := map[string]*codexLoginCheck{}
+	codexAuthChecks := map[string]*codexLoginCheck{}
+	claudeAuthChecks := map[string]*claudeLoginCheck{}
 	skillPlan := &bundledSkillSyncPlan{
 		AliceHome: cfg.AliceHome,
 		allowed:   map[string]struct{}{},
@@ -159,13 +246,24 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		if runtimeUsesCodex(runtimeCfg) {
 			codexCmd := resolveCodexCommand(runtimeCfg)
 			key := codexCmd + "\x00" + runtimeCfg.CodexHome
-			check, ok := authChecks[key]
+			check, ok := codexAuthChecks[key]
 			if !ok {
 				check = &codexLoginCheck{
 					Command:   codexCmd,
 					CodexHome: runtimeCfg.CodexHome,
 				}
-				authChecks[key] = check
+				codexAuthChecks[key] = check
+			}
+			check.Bots = append(check.Bots, runtimeCfg.BotID)
+		}
+		if runtimeUsesClaude(runtimeCfg) {
+			claudeCmd := resolveClaudeCommand(runtimeCfg)
+			check, ok := claudeAuthChecks[claudeCmd]
+			if !ok {
+				check = &claudeLoginCheck{
+					Command: claudeCmd,
+				}
+				claudeAuthChecks[claudeCmd] = check
 			}
 			check.Bots = append(check.Bots, runtimeCfg.BotID)
 		}
@@ -180,13 +278,13 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		}
 	}
 
-	authKeys := make([]string, 0, len(authChecks))
-	for key := range authChecks {
+	authKeys := make([]string, 0, len(codexAuthChecks))
+	for key := range codexAuthChecks {
 		authKeys = append(authKeys, key)
 	}
 	sort.Strings(authKeys)
 	for _, key := range authKeys {
-		check := authChecks[key]
+		check := codexAuthChecks[key]
 		report, authErr := bootstrap.CheckCodexLoginForCodexHome(check.Command, check.CodexHome)
 		if authErr != nil {
 			return fmt.Errorf("check Codex login failed for bots %s: %w", check.botList(), authErr)
@@ -201,6 +299,33 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 			)
 		}
 		logging.Infof("codex login verified bots=%s codex_home=%s command=%s", check.botList(), report.CodexHome, report.Command)
+	}
+	claudeKeys := make([]string, 0, len(claudeAuthChecks))
+	for key := range claudeAuthChecks {
+		claudeKeys = append(claudeKeys, key)
+	}
+	sort.Strings(claudeKeys)
+	for _, key := range claudeKeys {
+		check := claudeAuthChecks[key]
+		report, authErr := bootstrap.CheckClaudeLogin(check.Command)
+		if authErr != nil {
+			return fmt.Errorf("check Claude login failed for bots %s: %w", check.botList(), authErr)
+		}
+		if !report.LoggedIn {
+			return fmt.Errorf(
+				"Claude login required for bots %s (command=%q): %s",
+				check.botList(),
+				report.Command,
+				formatClaudeLoginOutput(report.Command, report.Output),
+			)
+		}
+		logging.Infof(
+			"claude login verified bots=%s command=%s auth_method=%s api_provider=%s",
+			check.botList(),
+			report.Command,
+			report.AuthMethod,
+			report.APIProvider,
+		)
 	}
 
 	skillReport, skillErr := bootstrap.EnsureBundledSkillsLinkedForAliceHome(skillPlan.AliceHome, skillPlan.allowedSkills())
@@ -244,7 +369,11 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		logging.Warnf("config hot reload disabled for multi-bot mode; restart service after config changes")
 	}
 
-	logging.Infof("feishu-codex connector started (long connection mode)")
+	if runtimeOnly {
+		logging.Infof("runtime-only mode enabled; Feishu websocket connector disabled")
+	} else {
+		logging.Infof("feishu-codex connector started (long connection mode)")
+	}
 	for _, built := range manager.Runtimes {
 		if built == nil {
 			continue
@@ -253,6 +382,12 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool) error {
 		if built.RuntimeAPI != nil {
 			logging.Infof("runtime http api enabled bot=%s addr=%s", built.Config.BotID, built.RuntimeAPIBaseURL)
 		}
+	}
+	if runtimeOnly {
+		if err := manager.RunRuntimeOnly(ctx); err != nil {
+			return err
+		}
+		return nil
 	}
 	if err := manager.Run(ctx); err != nil {
 		return err
@@ -485,6 +620,11 @@ type bundledSkillSyncPlan struct {
 	allowed   map[string]struct{}
 }
 
+type claudeLoginCheck struct {
+	Command string
+	Bots    []string
+}
+
 func (p *bundledSkillSyncPlan) allowedSkills() []string {
 	skills := make([]string, 0, len(p.allowed))
 	for skill := range p.allowed {
@@ -503,6 +643,15 @@ func (p *bundledSkillSyncPlan) botList() string {
 func runtimeUsesCodex(cfg config.Config) bool {
 	for _, provider := range cfg.ResolvedLLMProviders() {
 		if provider == config.DefaultLLMProvider {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeUsesClaude(cfg config.Config) bool {
+	for _, provider := range cfg.ResolvedLLMProviders() {
+		if provider == config.LLMProviderClaude {
 			return true
 		}
 	}
@@ -528,6 +677,22 @@ func resolveCodexCommand(cfg config.Config) string {
 	return "codex"
 }
 
+func resolveClaudeCommand(cfg config.Config) string {
+	names := make([]string, 0, len(cfg.LLMProfiles))
+	for name, profile := range cfg.LLMProfiles {
+		if strings.ToLower(strings.TrimSpace(profile.Provider)) == config.LLMProviderClaude {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if cmd := strings.TrimSpace(cfg.LLMProfiles[name].Command); cmd != "" {
+			return cmd
+		}
+	}
+	return "claude"
+}
+
 func formatCodexLoginOutput(command, output string) string {
 	output = strings.Join(strings.Fields(strings.TrimSpace(output)), " ")
 	if output == "" {
@@ -536,6 +701,24 @@ func formatCodexLoginOutput(command, output string) string {
 			command = "codex"
 		}
 		return fmt.Sprintf("run `%s login` (or `CODEX_HOME=<path> %s login`) first", command, command)
+	}
+	return output
+}
+
+func (c *claudeLoginCheck) botList() string {
+	bots := append([]string(nil), c.Bots...)
+	sort.Strings(bots)
+	return strings.Join(bots, ",")
+}
+
+func formatClaudeLoginOutput(command, output string) string {
+	output = strings.Join(strings.Fields(strings.TrimSpace(output)), " ")
+	if output == "" {
+		command = strings.TrimSpace(command)
+		if command == "" {
+			command = "claude"
+		}
+		return fmt.Sprintf("run `%s auth login` first", command)
 	}
 	return output
 }

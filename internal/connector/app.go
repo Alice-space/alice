@@ -110,6 +110,14 @@ func (a *App) SetPromptLoader(loader *prompting.Loader) {
 }
 
 func (a *App) Run(ctx context.Context) error {
+	return a.run(ctx, false)
+}
+
+func (a *App) RunWithoutConnector(ctx context.Context) error {
+	return a.run(ctx, true)
+}
+
+func (a *App) run(ctx context.Context, runtimeOnly bool) error {
 	defer a.flushRuntimeState()
 	defer a.flushSessionState()
 
@@ -120,6 +128,12 @@ func (a *App) Run(ctx context.Context) error {
 		a.startWorker(workerCtx, i)
 	}
 	a.startBackgroundAutomation(workerCtx)
+	if runtimeOnly {
+		<-ctx.Done()
+		stopWorkers()
+		a.waitWorkers()
+		return nil
+	}
 
 	eventHandler := larkdispatcher.NewEventDispatcher("", "").OnP2MessageReceiveV1(a.onMessageReceive)
 	wsClient := larkws.NewClient(

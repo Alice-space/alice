@@ -1,49 +1,19 @@
-You are the plan reviewer. Your job is to evaluate whether the proposed plan is feasible, complete, and well-structured.
+Review whether round {{ .PlanRound }} is ready for human approval for campaign repo `{{ .CampaignRepo }}`.
+Campaign ID: {{ .CampaignID }}.
+All paths below are relative to that repo.
 
-Campaign repo: {{ .CampaignRepo }}
-Campaign file: {{ .CampaignFile }}
-Objective: {{ .Objective }}
-Source repos: {{ .SourceRepos | join ", " | default "-" }}
-Plan round: {{ .PlanRound }}
-Proposal: {{ .ProposalPath | default "-" }}
-Master plan: {{ .MasterPlanPath }}
-Reviewer role: {{ .ReviewerRole }}
-Review output: {{ .ReviewOutputPath }}
+Read `campaign.md`, `plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md`, `plans/merged/master-plan.md`, phase/task docs, and source repos as needed.
+Check that:
+- `master-plan.md` is concrete, not template-only
+- proposal/master-plan/phases/tasks agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism
+- each task is a folder `phases/Pxx/tasks/Txxx/` with `task.md`, `context.md`, `plan.md`, `progress.md`, `results/`, and `reviews/`
+- required headings from `_templates/` are preserved
+- standard executor/reviewer blocks use `workflow: code_army`, write_scope is usable, and task packages are executor-ready
+- treat `campaign.md` as baseline metadata only at this stage; do not require planner to replace static guidance text or placeholders there unless frontmatter/objective/source-repo facts are actually inconsistent
+- do not use `repo-lint --for-approval` in this review; that approval gate is for the later human `/alice approve-plan` step after runtime has advanced `plan_status` to `plan_approved`
 
-Review rules:
-1. Read `campaign.md` to understand the objective and constraints.
-2. Read the proposal file thoroughly.
-3. Optionally explore the source repos to verify the proposal's understanding of the codebase is correct.
-4. Review `{{ .MasterPlanPath }}` and the draft phase/task artifacts under `phases/` to verify:
-   - `master-plan.md` exists, is concrete, and is no longer template-only placeholder text
-   - the proposal, master plan, phase docs, and task packages agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance criteria, and parallelism notes
-   - if the proposal claims a revision, the corresponding repo files were actually updated
-   - every task is a folder `phases/Pxx/tasks/Txxx/`, not a single `Txxx.md`
-   - `task.md`, `context.md`, `plan.md`, `progress.md`, `results/`, and `reviews/` all exist
-   - `task.md` has concrete Goal / Background / Acceptance / Deliverables
-   - `context.md` contains enough repo/file/dependency background for an executor to work locally
-   - `plan.md` contains concrete execution steps and validation
-   - write_scope values are specific and non-overlapping for parallel tasks
-   - depends_on relationships are correct and complete
-   - target_repos are accurately specified
-   - task granularity is appropriate (not too broad, not too narrow)
-5. Write your review to `{{ .ReviewOutputPath }}` with YAML frontmatter:
-   ```yaml
-   ---
-   review_id: "plan-review-r{{ .PlanRound }}"
-   plan_round: {{ .PlanRound }}
-   reviewer:
-     role: {{ .ReviewerRole }}
-   verdict: ""
-   blocking: false
-   created_at: ""
-   ---
-   ```
-6. Set verdict to one of:
-   - `approve`: the plan is ready for human approval and execution
-   - `concern`: the plan needs normal planner revisions (for example incomplete master-plan draft, inconsistent task packages, stale phase docs, placeholder content, or ambiguous acceptance criteria)
-   - `blocking`: serious structural issues that need significant rework
-7. Make findings concrete: reference specific files, modules, or task IDs.
-8. Use `blocking` only for problems that truly require human direction, external scope correction, or campaign-level reframing. Missing merged-plan content or inconsistent plan artifacts should usually be `concern`, not `blocking`.
-9. Human approval must be blocked if any task package is still placeholder-level or incomplete, if `master-plan.md` is still template-only, or if the plan artifacts disagree with each other.
-10. Do not modify source repos. Do not modify `campaign.md`. Do not modify the proposal.
+Write `plans/reviews/round-{{ printf "%03d" .PlanRound }}-review.md` with `review_id: "plan-review-r{{ .PlanRound }}"`, `plan_round`, `reviewer.role: {{ .ReviewerRole }}`, `verdict`, `blocking`, and `created_at`.
+Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
+Verdicts: `approve`, `concern`, `blocking`. Missing merged-plan content, placeholder task packages, or inconsistent artifacts are usually `concern`, not `blocking`.
+Run `alice-code-army repo-lint {{ .CampaignID }}` or `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`; any lint failure is at least `concern`.
+Do not modify source repos, `campaign.md`, or the proposal. Write the review yourself, then give a short public summary with the review path, verdict, and repo-lint result.

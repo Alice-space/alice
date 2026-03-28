@@ -26,13 +26,16 @@
 4. 准备一个足够小但完整的 source repo。
    - 推荐用 Rust terminal calculator、最小 Cargo skeleton、最小 Go CLI 这类项目。
    - 目标不是业务复杂，而是能覆盖 planning / review / execution / repo artifact。
-5. 用 `alice-headless` 启动独立 runtime，并显式设置新的 `ALICE_HOME`。
-6. 用 `alice-code-army.sh bootstrap` 创建 campaign，让 planner 正式走 workflow。
-7. 在每个关键节点同时检查三处：
+5. 启动模式必须显式选择：真实飞书连接使用 `--feishu-websocket`，只跑本地 runtime/API 使用 `--runtime-only`。
+6. 用 `alice-headless --runtime-only` 启动独立 runtime，并显式设置新的 `ALICE_HOME`。
+   - 隔离测试实例绝对不能连真实飞书 websocket。
+   - 如果启动日志里出现 `feishu-codex connector started (long connection mode)`，立刻停掉，说明这次启动是危险的。
+7. 用 `alice-code-army.sh bootstrap` 创建 campaign，让 planner 正式走 workflow。
+8. 在每个关键节点同时检查三处：
    - campaign repo：`campaign.md`、`plans/`、`phases/`、`reports/live-report.md`
    - runtime API：`alice runtime campaigns get`、`alice runtime automation list/get`
    - runtime log：`<ALICE_HOME>/log/YYYY-MM-DD.log`
-8. 遇到状态不推进时，优先判断：
+9. 遇到状态不推进时，优先判断：
    - repo 产物还没写出来
    - repo 产物已写出来，但 verdict / summary 还没被下一次 reconcile 应用
    - task 其实跑挂了，只是 runtime summary 还没刷新
@@ -53,6 +56,16 @@
 - 但通知发送会失败，`last_result` 里常见 `invalid receive_id`
 
 这类错误在隔离测试里通常是预期噪音，不代表 CodeArmy workflow 自身坏了。
+
+## 隔离启动红线
+
+- 启动模式必须写清楚：真实飞书连接只用 `--feishu-websocket`，本地 runtime/API only 只用 `--runtime-only`。
+- `alice-headless` 只能配合 `--runtime-only` 使用；不要再依赖路径或临时目录名来保护自己。
+- 启动后第一时间看日志，只接受：
+  - `runtime-only mode enabled; Feishu websocket connector disabled`
+- 如果看到：
+  - `feishu-codex connector started (long connection mode)`
+  说明这个隔离实例正在吃真实飞书事件，必须马上停止。
 
 ## 这次实跑得到的经验
 
