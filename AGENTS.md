@@ -6,6 +6,14 @@ This file is the canonical collaboration and execution standard for contributors
 
 This standard applies to all human and AI contributors in this repository.
 
+## Repo-Local Skills First
+
+- When working inside the Alice repository, treat repo-local skills under `.agents/skills/...` as the default execution path for repository operations that already have a bundled workflow.
+- In particular, if the task is to update Alice itself, promote a release, merge `dev -> main`, wait for GitHub Release artifacts, or run the post-release self-update flow, use the repo-local GitHub skill first:
+  - read `.agents/skills/github/SKILL.md`
+  - run `.agents/skills/github/scripts/github.sh`
+- Do not bypass the repo-local skill with ad-hoc `gh`, installer, or release commands unless the skill is missing or clearly blocked.
+
 ## 1. Decision Discipline
 
 - Facts first, then inference, then conclusion.
