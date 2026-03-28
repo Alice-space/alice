@@ -197,11 +197,27 @@ func TestStore_ClaimDueTasks_MaxRunsPausesTask(t *testing.T) {
 	if updated.RunCount != 1 {
 		t.Fatalf("unexpected run_count: %d", updated.RunCount)
 	}
-	if updated.Status != TaskStatusPaused {
-		t.Fatalf("expected task paused after reaching max_runs, got %s", updated.Status)
+	if updated.Status != TaskStatusActive {
+		t.Fatalf("expected task to stay active while the final run is in progress, got %s", updated.Status)
+	}
+	if !updated.Running {
+		t.Fatalf("expected task to be marked running during its final run, task=%+v", updated)
 	}
 	if !updated.NextRunAt.IsZero() {
 		t.Fatalf("expected next_run_at to be cleared, got %s", updated.NextRunAt.Format(time.RFC3339))
+	}
+	if err := store.RecordTaskResult(created.ID, claimedAt.Add(10*time.Second), nil); err != nil {
+		t.Fatalf("record result failed: %v", err)
+	}
+	updated, err = store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task after result failed: %v", err)
+	}
+	if updated.Status != TaskStatusPaused {
+		t.Fatalf("expected task paused after the final run completed, got %s", updated.Status)
+	}
+	if updated.Running {
+		t.Fatalf("expected running flag cleared after result, task=%+v", updated)
 	}
 
 	secondClaim, err := store.ClaimDueTasks(claimedAt.Add(10*time.Minute), 10)
@@ -210,6 +226,51 @@ func TestStore_ClaimDueTasks_MaxRunsPausesTask(t *testing.T) {
 	}
 	if len(secondClaim) != 0 {
 		t.Fatalf("expected no tasks after max_runs reached, got %+v", secondClaim)
+	}
+}
+
+func TestStore_RecordTaskResult_DeletedTaskIsIgnored(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title: "single run",
+		Scope: Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route: Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator: Actor{
+			UserID: "ou_actor",
+		},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeSendText, Text: "run once"},
+		MaxRuns:  1,
+	})
+	if err != nil {
+		t.Fatalf("create task failed: %v", err)
+	}
+
+	if _, err := store.ClaimDueTasks(base.Add(2*time.Minute), 10); err != nil {
+		t.Fatalf("claim due tasks failed: %v", err)
+	}
+	if _, err := store.PatchTask(created.ID, func(task *Task) error {
+		task.Status = TaskStatusDeleted
+		return nil
+	}); err != nil {
+		t.Fatalf("delete task failed: %v", err)
+	}
+	if err := store.RecordTaskResult(created.ID, base.Add(3*time.Minute), errors.New("late failure")); err != nil {
+		t.Fatalf("record result failed: %v", err)
+	}
+
+	deleted, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get deleted task failed: %v", err)
+	}
+	if deleted.Status != TaskStatusDeleted {
+		t.Fatalf("expected task to stay deleted, got %s", deleted.Status)
+	}
+	if deleted.LastResult != "" {
+		t.Fatalf("expected deleted task result to stay untouched, got %q", deleted.LastResult)
 	}
 }
 

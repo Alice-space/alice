@@ -9,8 +9,11 @@ import (
 )
 
 type codexBackend struct {
-	runner         corecodex.Runner
-	profileRunners map[string]corecodex.Runner
+	runner            corecodex.Runner
+	profileRunners    map[string]corecodex.Runner
+	providerProfiles  map[string]string
+	defaultExecPolicy corecodex.ExecPolicyConfig
+	profilePolicies   map[string]corecodex.ExecPolicyConfig
 }
 
 func newCodexBackend(cfg CodexConfig, prompts *prompting.Loader) *codexBackend {
@@ -38,21 +41,33 @@ func newCodexBackend(cfg CodexConfig, prompts *prompting.Loader) *codexBackend {
 		}
 		profileRunners[name] = r
 	}
-	return &codexBackend{runner: defaultRunner, profileRunners: profileRunners}
+	providerProfiles := make(map[string]string, len(cfg.ProfileOverrides))
+	profilePolicies := make(map[string]corecodex.ExecPolicyConfig, len(cfg.ProfileOverrides))
+	for name, override := range cfg.ProfileOverrides {
+		providerProfiles[name] = strings.TrimSpace(override.ProviderProfile)
+		profilePolicies[name] = toCoreCodexExecPolicy(override.ExecPolicy)
+	}
+	return &codexBackend{
+		runner:            defaultRunner,
+		profileRunners:    profileRunners,
+		providerProfiles:  providerProfiles,
+		defaultExecPolicy: toCoreCodexExecPolicy(cfg.DefaultExecPolicy),
+		profilePolicies:   profilePolicies,
+	}
 }
 
 func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	runner := b.runner
+	providerProfile := strings.TrimSpace(req.Profile)
 	if profile := strings.TrimSpace(req.Profile); profile != "" {
 		if r, ok := b.profileRunners[profile]; ok {
 			runner = r
+			if resolved := strings.TrimSpace(b.providerProfiles[profile]); resolved != "" {
+				providerProfile = resolved
+			}
 		}
 	}
-	policy := corecodex.ExecPolicyConfig{
-		Sandbox:        strings.TrimSpace(req.ExecPolicy.Sandbox),
-		AskForApproval: strings.TrimSpace(req.ExecPolicy.AskForApproval),
-		AddDirs:        append([]string(nil), req.ExecPolicy.AddDirs...),
-	}
+	policy := b.resolveExecPolicy(req)
 	reply, nextThreadID, usage, err := runner.RunWithThreadAndProgressAndUsage(
 		ctx,
 		strings.TrimSpace(req.ThreadID),
@@ -61,7 +76,7 @@ func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, erro
 		policy,
 		strings.TrimSpace(req.PromptPrefix),
 		strings.TrimSpace(req.Model),
-		strings.TrimSpace(req.Profile),
+		providerProfile,
 		strings.TrimSpace(req.ReasoningEffort),
 		strings.TrimSpace(req.Personality),
 		strings.TrimSpace(req.NoReplyToken),
@@ -77,6 +92,42 @@ func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, erro
 			OutputTokens:      usage.OutputTokens,
 		},
 	}, err
+}
+
+func (b *codexBackend) resolveExecPolicy(req RunRequest) corecodex.ExecPolicyConfig {
+	policy := b.defaultExecPolicy
+	if profile := strings.TrimSpace(req.Profile); profile != "" {
+		if profilePolicy, ok := b.profilePolicies[profile]; ok {
+			policy = mergeCoreCodexExecPolicy(policy, profilePolicy)
+		}
+	}
+	return mergeCoreCodexExecPolicy(policy, toCoreCodexExecPolicy(req.ExecPolicy))
+}
+
+func toCoreCodexExecPolicy(policy ExecPolicyConfig) corecodex.ExecPolicyConfig {
+	return corecodex.ExecPolicyConfig{
+		Sandbox:        strings.TrimSpace(policy.Sandbox),
+		AskForApproval: strings.TrimSpace(policy.AskForApproval),
+		AddDirs:        append([]string(nil), policy.AddDirs...),
+	}
+}
+
+func mergeCoreCodexExecPolicy(base, override corecodex.ExecPolicyConfig) corecodex.ExecPolicyConfig {
+	out := corecodex.ExecPolicyConfig{
+		Sandbox:        strings.TrimSpace(base.Sandbox),
+		AskForApproval: strings.TrimSpace(base.AskForApproval),
+		AddDirs:        append([]string(nil), base.AddDirs...),
+	}
+	if sandbox := strings.TrimSpace(override.Sandbox); sandbox != "" {
+		out.Sandbox = sandbox
+	}
+	if approval := strings.TrimSpace(override.AskForApproval); approval != "" {
+		out.AskForApproval = approval
+	}
+	if len(override.AddDirs) > 0 {
+		out.AddDirs = append(out.AddDirs, override.AddDirs...)
+	}
+	return out
 }
 
 var _ Backend = (*codexBackend)(nil)

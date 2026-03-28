@@ -184,15 +184,17 @@ func defaultPlannerReviewerRoleConfig() RoleConfig {
 }
 
 func resolvePlannerRole(repo Repository) RoleConfig {
-    return resolveRoleConfig(defaultPlannerRoleConfig(), repo.Campaign.Frontmatter.DefaultPlanner, RoleConfig{}, "planner")
+    base := mergeRoleConfig(defaultPlannerRoleConfig(), repo.ConfigRoleDefaults.Planner)
+    return resolveRoleConfig(base, RoleConfig{}, "planner")
 }
 
 func resolvePlannerReviewerRole(repo Repository) RoleConfig {
-    return resolveRoleConfig(defaultPlannerReviewerRoleConfig(), repo.Campaign.Frontmatter.DefaultPlannerReviewer, RoleConfig{}, "planner_reviewer")
+    base := mergeRoleConfig(defaultPlannerReviewerRoleConfig(), repo.ConfigRoleDefaults.PlannerReviewer)
+    return resolveRoleConfig(base, RoleConfig{}, "planner_reviewer")
 }
 ```
 
-注意：planner 角色只有两级级联（系统默认 → campaign 级），不像 executor/reviewer 那样有 task 级覆盖，因为 plan 阶段没有 task 粒度的配置。
+注意：planner 角色只有两级级联（系统默认 → runtime `config.yaml`），不像 executor/reviewer 那样有 task 级覆盖，因为 plan 阶段没有 task 粒度的配置。
 
 ---
 
@@ -261,4 +263,3 @@ func resolvePlannerReviewerRole(repo Repository) RoleConfig {
 ---
 
 ## 六、Human Gate 与 Plan Approval
-

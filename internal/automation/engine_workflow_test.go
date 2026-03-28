@@ -314,7 +314,7 @@ func TestEngine_RunUserTask_RunWorkflow_PreflightNeedsHumanSkipsRunner(t *testin
 	}
 }
 
-func TestEngine_RunUserTask_RunWorkflow_SkipsAutomationTimeout(t *testing.T) {
+func TestEngine_RunUserTask_RunWorkflow_UsesConfiguredAutomationTimeout(t *testing.T) {
 	sender := &senderStub{}
 	runner := &workflowRunnerStub{
 		result: WorkflowRunResult{Message: "workflow finished"},
@@ -345,7 +345,7 @@ func TestEngine_RunUserTask_RunWorkflow_SkipsAutomationTimeout(t *testing.T) {
 		t.Fatal("expected workflow runner context to carry watchdog deadline")
 	}
 	remaining := runner.deadline.Sub(start)
-	if remaining < defaultWorkflowTaskTimeout-time.Minute || remaining > defaultWorkflowTaskTimeout+time.Minute {
+	if remaining < 2*time.Minute-time.Minute || remaining > 2*time.Minute+time.Minute {
 		t.Fatalf("unexpected workflow timeout window: %s", remaining)
 	}
 }

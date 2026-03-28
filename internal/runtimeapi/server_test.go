@@ -2,6 +2,7 @@ package runtimeapi
 
 import (
 	"testing"
+	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
@@ -62,6 +63,9 @@ func TestBuildTaskFromRequest_UsesWorkSceneLLMProfile(t *testing.T) {
 	}
 	if task.Action.Model != "gpt-5.4" {
 		t.Fatalf("unexpected model: %q", task.Action.Model)
+	}
+	if task.Action.Profile != "work" {
+		t.Fatalf("unexpected profile: %q", task.Action.Profile)
 	}
 	if task.Action.ReasoningEffort != "xhigh" {
 		t.Fatalf("unexpected reasoning effort: %q", task.Action.ReasoningEffort)
@@ -185,7 +189,7 @@ func TestBuildTaskFromRequest_InferRunWorkflowAndSetSessionKey(t *testing.T) {
 	if task.Action.Model != "gpt-5.4" {
 		t.Fatalf("unexpected workflow model: %q", task.Action.Model)
 	}
-	if task.Action.Profile != "work-profile" {
+	if task.Action.Profile != "work" {
 		t.Fatalf("unexpected workflow profile: %q", task.Action.Profile)
 	}
 	if task.Action.ReasoningEffort != "xhigh" {
@@ -196,6 +200,162 @@ func TestBuildTaskFromRequest_InferRunWorkflowAndSetSessionKey(t *testing.T) {
 	}
 	if task.Action.SessionKey != "chat_id:oc_chat|scene:work|thread:omt_1" {
 		t.Fatalf("unexpected workflow session key: %q", task.Action.SessionKey)
+	}
+}
+
+func TestBuildTaskFromRequest_RunWorkflowExplicitProfileOverridesSceneDefaults(t *testing.T) {
+	srv := NewServer(
+		"",
+		"",
+		nil,
+		nil,
+		nil,
+		config.Config{
+			LLMProvider: "codex",
+			LLMProfiles: map[string]config.LLMProfileConfig{
+				"work": {
+					Provider:        "codex",
+					Model:           "gpt-5.4",
+					ReasoningEffort: "xhigh",
+					Personality:     "pragmatic",
+				},
+				"executor": {
+					Provider:        "kimi",
+					Model:           "kimi-k2",
+					ReasoningEffort: "high",
+					Personality:     "pragmatic",
+				},
+			},
+			GroupScenes: config.GroupScenesConfig{
+				Work: config.GroupSceneConfig{
+					Enabled:    true,
+					LLMProfile: "work",
+				},
+			},
+		},
+	)
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 900,
+			},
+			Action: automation.Action{
+				Workflow: "code_army",
+				Prompt:   "/alice reconcile campaign camp_x",
+				Profile:  "executor",
+			},
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: mcpbridge.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if task.Action.Provider != "kimi" {
+		t.Fatalf("unexpected provider: %q", task.Action.Provider)
+	}
+	if task.Action.Model != "kimi-k2" {
+		t.Fatalf("unexpected model: %q", task.Action.Model)
+	}
+	if task.Action.Profile != "executor" {
+		t.Fatalf("unexpected profile: %q", task.Action.Profile)
+	}
+	if task.Action.ReasoningEffort != "high" {
+		t.Fatalf("unexpected reasoning effort: %q", task.Action.ReasoningEffort)
+	}
+}
+
+func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
+	srv := NewServer("", "", nil, nil, nil, config.Config{})
+	nextRunAt := time.Date(2026, 3, 26, 15, 30, 0, 0, time.UTC)
+
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 900,
+			},
+			Action: automation.Action{
+				Type: automation.ActionTypeSendText,
+				Text: "ping",
+			},
+			NextRunAt: nextRunAt,
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: mcpbridge.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if !task.NextRunAt.Equal(nextRunAt) {
+		t.Fatalf("unexpected next_run_at: got=%s want=%s", task.NextRunAt.Format(time.RFC3339), nextRunAt.Format(time.RFC3339))
+	}
+}
+
+func TestBuildTaskFromRequest_RunWorkflowExplicitProviderDoesNotInheritSceneModel(t *testing.T) {
+	srv := NewServer(
+		"",
+		"",
+		nil,
+		nil,
+		nil,
+		config.Config{
+			LLMProvider: "codex",
+			LLMProfiles: map[string]config.LLMProfileConfig{
+				"work": {
+					Provider:        "codex",
+					Model:           "gpt-5.4",
+					ReasoningEffort: "xhigh",
+					Personality:     "pragmatic",
+				},
+			},
+			GroupScenes: config.GroupScenesConfig{
+				Work: config.GroupSceneConfig{
+					Enabled:    true,
+					LLMProfile: "work",
+				},
+			},
+		},
+	)
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 900,
+			},
+			Action: automation.Action{
+				Workflow: "code_army",
+				Prompt:   "/alice reconcile campaign camp_x",
+				Provider: "kimi",
+			},
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: mcpbridge.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if task.Action.Provider != "kimi" {
+		t.Fatalf("unexpected provider: %q", task.Action.Provider)
+	}
+	if task.Action.Model != "" {
+		t.Fatalf("explicit provider should not inherit scene model, got %q", task.Action.Model)
+	}
+	if task.Action.Profile != "" {
+		t.Fatalf("explicit provider should not inherit scene profile, got %q", task.Action.Profile)
 	}
 }
 

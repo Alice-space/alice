@@ -154,6 +154,7 @@ group_scenes:
 ```
 
 Different scenes can use different providers. If a profile omits `provider`, Alice falls back to the default provider.
+`group_scenes.*.llm_profile` always points to the outer key under `llm_profiles`. If that profile also sets an inner `profile`, Alice keeps the outer key as the runtime selector and only passes the inner value to the provider CLI.
 
 ## `SOUL.md`
 

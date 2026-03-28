@@ -70,6 +70,7 @@ func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automation
 		Schedule:   req.Schedule,
 		Action:     req.Action,
 		MaxRuns:    req.MaxRuns,
+		NextRunAt:  req.NextRunAt,
 		Status:     automation.TaskStatusActive,
 	}
 	if task.ManageMode == "" {
@@ -117,8 +118,26 @@ func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScop
 	if task.Action.Type != automation.ActionTypeRunLLM && task.Action.Type != automation.ActionTypeRunWorkflow {
 		return
 	}
-	profile, ok := resolveSceneLLMProfile(runtime, scopeCtx.session.SessionKey)
+	if profileName := strings.ToLower(strings.TrimSpace(task.Action.Profile)); profileName != "" {
+		profile, ok := runtime.llmProfiles[profileName]
+		if !ok {
+			return
+		}
+		applyAutomationTaskLLMProfile(task, profileName, profile, runtime.llmProvider)
+		return
+	}
+	if strings.TrimSpace(task.Action.Provider) != "" {
+		return
+	}
+	selection, ok := resolveSceneLLMProfile(runtime, scopeCtx.session.SessionKey)
 	if !ok {
+		return
+	}
+	applyAutomationTaskLLMProfile(task, selection.Name, selection.Profile, runtime.llmProvider)
+}
+
+func applyAutomationTaskLLMProfile(task *automation.Task, profileName string, profile config.LLMProfileConfig, runtimeProvider string) {
+	if task == nil {
 		return
 	}
 	if strings.TrimSpace(task.Action.Model) == "" {
@@ -127,11 +146,11 @@ func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScop
 	if strings.TrimSpace(task.Action.Provider) == "" {
 		task.Action.Provider = strings.TrimSpace(profile.Provider)
 		if task.Action.Provider == "" {
-			task.Action.Provider = strings.TrimSpace(runtime.llmProvider)
+			task.Action.Provider = strings.TrimSpace(runtimeProvider)
 		}
 	}
 	if strings.TrimSpace(task.Action.Profile) == "" {
-		task.Action.Profile = strings.TrimSpace(profile.Profile)
+		task.Action.Profile = strings.TrimSpace(profileName)
 	}
 	if strings.TrimSpace(task.Action.ReasoningEffort) == "" {
 		task.Action.ReasoningEffort = strings.TrimSpace(profile.ReasoningEffort)
@@ -144,8 +163,8 @@ func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScop
 	}
 }
 
-func resolveSceneLLMProfile(runtime automationRuntimeConfig, sessionKey string) (config.LLMProfileConfig, bool) {
-	return runtimecfg.ResolveSceneLLMProfile(runtime.llmProfiles, runtime.groupScenes, sessionKey)
+func resolveSceneLLMProfile(runtime automationRuntimeConfig, sessionKey string) (runtimecfg.SceneLLMProfileSelection, bool) {
+	return runtimecfg.ResolveSceneLLMProfileSelection(runtime.llmProfiles, runtime.groupScenes, sessionKey)
 }
 
 func applyTaskPatch(current automation.Task, patchBytes []byte, contentType string, scopeCtx automationScopeContext) (automation.Task, error) {

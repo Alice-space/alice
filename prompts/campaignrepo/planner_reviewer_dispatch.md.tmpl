@@ -6,6 +6,7 @@ Objective: {{ .Objective }}
 Source repos: {{ .SourceRepos | join ", " | default "-" }}
 Plan round: {{ .PlanRound }}
 Proposal: {{ .ProposalPath | default "-" }}
+Master plan: {{ .MasterPlanPath }}
 Reviewer role: {{ .ReviewerRole }}
 Review output: {{ .ReviewOutputPath }}
 
@@ -13,7 +14,10 @@ Review rules:
 1. Read `campaign.md` to understand the objective and constraints.
 2. Read the proposal file thoroughly.
 3. Optionally explore the source repos to verify the proposal's understanding of the codebase is correct.
-4. Also review the draft task packages created by the planner under `phases/` to verify:
+4. Review `{{ .MasterPlanPath }}` and the draft phase/task artifacts under `phases/` to verify:
+   - `master-plan.md` exists, is concrete, and is no longer template-only placeholder text
+   - the proposal, master plan, phase docs, and task packages agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance criteria, and parallelism notes
+   - if the proposal claims a revision, the corresponding repo files were actually updated
    - every task is a folder `phases/Pxx/tasks/Txxx/`, not a single `Txxx.md`
    - `task.md`, `context.md`, `plan.md`, `progress.md`, `results/`, and `reviews/` all exist
    - `task.md` has concrete Goal / Background / Acceptance / Deliverables
@@ -37,8 +41,9 @@ Review rules:
    ```
 6. Set verdict to one of:
    - `approve`: the plan is ready for human approval and execution
-   - `concern`: the plan needs revisions (the planner will be re-dispatched with your feedback)
+   - `concern`: the plan needs normal planner revisions (for example incomplete master-plan draft, inconsistent task packages, stale phase docs, placeholder content, or ambiguous acceptance criteria)
    - `blocking`: serious structural issues that need significant rework
 7. Make findings concrete: reference specific files, modules, or task IDs.
-8. Human approval must be blocked if any task package is still placeholder-level or incomplete.
-9. Do not modify source repos. Do not modify `campaign.md`. Do not modify the proposal.
+8. Use `blocking` only for problems that truly require human direction, external scope correction, or campaign-level reframing. Missing merged-plan content or inconsistent plan artifacts should usually be `concern`, not `blocking`.
+9. Human approval must be blocked if any task package is still placeholder-level or incomplete, if `master-plan.md` is still template-only, or if the plan artifacts disagree with each other.
+10. Do not modify source repos. Do not modify `campaign.md`. Do not modify the proposal.

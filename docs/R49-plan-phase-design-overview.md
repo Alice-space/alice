@@ -4,7 +4,7 @@
 
 当前 Code Army 只有 executor → reviewer 两阶段。SKILL.md 描述的规划阶段（planner 出方案 → reviewer 审查 → 多轮迭代 → 人类批准 → 展开执行）没有运行时代码支撑。这意味着用户必须手动编写计划和任务文件，skill 描述的自动化承诺落空。
 
-本设计引入 **planner + planner_reviewer** 两个角色，形成三阶段流程。角色与模型完全解耦——planner/planner_reviewer 只是角色标签，具体绑定哪个 provider/model 由 campaign 或 task 级配置决定。
+本设计引入 **planner + planner_reviewer** 两个角色，形成三阶段流程。角色与模型完全解耦——planner/planner_reviewer 只是角色标签，具体绑定哪个 provider/model 由 runtime `config.yaml` 的 `campaign_role_defaults` + `llm_profiles` 决定。
 
 ## 设计原则
 
@@ -45,12 +45,12 @@ planned → planning → plan_review_pending → planning (concern 循环)
 新增字段：
 
 ```go
-DefaultPlanner         RoleConfig `yaml:"default_planner" json:"default_planner,omitempty"`
-DefaultPlannerReviewer RoleConfig `yaml:"default_planner_reviewer" json:"default_planner_reviewer,omitempty"`
 PlanRound              int        `yaml:"plan_round" json:"plan_round,omitempty"`
 PlanStatus             string     `yaml:"plan_status" json:"plan_status,omitempty"`
 // plan_status: "idle" | "planning" | "plan_review_pending" | "plan_reviewing" | "plan_approved" | "human_approved"
 ```
+
+说明：早期方案曾把 planner / planner_reviewer 默认模型写进 `campaign.md` frontmatter；当前实现已经收敛为只保留 `plan_round` / `plan_status`，角色到模型的映射统一由 `config.yaml` 管理。
 
 ### 1.3 shouldAutoReconcileCampaign 扩展
 
@@ -167,4 +167,3 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
     // ...
 }
 ```
-

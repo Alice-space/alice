@@ -236,6 +236,27 @@ func TestValidateTask_MaxRunsReachedPausedAllowed(t *testing.T) {
 	}
 }
 
+func TestValidateTask_MaxRunsReachedActiveRunningAllowed(t *testing.T) {
+	task := Task{
+		ID:       "task_max_runs_running",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type: ActionTypeSendText,
+			Text: "hello",
+		},
+		Status:   TaskStatusActive,
+		MaxRuns:  1,
+		RunCount: 1,
+		Running:  true,
+	}
+	if err := ValidateTask(task); err != nil {
+		t.Fatalf("expected active running max_runs task to be valid, got err=%v", err)
+	}
+}
+
 func TestNextRunAt_Cron(t *testing.T) {
 	from := time.Date(2026, 2, 23, 8, 30, 0, 0, time.Local)
 	next := NextRunAt(from, Schedule{Type: ScheduleTypeCron, CronExpr: "0 9 * * *"})

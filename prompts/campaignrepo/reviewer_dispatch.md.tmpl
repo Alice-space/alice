@@ -17,5 +17,7 @@ Review rules:
 2. Do not modify source repos.
 3. Write a new review markdown file at `{{ .SuggestedReviewFile }}` inside the task-local `reviews/` directory, using the template in `_templates/review.md`.
 4. Set verdict to one of `approve`, `concern`, or `blocking`, and make the findings concrete.
+   - Use `concern` for issues the executor can fix in the normal rework loop: acceptance gaps, missing tests, incorrect output, local code quality problems, or incomplete task-local artifacts.
+   - Use `blocking` only when the task cannot safely continue without human intervention, external dependency changes, task contract correction, or campaign-level replanning.
 5. Reference the reviewed commit or artifact path in the review.
 6. Do not change the task status yourself; Alice judge will apply the review verdict.

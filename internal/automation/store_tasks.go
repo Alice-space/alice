@@ -13,6 +13,8 @@ import (
 const maxConsecutiveTaskFailures = 3
 const deletedTaskRetention = 30 * 24 * time.Hour
 
+var errSkipDeletedTaskMutation = errors.New("skip deleted task mutation")
+
 func (s *Store) ListTasks(scope Scope, statusFilter string, limit int) ([]Task, error) {
 	if s == nil {
 		return nil, errors.New("store is nil")
@@ -267,7 +269,6 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 			task.Running = true
 			task.RunCount++
 			if task.MaxRuns > 0 && task.RunCount >= task.MaxRuns {
-				task.Status = TaskStatusPaused
 				task.NextRunAt = time.Time{}
 			} else {
 				task.NextRunAt = NextRunAt(at, task.Schedule)
@@ -291,6 +292,9 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 		return errors.New("store is nil")
 	}
 	_, err := s.PatchTask(taskID, func(task *Task) error {
+		if task.Status == TaskStatusDeleted {
+			return errSkipDeletedTaskMutation
+		}
 		if at.IsZero() {
 			at = s.nowLocal()
 		}
@@ -307,9 +311,16 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 			task.ConsecutiveFailures = 0
 			task.LastResult = "ok: " + at.Format(time.RFC3339)
 		}
+		if task.MaxRuns > 0 && task.RunCount >= task.MaxRuns {
+			task.Status = TaskStatusPaused
+			task.NextRunAt = time.Time{}
+		}
 		return nil
 	})
 	if errors.Is(err, ErrTaskNotFound) {
+		return nil
+	}
+	if errors.Is(err, errSkipDeletedTaskMutation) {
 		return nil
 	}
 	return err
@@ -360,6 +371,9 @@ func (s *Store) RecordTaskSignal(taskID string, at time.Time, kind, message stri
 		kind = "signal"
 	}
 	_, err := s.PatchTask(taskID, func(task *Task) error {
+		if task.Status == TaskStatusDeleted {
+			return errSkipDeletedTaskMutation
+		}
 		if at.IsZero() {
 			at = s.nowLocal()
 		}
@@ -374,13 +388,16 @@ func (s *Store) RecordTaskSignal(taskID string, at time.Time, kind, message stri
 		} else {
 			task.LastResult = kind + ": " + message
 		}
-		if pause {
+		if pause || (task.MaxRuns > 0 && task.RunCount >= task.MaxRuns) {
 			task.Status = TaskStatusPaused
 			task.NextRunAt = time.Time{}
 		}
 		return nil
 	})
 	if errors.Is(err, ErrTaskNotFound) {
+		return nil
+	}
+	if errors.Is(err, errSkipDeletedTaskMutation) {
 		return nil
 	}
 	return err

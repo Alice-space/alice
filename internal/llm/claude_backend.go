@@ -9,8 +9,9 @@ import (
 )
 
 type claudeBackend struct {
-	runner         coreclaude.Runner
-	profileRunners map[string]coreclaude.Runner
+	runner           coreclaude.Runner
+	profileRunners   map[string]coreclaude.Runner
+	providerProfiles map[string]string
 }
 
 func newClaudeBackend(cfg ClaudeConfig, prompts *prompting.Loader) *claudeBackend {
@@ -36,14 +37,26 @@ func newClaudeBackend(cfg ClaudeConfig, prompts *prompting.Loader) *claudeBacken
 		}
 		profileRunners[name] = r
 	}
-	return &claudeBackend{runner: defaultRunner, profileRunners: profileRunners}
+	providerProfiles := make(map[string]string, len(cfg.ProfileOverrides))
+	for name, override := range cfg.ProfileOverrides {
+		providerProfiles[name] = strings.TrimSpace(override.ProviderProfile)
+	}
+	return &claudeBackend{
+		runner:           defaultRunner,
+		profileRunners:   profileRunners,
+		providerProfiles: providerProfiles,
+	}
 }
 
 func (b *claudeBackend) Run(ctx context.Context, req RunRequest) (RunResult, error) {
 	runner := b.runner
+	providerProfile := strings.TrimSpace(req.Profile)
 	if profile := strings.TrimSpace(req.Profile); profile != "" {
 		if r, ok := b.profileRunners[profile]; ok {
 			runner = r
+			if resolved := strings.TrimSpace(b.providerProfiles[profile]); resolved != "" {
+				providerProfile = resolved
+			}
 		}
 	}
 	reply, nextThreadID, err := runner.RunWithThreadAndProgress(
@@ -52,7 +65,7 @@ func (b *claudeBackend) Run(ctx context.Context, req RunRequest) (RunResult, err
 		strings.TrimSpace(req.AgentName),
 		req.UserText,
 		strings.TrimSpace(req.Model),
-		strings.TrimSpace(req.Profile),
+		providerProfile,
 		strings.TrimSpace(req.Personality),
 		strings.TrimSpace(req.NoReplyToken),
 		strings.TrimSpace(req.PromptPrefix),

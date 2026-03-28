@@ -11,6 +11,11 @@ const (
 	SceneWork = "work"
 )
 
+type SceneLLMProfileSelection struct {
+	Name    string
+	Profile config.LLMProfileConfig
+}
+
 func CloneLLMProfiles(in map[string]config.LLMProfileConfig) map[string]config.LLMProfileConfig {
 	if len(in) == 0 {
 		return map[string]config.LLMProfileConfig{}
@@ -39,6 +44,18 @@ func ResolveSceneLLMProfile(
 	groupScenes config.GroupScenesConfig,
 	sessionKey string,
 ) (config.LLMProfileConfig, bool) {
+	selection, ok := ResolveSceneLLMProfileSelection(llmProfiles, groupScenes, sessionKey)
+	if !ok {
+		return config.LLMProfileConfig{}, false
+	}
+	return selection.Profile, true
+}
+
+func ResolveSceneLLMProfileSelection(
+	llmProfiles map[string]config.LLMProfileConfig,
+	groupScenes config.GroupScenesConfig,
+	sessionKey string,
+) (SceneLLMProfileSelection, bool) {
 	var name string
 	switch DetectScene(sessionKey) {
 	case SceneWork:
@@ -46,10 +63,16 @@ func ResolveSceneLLMProfile(
 	case SceneChat:
 		name = strings.TrimSpace(groupScenes.Chat.LLMProfile)
 	default:
-		return config.LLMProfileConfig{}, false
+		return SceneLLMProfileSelection{}, false
 	}
 	profile, ok := llmProfiles[name]
-	return profile, ok
+	if !ok {
+		return SceneLLMProfileSelection{}, false
+	}
+	return SceneLLMProfileSelection{
+		Name:    name,
+		Profile: profile,
+	}, true
 }
 
 func ThreadReplyPreferred(groupScenes config.GroupScenesConfig, sessionKey, chatType string) bool {

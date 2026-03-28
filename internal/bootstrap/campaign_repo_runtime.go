@@ -2,7 +2,6 @@ package bootstrap
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -15,14 +14,13 @@ import (
 )
 
 const (
-	campaignRepoReconcileInterval = 5 * time.Minute
-	campaignRepoDispatchLease     = 2 * time.Hour
-	campaignRepoTaskEverySeconds  = 60
-	campaignDispatchStatePrefix   = "campaign_dispatch:"
-	campaignWakeStatePrefix       = "campaign_wake:"
+	campaignRepoReconcileInterval   = 5 * time.Minute
+	campaignRepoDispatchLease       = 2 * time.Hour
+	campaignRepoTaskEverySeconds    = 60
+	campaignDispatchFailureCooldown = 1 * time.Minute
+	campaignDispatchStatePrefix     = "campaign_dispatch:"
+	campaignWakeStatePrefix         = "campaign_wake:"
 )
-
-var errSkipWakeTaskUpdate = errors.New("skip wake task update")
 
 func (b *connectorRuntimeBuilder) registerCampaignRepoSystemTask() error {
 	if b == nil || b.automationEngine == nil || b.automationStore == nil || b.campaignStore == nil {
@@ -105,7 +103,7 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if len(result.Events) > 0 {
 		b.sendCampaignNotifications(item, result.Events)
 	}
-	if err := b.syncCampaignDispatchTasks(item, result.DispatchTasks); err != nil {
+	if err := b.syncCampaignDispatchTasks(item, result.DispatchTasks, now); err != nil {
 		logging.Warnf("sync dispatch tasks failed campaign=%s: %v", item.ID, err)
 	}
 	if _, err := campaignrepo.WriteLiveReport(item.CampaignRepoPath, result.Summary); err != nil {
@@ -190,7 +188,7 @@ func (b *connectorRuntimeBuilder) deleteStaleCampaignAutomationTasks(existingByS
 	return nil
 }
 
-func (b *connectorRuntimeBuilder) syncCampaignDispatchTasks(item campaign.Campaign, specs []campaignrepo.DispatchTaskSpec) error {
+func (b *connectorRuntimeBuilder) syncCampaignDispatchTasks(item campaign.Campaign, specs []campaignrepo.DispatchTaskSpec, now time.Time) error {
 	state, ok, err := b.loadCampaignAutomationTaskState(item, campaignDispatchStatePrefix+item.ID+":", 400)
 	if err != nil {
 		return err
@@ -207,7 +205,7 @@ func (b *connectorRuntimeBuilder) syncCampaignDispatchTasks(item campaign.Campai
 		desired[spec.StateKey] = struct{}{}
 		task, ok := state.existingByState[spec.StateKey]
 		if ok {
-			if shouldKeepExistingDispatchTask(task, spec) {
+			if shouldKeepExistingDispatchTask(task, spec, now) {
 				continue
 			}
 			if err := b.upsertDispatchTask(task, state.target, spec); err != nil {
@@ -256,7 +254,7 @@ func (b *connectorRuntimeBuilder) syncCampaignWakeTasks(item campaign.Campaign, 
 	return b.deleteStaleCampaignAutomationTasks(state.existingByState, desired)
 }
 
-func shouldKeepExistingDispatchTask(task automation.Task, spec campaignrepo.DispatchTaskSpec) bool {
+func shouldKeepExistingDispatchTask(task automation.Task, spec campaignrepo.DispatchTaskSpec, now time.Time) bool {
 	task = automation.NormalizeTask(task)
 	if strings.TrimSpace(task.Action.Prompt) != strings.TrimSpace(spec.Prompt) {
 		return false
@@ -285,7 +283,24 @@ func shouldKeepExistingDispatchTask(task automation.Task, spec campaignrepo.Disp
 	if task.Status == automation.TaskStatusActive {
 		return true
 	}
-	return task.RunCount > 0
+	return keepFailedDispatchTaskCooling(task, now)
+}
+
+func keepFailedDispatchTaskCooling(task automation.Task, now time.Time) bool {
+	task = automation.NormalizeTask(task)
+	if task.Status != automation.TaskStatusPaused {
+		return false
+	}
+	if !strings.HasPrefix(strings.TrimSpace(task.LastResult), "error:") {
+		return false
+	}
+	if task.UpdatedAt.IsZero() {
+		return false
+	}
+	if now.IsZero() {
+		now = time.Now().Local()
+	}
+	return task.UpdatedAt.Add(campaignDispatchFailureCooldown).After(now.Local())
 }
 
 func shouldKeepExistingWakeTask(task automation.Task, spec campaignrepo.WakeTaskSpec) bool {
@@ -299,17 +314,11 @@ func shouldKeepExistingWakeTask(task automation.Task, spec campaignrepo.WakeTask
 	if !task.NextRunAt.IsZero() && !task.NextRunAt.Equal(spec.RunAt) {
 		return false
 	}
-	if task.Status == automation.TaskStatusActive {
-		return true
-	}
-	return task.RunCount > 0
+	return task.Status == automation.TaskStatusActive
 }
 
 func (b *connectorRuntimeBuilder) upsertDispatchTask(task automation.Task, target automationTaskTarget, spec campaignrepo.DispatchTaskSpec) error {
 	_, err := b.automationStore.PatchTask(task.ID, func(current *automation.Task) error {
-		if current.RunCount > 0 && current.Status != automation.TaskStatusActive {
-			return errSkipWakeTaskUpdate
-		}
 		current.Title = spec.Title
 		current.Scope = target.Scope
 		current.Route = target.Route
@@ -330,21 +339,23 @@ func (b *connectorRuntimeBuilder) upsertDispatchTask(task automation.Task, targe
 			Personality:     spec.Role.Personality,
 		}
 		current.MaxRuns = 1
+		current.RunCount = 0
+		current.LastRunAt = time.Time{}
+		current.LastResult = ""
+		current.LastSignalKind = ""
+		current.LastSignalMessage = ""
+		current.ConsecutiveFailures = 0
+		current.Running = false
+		current.DeletedAt = time.Time{}
 		current.Status = automation.TaskStatusActive
 		current.NextRunAt = spec.RunAt
 		return nil
 	})
-	if errors.Is(err, errSkipWakeTaskUpdate) {
-		return nil
-	}
 	return err
 }
 
 func (b *connectorRuntimeBuilder) upsertWakeTask(task automation.Task, target automationTaskTarget, spec campaignrepo.WakeTaskSpec) error {
 	_, err := b.automationStore.PatchTask(task.ID, func(current *automation.Task) error {
-		if current.RunCount > 0 && current.Status != automation.TaskStatusActive {
-			return errSkipWakeTaskUpdate
-		}
 		current.Title = spec.Title
 		current.Scope = target.Scope
 		current.Route = target.Route
@@ -360,13 +371,18 @@ func (b *connectorRuntimeBuilder) upsertWakeTask(task automation.Task, target au
 			SessionKey: target.SessionKey,
 		}
 		current.MaxRuns = 1
+		current.RunCount = 0
+		current.LastRunAt = time.Time{}
+		current.LastResult = ""
+		current.LastSignalKind = ""
+		current.LastSignalMessage = ""
+		current.ConsecutiveFailures = 0
+		current.Running = false
+		current.DeletedAt = time.Time{}
 		current.Status = automation.TaskStatusActive
 		current.NextRunAt = spec.RunAt
 		return nil
 	})
-	if errors.Is(err, errSkipWakeTaskUpdate) {
-		return nil
-	}
 	return err
 }
 
@@ -504,19 +520,52 @@ func (b *connectorRuntimeBuilder) campaignRoleDefaults() campaignrepo.CampaignRo
 	if b == nil {
 		return campaignrepo.CampaignRoleDefaults{}
 	}
-	d := b.cfg.CampaignRoleDefaults
+	return CampaignRoleDefaultsFromConfig(b.cfg)
+}
+
+func CampaignRoleDefaultsFromConfig(cfg config.Config) campaignrepo.CampaignRoleDefaults {
 	return campaignrepo.CampaignRoleDefaults{
-		Executor:        configRoleToRepoRole(d.Executor),
-		Reviewer:        configRoleToRepoRole(d.Reviewer),
-		Planner:         configRoleToRepoRole(d.Planner),
-		PlannerReviewer: configRoleToRepoRole(d.PlannerReviewer),
+		Executor:        configRoleToRepoRole(cfg, cfg.CampaignRoleDefaults.Executor, "executor"),
+		Reviewer:        configRoleToRepoRole(cfg, cfg.CampaignRoleDefaults.Reviewer, "reviewer"),
+		Planner:         configRoleToRepoRole(cfg, cfg.CampaignRoleDefaults.Planner, "planner"),
+		PlannerReviewer: configRoleToRepoRole(cfg, cfg.CampaignRoleDefaults.PlannerReviewer, "planner_reviewer"),
 	}
 }
 
-func configRoleToRepoRole(c config.CampaignRoleDefaultConfig) campaignrepo.RoleConfig {
-	return campaignrepo.RoleConfig{
-		Role:     c.Role,
-		Profile:  c.LLMProfile,
-		Workflow: c.Workflow,
+func configRoleToRepoRole(cfg config.Config, c config.CampaignRoleDefaultConfig, fallbackRole string) campaignrepo.RoleConfig {
+	role := strings.TrimSpace(c.Role)
+	if role == "" {
+		role = fallbackRole
 	}
+	workflow := strings.ToLower(strings.TrimSpace(c.Workflow))
+	if workflow == "" {
+		workflow = "code_army"
+	}
+
+	resolved := campaignrepo.RoleConfig{
+		Role:     role,
+		Workflow: workflow,
+	}
+
+	profileName := strings.ToLower(strings.TrimSpace(c.LLMProfile))
+	if profileName == "" {
+		return resolved
+	}
+	resolved.Profile = profileName
+
+	profile, ok := cfg.LLMProfiles[profileName]
+	if !ok {
+		return resolved
+	}
+	resolved.Provider = strings.ToLower(strings.TrimSpace(profile.Provider))
+	if resolved.Provider == "" {
+		resolved.Provider = strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
+		if resolved.Provider == "" {
+			resolved.Provider = config.DefaultLLMProvider
+		}
+	}
+	resolved.Model = strings.TrimSpace(profile.Model)
+	resolved.ReasoningEffort = strings.ToLower(strings.TrimSpace(profile.ReasoningEffort))
+	resolved.Personality = strings.ToLower(strings.TrimSpace(profile.Personality))
+	return resolved
 }

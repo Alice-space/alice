@@ -2,6 +2,7 @@ package runtimeapi
 
 import (
 	"strings"
+	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/campaign"
@@ -41,6 +42,7 @@ type CreateTaskRequest struct {
 	Action     automation.Action     `json:"action"`
 	ManageMode automation.ManageMode `json:"manage_mode,omitempty"`
 	MaxRuns    int                   `json:"max_runs,omitempty"`
+	NextRunAt  time.Time             `json:"next_run_at,omitempty"`
 	Enabled    *bool                 `json:"enabled,omitempty"`
 }
 

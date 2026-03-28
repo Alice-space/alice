@@ -146,7 +146,7 @@ func applyChatSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
 	job.ResourceScopeKey = sessionKey
 	job.CreateFeishuThread = cfg.groupScenes.Chat.CreateFeishuThread
 	job.NoReplyToken = strings.TrimSpace(cfg.groupScenes.Chat.NoReplyToken)
-	applyLLMProfileToJob(job, cfg.llmProvider, cfg.llmProfiles[cfg.groupScenes.Chat.LLMProfile])
+	applyLLMProfileToJob(job, cfg.llmProvider, cfg.groupScenes.Chat.LLMProfile, cfg.llmProfiles[cfg.groupScenes.Chat.LLMProfile])
 }
 
 func applyWorkSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
@@ -160,10 +160,10 @@ func applyWorkSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
 	job.ResourceScopeKey = buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey)
 	job.CreateFeishuThread = cfg.groupScenes.Work.CreateFeishuThread
 	job.NoReplyToken = strings.TrimSpace(cfg.groupScenes.Work.NoReplyToken)
-	applyLLMProfileToJob(job, cfg.llmProvider, cfg.llmProfiles[cfg.groupScenes.Work.LLMProfile])
+	applyLLMProfileToJob(job, cfg.llmProvider, cfg.groupScenes.Work.LLMProfile, cfg.llmProfiles[cfg.groupScenes.Work.LLMProfile])
 }
 
-func applyLLMProfileToJob(job *Job, defaultProvider string, profile config.LLMProfileConfig) {
+func applyLLMProfileToJob(job *Job, defaultProvider, profileName string, profile config.LLMProfileConfig) {
 	if job == nil {
 		return
 	}
@@ -173,7 +173,7 @@ func applyLLMProfileToJob(job *Job, defaultProvider string, profile config.LLMPr
 	}
 	job.LLMProvider = provider
 	job.LLMModel = strings.TrimSpace(profile.Model)
-	job.LLMProfile = strings.TrimSpace(profile.Profile)
+	job.LLMProfile = strings.TrimSpace(profileName)
 	job.LLMReasoningEffort = strings.TrimSpace(profile.ReasoningEffort)
 	job.LLMPersonality = strings.TrimSpace(profile.Personality)
 	job.LLMPromptPrefix = strings.TrimSpace(profile.PromptPrefix)

@@ -606,12 +606,48 @@ func markdownSectionContent(body, heading string) string {
 }
 
 func isPlaceholderText(value string) bool {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return true
+	}
+	for _, line := range strings.Split(value, "\n") {
+		candidate := normalizePlaceholderCandidate(line)
+		if candidate == "" {
+			continue
+		}
+		if !isPlaceholderCandidate(candidate) {
+			return false
+		}
+	}
+	return true
+}
+
+func normalizePlaceholderCandidate(line string) string {
+	candidate := strings.TrimSpace(line)
+	for {
+		trimmed := strings.TrimLeft(candidate, "#>*- \t")
+		trimmed = strings.TrimSpace(trimmed)
+		if trimmed == candidate {
+			break
+		}
+		candidate = trimmed
+	}
+	candidate = strings.Trim(candidate, "`*_\"'[]()")
+	return strings.TrimSpace(candidate)
+}
+
+func isPlaceholderCandidate(value string) bool {
 	normalized := strings.ToLower(strings.TrimSpace(value))
 	switch normalized {
 	case "", "-", "tbd", "todo", "待补充", "待完善", "待填写", "pending":
 		return true
 	}
-	return strings.Contains(normalized, "待补充")
+	for _, prefix := range []string{"tbd", "todo", "pending", "待补充", "待完善", "待填写"} {
+		if strings.HasPrefix(normalized, prefix+":") || strings.HasPrefix(normalized, prefix+"：") || strings.HasPrefix(normalized, prefix+" ") {
+			return true
+		}
+	}
+	return false
 }
 
 func gitWorktreeExists(path string) bool {

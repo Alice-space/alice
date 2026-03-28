@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/campaign"
@@ -16,6 +17,7 @@ import (
 const (
 	runtimeCampaignDispatchTaskLimit   = 200
 	runtimeCampaignDispatchEverySecs   = 60
+	runtimeDispatchFailureCooldown     = 1 * time.Minute
 	runtimeCampaignDispatchStatePrefix = "campaign_dispatch:"
 )
 
@@ -49,15 +51,20 @@ func syncRuntimeDispatchTasks(
 
 	existingByState := make(map[string]automation.Task)
 	for _, task := range tasks {
+		task = automation.NormalizeTask(task)
+		if task.Status == automation.TaskStatusDeleted {
+			continue
+		}
 		stateKey := strings.TrimSpace(task.Action.StateKey)
 		if !strings.HasPrefix(stateKey, statePrefix) {
 			continue
 		}
-		existingByState[stateKey] = automation.NormalizeTask(task)
+		existingByState[stateKey] = task
 	}
 
 	desired := make(map[string]struct{}, len(specs))
 	synced := 0
+	now := time.Now().Local()
 	for _, spec := range specs {
 		stateKey := strings.TrimSpace(spec.StateKey)
 		if stateKey == "" {
@@ -66,7 +73,17 @@ func syncRuntimeDispatchTasks(
 		desired[stateKey] = struct{}{}
 
 		if existing, ok := existingByState[stateKey]; ok {
-			if shouldKeepRuntimeDispatchTask(existing, spec) {
+			if shouldKeepRuntimeDispatchTask(existing, spec, now) {
+				synced++
+				continue
+			}
+			if existing.Status != automation.TaskStatusActive {
+				if _, err := client.DeleteTask(ctx, session, existing.ID); err != nil {
+					return synced, err
+				}
+				if _, err := client.CreateTask(ctx, session, buildRuntimeDispatchCreateRequest(item, spec)); err != nil {
+					return synced, err
+				}
 				synced++
 				continue
 			}
@@ -121,7 +138,7 @@ func decodeRuntimeAutomationTasks(payload map[string]any) ([]automation.Task, er
 	return tasks, nil
 }
 
-func shouldKeepRuntimeDispatchTask(task automation.Task, spec campaignrepo.DispatchTaskSpec) bool {
+func shouldKeepRuntimeDispatchTask(task automation.Task, spec campaignrepo.DispatchTaskSpec, now time.Time) bool {
 	task = automation.NormalizeTask(task)
 	if strings.TrimSpace(task.Action.Prompt) != strings.TrimSpace(spec.Prompt) {
 		return false
@@ -150,7 +167,16 @@ func shouldKeepRuntimeDispatchTask(task automation.Task, spec campaignrepo.Dispa
 	if task.Status == automation.TaskStatusActive {
 		return true
 	}
-	return task.RunCount > 0
+	if task.Status != automation.TaskStatusPaused {
+		return false
+	}
+	if !strings.HasPrefix(strings.TrimSpace(task.LastResult), "error:") {
+		return false
+	}
+	if task.UpdatedAt.IsZero() {
+		return false
+	}
+	return task.UpdatedAt.Add(runtimeDispatchFailureCooldown).After(now.Local())
 }
 
 func buildRuntimeDispatchCreateRequest(item campaign.Campaign, spec campaignrepo.DispatchTaskSpec) runtimeapi.CreateTaskRequest {
@@ -173,7 +199,8 @@ func buildRuntimeDispatchCreateRequest(item campaign.Campaign, spec campaignrepo
 			ReasoningEffort: spec.Role.ReasoningEffort,
 			Personality:     spec.Role.Personality,
 		},
-		MaxRuns: 1,
+		MaxRuns:   1,
+		NextRunAt: spec.RunAt,
 	}
 }
 

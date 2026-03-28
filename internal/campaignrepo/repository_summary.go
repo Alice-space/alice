@@ -221,7 +221,7 @@ func dependencyBlockReason(task TaskDocument, byID map[string]TaskDocument) stri
 			return fmt.Sprintf("missing dependency `%s`", depID)
 		}
 		switch normalizeTaskStatus(dependency.Frontmatter.Status) {
-		case TaskStatusDone:
+		case TaskStatusAccepted, TaskStatusDone:
 			continue
 		case TaskStatusRejected:
 			return fmt.Sprintf("dependency `%s` ended in `%s`", depID, normalizeTaskStatus(dependency.Frontmatter.Status))

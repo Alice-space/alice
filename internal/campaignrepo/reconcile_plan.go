@@ -244,8 +244,6 @@ func persistCampaignDocument(repo *Repository) (bool, error) {
 		return false, nil
 	}
 	repo.Campaign.Frontmatter.PlanStatus = normalizePlanStatus(repo.Campaign.Frontmatter.PlanStatus)
-	repo.Campaign.Frontmatter.DefaultPlanner = normalizeRoleConfig(repo.Campaign.Frontmatter.DefaultPlanner)
-	repo.Campaign.Frontmatter.DefaultPlannerReviewer = normalizeRoleConfig(repo.Campaign.Frontmatter.DefaultPlannerReviewer)
 	return true, writeCampaignDocument(repo.Root, repo.Campaign)
 }
 

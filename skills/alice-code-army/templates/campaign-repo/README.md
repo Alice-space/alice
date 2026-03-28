@@ -9,7 +9,7 @@
 ## 新 Agent 先按这个顺序读
 
 1. `campaign.md`
-   先确认 objective、current_phase、plan_status、plan_round、默认角色和 source_repos。
+   先确认 objective、current_phase、plan_status、plan_round 和 source_repos。
 2. `reports/live-report.md`
    先看当前活跃任务、阻塞项、review queue 和下一步。
 3. `plans/merged/master-plan.md`
@@ -26,7 +26,7 @@
 ## 目录怎么理解
 
 - `campaign.md`
-  总目标、默认角色、计划阶段状态、当前方向。
+  总目标、计划阶段状态、当前方向。
 - `plans/`
   planner proposal、planner reviewer review、以及最终 merged master plan。
 - `phases/`

@@ -241,7 +241,7 @@ func ValidateTask(task Task) error {
 	if task.MaxRuns > 0 && task.RunCount > task.MaxRuns {
 		return errors.New("run_count exceeds max_runs")
 	}
-	if task.Status == TaskStatusActive && task.MaxRuns > 0 && task.RunCount >= task.MaxRuns {
+	if task.Status == TaskStatusActive && task.MaxRuns > 0 && task.RunCount >= task.MaxRuns && !task.Running {
 		return errors.New("active task already reached max_runs")
 	}
 	return nil

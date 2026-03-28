@@ -80,6 +80,7 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 	}
 
 	result, err := r.backend.Run(ctx, llm.RunRequest{
+		ThreadID:        workflowThreadID(req.Provider, req.StateKey),
 		AgentName:       workflowAgentName(workflow),
 		UserText:        prompt,
 		Scene:           normalizeWorkflowScene(req.Scene, req.SessionKey),
@@ -99,6 +100,15 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 		Message:  stripWorkflowCommandBlocks(reply),
 		Commands: extractWorkflowCommands(reply),
 	}, nil
+}
+
+func workflowThreadID(provider, stateKey string) string {
+	switch strings.ToLower(strings.TrimSpace(provider)) {
+	case llm.ProviderCodex, llm.ProviderKimi:
+		return strings.TrimSpace(stateKey)
+	default:
+		return ""
+	}
 }
 
 func normalizeWorkflowName(raw string) string {

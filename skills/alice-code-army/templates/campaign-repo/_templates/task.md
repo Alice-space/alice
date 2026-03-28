@@ -11,20 +11,10 @@ owner_agent: ""
 lease_until: ""
 executor:
   role: executor
-  provider: ""
-  model: ""
-  profile: ""
   workflow: code_army
-  reasoning_effort: high
-  personality: pragmatic
 reviewer:
   role: reviewer
-  provider: ""
-  model: ""
-  profile: ""
   workflow: code_army
-  reasoning_effort: high
-  personality: analytical
 dispatch_state: idle
 review_status: pending
 execution_round: 0

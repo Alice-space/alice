@@ -11,6 +11,7 @@ Previous proposal: {{ .PreviousProposalPath | default "-" }}
 Previous review: {{ .PreviousReviewPath | default "-" }}
 Findings/discoveries: {{ .FindingsPath | default "-" }}
 Proposal output: {{ .ProposalOutputPath }}
+Master plan output: {{ .MasterPlanPath }}
 
 Planning rules:
 1. Read `campaign.md` to understand the objective, constraints, and source repos.
@@ -29,20 +30,31 @@ Planning rules:
    - **Phases**: numbered phases (P01, P02, ...) each with a goal and acceptance criteria
    - **Task breakdown**: concrete tasks with task_id, title, depends_on, target_repos, write_scope
    - **Risks**: potential issues and mitigations
-6. For each phase in your plan, create or update `phases/Pxx/phase.md` and fill a concrete phase goal.
-7. For each task in your plan, create a full task package at `phases/Pxx/tasks/Txxx/`:
+6. Update `{{ .MasterPlanPath }}` into a concrete merged-plan draft for this round:
+   - replace template placeholders with the actual merged summary, phase goals, task expansion, and dependency graph
+   - keep `human_approved: false` unless a human explicitly approved the plan
+   - make the master plan approval-ready; human approval still happens later via the normal gate
+7. For each phase in your plan, create or update `phases/Pxx/phase.md` and fill a concrete phase goal.
+8. For each task in your plan, create a full task package at `phases/Pxx/tasks/Txxx/`:
    - `task.md` from `_templates/task.md`
    - `context.md` from `_templates/task-context.md`
    - `plan.md` from `_templates/task-plan.md`
    - `progress.md` from `_templates/task-progress.md`
    - `results/README.md` from `_templates/task-results-readme.md`
    - `reviews/README.md` from `_templates/task-reviews-readme.md`
-8. The planner must fully refine each task package before handing off:
+   - If local templates still contain deprecated role model selector fields, normalize them away in the generated files.
+9. The planner must fully refine each task package before handing off:
    - `task.md` must have non-placeholder Goal / Background / Acceptance / Deliverables
    - `context.md` must list the relevant repos, files, dependencies, and task-local background
    - `plan.md` must contain execution steps, validation, and handoff instructions
    - executor should be able to start from the task folder without asking for missing context
-9. Ensure write_scope values are specific enough to avoid conflicts between parallel tasks, but broad enough to cover all files the task needs to modify.
-10. Declare task dependencies accurately: a task should depend on all tasks whose outputs it needs.
-11. Do not modify the source repos. Do not modify `campaign.md`. Do not modify `reports/live-report.md`.
-12. If a findings file exists at `{{ .FindingsPath | default "findings.md" }}`, read it carefully. It contains discoveries and replan requests from previous execution rounds that you MUST account for in your new plan.
+   - task / review role blocks should usually contain only `role` and `workflow`; only add `provider` / `model` / `profile` / `reasoning_effort` / `personality` for an intentional task-local override
+10. Keep repo-first truth consistent across proposal, master plan, phase docs, and task packages:
+   - phase goals, task IDs, depends_on, target_repos, write_scope, acceptance criteria, and parallelism notes must agree across those files
+   - if you say you changed a dependency, acceptance criterion, or output contract in the proposal, you must update the relevant `phase.md`, `task.md`, `context.md`, `plan.md`, and `master-plan.md` too
+   - do not leave stale task packages or phase notes behind from the previous round
+11. Ensure write_scope values are specific enough to avoid conflicts between parallel tasks, but broad enough to cover all files the task needs to modify.
+12. Declare task dependencies accurately: a task should depend on all tasks whose outputs it needs.
+13. Do not modify the source repos. Do not modify `campaign.md`. Do not modify `reports/live-report.md`.
+14. Never add `default_executor` / `default_reviewer` / `default_planner` / `default_planner_reviewer` back into `campaign.md`; campaign-level role model defaults live in runtime `config.yaml`, not in the campaign repo.
+15. If a findings file exists at `{{ .FindingsPath | default "findings.md" }}`, read it carefully. It contains discoveries and replan requests from previous execution rounds that you MUST account for in your new plan.

@@ -18,12 +18,14 @@ func configForGroupScenesTest() config.Config {
 		"chat": {
 			Provider:        "codex",
 			Model:           "gpt-5.4-mini",
+			Profile:         "chat-cli",
 			ReasoningEffort: "low",
 			Personality:     "friendly",
 		},
 		"work": {
 			Provider:        "codex",
 			Model:           "gpt-5.4",
+			Profile:         "work-cli",
 			ReasoningEffort: "xhigh",
 			Personality:     "pragmatic",
 		},
@@ -114,6 +116,9 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 		}
 		if job.LLMProvider != "codex" {
 			t.Fatalf("job %d unexpected llm provider: %q", idx+1, job.LLMProvider)
+		}
+		if job.LLMProfile != "chat" {
+			t.Fatalf("job %d unexpected llm profile selector: %q", idx+1, job.LLMProfile)
 		}
 		if job.NoReplyToken != "[[NO_REPLY]]" {
 			t.Fatalf("job %d unexpected no-reply token: %q", idx+1, job.NoReplyToken)
@@ -221,6 +226,9 @@ func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) 
 	}
 	if job1.LLMProvider != "codex" || job2.LLMProvider != "codex" {
 		t.Fatalf("unexpected work llm providers: %q %q", job1.LLMProvider, job2.LLMProvider)
+	}
+	if job1.LLMProfile != "work" || job2.LLMProfile != "work" {
+		t.Fatalf("unexpected work llm profile selectors: %q %q", job1.LLMProfile, job2.LLMProfile)
 	}
 	if job2.SessionVersion != 2 {
 		t.Fatalf("unexpected followup session version: %d", job2.SessionVersion)

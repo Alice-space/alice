@@ -37,7 +37,8 @@ type ConnectorRuntime struct {
 // For each provider, the first profile (alphabetically by name) that matches
 // provides the provider-level command, timeout, and default model/reasoning_effort/prompt_prefix.
 // All profiles are also stored as per-profile runner overrides so that selecting a specific
-// profile by its outer map name applies that profile's command, timeout, and prompt_prefix.
+// profile by its outer map name applies that profile's command, timeout, prompt_prefix,
+// and provider-specific profile selector.
 func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.FactoryConfig {
 	defaultEnv := applyLLMProcessEnvDefaults(cfg.CodexEnv, cfg.CodexHome)
 
@@ -47,6 +48,7 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 		model           string
 		reasoningEffort string
 		promptPrefix    string
+		execPolicy      llm.ExecPolicyConfig
 	}
 	defaults := map[string]*providerDefaults{}
 
@@ -73,6 +75,7 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 				model:           profile.Model,
 				reasoningEffort: profile.ReasoningEffort,
 				promptPrefix:    profile.PromptPrefix,
+				execPolicy:      buildCodexExecPolicy(derefCodexExecPolicy(profile.Permissions)),
 			}
 		}
 		// Register per-profile runner override keyed by outer profile name.
@@ -80,9 +83,11 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 			profileOverrides[provider] = map[string]llm.ProfileRunnerConfig{}
 		}
 		profileOverrides[provider][name] = llm.ProfileRunnerConfig{
-			Command:      profile.Command,
-			Timeout:      profile.Timeout,
-			PromptPrefix: profile.PromptPrefix,
+			Command:         profile.Command,
+			Timeout:         profile.Timeout,
+			PromptPrefix:    profile.PromptPrefix,
+			ProviderProfile: profile.Profile,
+			ExecPolicy:      buildCodexExecPolicy(derefCodexExecPolicy(profile.Permissions)),
 		}
 	}
 
@@ -112,14 +117,15 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 		Provider: cfg.LLMProvider,
 		Prompts:  prompts,
 		Codex: llm.CodexConfig{
-			Command:          codex.command,
-			Timeout:          codex.timeout,
-			Model:            codex.model,
-			ReasoningEffort:  codex.reasoningEffort,
-			Env:              defaultEnv,
-			PromptPrefix:     codex.promptPrefix,
-			WorkspaceDir:     cfg.WorkspaceDir,
-			ProfileOverrides: getOverrides(config.DefaultLLMProvider),
+			Command:           codex.command,
+			Timeout:           codex.timeout,
+			Model:             codex.model,
+			ReasoningEffort:   codex.reasoningEffort,
+			Env:               defaultEnv,
+			PromptPrefix:      codex.promptPrefix,
+			WorkspaceDir:      cfg.WorkspaceDir,
+			DefaultExecPolicy: codex.execPolicy,
+			ProfileOverrides:  getOverrides(config.DefaultLLMProvider),
 		},
 		Claude: llm.ClaudeConfig{
 			Command:          claude.command,
@@ -170,6 +176,13 @@ func buildCodexExecPolicy(policy config.CodexExecPolicyConfig) llm.ExecPolicyCon
 		AskForApproval: strings.TrimSpace(policy.AskForApproval),
 		AddDirs:        append([]string(nil), policy.AddDirs...),
 	}
+}
+
+func derefCodexExecPolicy(policy *config.CodexExecPolicyConfig) config.CodexExecPolicyConfig {
+	if policy == nil {
+		return config.CodexExecPolicyConfig{}
+	}
+	return *policy
 }
 
 func applyLLMProcessEnvDefaults(raw map[string]string, codexHome string) map[string]string {

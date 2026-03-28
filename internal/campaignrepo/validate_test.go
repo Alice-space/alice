@@ -186,6 +186,97 @@ human_approved: false
 	}
 }
 
+func TestValidateRepositoryForApproval_MasterPlanMayMentionHistoricalPlaceholder(t *testing.T) {
+	root := t.TempDir()
+	initGitRepo(t, root)
+	headCommit := gitHeadCommit(t, root)
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship the workflow"
+current_phase: P01
+source_repos: [repo-a]
+plan_round: 2
+plan_status: plan_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+root+`"
+default_branch: main
+base_commit: "`+headCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Refined task"
+phase: P01
+status: draft
+target_repos: [repo-a]
+write_scope: [src/core]
+---
+
+# Task
+
+## Goal
+- complete the work
+
+## Background
+- enough background
+
+## Acceptance
+- acceptance is clear
+
+## Deliverables
+- deliver the code
+`)
+	mustWriteTestFile(t, filepath.Join(root, "plans", "proposals", "round-002-plan.md"), `---
+proposal_id: "plan-r2"
+plan_round: 2
+status: submitted
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "plans", "reviews", "round-002-review.md"), `---
+review_id: "plan-review-r2"
+plan_round: 2
+verdict: approve
+blocking: false
+created_at: "2026-03-24T10:30:00+08:00"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "plans", "merged", "master-plan.md"), `---
+status: submitted
+human_approved: false
+---
+
+# Master Plan
+
+## Changes from Round 1
+> previous draft called this section 待补充
+
+## Merge Summary
+- refined and ready
+
+## Phases
+- P01
+`)
+
+	_, validation, err := ValidateForApproval(root)
+	if err != nil {
+		t.Fatalf("validate for approval failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected approval validation success, got %+v", validation.Issues)
+	}
+}
+
 func TestResumeWakeTask_RestoresExecutingState(t *testing.T) {
 	root := t.TempDir()
 	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---

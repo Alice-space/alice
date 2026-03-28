@@ -6,6 +6,10 @@
 
 `CodeArmy = skill 脚本 + runtime campaign 索引 + campaign repo 真相源 + 自动 reconcile/dispatch + source repo 实际改动面`
 
+如果你是在排查 Alice / CodeArmy 自己的行为，而不是单纯使用它，推荐直接按隔离环境 runbook 做：
+
+- `docs/codearmy-isolated-debug.zh-CN.md`
+
 ## 先认清入口
 
 如果你是在 Alice 仓库里开发，脚本路径通常是：
@@ -149,7 +153,7 @@ campaign-repo/
 | 文件/目录 | 作用 | 排障时先看什么 |
 | --- | --- | --- |
 | `README.md` | 给新 agent 的入场说明和推荐阅读顺序 | 应该先看哪些文件、哪些约定不能踩 |
-| `campaign.md` | 总目标、当前 phase、默认角色、`plan_status`、`source_repos` | 当前在第几轮 planning、默认谁来干活 |
+| `campaign.md` | 总目标、frontmatter 状态字段、`source_repos`、gate/roles 说明 | 当前在第几轮 planning、涉及哪些 repo、约束是什么 |
 | `repos/*.md` | source repo 的本地路径、远端、分支信息 | 真正代码仓库在哪 |
 | `plans/proposals/` | planner 产出的 proposal | 当前计划到底写了什么 |
 | `plans/reviews/` | planner reviewer 对 proposal 的评审 | 为什么 plan 被通过或打回 |
@@ -167,24 +171,15 @@ campaign-repo/
 campaign_id: camp_xxx
 title: "..."
 objective: "..."
-status: planned
 campaign_repo_path: "/path/to/campaign"
 current_phase: P01
 source_repos: []
-default_executor:
-  role: executor
-default_reviewer:
-  role: reviewer
-default_planner:
-  role: planner
-default_planner_reviewer:
-  role: planner_reviewer
 plan_round: 0
 plan_status: idle
 ---
 ```
 
-这里的 `role` 是角色标识，不是模型名。`provider` / `model` / `profile` 可以在 frontmatter 里显式覆盖；若省略或留空，则由 Alice runtime 按当前配置决定实际调度到哪个后端。
+这里的 `role` 是角色标识，不是模型名。campaign 级默认角色到具体 `provider` / `model` / `profile` 的映射现在只来自 `config.yaml` 里的 `campaign_role_defaults` 和 `llm_profiles`；`campaign.md` 不再承载这类默认值。只有 task / review frontmatter 在极少数 one-off override 场景下才需要显式写 `provider` / `model` / `profile`。
 
 这些字段最影响系统行为：
 
@@ -194,10 +189,19 @@ plan_status: idle
 | `objective` | 这次协作到底要达成什么 | 创建时写清楚，后续少改 |
 | `current_phase` | 当前主阶段 | 进入新阶段时更新 |
 | `source_repos` | 本次涉及的源码仓库标识 | planner/executor 需要据此定位代码 |
-| `default_planner` / `default_planner_reviewer` | 计划阶段默认角色 | 需要切模型或 provider 时改 |
-| `default_executor` / `default_reviewer` | 执行阶段默认角色 | 需要切模型或 provider 时改 |
 | `plan_round` | 当前计划轮次 | planning/review 循环里递增 |
 | `plan_status` | 计划阶段当前状态 | reconcile 和人工审批共同推进 |
+
+说明：
+
+- runtime campaign 的总体 `status` 以 runtime campaign 记录为准，用 `alice-code-army.sh get` / runtime campaigns API 查看；`campaign.md` 里不再把它当主事实源。
+- queue / ready / blocked 的执行态摘要看 `reports/live-report.md`。
+
+角色默认值现在应该改 `config.yaml`：
+
+- `campaign_role_defaults.*.role` / `workflow`：控制 planner / reviewer / executor 的角色标签与 workflow
+- `campaign_role_defaults.*.llm_profile`：指向 `llm_profiles` 的外层名字
+- `llm_profiles.<name>`：定义 provider / model / provider-specific `profile` / timeout / prompt prefix 等实际运行配置
 
 ## Task frontmatter 里哪些字段最关键
 
@@ -467,7 +471,9 @@ phases/P01/tasks/T001/reviews/R001.md
 
 - `approve` -> `accepted`
 - `concern` -> `rework`
+  适用于 executor 可以在当前 task 正常返工修掉的问题，例如 acceptance 不满足、测试缺失、输出错误、task-local 结果不完整。
 - `blocking` -> `blocked`
+  只用于需要人类介入、外部依赖变化、task contract 本身有误，或必须升格到 campaign 级重规划的情况。
 - `reject` -> `rejected`
 
 ### 10. 长任务用 `waiting_external + wake_at`

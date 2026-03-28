@@ -63,25 +63,11 @@ case "human_approved":
 新增 frontmatter 字段：
 
 ```yaml
-default_planner:
-  role: planner
-  provider: claude
-  model: ""
-  profile: ""
-  workflow: code_army
-  reasoning_effort: high
-  personality: analytical
-default_planner_reviewer:
-  role: planner_reviewer
-  provider: claude
-  model: ""
-  profile: ""
-  workflow: code_army
-  reasoning_effort: high
-  personality: analytical
 plan_round: 0
 plan_status: idle
 ```
+
+说明：后续实现已经把 campaign 级角色模型默认值移出 `campaign.md`，统一改由 `config.yaml` 的 `campaign_role_defaults` + `llm_profiles` 提供；模板里只保留 planning 状态字段。
 
 ### 7.2 plans/ 模板简化
 
@@ -232,7 +218,7 @@ plan-status     CAMPAIGN_ID              查看当前计划状态
 | `internal/campaignrepo/reconcile_plan.go` | **新建** | 计划阶段 reconcile 独立文件，包含 reconcilePlanPhase、applyPlanVerdict、promoteDraftTasksToReady、promotePlanToMasterPlan 等函数 |
 | `prompts/campaignrepo/planner_dispatch.md.tmpl` | **新建** | Planner dispatch prompt 模板 |
 | `prompts/campaignrepo/planner_reviewer_dispatch.md.tmpl` | **新建** | Planner reviewer dispatch prompt 模板 |
-| `skills/alice-code-army/templates/campaign-repo/campaign.md` | 修改 | 添加 default_planner、default_planner_reviewer、plan_round、plan_status |
+| `skills/alice-code-army/templates/campaign-repo/campaign.md` | 修改 | 添加 `plan_round`、`plan_status`，并在后续实现中移除了 campaign 级角色模型默认值 |
 | `skills/alice-code-army/templates/campaign-repo/plans/proposals/` | 修改 | 删除旧的多模型模板，替换为 README |
 | `skills/alice-code-army/templates/campaign-repo/_templates/plan-proposal.md` | **新建** | Proposal 模板 |
 | `skills/alice-code-army/templates/campaign-repo/_templates/plan-review.md` | **新建** | Plan review 模板 |

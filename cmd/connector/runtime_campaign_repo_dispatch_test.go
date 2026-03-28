@@ -95,6 +95,9 @@ func TestSyncRuntimeDispatchTasksCreatesPlannerTask(t *testing.T) {
 	if req.MaxRuns != 1 {
 		t.Fatalf("unexpected max runs: %d", req.MaxRuns)
 	}
+	if !req.NextRunAt.Equal(now) {
+		t.Fatalf("unexpected next_run_at: got=%s want=%s", req.NextRunAt.Format(time.RFC3339), now.Format(time.RFC3339))
+	}
 }
 
 func TestSyncRuntimeDispatchTasksReusesMatchingActiveTask(t *testing.T) {
@@ -149,6 +152,61 @@ func TestSyncRuntimeDispatchTasksReusesMatchingActiveTask(t *testing.T) {
 	}
 }
 
+func TestSyncRuntimeDispatchTasksKeepsRecentlyFailedDispatchTask(t *testing.T) {
+	existing := automation.Task{
+		ID:         "task_failed_recently",
+		Title:      "campaign planner camp_demo r1",
+		Status:     automation.TaskStatusPaused,
+		RunCount:   1,
+		UpdatedAt:  time.Now().Add(-30 * time.Second),
+		LastResult: "error: planner failed",
+		Action: automation.Action{
+			Prompt:          "plan this campaign",
+			Provider:        "claude",
+			Workflow:        "code_army",
+			StateKey:        "campaign_dispatch:camp_demo:planner:r1",
+			ReasoningEffort: "high",
+			Personality:     "analytical",
+		},
+	}
+	client := &runtimeAutomationClientStub{
+		listPayload: map[string]any{"status": "ok", "tasks": []automation.Task{existing}},
+	}
+	item := campaign.Campaign{ID: "camp_demo", ManageMode: campaign.ManageModeCreatorOnly}
+	specs := []campaignrepo.DispatchTaskSpec{
+		{
+			StateKey: "campaign_dispatch:camp_demo:planner:r1",
+			Kind:     campaignrepo.DispatchKindPlanner,
+			TaskID:   "plan-r1",
+			Title:    "campaign planner camp_demo r1",
+			Prompt:   "plan this campaign",
+			Role: campaignrepo.RoleConfig{
+				Provider:        "claude",
+				Workflow:        "code_army",
+				ReasoningEffort: "high",
+				Personality:     "analytical",
+			},
+		},
+	}
+
+	synced, err := syncRuntimeDispatchTasks(context.Background(), client, mcpbridge.SessionContext{}, item, specs)
+	if err != nil {
+		t.Fatalf("syncRuntimeDispatchTasks returned err=%v", err)
+	}
+	if synced != 1 {
+		t.Fatalf("expected synced=1, got %d", synced)
+	}
+	if len(client.created) != 0 {
+		t.Fatalf("expected no created tasks during failure cooldown, got %d", len(client.created))
+	}
+	if len(client.patched) != 0 {
+		t.Fatalf("expected no patched tasks during failure cooldown, got %d", len(client.patched))
+	}
+	if len(client.deleted) != 0 {
+		t.Fatalf("expected no deleted tasks during failure cooldown, got %#v", client.deleted)
+	}
+}
+
 func TestSyncRuntimeDispatchTasksDeletesStaleDispatchTask(t *testing.T) {
 	existing := automation.Task{
 		ID:    "task_stale",
@@ -172,6 +230,55 @@ func TestSyncRuntimeDispatchTasksDeletesStaleDispatchTask(t *testing.T) {
 	}
 	if len(client.deleted) != 1 || client.deleted[0] != "task_stale" {
 		t.Fatalf("expected stale task to be deleted, got %#v", client.deleted)
+	}
+}
+
+func TestSyncRuntimeDispatchTasksIgnoresDeletedDispatchTask(t *testing.T) {
+	existing := automation.Task{
+		ID:    "task_deleted",
+		Title: "campaign planner camp_demo r1",
+		Action: automation.Action{
+			Prompt:          "old failed plan",
+			Provider:        "claude",
+			Workflow:        "code_army",
+			StateKey:        "campaign_dispatch:camp_demo:planner:r1",
+			ReasoningEffort: "high",
+			Personality:     "analytical",
+		},
+		Status: automation.TaskStatusDeleted,
+	}
+	client := &runtimeAutomationClientStub{
+		listPayload: map[string]any{"status": "ok", "tasks": []automation.Task{existing}},
+	}
+	item := campaign.Campaign{ID: "camp_demo", ManageMode: campaign.ManageModeCreatorOnly}
+	specs := []campaignrepo.DispatchTaskSpec{
+		{
+			StateKey: "campaign_dispatch:camp_demo:planner:r1",
+			Kind:     campaignrepo.DispatchKindPlanner,
+			TaskID:   "plan-r1",
+			Title:    "campaign planner camp_demo r1",
+			Prompt:   "plan this campaign",
+			Role: campaignrepo.RoleConfig{
+				Provider:        "claude",
+				Workflow:        "code_army",
+				ReasoningEffort: "high",
+				Personality:     "pragmatic",
+			},
+		},
+	}
+
+	synced, err := syncRuntimeDispatchTasks(context.Background(), client, mcpbridge.SessionContext{}, item, specs)
+	if err != nil {
+		t.Fatalf("syncRuntimeDispatchTasks returned err=%v", err)
+	}
+	if synced != 1 {
+		t.Fatalf("expected synced=1, got %d", synced)
+	}
+	if len(client.created) != 1 {
+		t.Fatalf("expected one created task, got %d", len(client.created))
+	}
+	if len(client.patched) != 0 {
+		t.Fatalf("expected no patched tasks, got %d", len(client.patched))
 	}
 }
 
@@ -206,5 +313,59 @@ func TestBuildRuntimeDispatchPatchIncludesRunAt(t *testing.T) {
 	}
 	if patch["next_run_at"] == "" {
 		t.Fatal("expected next_run_at to be present")
+	}
+}
+
+func TestSyncRuntimeDispatchTasksRecreatesCompletedDispatchTask(t *testing.T) {
+	existing := automation.Task{
+		ID:    "task_done_once",
+		Title: "campaign planner camp_demo r1",
+		Action: automation.Action{
+			Prompt:          "plan this campaign",
+			Provider:        "claude",
+			Workflow:        "code_army",
+			StateKey:        "campaign_dispatch:camp_demo:planner:r1",
+			ReasoningEffort: "high",
+			Personality:     "analytical",
+		},
+		Status:   automation.TaskStatusPaused,
+		RunCount: 1,
+	}
+	client := &runtimeAutomationClientStub{
+		listPayload: map[string]any{"status": "ok", "tasks": []automation.Task{existing}},
+	}
+	item := campaign.Campaign{ID: "camp_demo", ManageMode: campaign.ManageModeCreatorOnly}
+	specs := []campaignrepo.DispatchTaskSpec{
+		{
+			StateKey: "campaign_dispatch:camp_demo:planner:r1",
+			Kind:     campaignrepo.DispatchKindPlanner,
+			TaskID:   "plan-r1",
+			Title:    "campaign planner camp_demo r1",
+			RunAt:    time.Date(2026, 3, 25, 9, 0, 0, 0, time.UTC),
+			Prompt:   "plan this campaign",
+			Role: campaignrepo.RoleConfig{
+				Provider:        "claude",
+				Workflow:        "code_army",
+				ReasoningEffort: "high",
+				Personality:     "analytical",
+			},
+		},
+	}
+
+	synced, err := syncRuntimeDispatchTasks(context.Background(), client, mcpbridge.SessionContext{}, item, specs)
+	if err != nil {
+		t.Fatalf("syncRuntimeDispatchTasks returned err=%v", err)
+	}
+	if synced != 1 {
+		t.Fatalf("expected synced=1, got %d", synced)
+	}
+	if len(client.deleted) != 1 || client.deleted[0] != "task_done_once" {
+		t.Fatalf("expected completed task to be deleted first, got %#v", client.deleted)
+	}
+	if len(client.created) != 1 {
+		t.Fatalf("expected one recreated task, got %d", len(client.created))
+	}
+	if len(client.patched) != 0 {
+		t.Fatalf("expected no patch calls for completed task recreation, got %d", len(client.patched))
 	}
 }

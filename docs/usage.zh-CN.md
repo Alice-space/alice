@@ -154,6 +154,7 @@ group_scenes:
 ```
 
 不同 scene 可以使用不同 provider；如果某个 profile 没写 `provider`，Alice 会回退到默认 provider。
+`group_scenes.*.llm_profile` 指向的始终是 `llm_profiles` 的外层名字；如果该 profile 还配置了内层 `profile`，Alice 会把外层名字作为 runtime 里的稳定选择器，只把内层值传给具体 provider CLI。
 
 ## `SOUL.md`
 

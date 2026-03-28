@@ -92,7 +92,7 @@ func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Contex
 	task = NormalizeTask(task)
 	if task.Action.Type == ActionTypeRunWorkflow {
 		timeout := e.userTaskTimeoutDuration()
-		if timeout < defaultWorkflowTaskTimeout {
+		if timeout <= 0 {
 			timeout = defaultWorkflowTaskTimeout
 		}
 		return context.WithTimeout(ctx, timeout)

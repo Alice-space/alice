@@ -22,23 +22,27 @@ type FactoryConfig struct {
 	Kimi     KimiConfig
 }
 
-// ProfileRunnerConfig carries per-profile overrides for command, timeout, and prompt prefix.
+// ProfileRunnerConfig carries per-profile overrides for command, timeout, prompt prefix,
+// and provider-specific profile selectors.
 // Keyed by the outer llm_profiles map name (e.g. "executor", "reviewer").
 type ProfileRunnerConfig struct {
-	Command      string
-	Timeout      time.Duration
-	PromptPrefix string
+	Command         string
+	Timeout         time.Duration
+	PromptPrefix    string
+	ProviderProfile string
+	ExecPolicy      ExecPolicyConfig
 }
 
 type CodexConfig struct {
-	Command         string
-	Timeout         time.Duration
-	Model           string
-	ReasoningEffort string
-	Env             map[string]string
-	PromptPrefix    string
-	WorkspaceDir    string
-	// ProfileOverrides maps outer profile name -> per-profile command/timeout/prompt_prefix.
+	Command           string
+	Timeout           time.Duration
+	Model             string
+	ReasoningEffort   string
+	Env               map[string]string
+	PromptPrefix      string
+	WorkspaceDir      string
+	DefaultExecPolicy ExecPolicyConfig
+	// ProfileOverrides maps outer profile name -> per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
 }
 
@@ -48,7 +52,7 @@ type ClaudeConfig struct {
 	Env          map[string]string
 	PromptPrefix string
 	WorkspaceDir string
-	// ProfileOverrides maps outer profile name -> per-profile command/timeout/prompt_prefix.
+	// ProfileOverrides maps outer profile name -> per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
 }
 
@@ -58,7 +62,7 @@ type GeminiConfig struct {
 	Env          map[string]string
 	PromptPrefix string
 	WorkspaceDir string
-	// ProfileOverrides maps outer profile name -> per-profile command/timeout/prompt_prefix.
+	// ProfileOverrides maps outer profile name -> per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
 }
 
@@ -68,7 +72,7 @@ type KimiConfig struct {
 	Env          map[string]string
 	PromptPrefix string
 	WorkspaceDir string
-	// ProfileOverrides maps outer profile name -> per-profile command/timeout/prompt_prefix.
+	// ProfileOverrides maps outer profile name -> per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
 }
 

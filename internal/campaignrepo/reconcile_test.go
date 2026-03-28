@@ -135,22 +135,6 @@ func TestBuildDispatchSpecs_Content(t *testing.T) {
 campaign_id: camp_demo
 title: "Demo Campaign"
 current_phase: P01
-default_executor:
-  role: executor.gemini
-  provider: gemini
-  model: gemini-2.5-pro
-  profile: exec-profile
-  workflow: code_army
-  reasoning_effort: medium
-  personality: methodical
-default_reviewer:
-  role: reviewer.kimi
-  provider: kimi
-  model: kimi-k2
-  profile: review-profile
-  workflow: code_army
-  reasoning_effort: high
-  personality: analytical
 ---
 `)
 	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
@@ -185,6 +169,26 @@ last_run_path: "results/summary.md"
 	repo, err := Load(root)
 	if err != nil {
 		t.Fatalf("load repo failed: %v", err)
+	}
+	repo.ConfigRoleDefaults = CampaignRoleDefaults{
+		Executor: RoleConfig{
+			Role:            "executor.gemini",
+			Provider:        "gemini",
+			Model:           "gemini-2.5-pro",
+			Profile:         "exec-profile",
+			Workflow:        "code_army",
+			ReasoningEffort: "medium",
+			Personality:     "pragmatic",
+		},
+		Reviewer: RoleConfig{
+			Role:            "reviewer.kimi",
+			Provider:        "kimi",
+			Model:           "kimi-k2",
+			Profile:         "review-profile",
+			Workflow:        "code_army",
+			ReasoningEffort: "high",
+			Personality:     "pragmatic",
+		},
 	}
 	specs, err := buildDispatchSpecs(repo, now)
 	if err != nil {
@@ -232,6 +236,124 @@ last_run_path: "results/summary.md"
 	expectedReviewFile := filepath.Join(root, "phases", "P01", "tasks", "T002", "reviews", "R001.md")
 	if !containsAll(reviewerSpec.Prompt, "Task id: T002", "Target commit: abc123", "Last run path: results/summary.md", "Suggested review file: "+expectedReviewFile) {
 		t.Fatalf("unexpected reviewer prompt: %q", reviewerSpec.Prompt)
+	}
+}
+
+func TestBuildDispatchSpecs_PlannerPromptIncludesMasterPlanContract(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship a concrete plan"
+source_repos: [repo-a]
+current_phase: P01
+plan_round: 1
+plan_status: planning
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: planned
+goal: "Phase placeholder"
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	specs, err := buildDispatchSpecs(repo, now)
+	if err != nil {
+		t.Fatalf("build dispatch specs failed: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("expected 1 dispatch spec, got %d", len(specs))
+	}
+	spec := specs[0]
+	if spec.Kind != DispatchKindPlanner {
+		t.Fatalf("unexpected dispatch kind: %s", spec.Kind)
+	}
+	masterPlanPath := filepath.Join(root, "plans", "merged", "master-plan.md")
+	if !containsAll(
+		spec.Prompt,
+		"Master plan output: "+masterPlanPath,
+		"Keep repo-first truth consistent across proposal, master plan, phase docs, and task packages",
+		"if you say you changed a dependency, acceptance criterion, or output contract in the proposal, you must update the relevant `phase.md`, `task.md`, `context.md`, `plan.md`, and `master-plan.md` too",
+	) {
+		t.Fatalf("unexpected planner prompt: %q", spec.Prompt)
+	}
+}
+
+func TestBuildDispatchSpecs_PlannerReviewerPromptChecksConsistency(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Review the plan"
+source_repos: [repo-a]
+current_phase: P01
+plan_round: 1
+plan_status: plan_review_pending
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "plans", "proposals", "round-001-plan.md"), `---
+proposal_id: "plan-r1"
+plan_round: 1
+status: submitted
+---
+
+# Plan Proposal
+`)
+	mustWriteTestFile(t, filepath.Join(root, "plans", "merged", "master-plan.md"), `---
+status: draft
+human_approved: false
+---
+
+# Master Plan
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: planned
+goal: "Phase goal"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Planned task"
+phase: P01
+status: draft
+target_repos: [repo-a]
+write_scope: [src/**]
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	specs, err := buildDispatchSpecs(repo, now)
+	if err != nil {
+		t.Fatalf("build dispatch specs failed: %v", err)
+	}
+	if len(specs) != 1 {
+		t.Fatalf("expected 1 dispatch spec, got %d", len(specs))
+	}
+	spec := specs[0]
+	if spec.Kind != DispatchKindPlannerReviewer {
+		t.Fatalf("unexpected dispatch kind: %s", spec.Kind)
+	}
+	masterPlanPath := filepath.Join(root, "plans", "merged", "master-plan.md")
+	if !containsAll(
+		spec.Prompt,
+		"Master plan: "+masterPlanPath,
+		"the proposal, master plan, phase docs, and task packages agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance criteria, and parallelism notes",
+		"Missing merged-plan content or inconsistent plan artifacts should usually be `concern`, not `blocking`",
+	) {
+		t.Fatalf("unexpected planner reviewer prompt: %q", spec.Prompt)
 	}
 }
 

@@ -228,7 +228,8 @@ bots:
       allowed_skills: ["alice-message", "alice-scheduler", "alice-code-army"]
 
     # Optional campaign role defaults for code-army.
-    # Cascade: Go defaults → config.yaml → campaign.md → task frontmatter
+    # Role model selection lives here: Go defaults → config.yaml.
+    # campaign.md should not duplicate provider/model/profile defaults.
     # Each role references an llm_profile by name.
     campaign_role_defaults:
       executor:

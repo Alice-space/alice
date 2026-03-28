@@ -4,12 +4,7 @@ target_task: T000
 review_round: 1
 reviewer:
   role: reviewer
-  provider: ""
-  model: ""
-  profile: ""
   workflow: code_army
-  reasoning_effort: high
-  personality: analytical
 verdict: concern
 blocking: false
 target_commit: ""

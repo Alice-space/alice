@@ -45,8 +45,6 @@ func loadCampaignDocument(path, root string) (CampaignDocument, error) {
 	frontmatter.SourceRepos = normalizeStringList(frontmatter.SourceRepos)
 	frontmatter.ReviewMode = strings.TrimSpace(frontmatter.ReviewMode)
 	frontmatter.ReportMode = strings.TrimSpace(frontmatter.ReportMode)
-	frontmatter.DefaultExecutor = normalizeRoleConfig(frontmatter.DefaultExecutor)
-	frontmatter.DefaultReviewer = normalizeRoleConfig(frontmatter.DefaultReviewer)
 	return CampaignDocument{
 		Path:        relativePath(root, path),
 		Body:        parsed.Body,

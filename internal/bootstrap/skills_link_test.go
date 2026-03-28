@@ -205,6 +205,12 @@ func TestEnsureBundledSkillsLinked_AliceCodeArmyTemplatesUseRuntimeDispatchedGen
 		if strings.Contains(content, "executor.codex") || strings.Contains(content, "reviewer.claude") {
 			t.Fatalf("template %s should not hardcode model-bound roles, got %q", path, content)
 		}
+		if strings.HasSuffix(path, "campaign.md") {
+			if !strings.Contains(content, "planner default: `planner`") {
+				t.Fatalf("campaign template should keep generic planner label, got %q", content)
+			}
+			continue
+		}
 		if strings.HasSuffix(path, "task-context.md") || strings.HasSuffix(path, "task-plan.md") {
 			continue
 		}
@@ -215,6 +221,45 @@ func TestEnsureBundledSkillsLinked_AliceCodeArmyTemplatesUseRuntimeDispatchedGen
 
 	if _, err := os.Stat(filepath.Join(skillRoot, "reviews", "README.md")); !os.IsNotExist(err) {
 		t.Fatalf("top-level reviews README should be absent in repo-first task-package scaffold, err=%v", err)
+	}
+}
+
+func TestCampaignRoleDefaultsFromConfig_ResolvesProfileSelectors(t *testing.T) {
+	defaults := CampaignRoleDefaultsFromConfig(config.Config{
+		LLMProvider: "codex",
+		LLMProfiles: map[string]config.LLMProfileConfig{
+			"planner": {
+				Provider:        "claude",
+				Model:           "claude-opus-4-6",
+				ReasoningEffort: "high",
+			},
+			"reviewer": {
+				Provider:    "codex",
+				Model:       "gpt-5.4",
+				Personality: "pragmatic",
+			},
+		},
+		CampaignRoleDefaults: config.CampaignRoleDefaultsConfig{
+			Planner: config.CampaignRoleDefaultConfig{
+				LLMProfile: "planner",
+			},
+			Reviewer: config.CampaignRoleDefaultConfig{
+				LLMProfile: "reviewer",
+			},
+		},
+	})
+
+	if defaults.Planner.Provider != "claude" || defaults.Planner.Model != "claude-opus-4-6" {
+		t.Fatalf("planner role should resolve provider/model from llm_profile, got %+v", defaults.Planner)
+	}
+	if defaults.Planner.Profile != "planner" {
+		t.Fatalf("planner profile should preserve llm_profile name, got %+v", defaults.Planner)
+	}
+	if defaults.Planner.Workflow != "code_army" {
+		t.Fatalf("planner workflow should default to code_army, got %+v", defaults.Planner)
+	}
+	if defaults.Reviewer.Personality != "pragmatic" {
+		t.Fatalf("reviewer personality should come from llm_profile, got %+v", defaults.Reviewer)
 	}
 }
 

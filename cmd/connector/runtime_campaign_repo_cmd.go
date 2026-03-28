@@ -4,13 +4,17 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
+	"os"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
+	"github.com/Alice-space/alice/internal/bootstrap"
 	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/campaignrepo"
+	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 	"github.com/Alice-space/alice/internal/runtimeapi"
 )
@@ -142,14 +146,18 @@ func newRuntimeCampaignRepoReconcileCmd() *cobra.Command {
 			ctx context.Context,
 			client *runtimeapi.Client,
 			session mcpbridge.SessionContext,
-			_ *cobra.Command,
+			cmd *cobra.Command,
 			args []string,
 		) error {
 			item, err := loadRuntimeCampaign(ctx, client, session, args[0])
 			if err != nil {
 				return err
 			}
-			result, err := campaignrepo.ReconcileAndPrepare(item.CampaignRepoPath, currentTime(), item.MaxParallelTrials, 0)
+			roleDefaults, err := currentRuntimeCampaignRoleDefaults(cmd)
+			if err != nil {
+				return err
+			}
+			result, err := campaignrepo.ReconcileAndPrepare(item.CampaignRepoPath, currentTime(), item.MaxParallelTrials, 0, roleDefaults)
 			if err != nil {
 				return err
 			}
@@ -241,4 +249,43 @@ func validateRuntimeCampaignRepo(item campaign.Campaign, forApproval bool) (camp
 		return campaignrepo.ValidateForApproval(item.CampaignRepoPath)
 	}
 	return campaignrepo.Validate(item.CampaignRepoPath)
+}
+
+func currentRuntimeCampaignRoleDefaults(cmd *cobra.Command) (campaignrepo.CampaignRoleDefaults, error) {
+	runtimeCfg, err := currentRuntimeConfig(cmd)
+	if err != nil {
+		return campaignrepo.CampaignRoleDefaults{}, err
+	}
+	return bootstrap.CampaignRoleDefaultsFromConfig(runtimeCfg), nil
+}
+
+func currentRuntimeConfig(cmd *cobra.Command) (config.Config, error) {
+	configPath := config.DefaultConfigPath()
+	if cmd != nil {
+		if value, err := cmd.Flags().GetString("config"); err == nil && strings.TrimSpace(value) != "" {
+			configPath = value
+		}
+	}
+	cfg, err := config.LoadFromFile(bootstrap.ResolveConfigPath(configPath))
+	if err != nil {
+		return config.Config{}, err
+	}
+	runtimes, err := cfg.RuntimeConfigs()
+	if err != nil {
+		return config.Config{}, err
+	}
+	return matchRuntimeConfigByBaseURL(runtimes, strings.TrimSpace(os.Getenv(runtimeapi.EnvBaseURL)))
+}
+
+func matchRuntimeConfigByBaseURL(runtimes []config.Config, baseURL string) (config.Config, error) {
+	if len(runtimes) == 1 {
+		return runtimes[0], nil
+	}
+	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
+	for _, runtimeCfg := range runtimes {
+		if strings.TrimRight(runtimeapi.BaseURL(runtimeCfg.RuntimeHTTPAddr), "/") == baseURL {
+			return runtimeCfg, nil
+		}
+	}
+	return config.Config{}, fmt.Errorf("no runtime config matches %q", baseURL)
 }
