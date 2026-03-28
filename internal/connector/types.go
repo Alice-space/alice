@@ -15,12 +15,20 @@ var mentionUserIDPattern = regexp.MustCompile(`<at[^>]*\buser_id="([^"]+)"[^>]*>
 
 var ErrIgnoreMessage = errors.New("ignore message")
 var errSessionInterrupted = errors.New("session interrupted by newer message")
+var errSessionStopped = errors.New("session stopped by slash command")
 
 func wasInterruptedByNewMessage(ctx context.Context) bool {
 	if ctx == nil {
 		return false
 	}
 	return errors.Is(context.Cause(ctx), errSessionInterrupted)
+}
+
+func wasStoppedByCommand(ctx context.Context) bool {
+	if ctx == nil {
+		return false
+	}
+	return errors.Is(context.Cause(ctx), errSessionStopped)
 }
 
 type Sender = messaging.ConversationSender

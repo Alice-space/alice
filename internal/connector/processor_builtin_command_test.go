@@ -59,6 +59,7 @@ func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
 		"`/help`",
 		"`/status`",
 		"`/clear`",
+		"`/stop`",
 		"`普通模式`",
 		"`工作模式`",
 		"`#work`",
@@ -108,6 +109,36 @@ func TestProcessor_ClearCommand_RotatesGroupChatSceneSession(t *testing.T) {
 	}
 	if threadID := processor.getThreadID(resolved); threadID != "" {
 		t.Fatalf("expected rotated session to start without thread id, got %q", threadID)
+	}
+}
+
+func TestProcessor_StopCommand_BypassesLLMAndReplies(t *testing.T) {
+	llmStub := &llmCallCountingStub{}
+	sender := &senderStub{}
+	processor := NewProcessor(llmStub, sender, "failed", "thinking")
+
+	state := processor.ProcessJobState(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		ChatType:        "group",
+		SourceMessageID: "om_stop",
+		SessionKey:      "chat_id:oc_chat|thread:omt_1",
+		Text:            "/stop",
+	})
+	if state != JobProcessCompleted {
+		t.Fatalf("expected completed state, got %s", state)
+	}
+	if llmStub.calls != 0 {
+		t.Fatalf("expected stop command to bypass llm, got %d llm calls", llmStub.calls)
+	}
+	if sender.replyRichMarkdownCalls != 1 || sender.replyRichMarkdownDirectCalls != 1 {
+		t.Fatalf("expected one direct rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
+	}
+	if !strings.Contains(sender.replyMarkdownTexts[0], "Codex session") {
+		t.Fatalf("unexpected stop reply: %q", sender.replyMarkdownTexts[0])
+	}
+	if !strings.Contains(sender.replyMarkdownTexts[0], "会保留") {
+		t.Fatalf("unexpected stop reply: %q", sender.replyMarkdownTexts[0])
 	}
 }
 
@@ -373,6 +404,27 @@ func TestIsClearCommand(t *testing.T) {
 	} {
 		if isClearCommand(text) {
 			t.Fatalf("expected %q to be rejected as clear command", text)
+		}
+	}
+}
+
+func TestIsStopCommand(t *testing.T) {
+	for _, text := range []string{
+		"/stop",
+		"  /stop  ",
+		"/stop now",
+	} {
+		if !isStopCommand(text) {
+			t.Fatalf("expected %q to be recognized as stop command", text)
+		}
+	}
+	for _, text := range []string{
+		"stop",
+		"/ stopping",
+		"/stopper",
+	} {
+		if isStopCommand(text) {
+			t.Fatalf("expected %q to be rejected as stop command", text)
 		}
 	}
 }

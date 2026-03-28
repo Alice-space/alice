@@ -263,9 +263,7 @@ func (a *App) workerLoop(ctx context.Context, idx int) {
 				continue
 			}
 			runCtx, cancelRun := context.WithCancelCause(ctx)
-			a.setActiveRun(sessionKey, job.SessionVersion, job.EventID, func() {
-				cancelRun(errSessionInterrupted)
-			})
+			a.setActiveRun(sessionKey, job.SessionVersion, job.EventID, cancelRun)
 			result := a.processor.ProcessJobState(runCtx, job)
 			cancelRun(nil)
 			a.clearActiveRun(sessionKey, job.SessionVersion)

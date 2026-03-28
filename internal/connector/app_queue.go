@@ -134,7 +134,13 @@ func (a *App) enqueueJob(job *Job) (queued bool, cancelActive context.CancelFunc
 	select {
 	case a.queue <- *job:
 		if interruptActive {
-			cancelActive = active.cancel
+			cancelCause := errSessionInterrupted
+			if isStopCommand(job.Text) {
+				cancelCause = errSessionStopped
+			}
+			cancelActive = func() {
+				active.cancel(cancelCause)
+			}
 			canceledEventID = active.eventID
 		}
 		if interruptActive || supersedeQueued {
@@ -159,7 +165,7 @@ func normalizeJobSessionKey(job Job) string {
 	return buildSessionKey(job.ReceiveIDType, job.ReceiveID)
 }
 
-func (a *App) setActiveRun(sessionKey string, version uint64, eventID string, cancel context.CancelFunc) {
+func (a *App) setActiveRun(sessionKey string, version uint64, eventID string, cancel context.CancelCauseFunc) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" || version == 0 || cancel == nil {
 		return

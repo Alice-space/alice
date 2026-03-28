@@ -135,6 +135,47 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 	}
 }
 
+func TestApp_RouteBuiltinStopToExistingWorkSession(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := NewApp(cfg, nil)
+
+	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_work_root")
+	app.state.latest[sessionKey] = 1
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_stop"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_stop"),
+				ParentId:    strPtr("om_work_root"),
+				RootId:      strPtr("om_work_root"),
+				ThreadId:    strPtr("omt_work"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/stop"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected builtin stop to be routed")
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("unexpected scene: %q", job.Scene)
+	}
+	if job.SessionKey != sessionKey {
+		t.Fatalf("unexpected session key: %q", job.SessionKey)
+	}
+	if job.ResourceScopeKey != buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey) {
+		t.Fatalf("unexpected resource scope key: %q", job.ResourceScopeKey)
+	}
+}
+
 func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")

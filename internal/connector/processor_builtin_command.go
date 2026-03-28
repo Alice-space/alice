@@ -18,6 +18,7 @@ const statusCommandName = "/status"
 const codeArmyCommandName = "/codearmy"
 const codeArmyStatusSubcommand = "status"
 const clearCommandName = "/clear"
+const stopCommandName = "/stop"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
 
@@ -31,11 +32,14 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 	if isClearCommand(job.Text) {
 		return true, p.processClearCommand(ctx, job)
 	}
+	if isStopCommand(job.Text) {
+		return true, p.processStopCommand(ctx, job)
+	}
 	return false, JobProcessCompleted
 }
 
 func isBuiltinCommandText(text string) bool {
-	return isHelpCommand(text) || isStatusCommand(text) || isCodeArmyStatusCommand(text) || isClearCommand(text)
+	return isHelpCommand(text) || isStatusCommand(text) || isCodeArmyStatusCommand(text) || isClearCommand(text) || isStopCommand(text)
 }
 
 func isHelpCommand(text string) bool {
@@ -60,6 +64,14 @@ func isStatusCommand(text string) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(fields[0]), statusCommandName)
+}
+
+func isStopCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), stopCommandName)
 }
 
 func isCodeArmyStatusCommand(text string) bool {
@@ -115,6 +127,18 @@ func (p *Processor) processClearCommand(ctx context.Context, job Job) JobProcess
 	return JobProcessCompleted
 }
 
+func (p *Processor) processStopCommand(ctx context.Context, job Job) JobProcessState {
+	reply := "已请求停止当前 session 的回复。若当前有正在运行的 Codex 进程，它会被打断；现有 Codex session 会保留，你继续在当前 thread 或会话里发送新指令时会在原 session 上继续。"
+
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send builtin stop reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
 func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 	lines := []string{
 		"## Alice 内建命令",
@@ -125,6 +149,8 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		"  显示当前会话 scope 下的 token 统计、活跃自动化任务，以及非终态的 code-army campaigns。",
 		"- `/clear`",
 		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
+		"- `/stop`",
+		"  停止当前 session 正在运行的回复，但保留现有 Codex session；后续新指令会在当前 session 上继续。",
 	}
 
 	if !helpCfg.chatEnabled && !helpCfg.workEnabled {

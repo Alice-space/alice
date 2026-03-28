@@ -8,7 +8,7 @@ import (
 type activeSessionRun struct {
 	eventID string
 	version uint64
-	cancel  context.CancelFunc
+	cancel  context.CancelCauseFunc
 }
 
 // runtimeStore groups mutable connector runtime state in one place so App can

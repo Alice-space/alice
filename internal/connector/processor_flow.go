@@ -24,6 +24,10 @@ func (p *Processor) processSendMessage(ctx context.Context, job Job) JobProcessS
 	p.setThreadID(sessionKey, nextThreadID)
 	p.recordSessionUsage(sessionKey, usage)
 	if errors.Is(err, context.Canceled) {
+		if wasStoppedByCommand(ctx) {
+			logging.Infof("llm stopped by slash command event_id=%s", job.EventID)
+			return JobProcessRetryAfterRestart
+		}
 		if wasInterruptedByNewMessage(ctx) {
 			logging.Infof("llm interrupted by newer message event_id=%s", job.EventID)
 			return JobProcessRetryAfterRestart
@@ -108,6 +112,10 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	p.setThreadID(sessionKey, nextThreadID)
 	p.recordSessionUsage(sessionKey, usage)
 	if errors.Is(runErr, context.Canceled) {
+		if wasStoppedByCommand(ctx) {
+			logging.Infof("llm stopped by slash command event_id=%s", job.EventID)
+			return JobProcessRetryAfterRestart
+		}
 		if wasInterruptedByNewMessage(ctx) {
 			notifyCtx := context.WithoutCancel(ctx)
 			if ackDelivered {

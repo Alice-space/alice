@@ -17,7 +17,22 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 	if event != nil && event.Event != nil {
 		message = event.Event.Message
 	}
-	if !isGroupChatType(job.ChatType) || isBuiltinCommandText(job.Text) {
+	if !isGroupChatType(job.ChatType) {
+		if message != nil {
+			a.resolveJobSessionKey(job, message)
+		}
+		return true
+	}
+	if isBuiltinCommandText(job.Text) {
+		if cfg.groupScenes.Work.Enabled {
+			if sessionKey := a.resolveExistingWorkSession(job, event, message); sessionKey != "" {
+				applyWorkSceneToJob(job, cfg, sessionKey)
+				if a.processor != nil && message != nil {
+					a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
+				}
+				return true
+			}
+		}
 		if message != nil {
 			a.resolveJobSessionKey(job, message)
 		}
