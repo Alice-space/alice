@@ -199,6 +199,60 @@ func TestNormalizeTaskDocumentPreservesExplicitTimeOffset(t *testing.T) {
 	}
 }
 
+func TestParseFlexibleTimeAcceptsCompactTimezoneOffset(t *testing.T) {
+	parsed, err := parseFlexibleTime("2026-03-28T14:57:39+0800")
+	if err != nil {
+		t.Fatalf("parse flexible time failed: %v", err)
+	}
+	if got := parsed.Format(time.RFC3339); got != "2026-03-28T14:57:39+08:00" {
+		t.Fatalf("unexpected parsed timestamp: %s", got)
+	}
+}
+
+func TestLoadAcceptsReviewCreatedAtWithCompactTimezoneOffset(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Needs review verdict"
+phase: P01
+status: reviewing
+review_round: 5
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R005.md"), `---
+review_id: R005
+target_task: T001
+review_round: 5
+verdict: approve
+blocking: false
+created_at: "2026-03-28T14:57:39+0800"
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	if len(repo.Reviews) != 1 {
+		t.Fatalf("expected 1 review, got %d", len(repo.Reviews))
+	}
+	if got := repo.Reviews[0].CreatedAt.Format(time.RFC3339); got != "2026-03-28T14:57:39+08:00" {
+		t.Fatalf("unexpected review created_at: %s", got)
+	}
+}
+
 func TestReconcileFromPathClaimsExecutorAndReviewer(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
@@ -271,6 +325,145 @@ last_run_path: "results/summary.md"
 	}
 	if len(specs) != 2 {
 		t.Fatalf("expected 2 dispatch specs")
+	}
+}
+
+func TestSummarize_SkipsReviewDispatchWhenExecutionArtifactsDoNotResolve(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+headCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Needs review"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+working_branches: [codearmy/t001]
+write_scope: [src/lib.rs]
+head_commit: "deadbeef"
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	summary := Summarize(repo, time.Date(2026, 3, 24, 11, 0, 0, 0, time.UTC), 2)
+	if len(summary.SelectedReview) != 0 {
+		t.Fatalf("expected no selected review tasks, got %+v", summary.SelectedReview)
+	}
+	var found bool
+	for _, task := range summary.BlockedTasks {
+		if task.TaskID == "T001" && strings.Contains(task.BlockedReason, "head_commit") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected blocked reason about execution artifacts, got %+v", summary.BlockedTasks)
+	}
+}
+
+func TestSummarize_SkipsReviewDispatchWhenDiffEscapesWriteScope(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	runGitOrFail(t, sourceRoot, "checkout", "-b", "codearmy/t001")
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v1() {}\n")
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "Cargo.lock"), "version = 3\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs", "Cargo.lock")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t1")
+	baseCommit := gitHeadCommit(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v2() {}\n")
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "Cargo.lock"), "version = 4\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs", "Cargo.lock")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t2")
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Needs review"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+working_branches: [codearmy/t001]
+write_scope: [src/lib.rs]
+base_commit: "`+baseCommit+`"
+head_commit: "`+headCommit+`"
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	summary := Summarize(repo, time.Date(2026, 3, 24, 11, 0, 0, 0, time.UTC), 2)
+	if len(summary.SelectedReview) != 0 {
+		t.Fatalf("expected no selected review tasks, got %+v", summary.SelectedReview)
+	}
+	var found bool
+	for _, task := range summary.BlockedTasks {
+		if task.TaskID == "T001" && strings.Contains(task.BlockedReason, "Cargo.lock") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected blocked reason about write_scope escape, got %+v", summary.BlockedTasks)
 	}
 }
 

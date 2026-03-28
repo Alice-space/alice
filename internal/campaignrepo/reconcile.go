@@ -81,6 +81,14 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		events = append(events, verdictEvents...)
 	}
 
+	repairedTasks, err := repairInactiveTaskState(&repo)
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	if repairedTasks > 0 {
+		changed = true
+	}
+
 	summary := Summarize(repo, now, maxParallel)
 	claimedExecutors, executorEvents, err := claimSelectedExecutorTasks(&repo, summary, now, leaseDuration, campaignID)
 	if err != nil {
@@ -117,6 +125,49 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		ClaimedReviewers: claimedReviewers,
 		Events:           events,
 	}, nil
+}
+
+func repairInactiveTaskState(repo *Repository) (int, error) {
+	if repo == nil || len(repo.Tasks) == 0 {
+		return 0, nil
+	}
+	repaired := 0
+	for idx := range repo.Tasks {
+		task := &repo.Tasks[idx]
+		status := normalizeTaskStatus(task.Frontmatter.Status)
+		changed := false
+
+		if status != TaskStatusExecuting && status != TaskStatusReviewing {
+			if strings.TrimSpace(task.Frontmatter.OwnerAgent) != "" {
+				task.Frontmatter.OwnerAgent = ""
+				changed = true
+			}
+			if !task.LeaseUntil.IsZero() {
+				task.LeaseUntil = time.Time{}
+				changed = true
+			}
+		}
+
+		if status != TaskStatusWaitingExternal {
+			if !task.WakeAt.IsZero() {
+				task.WakeAt = time.Time{}
+				changed = true
+			}
+			if strings.TrimSpace(task.Frontmatter.WakePrompt) != "" {
+				task.Frontmatter.WakePrompt = ""
+				changed = true
+			}
+		}
+
+		if !changed {
+			continue
+		}
+		if err := persistTaskDocument(repo, idx); err != nil {
+			return repaired, err
+		}
+		repaired++
+	}
+	return repaired, nil
 }
 
 func planTransitionEvent(campaignID, campaignTitle, prevStatus, newStatus string, planRound int) (ReconcileEvent, bool) {

@@ -18,6 +18,8 @@ type senderStub struct {
 	lastReceiveID   string
 	lastText        string
 	lastCard        string
+	sendTextErr     error
+	sendCardErr     error
 }
 
 func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text string) error {
@@ -27,7 +29,7 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	s.lastReceiveType = receiveIDType
 	s.lastReceiveID = receiveID
 	s.lastText = text
-	return nil
+	return s.sendTextErr
 }
 
 func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardContent string) error {
@@ -37,7 +39,7 @@ func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardC
 	s.lastReceiveType = receiveIDType
 	s.lastReceiveID = receiveID
 	s.lastCard = cardContent
-	return nil
+	return s.sendCardErr
 }
 
 func cardTitleFromJSON(t *testing.T, raw string) string {

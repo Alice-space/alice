@@ -219,6 +219,14 @@ func BuildConnectorRuntime(cfg config.Config, backend llm.Backend) (*ConnectorRu
 }
 
 func (r *ConnectorRuntime) Run(ctx context.Context) error {
+	return r.run(ctx, false)
+}
+
+func (r *ConnectorRuntime) RunRuntimeOnly(ctx context.Context) error {
+	return r.run(ctx, true)
+}
+
+func (r *ConnectorRuntime) run(ctx context.Context, runtimeOnly bool) error {
 	if r == nil || r.App == nil {
 		return errors.New("connector runtime is nil")
 	}
@@ -226,6 +234,9 @@ func (r *ConnectorRuntime) Run(ctx context.Context) error {
 	var group run.Group
 	appCtx, cancelApp := context.WithCancel(ctx)
 	group.Add(func() error {
+		if runtimeOnly {
+			return r.App.RunWithoutConnector(appCtx)
+		}
 		return r.App.Run(appCtx)
 	}, func(error) {
 		cancelApp()

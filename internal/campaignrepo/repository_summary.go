@@ -39,6 +39,12 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 			byID[id] = task
 		}
 	}
+	sourceRepoByID := make(map[string]SourceRepoDocument, len(repo.SourceRepos))
+	for _, repoDoc := range repo.SourceRepos {
+		if repoID := strings.TrimSpace(repoDoc.Frontmatter.RepoID); repoID != "" {
+			sourceRepoByID[repoID] = repoDoc
+		}
+	}
 
 	taskOrder := append([]TaskDocument(nil), repo.Tasks...)
 	sort.Slice(taskOrder, func(i, j int) bool {
@@ -154,6 +160,11 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 			continue
 		}
 		view := taskSummary(task)
+		if reason := taskExecutionArtifactBlockReason(repo.Root, task, sourceRepoByID); reason != "" {
+			summary.BlockedCount++
+			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+			continue
+		}
 		if reason := leaseBlockReason(task, now); reason != "" {
 			summary.BlockedCount++
 			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))

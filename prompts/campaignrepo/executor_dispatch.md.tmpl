@@ -1,7 +1,6 @@
 Continue the repo-first campaign as the executor.
 
 Campaign repo: {{ .CampaignRepo }}
-Campaign file: {{ .CampaignFile }}
 Task file: {{ .TaskFile }}
 Task dir: {{ .TaskDir }}
 Task id: {{ .TaskID }}
@@ -9,17 +8,28 @@ Task title: {{ .TaskTitle }}
 Executor role: {{ .ExecutorRole }}
 Execution round: {{ .ExecutionRound }}
 Target repos: {{ .TargetRepos | join ", " | default "-" }}
+Source repos:
+{{- if .SourceRepoRefs }}
+{{- range .SourceRepoRefs }}
+- {{ .RepoID }}: local_path={{ .LocalPath | default "-" }}, default_branch={{ .DefaultBranch | default "-" }}, repo_doc={{ .DocPath }}
+{{- end }}
+{{- else }}
+- none declared
+{{- end }}
 Working branches: {{ .WorkingBranches | join ", " | default "-" }}
 Write scope: {{ .WriteScope | join ", " | default "-" }}
 Reviewer role: {{ .ReviewerRole }}
 Report snippet: {{ .ReportSnippet }}
+Review status: {{ .ReviewStatus }}
+Last review path: {{ .LastReviewPath }}
 
 Execution rules:
 1. Read `campaign.md`, the task markdown in the task dir, and the referenced source repos.
 2. You may modify the source repos listed in `target_repos` and the task directory for this task.
 3. Do not edit `reports/live-report.md` or unrelated task directories.
-4. Treat the task folder as your local contract surface. Read `task.md`, `context.md`, and `plan.md` first, then keep progress in task-local files such as `progress.md`, `results/summary.md`, `results/metrics.md`, `results/artifacts.md`, and `report-snippet.md`.
-5. When the task is ready for review, update the task frontmatter to status `review_pending`, clear `owner_agent` and `lease_until`, set `head_commit` and `last_run_path`, and explain what changed.
-6. If the task is waiting on a long-running external job, switch to `waiting_external` with `wake_at` and `wake_prompt`.
-7. If the task is blocked, set status to `blocked` and state the blocker clearly in the task files.
-8. Keep the campaign repo as the source of truth; do not rely on issue comments as primary state.
+4. Treat the task folder as the contract surface. Read `task.md`, `context.md`, and `plan.md` first. If `review_status` is not `pending` or `last_review_path` is set, read that review before touching the source repo and address its findings in this execution round.
+5. Before setting `review_pending`, verify the source-repo branch/commit yourself. Record the real reachable git commit from the target repo in `head_commit`, keep `last_run_path` pointing at a real task-local result file, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and do not claim success without source-repo changes.
+6. If the task is waiting on a long-running external job, switch to `waiting_external`, clear `owner_agent` and `lease_until`, then set `wake_at` and `wake_prompt`.
+7. If the task is blocked, set status to `blocked`, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and state the blocker clearly in the task files.
+8. Keep the campaign repo as the source of truth.
+9. Apply the required source-repo and task-file updates yourself, then emit a short public summary listing changed files, validation, and the final task status.

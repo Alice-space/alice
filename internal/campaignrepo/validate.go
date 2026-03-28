@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"sort"
 	"strings"
 )
@@ -19,6 +20,8 @@ type ValidationResult struct {
 	Valid  bool              `json:"valid"`
 	Issues []ValidationIssue `json:"issues,omitempty"`
 }
+
+var taskFileRefPattern = regexp.MustCompile("(?m)(?:^|[^A-Za-z0-9_./-])((?:src|tests)/[A-Za-z0-9_./-]+\\.[A-Za-z0-9_.-]+|Cargo\\.toml|Cargo\\.lock)(?:$|[^A-Za-z0-9_./-])")
 
 func (r ValidationResult) Error() error {
 	if r.Valid {
@@ -273,7 +276,9 @@ func validateTaskDocument(root string, task TaskDocument, phases map[string]Phas
 			})
 		}
 	}
-	validateTaskStateContract(task, issues)
+	validateTaskStateContract(root, task, repos, issues)
+	validateTaskRoleWorkflows(task, issues)
+	validateTaskWriteScopeCoverage(task, issues)
 }
 
 func validateTaskDependencies(task TaskDocument, taskByID map[string]TaskDocument, issues *[]ValidationIssue) {
@@ -289,24 +294,32 @@ func validateTaskDependencies(task TaskDocument, taskByID map[string]TaskDocumen
 	}
 }
 
-func validateTaskStateContract(task TaskDocument, issues *[]ValidationIssue) {
+func validateTaskStateContract(root string, task TaskDocument, repos map[string]SourceRepoDocument, issues *[]ValidationIssue) {
 	status := normalizeTaskStatus(task.Frontmatter.Status)
 	switch status {
-	case TaskStatusReviewPending:
+	case TaskStatusReviewPending, TaskStatusReviewing:
 		if strings.TrimSpace(task.Frontmatter.HeadCommit) == "" {
 			*issues = append(*issues, ValidationIssue{
 				Code:    "task_review_pending_head_commit_missing",
 				Path:    task.Path,
-				Message: fmt.Sprintf("task %s is review_pending but head_commit is empty", task.Frontmatter.TaskID),
+				Message: fmt.Sprintf("task %s is %s but head_commit is empty", task.Frontmatter.TaskID, status),
 			})
 		}
 		if strings.TrimSpace(task.Frontmatter.LastRunPath) == "" {
 			*issues = append(*issues, ValidationIssue{
 				Code:    "task_review_pending_last_run_missing",
 				Path:    task.Path,
-				Message: fmt.Sprintf("task %s is review_pending but last_run_path is empty", task.Frontmatter.TaskID),
+				Message: fmt.Sprintf("task %s is %s but last_run_path is empty", task.Frontmatter.TaskID, status),
 			})
 		}
+		if status == TaskStatusReviewPending && (strings.TrimSpace(task.Frontmatter.OwnerAgent) != "" || !task.LeaseUntil.IsZero()) {
+			*issues = append(*issues, ValidationIssue{
+				Code:    "task_review_pending_lease_not_cleared",
+				Path:    task.Path,
+				Message: fmt.Sprintf("task %s is review_pending but owner_agent/lease_until is still set", task.Frontmatter.TaskID),
+			})
+		}
+		*issues = append(*issues, taskExecutionArtifactIssues(root, task, repos)...)
 	case TaskStatusWaitingExternal:
 		if task.WakeAt.IsZero() {
 			*issues = append(*issues, ValidationIssue{
@@ -322,7 +335,7 @@ func validateTaskStateContract(task TaskDocument, issues *[]ValidationIssue) {
 				Message: fmt.Sprintf("task %s is waiting_external but wake_prompt is empty", task.Frontmatter.TaskID),
 			})
 		}
-	case TaskStatusExecuting, TaskStatusReviewing:
+	case TaskStatusExecuting:
 		if strings.TrimSpace(task.Frontmatter.OwnerAgent) == "" {
 			*issues = append(*issues, ValidationIssue{
 				Code:    "task_active_owner_missing",
@@ -346,6 +359,211 @@ func validateTaskStateContract(task TaskDocument, issues *[]ValidationIssue) {
 			})
 		}
 	}
+	if status == TaskStatusReviewing {
+		if strings.TrimSpace(task.Frontmatter.OwnerAgent) == "" {
+			*issues = append(*issues, ValidationIssue{
+				Code:    "task_active_owner_missing",
+				Path:    task.Path,
+				Message: fmt.Sprintf("task %s is %s but owner_agent is empty", task.Frontmatter.TaskID, status),
+			})
+		}
+		if task.LeaseUntil.IsZero() {
+			*issues = append(*issues, ValidationIssue{
+				Code:    "task_active_lease_missing",
+				Path:    task.Path,
+				Message: fmt.Sprintf("task %s is %s but lease_until is empty", task.Frontmatter.TaskID, status),
+			})
+		}
+	}
+}
+
+func taskExecutionArtifactIssues(root string, task TaskDocument, repos map[string]SourceRepoDocument) []ValidationIssue {
+	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+	if taskID == "" {
+		return nil
+	}
+	targetRepos := resolveTaskSourceRepos(task, repos)
+	if len(targetRepos) == 0 {
+		return nil
+	}
+
+	var issues []ValidationIssue
+	lastRunPath := strings.TrimSpace(task.Frontmatter.LastRunPath)
+	if lastRunPath != "" {
+		if _, ok := resolveTaskArtifactPath(root, task, lastRunPath); !ok {
+			issues = append(issues, ValidationIssue{
+				Code:    "task_last_run_path_missing_file",
+				Path:    task.Path,
+				Message: fmt.Sprintf("task %s last_run_path %s does not resolve to a file inside the campaign repo", taskID, lastRunPath),
+			})
+		}
+	}
+
+	headCommit := strings.TrimSpace(task.Frontmatter.HeadCommit)
+	if headCommit == "" {
+		return issues
+	}
+	if !gitCommitExistsInRepos(targetRepos, headCommit) {
+		issues = append(issues, ValidationIssue{
+			Code:    "task_head_commit_unknown",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s head_commit %s is not reachable in any target_repos local_path", taskID, headCommit),
+		})
+		return issues
+	}
+	if baseCommit := strings.TrimSpace(task.Frontmatter.BaseCommit); baseCommit != "" {
+		diffIssues := taskExecutionDiffIssues(task, targetRepos, baseCommit, headCommit)
+		issues = append(issues, diffIssues...)
+	}
+
+	workingBranches := normalizeDeclaredBranches(task.Frontmatter.WorkingBranches)
+	if len(workingBranches) == 0 {
+		return issues
+	}
+	if !gitAnyBranchExistsInRepos(targetRepos, workingBranches) {
+		issues = append(issues, ValidationIssue{
+			Code:    "task_working_branch_unknown",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s declared working_branches %s but none exist in target_repos local_path", taskID, strings.Join(workingBranches, ", ")),
+		})
+		return issues
+	}
+	if !gitAnyBranchContainsCommit(targetRepos, workingBranches, headCommit) {
+		issues = append(issues, ValidationIssue{
+			Code:    "task_head_commit_not_on_working_branch",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s head_commit %s is not reachable from declared working_branches %s", taskID, headCommit, strings.Join(workingBranches, ", ")),
+		})
+	}
+	return issues
+}
+
+func taskExecutionDiffIssues(task TaskDocument, repos []SourceRepoDocument, baseCommit string, headCommit string) []ValidationIssue {
+	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+	if taskID == "" {
+		return nil
+	}
+	baseCommit = strings.TrimSpace(baseCommit)
+	headCommit = strings.TrimSpace(headCommit)
+	if baseCommit == "" || headCommit == "" {
+		return nil
+	}
+	var issues []ValidationIssue
+	diffChecked := false
+	for _, repo := range repos {
+		localPath := strings.TrimSpace(repo.Frontmatter.LocalPath)
+		if localPath == "" {
+			continue
+		}
+		if !gitCommitExists(localPath, baseCommit) || !gitCommitExists(localPath, headCommit) {
+			continue
+		}
+		diffChecked = true
+		files, err := gitChangedFiles(localPath, baseCommit, headCommit)
+		if err != nil {
+			issues = append(issues, ValidationIssue{
+				Code:    "task_execution_diff_unreadable",
+				Path:    task.Path,
+				Message: fmt.Sprintf("task %s could not read changed files for %s..%s in %s: %v", taskID, baseCommit, headCommit, localPath, err),
+			})
+			continue
+		}
+		for _, file := range files {
+			if writeScopeCoversRef(task.Frontmatter.WriteScope, file) {
+				continue
+			}
+			issues = append(issues, ValidationIssue{
+				Code:    "task_head_diff_outside_write_scope",
+				Path:    task.Path,
+				Message: fmt.Sprintf("task %s changed %s between %s..%s but write_scope does not cover it", taskID, file, baseCommit, headCommit),
+			})
+		}
+	}
+	if diffChecked {
+		return issues
+	}
+	return []ValidationIssue{{
+		Code:    "task_base_commit_unknown",
+		Path:    task.Path,
+		Message: fmt.Sprintf("task %s base_commit %s is not reachable with head_commit %s in any target_repos local_path", taskID, baseCommit, headCommit),
+	}}
+}
+
+func taskExecutionArtifactBlockReason(root string, task TaskDocument, repos map[string]SourceRepoDocument) string {
+	issues := taskExecutionArtifactIssues(root, task, repos)
+	if len(issues) == 0 {
+		return ""
+	}
+	return issues[0].Message
+}
+
+func resolveTaskSourceRepos(task TaskDocument, repos map[string]SourceRepoDocument) []SourceRepoDocument {
+	if len(task.Frontmatter.TargetRepos) == 0 || len(repos) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(task.Frontmatter.TargetRepos))
+	out := make([]SourceRepoDocument, 0, len(task.Frontmatter.TargetRepos))
+	for _, repoID := range task.Frontmatter.TargetRepos {
+		repoID = strings.TrimSpace(repoID)
+		if repoID == "" {
+			continue
+		}
+		if _, ok := seen[repoID]; ok {
+			continue
+		}
+		seen[repoID] = struct{}{}
+		doc, ok := repos[repoID]
+		if !ok {
+			continue
+		}
+		out = append(out, doc)
+	}
+	return out
+}
+
+func resolveTaskArtifactPath(root string, task TaskDocument, raw string) (string, bool) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return "", false
+	}
+	candidates := []string{}
+	if filepath.IsAbs(raw) {
+		candidates = append(candidates, raw)
+	} else {
+		rel := filepath.FromSlash(raw)
+		candidates = append(candidates, filepath.Join(root, rel))
+		candidates = append(candidates, filepath.Join(root, filepath.FromSlash(task.Dir), rel))
+	}
+	seen := make(map[string]struct{}, len(candidates))
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		info, err := os.Stat(candidate)
+		if err == nil && !info.IsDir() {
+			return candidate, true
+		}
+	}
+	return "", false
+}
+
+func normalizeDeclaredBranches(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		trimmed := strings.TrimSpace(value)
+		if trimmed == "" {
+			continue
+		}
+		if _, ok := seen[trimmed]; ok {
+			continue
+		}
+		seen[trimmed] = struct{}{}
+		out = append(out, trimmed)
+	}
+	return out
 }
 
 func validateReviewDocument(review ReviewDocument, taskByID map[string]TaskDocument, issues *[]ValidationIssue) {
@@ -397,6 +615,135 @@ func validateReviewDocument(review ReviewDocument, taskByID map[string]TaskDocum
 			Message: fmt.Sprintf("review for task %s must set reviewer.role", taskID),
 		})
 	}
+	validateRoleWorkflow(review.Path, "review", taskID, "reviewer", review.Frontmatter.Reviewer.Workflow, issues)
+}
+
+func validateTaskRoleWorkflows(task TaskDocument, issues *[]ValidationIssue) {
+	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+	validateRoleWorkflow(task.Path, "task", taskID, "executor", task.Frontmatter.Executor.Workflow, issues)
+	validateRoleWorkflow(task.Path, "task", taskID, "reviewer", task.Frontmatter.Reviewer.Workflow, issues)
+}
+
+func validateTaskWriteScopeCoverage(task TaskDocument, issues *[]ValidationIssue) {
+	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+	if taskID == "" || len(task.Frontmatter.WriteScope) == 0 {
+		return
+	}
+	checks := []struct {
+		path    string
+		label   string
+		content string
+	}{
+		{
+			path:    task.Path,
+			label:   "Acceptance",
+			content: markdownSectionContent(task.Body, "Acceptance"),
+		},
+		{
+			path:    task.Path,
+			label:   "Deliverables",
+			content: markdownSectionContent(task.Body, "Deliverables"),
+		},
+		{
+			path:    task.PlanPath,
+			label:   "Execution Steps",
+			content: markdownSectionContent(task.PlanBody, "Execution Steps"),
+		},
+	}
+	for _, check := range checks {
+		for _, ref := range referencedTaskFiles(check.content) {
+			if writeScopeCoversRef(task.Frontmatter.WriteScope, ref) {
+				continue
+			}
+			*issues = append(*issues, ValidationIssue{
+				Code:    "task_write_scope_incomplete",
+				Path:    check.path,
+				Message: fmt.Sprintf("task %s %s references %s but write_scope does not cover it", taskID, check.label, ref),
+			})
+		}
+	}
+}
+
+func validateRoleWorkflow(path, artifactKind, artifactID, roleName, rawWorkflow string, issues *[]ValidationIssue) {
+	workflow := strings.ToLower(strings.TrimSpace(rawWorkflow))
+	if workflow == "" {
+		return
+	}
+	if workflow == "code_army" {
+		return
+	}
+	*issues = append(*issues, ValidationIssue{
+		Code:    fmt.Sprintf("%s_role_workflow_invalid", artifactKind),
+		Path:    path,
+		Message: fmt.Sprintf("%s %s must use %s.workflow=code_army, got %q", artifactKind, artifactID, roleName, rawWorkflow),
+	})
+}
+
+func referencedTaskFiles(content string) []string {
+	matches := taskFileRefPattern.FindAllStringSubmatch(content, -1)
+	if len(matches) == 0 {
+		return nil
+	}
+	seen := make(map[string]struct{}, len(matches))
+	refs := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		ref := filepath.ToSlash(strings.TrimSpace(match[1]))
+		if !isTaskContractFileRef(ref) {
+			continue
+		}
+		if _, ok := seen[ref]; ok {
+			continue
+		}
+		seen[ref] = struct{}{}
+		refs = append(refs, ref)
+	}
+	sort.Strings(refs)
+	return refs
+}
+
+func isTaskContractFileRef(ref string) bool {
+	switch ref {
+	case "Cargo.toml", "Cargo.lock":
+		return true
+	}
+	return strings.HasPrefix(ref, "src/") || strings.HasPrefix(ref, "tests/")
+}
+
+func writeScopeCoversRef(writeScope []string, ref string) bool {
+	ref = filepath.ToSlash(strings.TrimSpace(ref))
+	if ref == "" {
+		return false
+	}
+	for _, rawScope := range writeScope {
+		scope := filepath.ToSlash(strings.TrimSpace(rawScope))
+		if scope == "" {
+			continue
+		}
+		if scope == ref {
+			return true
+		}
+		if strings.ContainsAny(scope, "*?[") {
+			if ok, _ := filepath.Match(scope, ref); ok {
+				return true
+			}
+			if strings.HasSuffix(scope, "/**") {
+				prefix := strings.TrimSuffix(scope, "/**")
+				if ref == prefix || strings.HasPrefix(ref, prefix+"/") {
+					return true
+				}
+			}
+			continue
+		}
+		if !strings.Contains(filepath.Base(scope), ".") {
+			if ref == scope || strings.HasPrefix(ref, scope+"/") {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func validateCampaignSourceRepoIndex(campaignDoc CampaignDocument, sourceRepoByID map[string]SourceRepoDocument, issues *[]ValidationIssue) {
@@ -656,16 +1003,90 @@ func gitWorktreeExists(path string) bool {
 }
 
 func gitBranchExists(path, branch string) bool {
-	if _, err := runGit(path, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
-		return true
-	}
-	_, err := runGit(path, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch)
-	return err == nil
+	return gitBranchRef(path, branch) != ""
 }
 
 func gitCommitExists(path, commit string) bool {
 	_, err := runGit(path, "rev-parse", "--verify", commit+"^{commit}")
 	return err == nil
+}
+
+func gitChangedFiles(path, baseCommit, headCommit string) ([]string, error) {
+	output, err := runGit(path, "diff", "--name-only", "--no-renames", baseCommit+".."+headCommit)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(output) == "" {
+		return nil, nil
+	}
+	lines := strings.Split(output, "\n")
+	files := make([]string, 0, len(lines))
+	seen := make(map[string]struct{}, len(lines))
+	for _, line := range lines {
+		file := filepath.ToSlash(strings.TrimSpace(line))
+		if file == "" {
+			continue
+		}
+		if _, ok := seen[file]; ok {
+			continue
+		}
+		seen[file] = struct{}{}
+		files = append(files, file)
+	}
+	sort.Strings(files)
+	return files, nil
+}
+
+func gitBranchRef(path, branch string) string {
+	if _, err := runGit(path, "show-ref", "--verify", "--quiet", "refs/heads/"+branch); err == nil {
+		return "refs/heads/" + branch
+	}
+	if _, err := runGit(path, "show-ref", "--verify", "--quiet", "refs/remotes/origin/"+branch); err == nil {
+		return "refs/remotes/origin/" + branch
+	}
+	return ""
+}
+
+func gitBranchContainsCommit(path, branch, commit string) bool {
+	ref := gitBranchRef(path, branch)
+	if ref == "" {
+		return false
+	}
+	_, err := runGit(path, "merge-base", "--is-ancestor", commit, ref)
+	return err == nil
+}
+
+func gitCommitExistsInRepos(repos []SourceRepoDocument, commit string) bool {
+	for _, repo := range repos {
+		if gitCommitExists(strings.TrimSpace(repo.Frontmatter.LocalPath), commit) {
+			return true
+		}
+	}
+	return false
+}
+
+func gitAnyBranchExistsInRepos(repos []SourceRepoDocument, branches []string) bool {
+	for _, repo := range repos {
+		localPath := strings.TrimSpace(repo.Frontmatter.LocalPath)
+		for _, branch := range branches {
+			if gitBranchExists(localPath, branch) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func gitAnyBranchContainsCommit(repos []SourceRepoDocument, branches []string, commit string) bool {
+	for _, repo := range repos {
+		localPath := strings.TrimSpace(repo.Frontmatter.LocalPath)
+		for _, branch := range branches {
+			if gitBranchContainsCommit(localPath, branch, commit) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func runGit(path string, args ...string) (string, error) {

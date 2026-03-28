@@ -1,6 +1,7 @@
 package campaignrepo
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -143,6 +144,13 @@ status: active
 goal: "Ship the first phase"
 ---
 `)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+root+`"
+default_branch: main
+role: source
+---
+`)
 	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
 task_id: T001
 title: "Execute me"
@@ -152,6 +160,8 @@ execution_round: 2
 target_repos: [repo-a]
 working_branches: [feat/t001]
 write_scope: [src/core]
+review_status: changes_requested
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
 ---
 `)
 	mustWriteTestTaskPackage(t, root, "P01", "T002", `---
@@ -160,6 +170,7 @@ title: "Review me"
 phase: P01
 status: reviewing
 review_round: 1
+target_repos: [repo-a]
 head_commit: "abc123"
 last_run_path: "results/summary.md"
 ---
@@ -219,7 +230,7 @@ last_run_path: "results/summary.md"
 	if executorSpec.TaskPath != "phases/P01/tasks/T001" {
 		t.Fatalf("unexpected executor task path: %q", executorSpec.TaskPath)
 	}
-	if !containsAll(executorSpec.Prompt, "Task id: T001", "Executor role: executor.gemini", "Reviewer role: reviewer.kimi", "Write scope: src/core") {
+	if !containsAll(executorSpec.Prompt, "Task id: T001", "Executor role: executor.gemini", "Reviewer role: reviewer.kimi", "Write scope: src/core", "Review status: changes_requested", "Last review path: phases/P01/tasks/T001/reviews/R001.md", "read that review before touching the source repo", "Source repos:", "repo-a: local_path="+root) {
 		t.Fatalf("unexpected executor prompt: %q", executorSpec.Prompt)
 	}
 
@@ -234,7 +245,7 @@ last_run_path: "results/summary.md"
 		t.Fatalf("unexpected reviewer role: %+v", reviewerSpec.Role)
 	}
 	expectedReviewFile := filepath.Join(root, "phases", "P01", "tasks", "T002", "reviews", "R001.md")
-	if !containsAll(reviewerSpec.Prompt, "Task id: T002", "Target commit: abc123", "Last run path: results/summary.md", "Suggested review file: "+expectedReviewFile) {
+	if !containsAll(reviewerSpec.Prompt, "Task id: T002", "Target commit: abc123", "Last run path: results/summary.md", "Write scope: -", "Suggested review file: "+expectedReviewFile, "Source repos:", "repo-a: local_path="+root, "Verify that `target_commit`, `working_branches`, and `last_run_path` resolve", "diff stays inside `write_scope`", "Use RFC3339 for `created_at`") {
 		t.Fatalf("unexpected reviewer prompt: %q", reviewerSpec.Prompt)
 	}
 }
@@ -259,6 +270,13 @@ status: planned
 goal: "Phase placeholder"
 ---
 `)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "/tmp/repo-a"
+default_branch: main
+role: source
+---
+`)
 
 	repo, err := Load(root)
 	if err != nil {
@@ -275,12 +293,22 @@ goal: "Phase placeholder"
 	if spec.Kind != DispatchKindPlanner {
 		t.Fatalf("unexpected dispatch kind: %s", spec.Kind)
 	}
-	masterPlanPath := filepath.Join(root, "plans", "merged", "master-plan.md")
 	if !containsAll(
 		spec.Prompt,
-		"Master plan output: "+masterPlanPath,
-		"Keep repo-first truth consistent across proposal, master plan, phase docs, and task packages",
-		"if you say you changed a dependency, acceptance criterion, or output contract in the proposal, you must update the relevant `phase.md`, `task.md`, `context.md`, `plan.md`, and `master-plan.md` too",
+		"Plan round 1 for campaign repo `"+root+"`",
+		"Campaign ID: camp_demo",
+		"All paths below are relative to that repo.",
+		"`plans/proposals/round-001-plan.md`",
+		"`plans/merged/master-plan.md`",
+		"`phases/Pxx/tasks/Txxx/{task.md,context.md,plan.md,progress.md,results/README.md,reviews/README.md}`",
+		"`context.md` Context/Relevant Repos/Relevant Files/Dependencies",
+		"`alice-code-army repo-lint camp_demo`",
+		"$ALICE_RUNTIME_BIN runtime campaigns repo-lint camp_demo",
+		"Keep proposal/master-plan/phases/tasks consistent",
+		"Keep validation inside each task's `write_scope`",
+		"Verify claims from files or command output",
+		"Never add `default_*` to `campaign.md`",
+		"give a short public summary",
 	) {
 		t.Fatalf("unexpected planner prompt: %q", spec.Prompt)
 	}
@@ -321,6 +349,13 @@ status: planned
 goal: "Phase goal"
 ---
 `)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "/tmp/repo-a"
+default_branch: main
+role: source
+---
+`)
 	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
 task_id: T001
 title: "Planned task"
@@ -346,14 +381,132 @@ write_scope: [src/**]
 	if spec.Kind != DispatchKindPlannerReviewer {
 		t.Fatalf("unexpected dispatch kind: %s", spec.Kind)
 	}
-	masterPlanPath := filepath.Join(root, "plans", "merged", "master-plan.md")
 	if !containsAll(
 		spec.Prompt,
-		"Master plan: "+masterPlanPath,
-		"the proposal, master plan, phase docs, and task packages agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance criteria, and parallelism notes",
-		"Missing merged-plan content or inconsistent plan artifacts should usually be `concern`, not `blocking`",
+		"Review whether round 1 is ready for human approval for campaign repo `"+root+"`",
+		"Campaign ID: camp_demo",
+		"All paths below are relative to that repo.",
+		"`plans/proposals/round-001-plan.md`",
+		"`plans/merged/master-plan.md`",
+		"`alice-code-army repo-lint camp_demo`",
+		"$ALICE_RUNTIME_BIN runtime campaigns repo-lint camp_demo",
+		"Use RFC3339 for `created_at`",
+		"proposal/master-plan/phases/tasks agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism",
+		"do not require planner to replace static guidance text or placeholders there unless frontmatter/objective/source-repo facts are actually inconsistent",
+		"do not use `repo-lint --for-approval` in this review",
+		"placeholder task packages, or inconsistent artifacts are usually `concern`, not `blocking`",
+		"give a short public summary with the review path, verdict, and repo-lint result",
 	) {
 		t.Fatalf("unexpected planner reviewer prompt: %q", spec.Prompt)
+	}
+}
+
+func TestReconcileAndPrepare_ClearsExecutorLeaseBeforeReviewerDispatch(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	runGitOrFail(t, sourceRoot, "checkout", "-b", "codearmy/t001")
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v1() {}\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t1")
+	baseCommit := gitHeadCommit(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v2() {}\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t2")
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+source_repos: [repo-a]
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Needs review dispatch"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+working_branches: [codearmy/t001]
+write_scope: [src/lib.rs]
+owner_agent: executor.kimi
+lease_until: "2026-03-28T17:45:21+08:00"
+execution_round: 1
+review_round: 0
+base_commit: "`+baseCommit+`"
+head_commit: "`+headCommit+`"
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	now := time.Date(2026, 3, 28, 16, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	result, err := ReconcileAndPrepare(root, now, 2, time.Hour, CampaignRoleDefaults{
+		Reviewer: RoleConfig{
+			Role:            "reviewer.codex",
+			Provider:        "codex",
+			Model:           "gpt-5.4",
+			Profile:         "reviewer",
+			Workflow:        "code_army",
+			ReasoningEffort: "high",
+			Personality:     "pragmatic",
+		},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if result.ClaimedReviewers != 1 {
+		t.Fatalf("expected 1 claimed reviewer, got %d", result.ClaimedReviewers)
+	}
+	if len(result.DispatchTasks) != 1 || result.DispatchTasks[0].Kind != DispatchKindReviewer {
+		t.Fatalf("expected one reviewer dispatch, got %+v", result.DispatchTasks)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusReviewing {
+		t.Fatalf("expected task to move to reviewing, got %s", got)
+	}
+	if task.Frontmatter.OwnerAgent != "reviewer.codex" {
+		t.Fatalf("expected reviewer to own task, got %q", task.Frontmatter.OwnerAgent)
+	}
+	if task.LeaseUntil.IsZero() {
+		t.Fatal("expected reviewer lease to be claimed")
+	}
+	if task.Frontmatter.ReviewRound != 1 {
+		t.Fatalf("expected review round 1, got %d", task.Frontmatter.ReviewRound)
+	}
+
+	updated, err := Load(root)
+	if err != nil {
+		t.Fatalf("reload repo failed: %v", err)
+	}
+	task = updated.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusReviewing {
+		t.Fatalf("expected persisted task status reviewing, got %s", got)
+	}
+	if task.Frontmatter.OwnerAgent != "reviewer.codex" {
+		t.Fatalf("expected persisted reviewer owner, got %q", task.Frontmatter.OwnerAgent)
+	}
+	if task.LeaseUntil.IsZero() {
+		t.Fatal("expected persisted reviewer lease")
 	}
 }
 

@@ -20,6 +20,7 @@ func resolveRoleConfig(base RoleConfig, taskOverride RoleConfig, kind string) Ro
 	if cfg.Provider == "" {
 		cfg.Provider = providerFromRole(cfg.Role)
 	}
+	cfg.Workflow = normalizeCodeArmyWorkflowAlias(cfg.Workflow)
 	if cfg.Workflow == "" {
 		cfg.Workflow = "code_army"
 	}
@@ -114,4 +115,14 @@ func roleLabel(role RoleConfig) string {
 		return value
 	}
 	return "agent"
+}
+
+func normalizeCodeArmyWorkflowAlias(raw string) string {
+	workflow := strings.ToLower(strings.TrimSpace(raw))
+	switch workflow {
+	case "code", "code_review", "code-review", "codearmy", "code-army":
+		return "code_army"
+	default:
+		return workflow
+	}
 }

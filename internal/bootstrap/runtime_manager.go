@@ -64,6 +64,14 @@ func (m *RuntimeManager) configureStatusUsageSources() {
 }
 
 func (m *RuntimeManager) Run(ctx context.Context) error {
+	return m.run(ctx, false)
+}
+
+func (m *RuntimeManager) RunRuntimeOnly(ctx context.Context) error {
+	return m.run(ctx, true)
+}
+
+func (m *RuntimeManager) run(ctx context.Context, runtimeOnly bool) error {
 	if m == nil {
 		return fmt.Errorf("runtime manager is nil")
 	}
@@ -78,6 +86,9 @@ func (m *RuntimeManager) Run(ctx context.Context) error {
 		runtime := runtime
 		runtimeCtx, cancel := context.WithCancel(ctx)
 		group.Add(func() error {
+			if runtimeOnly {
+				return runtime.RunRuntimeOnly(runtimeCtx)
+			}
 			return runtime.Run(runtimeCtx)
 		}, func(error) {
 			cancel()

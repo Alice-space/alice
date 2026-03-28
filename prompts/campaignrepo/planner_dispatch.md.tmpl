@@ -1,60 +1,18 @@
-You are the campaign planner. Your job is to analyze source repositories and produce a detailed execution plan.
+Plan round {{ .PlanRound }} for campaign repo `{{ .CampaignRepo }}`.
+Campaign ID: {{ .CampaignID }}.
+All paths below are relative to that repo.
 
-Campaign repo: {{ .CampaignRepo }}
-Campaign file: {{ .CampaignFile }}
-Objective: {{ .Objective }}
-Source repos: {{ .SourceRepos | join ", " | default "-" }}
-Plan round: {{ .PlanRound }}
-Planner role: {{ .PlannerRole }}
-Planner reviewer role: {{ .PlannerReviewerRole }}
-Previous proposal: {{ .PreviousProposalPath | default "-" }}
-Previous review: {{ .PreviousReviewPath | default "-" }}
-Findings/discoveries: {{ .FindingsPath | default "-" }}
-Proposal output: {{ .ProposalOutputPath }}
-Master plan output: {{ .MasterPlanPath }}
+Read `campaign.md`, `repos/*.md`, `findings.md` when present, and the source repos from each repo ref `local_path`.
+Write:
+- `plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md` with `proposal_id: "plan-r{{ .PlanRound }}"`, `plan_round: {{ .PlanRound }}`, `status: submitted`, plus analysis/phases/tasks/risks
+- `plans/merged/master-plan.md`
+- `phases/Pxx/phase.md`
+- `phases/Pxx/tasks/Txxx/{task.md,context.md,plan.md,progress.md,results/README.md,reviews/README.md}`
 
-Planning rules:
-1. Read `campaign.md` to understand the objective, constraints, and source repos.
-2. Explore the source repos listed above to understand directory structure, key modules, and code patterns.
-3. If this is round > 1, read the previous review feedback carefully and address every concern raised.
-4. Write your proposal to `{{ .ProposalOutputPath }}` with YAML frontmatter:
-   ```yaml
-   ---
-   proposal_id: "plan-r{{ .PlanRound }}"
-   plan_round: {{ .PlanRound }}
-   status: submitted
-   ---
-   ```
-5. Your proposal must include:
-   - **Analysis**: current state of the codebase relevant to the objective
-   - **Phases**: numbered phases (P01, P02, ...) each with a goal and acceptance criteria
-   - **Task breakdown**: concrete tasks with task_id, title, depends_on, target_repos, write_scope
-   - **Risks**: potential issues and mitigations
-6. Update `{{ .MasterPlanPath }}` into a concrete merged-plan draft for this round:
-   - replace template placeholders with the actual merged summary, phase goals, task expansion, and dependency graph
-   - keep `human_approved: false` unless a human explicitly approved the plan
-   - make the master plan approval-ready; human approval still happens later via the normal gate
-7. For each phase in your plan, create or update `phases/Pxx/phase.md` and fill a concrete phase goal.
-8. For each task in your plan, create a full task package at `phases/Pxx/tasks/Txxx/`:
-   - `task.md` from `_templates/task.md`
-   - `context.md` from `_templates/task-context.md`
-   - `plan.md` from `_templates/task-plan.md`
-   - `progress.md` from `_templates/task-progress.md`
-   - `results/README.md` from `_templates/task-results-readme.md`
-   - `reviews/README.md` from `_templates/task-reviews-readme.md`
-   - If local templates still contain deprecated role model selector fields, normalize them away in the generated files.
-9. The planner must fully refine each task package before handing off:
-   - `task.md` must have non-placeholder Goal / Background / Acceptance / Deliverables
-   - `context.md` must list the relevant repos, files, dependencies, and task-local background
-   - `plan.md` must contain execution steps, validation, and handoff instructions
-   - executor should be able to start from the task folder without asking for missing context
-   - task / review role blocks should usually contain only `role` and `workflow`; only add `provider` / `model` / `profile` / `reasoning_effort` / `personality` for an intentional task-local override
-10. Keep repo-first truth consistent across proposal, master plan, phase docs, and task packages:
-   - phase goals, task IDs, depends_on, target_repos, write_scope, acceptance criteria, and parallelism notes must agree across those files
-   - if you say you changed a dependency, acceptance criterion, or output contract in the proposal, you must update the relevant `phase.md`, `task.md`, `context.md`, `plan.md`, and `master-plan.md` too
-   - do not leave stale task packages or phase notes behind from the previous round
-11. Ensure write_scope values are specific enough to avoid conflicts between parallel tasks, but broad enough to cover all files the task needs to modify.
-12. Declare task dependencies accurately: a task should depend on all tasks whose outputs it needs.
-13. Do not modify the source repos. Do not modify `campaign.md`. Do not modify `reports/live-report.md`.
-14. Never add `default_executor` / `default_reviewer` / `default_planner` / `default_planner_reviewer` back into `campaign.md`; campaign-level role model defaults live in runtime `config.yaml`, not in the campaign repo.
-15. If a findings file exists at `{{ .FindingsPath | default "findings.md" }}`, read it carefully. It contains discoveries and replan requests from previous execution rounds that you MUST account for in your new plan.
+Rules:
+- Keep proposal/master-plan/phases/tasks consistent on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism.
+- Preserve required headings from `_templates/`: `task.md` Goal/Background/Acceptance/Deliverables, `context.md` Context/Relevant Repos/Relevant Files/Dependencies, `plan.md` Execution Steps/Validation/Handoff.
+- Task packages must be executor-ready. Keep validation inside each task's `write_scope`. Verify claims from files or command output.
+- Standard executor/reviewer blocks use `workflow: code_army`. Keep task/review role blocks to `role` + `workflow` unless a local override is intentional. Never add `default_*` to `campaign.md`.
+- Do not modify source repos, `campaign.md`, or `reports/live-report.md`.
+- Run `alice-code-army repo-lint {{ .CampaignID }}` or `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`, fix failures, then give a short public summary.

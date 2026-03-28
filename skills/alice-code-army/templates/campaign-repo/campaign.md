@@ -27,7 +27,8 @@ __CAMPAIGN_OBJECTIVE__
 - queue / ready / blocked summary lives in `reports/live-report.md`
 
 ## Gates
-- TBD
+- Default planning and execution gates are enforced by planner reviews, task acceptance criteria, `repo-lint`, and runtime `plan_status`.
+- Add campaign-level gates here only when humans introduce extra approval constraints beyond the default workflow.
 
 ## Roles
 - planner default: `planner`

@@ -15,6 +15,8 @@ const (
 	EnvWorkflowTaskID     = "ALICE_AUTOMATION_TASK_ID"
 	EnvWorkflowSessionKey = "ALICE_AUTOMATION_SESSION_KEY"
 	workflowCommandTag    = "alice_command"
+	envRuntimeBin         = "ALICE_RUNTIME_BIN"
+	envRuntimeAPIBaseURL  = "ALICE_RUNTIME_API_BASE_URL"
 )
 
 type WorkflowRunRequest struct {
@@ -78,6 +80,7 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 	if sessionKey := strings.TrimSpace(req.SessionKey); sessionKey != "" {
 		env[EnvWorkflowSessionKey] = sessionKey
 	}
+	prompt = applyWorkflowSkillHint(workflow, prompt, env)
 
 	result, err := r.backend.Run(ctx, llm.RunRequest{
 		ThreadID:        workflowThreadID(req.Provider, req.StateKey),
@@ -100,6 +103,21 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 		Message:  stripWorkflowCommandBlocks(reply),
 		Commands: extractWorkflowCommands(reply),
 	}, nil
+}
+
+func applyWorkflowSkillHint(workflow string, prompt string, env map[string]string) string {
+	prompt = strings.TrimSpace(prompt)
+	if prompt == "" {
+		return ""
+	}
+	if workflow != "code_army" {
+		return prompt
+	}
+	if strings.TrimSpace(env[envRuntimeBin]) == "" && strings.TrimSpace(env[envRuntimeAPIBaseURL]) == "" {
+		return prompt
+	}
+	const hint = `Runtime: session/auth are injected; use ` + "`alice-code-army`" + ` or ` + "`$ALICE_RUNTIME_BIN runtime campaigns ...`" + ` for campaign ops. Do the file updates yourself, then end with a short public summary.`
+	return hint + "\n\n" + prompt
 }
 
 func workflowThreadID(provider, stateKey string) string {

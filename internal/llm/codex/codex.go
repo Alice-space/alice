@@ -19,6 +19,7 @@ import (
 type Runner struct {
 	Command                string
 	Timeout                time.Duration
+	IdleTimeout            time.Duration
 	DefaultModel           string
 	DefaultReasoningEffort string
 	Env                    map[string]string
@@ -33,7 +34,12 @@ const (
 	defaultChatSandbox   = "workspace-write"
 	defaultApprovalMode  = "never"
 	envAliceResourceRoot = "ALICE_MCP_RESOURCE_ROOT"
+	defaultIdleTimeout   = 90 * time.Second
+	highIdleTimeout      = 5 * time.Minute
+	xhighIdleTimeout     = 10 * time.Minute
 )
+
+var errCodexIdleTimeout = errors.New("codex idle timeout")
 
 type ExecPolicyConfig struct {
 	Sandbox        string
@@ -132,6 +138,63 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 	env map[string]string,
 	onThinking func(step string),
 ) (string, string, Usage, error) {
+	reply, nextThreadID, usage, err := r.runAttemptWithThreadAndProgressAndUsage(
+		ctx,
+		threadID,
+		agentName,
+		userText,
+		policy,
+		promptPrefixOverride,
+		model,
+		profile,
+		reasoningEffort,
+		personality,
+		noReplyToken,
+		env,
+		onThinking,
+	)
+	if err == nil || !errors.Is(err, errCodexIdleTimeout) || strings.TrimSpace(nextThreadID) == "" {
+		return reply, nextThreadID, usage, err
+	}
+
+	logging.Debugf("codex idle timeout detected; retrying once thread_id=%s", nextThreadID)
+	retryReply, retryThreadID, retryUsage, retryErr := r.runAttemptWithThreadAndProgressAndUsage(
+		ctx,
+		nextThreadID,
+		agentName,
+		idleResumePrompt(),
+		policy,
+		promptPrefixOverride,
+		model,
+		profile,
+		reasoningEffort,
+		personality,
+		noReplyToken,
+		env,
+		onThinking,
+	)
+	usage = mergeUsage(usage, retryUsage)
+	if retryErr != nil {
+		return "", retryThreadID, usage, fmt.Errorf("codex idle timeout and resume failed: %w", retryErr)
+	}
+	return retryReply, retryThreadID, usage, nil
+}
+
+func (r Runner) runAttemptWithThreadAndProgressAndUsage(
+	ctx context.Context,
+	threadID string,
+	agentName string,
+	userText string,
+	policy ExecPolicyConfig,
+	promptPrefixOverride string,
+	model string,
+	profile string,
+	reasoningEffort string,
+	personality string,
+	noReplyToken string,
+	env map[string]string,
+	onThinking func(step string),
+) (string, string, Usage, error) {
 	model = strings.TrimSpace(model)
 	if model == "" {
 		model = strings.TrimSpace(r.DefaultModel)
@@ -166,6 +229,13 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 	timeout := r.Timeout
 	if timeout <= 0 {
 		timeout = 172800 * time.Second
+	}
+	idleTimeout := r.IdleTimeout
+	if idleTimeout <= 0 {
+		idleTimeout = defaultIdleTimeoutForReasoningEffort(reasoningEffort)
+	}
+	if idleTimeout > timeout {
+		idleTimeout = timeout
 	}
 
 	tctx, cancel := context.WithTimeout(ctx, timeout)
@@ -260,62 +330,121 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 	var stdout bytes.Buffer
 	sawNativeFileChange := false
 	usage := Usage{}
-	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+	type stdoutEvent struct {
+		line string
+		err  error
+	}
+	stdoutEvents := make(chan stdoutEvent, 128)
+	go func() {
+		scanner := bufio.NewScanner(stdoutPipe)
+		scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+		for scanner.Scan() {
+			stdoutEvents <- stdoutEvent{line: scanner.Text()}
+		}
+		if err := scanner.Err(); err != nil {
+			stdoutEvents <- stdoutEvent{err: err}
+		}
+		close(stdoutEvents)
+	}()
 
-	for scanner.Scan() {
-		line := scanner.Text()
-		stdout.WriteString(line)
-		stdout.WriteByte('\n')
-		logging.Debugf("codex stdout line=%s", line)
-
-		reasoning, agentMessage, fileChangeMessage, parsedThreadID := parseEventLine(line)
-		if strings.TrimSpace(parsedThreadID) != "" {
-			activeThreadID = strings.TrimSpace(parsedThreadID)
-			logging.Debugf("codex thread started thread_id=%s", activeThreadID)
-		}
-		if toolCall := parseToolCallLine(line); strings.TrimSpace(toolCall) != "" {
-			toolCalls = append(toolCalls, strings.TrimSpace(toolCall))
-			logging.Debugf("codex tool_call=%q", strings.TrimSpace(toolCall))
-		}
-		if parsedUsage := parseUsageLine(line); parsedUsage.HasUsage() {
-			usage = parsedUsage
-			logging.Debugf(
-				"codex usage input_tokens=%d cached_input_tokens=%d output_tokens=%d total_tokens=%d",
-				usage.InputTokens,
-				usage.CachedInputTokens,
-				usage.OutputTokens,
-				usage.TotalTokens(),
-			)
-		}
-		if strings.TrimSpace(reasoning) != "" {
-			logging.Debugf("codex reasoning=%q", strings.TrimSpace(reasoning))
-		}
-		if strings.TrimSpace(fileChangeMessage) != "" {
-			resolvedFileChangeMessage := enrichFileChangeMessageStats(tctx, fileChangeMessage, watchedRepos)
-			if strings.TrimSpace(resolvedFileChangeMessage) == "" {
-				resolvedFileChangeMessage = strings.TrimSpace(fileChangeMessage)
-			}
-			sawNativeFileChange = true
-			logging.Debugf("codex file_change=%q", strings.TrimSpace(resolvedFileChangeMessage))
-			if onThinking != nil {
-				onThinking(fileChangeCallbackPrefix + strings.TrimSpace(resolvedFileChangeMessage))
+	idleTimer := time.NewTimer(idleTimeout)
+	defer idleTimer.Stop()
+	resetIdleTimer := func() {
+		if !idleTimer.Stop() {
+			select {
+			case <-idleTimer.C:
+			default:
 			}
 		}
-		if strings.TrimSpace(agentMessage) != "" {
-			finalMessage = strings.TrimSpace(agentMessage)
-			if onThinking != nil {
-				onThinking(finalMessage)
-			}
-			logging.Debugf("codex agent_message=%q", finalMessage)
-		}
+		idleTimer.Reset(idleTimeout)
+	}
 
-		if onThinking != nil && !sawNativeFileChange && isSuccessfulCommandExecutionCompleted(line) {
-			tryEmitSyntheticFileChanges()
+	var scanErr error
+	for {
+		select {
+		case <-tctx.Done():
+			_ = cmd.Cancel()
+			_ = cmd.Wait()
+			<-stderrDone
+			if errors.Is(tctx.Err(), context.DeadlineExceeded) {
+				logging.Debugf("codex run timeout while scanning elapsed=%s", time.Since(startedAt))
+				timeoutErr := errors.New("codex timeout")
+				emitTrace(timeoutErr)
+				return "", activeThreadID, usage, timeoutErr
+			}
+			logging.Debugf("codex run canceled while scanning elapsed=%s", time.Since(startedAt))
+			emitTrace(context.Canceled)
+			return "", activeThreadID, usage, context.Canceled
+		case <-idleTimer.C:
+			_ = cmd.Cancel()
+			_ = cmd.Wait()
+			<-stderrDone
+			logging.Debugf("codex idle timeout elapsed=%s thread_id=%s", time.Since(startedAt), activeThreadID)
+			emitTrace(errCodexIdleTimeout)
+			return "", activeThreadID, usage, errCodexIdleTimeout
+		case event, ok := <-stdoutEvents:
+			if !ok {
+				goto scanDone
+			}
+			if event.err != nil {
+				scanErr = event.err
+				goto scanDone
+			}
+			resetIdleTimer()
+			line := event.line
+			stdout.WriteString(line)
+			stdout.WriteByte('\n')
+			logging.Debugf("codex stdout line=%s", line)
+
+			reasoning, agentMessage, fileChangeMessage, parsedThreadID := parseEventLine(line)
+			if strings.TrimSpace(parsedThreadID) != "" {
+				activeThreadID = strings.TrimSpace(parsedThreadID)
+				logging.Debugf("codex thread started thread_id=%s", activeThreadID)
+			}
+			if toolCall := parseToolCallLine(line); strings.TrimSpace(toolCall) != "" {
+				toolCalls = append(toolCalls, strings.TrimSpace(toolCall))
+				logging.Debugf("codex tool_call=%q", strings.TrimSpace(toolCall))
+			}
+			if parsedUsage := parseUsageLine(line); parsedUsage.HasUsage() {
+				usage = parsedUsage
+				logging.Debugf(
+					"codex usage input_tokens=%d cached_input_tokens=%d output_tokens=%d total_tokens=%d",
+					usage.InputTokens,
+					usage.CachedInputTokens,
+					usage.OutputTokens,
+					usage.TotalTokens(),
+				)
+			}
+			if strings.TrimSpace(reasoning) != "" {
+				logging.Debugf("codex reasoning=%q", strings.TrimSpace(reasoning))
+			}
+			if strings.TrimSpace(fileChangeMessage) != "" {
+				resolvedFileChangeMessage := enrichFileChangeMessageStats(tctx, fileChangeMessage, watchedRepos)
+				if strings.TrimSpace(resolvedFileChangeMessage) == "" {
+					resolvedFileChangeMessage = strings.TrimSpace(fileChangeMessage)
+				}
+				sawNativeFileChange = true
+				logging.Debugf("codex file_change=%q", strings.TrimSpace(resolvedFileChangeMessage))
+				if onThinking != nil {
+					onThinking(fileChangeCallbackPrefix + strings.TrimSpace(resolvedFileChangeMessage))
+				}
+			}
+			if strings.TrimSpace(agentMessage) != "" {
+				finalMessage = strings.TrimSpace(agentMessage)
+				if onThinking != nil {
+					onThinking(finalMessage)
+				}
+				logging.Debugf("codex agent_message=%q", finalMessage)
+			}
+
+			if onThinking != nil && !sawNativeFileChange && isSuccessfulCommandExecutionCompleted(line) {
+				tryEmitSyntheticFileChanges()
+			}
 		}
 	}
 
-	if scanErr := scanner.Err(); scanErr != nil {
+scanDone:
+	if scanErr != nil {
 		_ = cmd.Process.Kill()
 		_ = cmd.Wait()
 		<-stderrDone
@@ -389,6 +518,28 @@ func (r Runner) RunWithThreadAndProgressAndUsage(
 	)
 	emitTrace(nil)
 	return finalMessage, activeThreadID, usage, nil
+}
+
+func idleResumePrompt() string {
+	return "Resume the current thread from its existing state and finish the task. Do not repeat completed analysis. If required repo or file updates are still pending, perform them now, then emit the required final assistant completion message."
+}
+
+func defaultIdleTimeoutForReasoningEffort(reasoningEffort string) time.Duration {
+	switch strings.ToLower(strings.TrimSpace(reasoningEffort)) {
+	case "xhigh":
+		return xhighIdleTimeout
+	case "high":
+		return highIdleTimeout
+	default:
+		return defaultIdleTimeout
+	}
+}
+
+func mergeUsage(base Usage, extra Usage) Usage {
+	base.InputTokens += extra.InputTokens
+	base.CachedInputTokens += extra.CachedInputTokens
+	base.OutputTokens += extra.OutputTokens
+	return base
 }
 
 func (r Runner) execPolicy(policy ExecPolicyConfig, env map[string]string) ExecPolicyConfig {
