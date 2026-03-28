@@ -197,6 +197,7 @@ func finalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileCo
 	}
 	out := make(map[string]LLMProfileConfig, len(in))
 	for name, profile := range in {
+		defaultSandbox := defaultSandboxForProvider(profile.Provider)
 		if profile.Command == "" {
 			switch profile.Provider {
 			case LLMProviderClaude:
@@ -215,12 +216,12 @@ func finalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileCo
 		profile.Timeout = time.Duration(profile.TimeoutSecs) * time.Second
 		if profile.Permissions == nil {
 			profile.Permissions = &CodexExecPolicyConfig{
-				Sandbox:        CodexSandboxWorkspaceWrite,
+				Sandbox:        defaultSandbox,
 				AskForApproval: CodexApprovalNever,
 			}
 		} else {
 			if profile.Permissions.Sandbox == "" {
-				profile.Permissions.Sandbox = CodexSandboxWorkspaceWrite
+				profile.Permissions.Sandbox = defaultSandbox
 			}
 			if profile.Permissions.AskForApproval == "" {
 				profile.Permissions.AskForApproval = CodexApprovalNever
@@ -229,6 +230,15 @@ func finalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileCo
 		out[name] = profile
 	}
 	return out
+}
+
+func defaultSandboxForProvider(provider string) string {
+	switch normalizeLLMProvider(provider) {
+	case LLMProviderClaude, LLMProviderKimi:
+		return CodexSandboxDangerFullAccess
+	default:
+		return CodexSandboxWorkspaceWrite
+	}
 }
 
 func (cfg Config) AllowedBundledSkills() []string {
