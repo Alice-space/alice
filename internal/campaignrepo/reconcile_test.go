@@ -128,6 +128,67 @@ created_at: "2026-03-24T10:30:00+08:00"
 	}
 }
 
+func TestApplyReviewVerdicts_RepairsDanglingTaskWithRecordedLatestReview(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Dangling after review"
+phase: P01
+status: executing
+dispatch_state: executor_dispatched
+review_status: review_pending
+review_round: 1
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+owner_agent: ""
+lease_until: ""
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: concern
+blocking: false
+target_commit: "-"
+created_at: "2026-03-24T10:30:00+08:00"
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	applied, _, err := applyReviewVerdicts(&repo, "")
+	if err != nil {
+		t.Fatalf("apply review verdicts failed: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("expected 1 applied verdict, got %d", applied)
+	}
+	task := repo.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusRework {
+		t.Fatalf("expected rework after concern verdict, got %s", got)
+	}
+	if got := task.Frontmatter.DispatchState; got != "judge_applied" {
+		t.Fatalf("expected dispatch_state=judge_applied, got %q", got)
+	}
+	if got := task.Frontmatter.ReviewStatus; got != "changes_requested" {
+		t.Fatalf("expected changes_requested review status, got %q", got)
+	}
+}
+
 func TestBuildDispatchSpecs_Content(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
