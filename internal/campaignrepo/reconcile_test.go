@@ -128,6 +128,123 @@ created_at: "2026-03-24T10:30:00+08:00"
 	}
 }
 
+func TestApplyReviewVerdicts_DowngradesBlockingDuringBlockedGuidanceLoop(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Needs blocked guidance"
+phase: P01
+status: reviewing
+dispatch_state: blocked_guidance_requested
+review_status: reviewing
+review_round: 1
+block_guidance_count: 2
+last_blocked_reason: "missing IHEP cluster handoff"
+owner_agent: reviewer.claude
+lease_until: "2026-03-24T12:00:00+08:00"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: "blocking"
+blocking: true
+created_at: "2026-03-24T10:30:00+08:00"
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	applied, events, err := applyReviewVerdicts(&repo, "camp_demo")
+	if err != nil {
+		t.Fatalf("apply review verdicts failed: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("expected one applied review, got %d", applied)
+	}
+	task := repo.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusRework {
+		t.Fatalf("expected blocked guidance verdict to return task to rework, got %s", got)
+	}
+	if task.Frontmatter.ReviewStatus != "changes_requested" {
+		t.Fatalf("expected changes_requested review status, got %q", task.Frontmatter.ReviewStatus)
+	}
+	if task.Frontmatter.DispatchState != "blocked_guidance_applied" {
+		t.Fatalf("expected blocked_guidance_applied dispatch state, got %q", task.Frontmatter.DispatchState)
+	}
+	if len(events) != 1 || events[0].Title != "阻塞指导返回执行" {
+		t.Fatalf("expected blocked guidance event, got %+v", events)
+	}
+}
+
+func TestReconcileAndPrepare_RequeuesDirectBlockedTasksForReviewerGuidance(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 30, 10, 0, 0, 0, time.FixedZone("CST", 8*3600))
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Replay on remote host"
+phase: P01
+status: blocked
+dispatch_state: executor_dispatched
+review_status: pending
+execution_round: 1
+last_blocked_reason: "missing IHEP handoff"
+last_run_path: "results/README.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "README.md"), "# Result\n")
+
+	result, err := ReconcileAndPrepare(root, now, 1, time.Hour)
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusReviewing {
+		t.Fatalf("expected blocked task to be handed to reviewer, got %s", got)
+	}
+	if task.Frontmatter.BlockGuidanceCount != 1 {
+		t.Fatalf("expected block guidance count 1, got %d", task.Frontmatter.BlockGuidanceCount)
+	}
+	if task.Frontmatter.ReviewRound != 1 {
+		t.Fatalf("expected review round 1, got %d", task.Frontmatter.ReviewRound)
+	}
+	if len(result.Events) == 0 || result.Events[0].Kind != EventTaskBlocked {
+		t.Fatalf("expected blocked notification event, got %+v", result.Events)
+	}
+	if len(result.DispatchTasks) != 1 || result.DispatchTasks[0].Kind != DispatchKindReviewer {
+		t.Fatalf("expected reviewer dispatch after blocked handoff, got %+v", result.DispatchTasks)
+	}
+}
+
 func TestBuildDispatchSpecs_Content(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))

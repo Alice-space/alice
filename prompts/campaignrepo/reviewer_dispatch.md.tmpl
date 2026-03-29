@@ -7,8 +7,11 @@ Task id: {{ .TaskID }}
 Task title: {{ .TaskTitle }}
 Reviewer role: {{ .ReviewerRole }}
 Review round: {{ .ReviewRound }}
+Review status: {{ .ReviewStatus }}
 Target commit: {{ .TargetCommit }}
 Last run path: {{ .LastRunPath }}
+Blocked guidance count: {{ .BlockGuidanceCount }}
+Last blocked reason: {{ .LastBlockedReason }}
 Write scope: {{ .WriteScope | join ", " | default "-" }}
 Source repo changes required: {{ if .SourceChangeRequired }}yes{{ else }}no (campaign-only/archive-only task){{ end }}
 Source repos:
@@ -28,6 +31,7 @@ Review rules:
 4. Set verdict to one of `approve`, `concern`, or `blocking`, and make the findings concrete.
    - Use `concern` for issues the executor can fix in the normal rework loop: acceptance gaps, missing tests, incorrect output, local code quality problems, or incomplete task-local artifacts.
    - Use `blocking` only when the task cannot safely continue without human intervention, external dependency changes, task contract correction, or campaign-level replanning.
+   - If `last_blocked_reason` is non-empty and `block_guidance_count` is 1-3, treat this as a blocked-recovery round: prefer concrete recovery guidance plus `concern`, and reserve `blocking` for truly unrecoverable situations after the guidance budget is exhausted.
 5. Verify that `last_run_path` resolves and that the reviewed diff stays inside `write_scope`, before approving. {{ if .SourceChangeRequired }}For source-repo tasks, also verify that `target_commit` and `working_branches` resolve in the listed local repos.{{ else }}For campaign-only/archive-only tasks, do not require a source-repo `head_commit`; review the task-local artifacts and campaign-repo diff instead.{{ end }} If a required commit or artifact reference does not resolve, or the diff escapes `write_scope`, that is at least `concern`.
 6. Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
 7. Do not change the task status yourself; Alice judge will apply the review verdict.

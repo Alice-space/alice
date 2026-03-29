@@ -165,6 +165,7 @@ func buildExecutorDispatchPrompt(repo Repository, task TaskDocument, role RoleCo
 		"ReviewStatus":         blankForSummary(task.Frontmatter.ReviewStatus),
 		"LastReviewPath":       blankForSummary(task.Frontmatter.LastReviewPath),
 		"AutoRetryCount":       task.Frontmatter.AutoRetryCount,
+		"BlockGuidanceCount":   task.Frontmatter.BlockGuidanceCount,
 		"LastBlockedReason":    blankForSummary(task.Frontmatter.LastBlockedReason),
 	})
 }
@@ -182,9 +183,12 @@ func buildReviewerDispatchPrompt(repo Repository, task TaskDocument, role RoleCo
 		"TaskTitle":            task.Frontmatter.Title,
 		"ReviewerRole":         roleLabel(role),
 		"ReviewRound":          task.Frontmatter.ReviewRound,
+		"ReviewStatus":         blankForSummary(task.Frontmatter.ReviewStatus),
 		"SourceChangeRequired": sourceChangeRequired,
 		"TargetCommit":         reviewerPromptTargetCommit(task),
 		"LastRunPath":          blankForSummary(task.Frontmatter.LastRunPath),
+		"LastBlockedReason":    blankForSummary(task.Frontmatter.LastBlockedReason),
+		"BlockGuidanceCount":   task.Frontmatter.BlockGuidanceCount,
 		"WriteScope":           task.Frontmatter.WriteScope,
 		"SourceRepoRefs":       targetSourceRepoRefs(repo, task),
 		"SuggestedReviewFile":  filepath.Join(repo.Root, filepath.FromSlash(reviewPath)),

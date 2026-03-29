@@ -226,6 +226,27 @@ func TestNewSummaryBlockedEvents_OnlyNotifiesNewExecutionChainBlockers(t *testin
 	}
 }
 
+func TestNewSummaryBlockedEvents_NotifiesTrueBlockedTasks(t *testing.T) {
+	summary := campaignrepo.Summary{
+		BlockedTasks: []campaignrepo.TaskSummary{
+			{
+				TaskID:        "T301",
+				Title:         "Replay Run 9607",
+				Status:        campaignrepo.TaskStatusBlocked,
+				BlockedReason: "missing IHEP execution surface",
+			},
+		},
+	}
+
+	events := newSummaryBlockedEvents("camp_demo", nil, summary)
+	if len(events) != 1 {
+		t.Fatalf("expected one blocked event, got %+v", events)
+	}
+	if events[0].TaskID != "T301" {
+		t.Fatalf("expected T301 event, got %+v", events[0])
+	}
+}
+
 func TestNewSummaryBlockedEvents_SuppressesRepeatedReason(t *testing.T) {
 	summary := campaignrepo.Summary{
 		BlockedTasks: []campaignrepo.TaskSummary{

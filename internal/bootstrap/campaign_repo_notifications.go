@@ -102,7 +102,7 @@ func newSummaryBlockedEvents(campaignID string, previous map[string]string, summ
 
 func shouldNotifySummaryBlockedTask(task campaignrepo.TaskSummary) bool {
 	switch task.Status {
-	case campaignrepo.TaskStatusExecuting, campaignrepo.TaskStatusReviewing, campaignrepo.TaskStatusReviewPending:
+	case campaignrepo.TaskStatusExecuting, campaignrepo.TaskStatusReviewing, campaignrepo.TaskStatusReviewPending, campaignrepo.TaskStatusBlocked:
 		return true
 	default:
 		return false

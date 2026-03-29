@@ -98,7 +98,11 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 			summary.AcceptedTasks = append(summary.AcceptedTasks, view)
 		case TaskStatusBlocked:
 			summary.BlockedCount++
-			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, "status is blocked"))
+			reason := strings.TrimSpace(task.Frontmatter.LastBlockedReason)
+			if reason == "" {
+				reason = "status is blocked"
+			}
+			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
 		case TaskStatusWaitingExternal:
 			summary.WaitingCount++
 			if !task.WakeAt.IsZero() && strings.TrimSpace(task.Frontmatter.WakePrompt) != "" {

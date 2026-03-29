@@ -79,19 +79,26 @@ func (b *connectorRuntimeBuilder) handleBlockedSignal(item campaign.Campaign, re
 	if reason == "" {
 		reason = "executor reported task is blocked"
 	}
-	// Mark the task as blocked in the campaign repo
+	title := "任务阻塞"
+	detail := fmt.Sprintf("任务 **%s** 遇到阻塞，无法继续执行。\n\n**原因**: %s", taskID, reason)
 	if repoPath != "" && taskID != "" {
-		if err := campaignrepo.MarkTaskBlocked(repoPath, taskID, reason); err != nil {
-			logging.Warnf("mark task blocked failed campaign=%s task=%s: %v", item.ID, taskID, err)
+		outcome, err := campaignrepo.HandleTaskBlocked(repoPath, taskID, reason)
+		if err != nil {
+			logging.Warnf("handle task blocked failed campaign=%s task=%s: %v", item.ID, taskID, err)
+		} else if outcome.GuidanceRequested {
+			title = "任务遇到阻塞，转评审指导"
+			detail = fmt.Sprintf("任务 **%s** 遇到阻塞，已转 reviewer 指导（第 %d/%d 次）。\n\n**原因**: %s", taskID, outcome.GuidanceAttempt, 3, outcome.Reason)
+		} else if outcome.TerminalBlocked {
+			title = "任务阻塞"
+			detail = fmt.Sprintf("任务 **%s** 多次阻塞后仍未恢复，已进入真正阻塞状态。\n\n**原因**: %s", taskID, outcome.Reason)
 		}
 	}
-	// Send notification
 	b.sendCampaignSignalNotification(item, campaignrepo.ReconcileEvent{
 		Kind:       campaignrepo.EventTaskBlocked,
 		CampaignID: item.ID,
 		TaskID:     taskID,
-		Title:      "任务阻塞",
-		Detail:     fmt.Sprintf("任务 **%s** 遇到阻塞，无法继续执行。\n\n**原因**: %s", taskID, reason),
+		Title:      title,
+		Detail:     detail,
 		Severity:   "warning",
 	})
 }

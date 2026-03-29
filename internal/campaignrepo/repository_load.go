@@ -144,6 +144,9 @@ func loadTaskDocuments(root string) ([]TaskDocument, error) {
 		if frontmatter.ReviewRound < 0 {
 			frontmatter.ReviewRound = 0
 		}
+		if frontmatter.BlockGuidanceCount < 0 {
+			frontmatter.BlockGuidanceCount = 0
+		}
 		frontmatter.BaseCommit = strings.TrimSpace(frontmatter.BaseCommit)
 		frontmatter.HeadCommit = strings.TrimSpace(frontmatter.HeadCommit)
 		frontmatter.LastRunPath = filepath.ToSlash(strings.TrimSpace(frontmatter.LastRunPath))

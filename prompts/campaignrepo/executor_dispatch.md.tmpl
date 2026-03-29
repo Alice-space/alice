@@ -23,7 +23,8 @@ Reviewer role: {{ .ReviewerRole }}
 Report snippet: {{ .ReportSnippet }}
 Review status: {{ .ReviewStatus }}
 Last review path: {{ .LastReviewPath }}
-Auto retry count: {{ .AutoRetryCount }}
+Artifact auto retry count: {{ .AutoRetryCount }}
+Blocked guidance count: {{ .BlockGuidanceCount }}
 Last blocked reason: {{ .LastBlockedReason }}
 
 Execution rules:
@@ -36,6 +37,6 @@ Execution rules:
    - If this task is campaign-only or archive-only, leave `head_commit` empty and do not invent placeholder commit strings.
    - Do not claim source-repo changes that did not happen.
 6. If the task is waiting on a long-running external job, switch to `waiting_external`, clear `owner_agent` and `lease_until`, then set `wake_at` and `wake_prompt`.
-7. If the task is blocked, set status to `blocked`, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and state the blocker clearly in the task files.
+7. If the task is blocked, set status to `blocked`, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and state the blocker clearly in the task files. Alice may route the first few blocked attempts through reviewer guidance before treating the task as terminally blocked.
 8. Keep the campaign repo as the source of truth.
 9. Apply the required source-repo and task-file updates yourself, then emit a short public summary listing changed files, validation, and the final task status.

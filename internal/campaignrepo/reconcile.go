@@ -9,6 +9,7 @@ import (
 
 const defaultDispatchLease = 2 * time.Hour
 const maxSummaryBlockAutoRetries = 3
+const maxBlockedGuidanceRetries = 3
 
 type ReconcileResult struct {
 	Repository       Repository         `json:"repository"`
@@ -98,6 +99,15 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		changed = true
 	}
 
+	blockGuidanceTasks, blockedEvents, err := requeueBlockedTasksForReviewerGuidance(&repo, campaignID)
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	if blockGuidanceTasks > 0 {
+		changed = true
+		events = append(events, blockedEvents...)
+	}
+
 	autoRetriedTasks, err := retryReviewPendingArtifactBlockers(&repo)
 	if err != nil {
 		return ReconcileResult{}, err
@@ -158,6 +168,9 @@ func retryReviewPendingArtifactBlockers(repo *Repository) (int, error) {
 	for idx := range repo.Tasks {
 		task := &repo.Tasks[idx]
 		if normalizeTaskStatus(task.Frontmatter.Status) != TaskStatusReviewPending {
+			continue
+		}
+		if taskInBlockedGuidanceLoop(*task) {
 			continue
 		}
 		reason := strings.TrimSpace(taskExecutionArtifactBlockReason(repo.Root, *task, sourceRepoByID))
@@ -316,6 +329,7 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 		}
 		taskID := strings.TrimSpace(task.Frontmatter.TaskID)
 		taskTitle := strings.TrimSpace(task.Frontmatter.Title)
+		blockedGuidanceLoop := taskInBlockedGuidanceLoop(*task)
 		switch verdict {
 		case "approve":
 			task.Frontmatter.Status = TaskStatusAccepted
@@ -329,6 +343,19 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 				Severity:   "success",
 			})
 		case "blocking":
+			if blockedGuidanceLoop {
+				task.Frontmatter.Status = TaskStatusRework
+				task.Frontmatter.ReviewStatus = "changes_requested"
+				events = append(events, ReconcileEvent{
+					Kind:       EventReviewVerdictApplied,
+					CampaignID: campaignID,
+					TaskID:     taskID,
+					Title:      "阻塞指导返回执行",
+					Detail:     fmt.Sprintf("任务 **%s** %s 的 reviewer 已给出阻塞恢复指导，返回 executor 继续尝试（第 %d/%d 次）", taskID, taskTitle, task.Frontmatter.BlockGuidanceCount, maxBlockedGuidanceRetries),
+					Severity:   "warning",
+				})
+				break
+			}
 			task.Frontmatter.Status = TaskStatusBlocked
 			task.Frontmatter.ReviewStatus = "blocked"
 			events = append(events, ReconcileEvent{
@@ -363,6 +390,9 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 			})
 		}
 		task.Frontmatter.DispatchState = "judge_applied"
+		if verdict == "blocking" && blockedGuidanceLoop {
+			task.Frontmatter.DispatchState = "blocked_guidance_applied"
+		}
 		task.Frontmatter.LastReviewPath = filepath.ToSlash(review.Path)
 		task.Frontmatter.OwnerAgent = ""
 		task.LeaseUntil = time.Time{}
@@ -377,6 +407,39 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 		applied++
 	}
 	return applied, events, nil
+}
+
+func requeueBlockedTasksForReviewerGuidance(repo *Repository, campaignID string) (int, []ReconcileEvent, error) {
+	if repo == nil || len(repo.Tasks) == 0 {
+		return 0, nil, nil
+	}
+	requeued := 0
+	var events []ReconcileEvent
+	for idx := range repo.Tasks {
+		task := &repo.Tasks[idx]
+		if !shouldRequestBlockedGuidance(*task) {
+			continue
+		}
+		outcome := applyBlockedGuidanceTransition(task, task.Frontmatter.LastBlockedReason)
+		if !outcome.GuidanceRequested {
+			continue
+		}
+		if err := persistTaskDocument(repo, idx); err != nil {
+			return requeued, events, err
+		}
+		taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+		taskTitle := strings.TrimSpace(task.Frontmatter.Title)
+		events = append(events, ReconcileEvent{
+			Kind:       EventTaskBlocked,
+			CampaignID: campaignID,
+			TaskID:     taskID,
+			Title:      "任务遇到阻塞，转评审指导",
+			Detail:     fmt.Sprintf("任务 **%s** %s 本轮遇到阻塞，已转 reviewer 指导（第 %d/%d 次）。\n\n**原因**: %s", taskID, taskTitle, outcome.GuidanceAttempt, maxBlockedGuidanceRetries, blankForSummary(outcome.Reason)),
+			Severity:   "warning",
+		})
+		requeued++
+	}
+	return requeued, events, nil
 }
 
 func repairDanglingExecutorReviewHandOff(repo *Repository) (int, error) {
