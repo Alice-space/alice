@@ -139,44 +139,55 @@ func buildDispatchSpecs(repo Repository, now time.Time) ([]DispatchTaskSpec, err
 }
 
 func buildExecutorDispatchPrompt(repo Repository, task TaskDocument, role RoleConfig) (string, error) {
+	sourceChangeRequired := taskRequiresSourceRepoEvidence(task)
 	return renderCampaignPrompt(campaignRepoPromptExecutorDispatch, map[string]any{
-		"CampaignRepo":    repo.Root,
-		"CampaignFile":    repo.Campaign.Path,
-		"TaskFile":        filepath.ToSlash(task.Path),
-		"TaskDir":         filepath.ToSlash(task.Dir),
-		"TaskID":          task.Frontmatter.TaskID,
-		"TaskTitle":       task.Frontmatter.Title,
-		"ExecutorRole":    roleLabel(role),
-		"ExecutionRound":  task.Frontmatter.ExecutionRound,
-		"TargetRepos":     task.Frontmatter.TargetRepos,
-		"SourceRepoRefs":  targetSourceRepoRefs(repo, task),
-		"WorkingBranches": task.Frontmatter.WorkingBranches,
-		"WriteScope":      task.Frontmatter.WriteScope,
-		"ReviewerRole":    roleLabel(resolveReviewerRole(repo, task)),
-		"ReportSnippet":   blankForSummary(task.Frontmatter.ReportSnippetPath),
-		"ReviewStatus":    blankForSummary(task.Frontmatter.ReviewStatus),
-		"LastReviewPath":  blankForSummary(task.Frontmatter.LastReviewPath),
+		"CampaignRepo":         repo.Root,
+		"CampaignFile":         repo.Campaign.Path,
+		"TaskFile":             filepath.ToSlash(task.Path),
+		"TaskDir":              filepath.ToSlash(task.Dir),
+		"TaskID":               task.Frontmatter.TaskID,
+		"TaskTitle":            task.Frontmatter.Title,
+		"ExecutorRole":         roleLabel(role),
+		"ExecutionRound":       task.Frontmatter.ExecutionRound,
+		"TargetRepos":          task.Frontmatter.TargetRepos,
+		"SourceRepoRefs":       targetSourceRepoRefs(repo, task),
+		"WorkingBranches":      task.Frontmatter.WorkingBranches,
+		"WriteScope":           task.Frontmatter.WriteScope,
+		"SourceChangeRequired": sourceChangeRequired,
+		"ReviewerRole":         roleLabel(resolveReviewerRole(repo, task)),
+		"ReportSnippet":        blankForSummary(task.Frontmatter.ReportSnippetPath),
+		"ReviewStatus":         blankForSummary(task.Frontmatter.ReviewStatus),
+		"LastReviewPath":       blankForSummary(task.Frontmatter.LastReviewPath),
 	})
 }
 
 func buildReviewerDispatchPrompt(repo Repository, task TaskDocument, role RoleConfig) (string, error) {
 	reviewPath := reviewDocumentPath(task)
+	sourceChangeRequired := taskRequiresSourceRepoEvidence(task)
 	return renderCampaignPrompt(campaignRepoPromptReviewerDispatch, map[string]any{
-		"CampaignID":          repo.Campaign.Frontmatter.CampaignID,
-		"CampaignRepo":        repo.Root,
-		"CampaignFile":        repo.Campaign.Path,
-		"TaskFile":            filepath.ToSlash(task.Path),
-		"TaskDir":             filepath.ToSlash(task.Dir),
-		"TaskID":              task.Frontmatter.TaskID,
-		"TaskTitle":           task.Frontmatter.Title,
-		"ReviewerRole":        roleLabel(role),
-		"ReviewRound":         task.Frontmatter.ReviewRound,
-		"TargetCommit":        blankForSummary(task.Frontmatter.HeadCommit),
-		"LastRunPath":         blankForSummary(task.Frontmatter.LastRunPath),
-		"WriteScope":          task.Frontmatter.WriteScope,
-		"SourceRepoRefs":      targetSourceRepoRefs(repo, task),
-		"SuggestedReviewFile": filepath.Join(repo.Root, filepath.FromSlash(reviewPath)),
+		"CampaignID":           repo.Campaign.Frontmatter.CampaignID,
+		"CampaignRepo":         repo.Root,
+		"CampaignFile":         repo.Campaign.Path,
+		"TaskFile":             filepath.ToSlash(task.Path),
+		"TaskDir":              filepath.ToSlash(task.Dir),
+		"TaskID":               task.Frontmatter.TaskID,
+		"TaskTitle":            task.Frontmatter.Title,
+		"ReviewerRole":         roleLabel(role),
+		"ReviewRound":          task.Frontmatter.ReviewRound,
+		"SourceChangeRequired": sourceChangeRequired,
+		"TargetCommit":         reviewerPromptTargetCommit(task),
+		"LastRunPath":          blankForSummary(task.Frontmatter.LastRunPath),
+		"WriteScope":           task.Frontmatter.WriteScope,
+		"SourceRepoRefs":       targetSourceRepoRefs(repo, task),
+		"SuggestedReviewFile":  filepath.Join(repo.Root, filepath.FromSlash(reviewPath)),
 	})
+}
+
+func reviewerPromptTargetCommit(task TaskDocument) string {
+	if !taskRequiresSourceRepoEvidence(task) {
+		return "-"
+	}
+	return blankForSummary(task.Frontmatter.HeadCommit)
 }
 
 func executionDispatchStateKey(repo Repository, task TaskDocument) string {

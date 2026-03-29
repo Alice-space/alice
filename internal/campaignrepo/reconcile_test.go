@@ -251,8 +251,60 @@ last_run_path: "results/summary.md"
 		t.Fatalf("unexpected reviewer title: %q", reviewerSpec.Title)
 	}
 	expectedReviewFile := filepath.Join(root, "phases", "P01", "tasks", "T002", "reviews", "R001.md")
-	if !containsAll(reviewerSpec.Prompt, "Task id: T002", "Target commit: abc123", "Last run path: results/summary.md", "Write scope: -", "Suggested review file: "+expectedReviewFile, "Source repos:", "repo-a: local_path="+root, "Verify that `target_commit`, `working_branches`, and `last_run_path` resolve", "diff stays inside `write_scope`", "Use RFC3339 for `created_at`") {
+	if !containsAll(reviewerSpec.Prompt, "Task id: T002", "Target commit: abc123", "Last run path: results/summary.md", "Source repo changes required: yes", "Write scope: -", "Suggested review file: "+expectedReviewFile, "Source repos:", "repo-a: local_path="+root, "Verify that `last_run_path` resolves", "also verify that `target_commit` and `working_branches` resolve", "diff stays inside `write_scope`", "Use RFC3339 for `created_at`") {
 		t.Fatalf("unexpected reviewer prompt: %q", reviewerSpec.Prompt)
+	}
+}
+
+func TestBuildDispatchSpecs_CampaignOnlyReviewerPromptSkipsSourceCommitRequirement(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+root+`"
+default_branch: main
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Campaign-only review"
+phase: P01
+status: reviewing
+review_round: 1
+target_repos: [repo-a]
+write_scope: [campaign:phases/P01/tasks/T001/**]
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	specs, err := buildDispatchSpecs(repo, now)
+	if err != nil {
+		t.Fatalf("build dispatch specs failed: %v", err)
+	}
+	if len(specs) != 1 || specs[0].Kind != DispatchKindReviewer {
+		t.Fatalf("expected single reviewer dispatch spec, got %+v", specs)
+	}
+	if !containsAll(specs[0].Prompt, "Task id: T001", "Target commit: -", "Source repo changes required: no (campaign-only/archive-only task)", "do not require a source-repo `head_commit`", "task-local artifacts and campaign-repo diff instead") {
+		t.Fatalf("unexpected campaign-only reviewer prompt: %q", specs[0].Prompt)
 	}
 }
 

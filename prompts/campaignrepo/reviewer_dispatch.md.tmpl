@@ -10,6 +10,7 @@ Review round: {{ .ReviewRound }}
 Target commit: {{ .TargetCommit }}
 Last run path: {{ .LastRunPath }}
 Write scope: {{ .WriteScope | join ", " | default "-" }}
+Source repo changes required: {{ if .SourceChangeRequired }}yes{{ else }}no (campaign-only/archive-only task){{ end }}
 Source repos:
 {{- if .SourceRepoRefs }}
 {{- range .SourceRepoRefs }}
@@ -21,13 +22,13 @@ Source repos:
 Suggested review file: {{ .SuggestedReviewFile }}
 
 Review rules:
-1. Read `campaign.md`, the task markdown, the referenced results, and the relevant source repo diff or commit from the listed local paths.
+1. Read `campaign.md`, the task markdown, and the referenced results. {{ if .SourceChangeRequired }}Also inspect the relevant source repo diff or commit from the listed local paths.{{ else }}This task is campaign-only/archive-only, so focus on the task-local artifacts and campaign-repo diff instead of requiring a source-repo commit.{{ end }}
 2. Do not modify source repos.
 3. Write a new review markdown file at `{{ .SuggestedReviewFile }}` inside the task-local `reviews/` directory, using the template in `_templates/review.md`.
 4. Set verdict to one of `approve`, `concern`, or `blocking`, and make the findings concrete.
    - Use `concern` for issues the executor can fix in the normal rework loop: acceptance gaps, missing tests, incorrect output, local code quality problems, or incomplete task-local artifacts.
    - Use `blocking` only when the task cannot safely continue without human intervention, external dependency changes, task contract correction, or campaign-level replanning.
-5. Verify that `target_commit`, `working_branches`, and `last_run_path` resolve in the source repo / campaign repo, and that the reviewed diff stays inside `write_scope`, before approving. If commit or artifact references do not resolve, or the diff escapes `write_scope`, that is at least `concern`.
+5. Verify that `last_run_path` resolves and that the reviewed diff stays inside `write_scope`, before approving. {{ if .SourceChangeRequired }}For source-repo tasks, also verify that `target_commit` and `working_branches` resolve in the listed local repos.{{ else }}For campaign-only/archive-only tasks, do not require a source-repo `head_commit`; review the task-local artifacts and campaign-repo diff instead.{{ end }} If a required commit or artifact reference does not resolve, or the diff escapes `write_scope`, that is at least `concern`.
 6. Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
 7. Do not change the task status yourself; Alice judge will apply the review verdict.
 8. Write the review file yourself, then emit a short public summary with the review file path, verdict, and key findings.

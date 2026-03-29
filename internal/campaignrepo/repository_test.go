@@ -395,6 +395,50 @@ last_run_path: "results/summary.md"
 	}
 }
 
+func TestSummarize_SelectsCampaignOnlyReviewPendingTaskWithoutSourceCommit(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+root+`"
+default_branch: main
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Campaign-only review"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+write_scope: [campaign:phases/P01/tasks/T001/**]
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	summary := Summarize(repo, time.Date(2026, 3, 24, 11, 0, 0, 0, time.UTC), 2)
+	if len(summary.SelectedReview) != 1 || summary.SelectedReview[0].TaskID != "T001" {
+		t.Fatalf("expected campaign-only review task to be selected, got %+v", summary.SelectedReview)
+	}
+}
+
 func TestSummarize_SkipsReviewDispatchWhenDiffEscapesWriteScope(t *testing.T) {
 	root := t.TempDir()
 	sourceRoot := filepath.Join(root, "source")

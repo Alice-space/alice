@@ -670,6 +670,71 @@ last_run_path: "results/report-snippet.md"
 	}
 }
 
+func TestValidateRepository_AllowsCampaignOnlyReviewPendingTaskWithoutHeadCommit(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship the workflow"
+current_phase: P01
+source_repos: [repo-a]
+plan_round: 1
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Campaign-only review"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+write_scope: [campaign:phases/P01/tasks/T001/**]
+last_run_path: "results/report-snippet.md"
+---
+
+# Task
+
+## Goal
+- complete the work
+
+## Background
+- enough background
+
+## Acceptance
+- acceptance is clear
+
+## Deliverables
+- deliver the campaign artifacts
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "report-snippet.md"), "# Summary\n")
+
+	_, validation, err := Validate(root)
+	if err != nil {
+		t.Fatalf("validate failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected campaign-only review_pending task to validate, got %+v", validation.Issues)
+	}
+}
+
 func TestValidateRepository_RejectsReviewPendingTaskWhenDiffEscapesWriteScope(t *testing.T) {
 	root := t.TempDir()
 	sourceRoot := filepath.Join(root, "source")

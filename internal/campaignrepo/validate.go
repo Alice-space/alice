@@ -299,7 +299,7 @@ func validateTaskStateContract(root string, task TaskDocument, repos map[string]
 	status := normalizeTaskStatus(task.Frontmatter.Status)
 	switch status {
 	case TaskStatusReviewPending, TaskStatusReviewing:
-		if strings.TrimSpace(task.Frontmatter.HeadCommit) == "" {
+		if taskRequiresSourceRepoEvidence(task) && strings.TrimSpace(task.Frontmatter.HeadCommit) == "" {
 			*issues = append(*issues, ValidationIssue{
 				Code:    "task_review_pending_head_commit_missing",
 				Path:    task.Path,
@@ -430,10 +430,6 @@ func taskExecutionArtifactIssues(root string, task TaskDocument, repos map[strin
 	if taskID == "" {
 		return nil
 	}
-	targetRepos := resolveTaskSourceRepos(task, repos)
-	if len(targetRepos) == 0 {
-		return nil
-	}
 
 	var issues []ValidationIssue
 	lastRunPath := strings.TrimSpace(task.Frontmatter.LastRunPath)
@@ -445,6 +441,14 @@ func taskExecutionArtifactIssues(root string, task TaskDocument, repos map[strin
 				Message: fmt.Sprintf("task %s last_run_path %s does not resolve to a file inside the campaign repo", taskID, lastRunPath),
 			})
 		}
+	}
+	if !taskRequiresSourceRepoEvidence(task) {
+		return issues
+	}
+
+	targetRepos := resolveTaskSourceRepos(task, repos)
+	if len(targetRepos) == 0 {
+		return issues
 	}
 
 	headCommit := strings.TrimSpace(task.Frontmatter.HeadCommit)
@@ -567,6 +571,27 @@ func resolveTaskSourceRepos(task TaskDocument, repos map[string]SourceRepoDocume
 		out = append(out, doc)
 	}
 	return out
+}
+
+func taskRequiresSourceRepoEvidence(task TaskDocument) bool {
+	sawScope := false
+	for _, raw := range task.Frontmatter.WriteScope {
+		scope := strings.ToLower(strings.TrimSpace(filepath.ToSlash(raw)))
+		if scope == "" {
+			continue
+		}
+		sawScope = true
+		if !strings.HasPrefix(scope, "campaign:") {
+			return true
+		}
+	}
+	if sawScope {
+		return false
+	}
+	return len(task.Frontmatter.TargetRepos) > 0 ||
+		len(task.Frontmatter.WorkingBranches) > 0 ||
+		strings.TrimSpace(task.Frontmatter.BaseCommit) != "" ||
+		strings.TrimSpace(task.Frontmatter.HeadCommit) != ""
 }
 
 func resolveTaskArtifactPath(root string, task TaskDocument, raw string) (string, bool) {
