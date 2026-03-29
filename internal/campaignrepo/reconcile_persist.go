@@ -50,6 +50,19 @@ func latestRelevantReview(task TaskDocument, reviews []ReviewDocument) (ReviewDo
 	return chosen, found
 }
 
+func latestTaskReview(reviews []ReviewDocument) (ReviewDocument, bool) {
+	if len(reviews) == 0 {
+		return ReviewDocument{}, false
+	}
+	chosen := reviews[0]
+	for _, review := range reviews[1:] {
+		if compareReviewDocs(chosen, review) < 0 {
+			chosen = review
+		}
+	}
+	return chosen, true
+}
+
 func compareReviewDocs(left, right ReviewDocument) int {
 	if left.Frontmatter.ReviewRound != right.Frontmatter.ReviewRound {
 		if left.Frontmatter.ReviewRound < right.Frontmatter.ReviewRound {

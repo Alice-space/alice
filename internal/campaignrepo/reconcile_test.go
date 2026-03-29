@@ -128,67 +128,6 @@ created_at: "2026-03-24T10:30:00+08:00"
 	}
 }
 
-func TestApplyReviewVerdicts_RepairsDanglingTaskWithRecordedLatestReview(t *testing.T) {
-	root := t.TempDir()
-	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
-campaign_id: camp_demo
-title: "Demo Campaign"
-current_phase: P01
----
-`)
-	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
-phase: P01
-status: active
-goal: "Ship the first phase"
----
-`)
-	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
-task_id: T001
-title: "Dangling after review"
-phase: P01
-status: executing
-dispatch_state: executor_dispatched
-review_status: review_pending
-review_round: 1
-last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
-owner_agent: ""
-lease_until: ""
----
-`)
-	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
-review_id: R001
-target_task: T001
-review_round: 1
-verdict: concern
-blocking: false
-target_commit: "-"
-created_at: "2026-03-24T10:30:00+08:00"
----
-`)
-
-	repo, err := Load(root)
-	if err != nil {
-		t.Fatalf("load repo failed: %v", err)
-	}
-	applied, _, err := applyReviewVerdicts(&repo, "")
-	if err != nil {
-		t.Fatalf("apply review verdicts failed: %v", err)
-	}
-	if applied != 1 {
-		t.Fatalf("expected 1 applied verdict, got %d", applied)
-	}
-	task := repo.Tasks[0]
-	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusRework {
-		t.Fatalf("expected rework after concern verdict, got %s", got)
-	}
-	if got := task.Frontmatter.DispatchState; got != "judge_applied" {
-		t.Fatalf("expected dispatch_state=judge_applied, got %q", got)
-	}
-	if got := task.Frontmatter.ReviewStatus; got != "changes_requested" {
-		t.Fatalf("expected changes_requested review status, got %q", got)
-	}
-}
-
 func TestBuildDispatchSpecs_Content(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
@@ -873,6 +812,113 @@ last_run_path: "results/summary.md"
 	}
 	if task.LeaseUntil.IsZero() {
 		t.Fatal("expected persisted reviewer lease")
+	}
+}
+
+func TestReconcileAndPrepare_RepairsDanglingExecutorHandOffBeforeReviewerDispatch(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	runGitOrFail(t, sourceRoot, "checkout", "-b", "codearmy/t001")
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v1() {}\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t1")
+	baseCommit := gitHeadCommit(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v2() {}\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t2")
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+source_repos: [repo-a]
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Executor finished but forgot status handoff"
+phase: P01
+status: executing
+dispatch_state: executor_dispatched
+target_repos: [repo-a]
+working_branches: [codearmy/t001]
+write_scope: [src/lib.rs]
+owner_agent: ""
+lease_until: ""
+execution_round: 2
+review_round: 2
+review_status: review_pending
+base_commit: "`+baseCommit+`"
+head_commit: "`+headCommit+`"
+last_run_path: "results/summary.md"
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: concern
+blocking: false
+target_commit: "`+baseCommit+`"
+created_at: "2026-03-24T10:30:00+08:00"
+---
+`)
+
+	now := time.Date(2026, 3, 28, 16, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	result, err := ReconcileAndPrepare(root, now, 2, time.Hour, CampaignRoleDefaults{
+		Reviewer: RoleConfig{
+			Role:            "reviewer.codex",
+			Provider:        "codex",
+			Model:           "gpt-5.4",
+			Profile:         "reviewer",
+			Workflow:        "code_army",
+			ReasoningEffort: "high",
+			Personality:     "pragmatic",
+		},
+	})
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if result.AppliedReviews != 0 {
+		t.Fatalf("expected no old review verdict to be re-applied, got %d", result.AppliedReviews)
+	}
+	if result.ClaimedReviewers != 1 {
+		t.Fatalf("expected 1 claimed reviewer after repair, got %d", result.ClaimedReviewers)
+	}
+	if len(result.DispatchTasks) != 1 || result.DispatchTasks[0].Kind != DispatchKindReviewer {
+		t.Fatalf("expected one reviewer dispatch, got %+v", result.DispatchTasks)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusReviewing {
+		t.Fatalf("expected task to move to reviewing, got %s", got)
+	}
+	if task.Frontmatter.OwnerAgent != "reviewer.codex" {
+		t.Fatalf("expected reviewer to own repaired task, got %q", task.Frontmatter.OwnerAgent)
+	}
+	if task.Frontmatter.ReviewRound != 2 {
+		t.Fatalf("expected repaired task to dispatch reviewer round 2, got %d", task.Frontmatter.ReviewRound)
 	}
 }
 

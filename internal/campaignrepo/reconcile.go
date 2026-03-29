@@ -82,6 +82,14 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		events = append(events, verdictEvents...)
 	}
 
+	repairedReviewHandOffs, err := repairDanglingExecutorReviewHandOff(&repo)
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	if repairedReviewHandOffs > 0 {
+		changed = true
+	}
+
 	repairedTasks, err := repairInactiveTaskState(&repo)
 	if err != nil {
 		return ReconcileResult{}, err
@@ -291,7 +299,8 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 	var events []ReconcileEvent
 	for idx := range repo.Tasks {
 		task := &repo.Tasks[idx]
-		if !taskReadyForReviewVerdict(*task) {
+		status := normalizeTaskStatus(task.Frontmatter.Status)
+		if status != TaskStatusReviewPending && status != TaskStatusReviewing {
 			continue
 		}
 		review, ok := latestRelevantReview(*task, reviewIndex[strings.TrimSpace(task.Frontmatter.TaskID)])
@@ -371,24 +380,55 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 	return applied, events, nil
 }
 
-func taskReadyForReviewVerdict(task TaskDocument) bool {
-	switch normalizeTaskStatus(task.Frontmatter.Status) {
-	case TaskStatusReviewPending, TaskStatusReviewing:
-		return true
-	case TaskStatusAccepted, TaskStatusBlocked, TaskStatusWaitingExternal, TaskStatusDone, TaskStatusRejected:
+func repairDanglingExecutorReviewHandOff(repo *Repository) (int, error) {
+	if repo == nil || len(repo.Tasks) == 0 {
+		return 0, nil
+	}
+	reviewIndex := reviewsByTask(repo.Reviews)
+	repaired := 0
+	for idx := range repo.Tasks {
+		task := &repo.Tasks[idx]
+		if normalizeTaskStatus(task.Frontmatter.Status) != TaskStatusExecuting {
+			continue
+		}
+		if strings.TrimSpace(task.Frontmatter.OwnerAgent) != "" || !task.LeaseUntil.IsZero() {
+			continue
+		}
+		if !taskLooksReadyForReviewHandOff(*task) {
+			continue
+		}
+		if review, ok := latestTaskReview(reviewIndex[strings.TrimSpace(task.Frontmatter.TaskID)]); ok {
+			if round := review.Frontmatter.ReviewRound; round > 0 && task.Frontmatter.ReviewRound > round {
+				task.Frontmatter.ReviewRound = round
+			}
+		}
+		task.Frontmatter.Status = TaskStatusReviewPending
+		task.Frontmatter.DispatchState = "executor_completed"
+		task.Frontmatter.ReviewStatus = "pending"
+		task.Frontmatter.OwnerAgent = ""
+		task.LeaseUntil = time.Time{}
+		task.WakeAt = time.Time{}
+		task.Frontmatter.WakePrompt = ""
+		if err := persistTaskDocument(repo, idx); err != nil {
+			return repaired, err
+		}
+		repaired++
+	}
+	return repaired, nil
+}
+
+func taskLooksReadyForReviewHandOff(task TaskDocument) bool {
+	if strings.TrimSpace(task.Frontmatter.LastRunPath) == "" {
 		return false
 	}
-	if strings.TrimSpace(task.Frontmatter.OwnerAgent) != "" || !task.LeaseUntil.IsZero() {
-		return false
-	}
-	if strings.TrimSpace(task.Frontmatter.LastReviewPath) != "" {
-		return true
-	}
-	switch normalizeReviewStatus(task.Frontmatter.ReviewStatus) {
-	case "reviewing", "changes_requested", "approved", "blocked", "review_pending":
+	raw := strings.ToLower(strings.TrimSpace(task.Frontmatter.ReviewStatus))
+	raw = strings.ReplaceAll(raw, "-", "_")
+	raw = strings.ReplaceAll(raw, " ", "_")
+	switch raw {
+	case "review_pending", "pending_review", "awaiting_review":
 		return true
 	default:
-		return strings.EqualFold(strings.TrimSpace(task.Frontmatter.ReviewStatus), "review_pending")
+		return false
 	}
 }
 
