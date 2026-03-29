@@ -8,6 +8,7 @@ import (
 )
 
 const defaultDispatchLease = 2 * time.Hour
+const maxSummaryBlockAutoRetries = 3
 
 type ReconcileResult struct {
 	Repository       Repository         `json:"repository"`
@@ -89,6 +90,14 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		changed = true
 	}
 
+	autoRetriedTasks, err := retryReviewPendingArtifactBlockers(&repo)
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	if autoRetriedTasks > 0 {
+		changed = true
+	}
+
 	summary := Summarize(repo, now, maxParallel)
 	claimedExecutors, executorEvents, err := claimSelectedExecutorTasks(&repo, summary, now, leaseDuration, campaignID)
 	if err != nil {
@@ -125,6 +134,57 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		ClaimedReviewers: claimedReviewers,
 		Events:           events,
 	}, nil
+}
+
+func retryReviewPendingArtifactBlockers(repo *Repository) (int, error) {
+	if repo == nil || len(repo.Tasks) == 0 {
+		return 0, nil
+	}
+	sourceRepoByID := make(map[string]SourceRepoDocument, len(repo.SourceRepos))
+	for _, repoDoc := range repo.SourceRepos {
+		if repoID := strings.TrimSpace(repoDoc.Frontmatter.RepoID); repoID != "" {
+			sourceRepoByID[repoID] = repoDoc
+		}
+	}
+	retried := 0
+	for idx := range repo.Tasks {
+		task := &repo.Tasks[idx]
+		if normalizeTaskStatus(task.Frontmatter.Status) != TaskStatusReviewPending {
+			continue
+		}
+		reason := strings.TrimSpace(taskExecutionArtifactBlockReason(repo.Root, *task, sourceRepoByID))
+		if reason == "" {
+			if strings.TrimSpace(task.Frontmatter.LastBlockedReason) == "" && task.Frontmatter.AutoRetryCount == 0 {
+				continue
+			}
+			task.Frontmatter.LastBlockedReason = ""
+			task.Frontmatter.AutoRetryCount = 0
+			if err := persistTaskDocument(repo, idx); err != nil {
+				return retried, err
+			}
+			continue
+		}
+		task.Frontmatter.LastBlockedReason = reason
+		if task.Frontmatter.AutoRetryCount >= maxSummaryBlockAutoRetries {
+			if err := persistTaskDocument(repo, idx); err != nil {
+				return retried, err
+			}
+			continue
+		}
+		task.Frontmatter.AutoRetryCount++
+		task.Frontmatter.Status = TaskStatusRework
+		task.Frontmatter.DispatchState = "auto_retry_requested"
+		task.Frontmatter.ReviewStatus = "changes_requested"
+		task.Frontmatter.OwnerAgent = ""
+		task.LeaseUntil = time.Time{}
+		task.WakeAt = time.Time{}
+		task.Frontmatter.WakePrompt = ""
+		if err := persistTaskDocument(repo, idx); err != nil {
+			return retried, err
+		}
+		retried++
+	}
+	return retried, nil
 }
 
 func repairInactiveTaskState(repo *Repository) (int, error) {
