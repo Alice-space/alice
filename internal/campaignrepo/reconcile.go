@@ -291,15 +291,15 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 	var events []ReconcileEvent
 	for idx := range repo.Tasks {
 		task := &repo.Tasks[idx]
-		status := normalizeTaskStatus(task.Frontmatter.Status)
-		if status != TaskStatusReviewPending && status != TaskStatusReviewing {
+		if !taskReadyForReviewVerdict(*task) {
 			continue
 		}
 		review, ok := latestRelevantReview(*task, reviewIndex[strings.TrimSpace(task.Frontmatter.TaskID)])
 		if !ok {
 			continue
 		}
-		if filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastReviewPath)) == filepath.ToSlash(review.Path) {
+		if filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastReviewPath)) == filepath.ToSlash(review.Path) &&
+			strings.EqualFold(strings.TrimSpace(task.Frontmatter.DispatchState), "judge_applied") {
 			continue
 		}
 		verdict := normalizeReviewVerdict(review.Frontmatter.Verdict, review.Frontmatter.Blocking)
@@ -369,6 +369,27 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 		applied++
 	}
 	return applied, events, nil
+}
+
+func taskReadyForReviewVerdict(task TaskDocument) bool {
+	switch normalizeTaskStatus(task.Frontmatter.Status) {
+	case TaskStatusReviewPending, TaskStatusReviewing:
+		return true
+	case TaskStatusAccepted, TaskStatusBlocked, TaskStatusWaitingExternal, TaskStatusDone, TaskStatusRejected:
+		return false
+	}
+	if strings.TrimSpace(task.Frontmatter.OwnerAgent) != "" || !task.LeaseUntil.IsZero() {
+		return false
+	}
+	if strings.TrimSpace(task.Frontmatter.LastReviewPath) != "" {
+		return true
+	}
+	switch normalizeReviewStatus(task.Frontmatter.ReviewStatus) {
+	case "reviewing", "changes_requested", "approved", "blocked", "review_pending":
+		return true
+	default:
+		return strings.EqualFold(strings.TrimSpace(task.Frontmatter.ReviewStatus), "review_pending")
+	}
 }
 
 func claimSelectedExecutorTasks(repo *Repository, summary Summary, now time.Time, leaseDuration time.Duration, campaignID string) (int, []ReconcileEvent, error) {
