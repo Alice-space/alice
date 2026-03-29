@@ -735,6 +735,160 @@ last_run_path: "results/report-snippet.md"
 	}
 }
 
+func TestValidateRepository_AllowsReviewPendingTaskWithRepoScopedWorkingBranch(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	runGitOrFail(t, sourceRoot, "checkout", "-b", "codearmy/t001")
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v1() {}\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t1")
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship the workflow"
+current_phase: P01
+source_repos: [repo-a]
+plan_round: 1
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+headCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Repo-scoped working branch"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+working_branches: [repo-a:codearmy/t001]
+write_scope: [repo-a:src/lib.rs]
+base_commit: "`+headCommit+`"
+head_commit: "`+headCommit+`"
+last_run_path: "results/report-snippet.md"
+---
+
+# Task
+
+## Goal
+- complete the work
+
+## Background
+- enough background
+
+## Acceptance
+- acceptance is clear
+
+## Deliverables
+- deliver the code
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "report-snippet.md"), "# Summary\n")
+
+	_, validation, err := Validate(root)
+	if err != nil {
+		t.Fatalf("validate failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected repo-scoped working branch to validate, got %+v", validation.Issues)
+	}
+}
+
+func TestValidateRepository_AllowsReviewPendingTaskWhenRepoScopedWriteScopeCoversDiff(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	runGitOrFail(t, sourceRoot, "checkout", "-b", "codearmy/t001")
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v1() {}\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t1")
+	baseCommit := gitHeadCommit(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "pub fn v2() {}\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "t2")
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship the workflow"
+current_phase: P01
+source_repos: [repo-a]
+plan_round: 1
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Repo-scoped diff"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+working_branches: [repo-a:codearmy/t001]
+write_scope: [repo-a:src/lib.rs]
+base_commit: "`+baseCommit+`"
+head_commit: "`+headCommit+`"
+last_run_path: "results/report-snippet.md"
+---
+
+# Task
+
+## Goal
+- complete the work
+
+## Background
+- enough background
+
+## Acceptance
+- acceptance is clear
+
+## Deliverables
+- deliver the code
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "report-snippet.md"), "# Summary\n")
+
+	_, validation, err := Validate(root)
+	if err != nil {
+		t.Fatalf("validate failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected repo-scoped write_scope to cover diff, got %+v", validation.Issues)
+	}
+}
+
 func TestValidateRepository_RejectsReviewPendingTaskWhenDiffEscapesWriteScope(t *testing.T) {
 	root := t.TempDir()
 	sourceRoot := filepath.Join(root, "source")

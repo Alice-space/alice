@@ -521,7 +521,7 @@ func taskExecutionDiffIssues(task TaskDocument, repos []SourceRepoDocument, base
 			continue
 		}
 		for _, file := range files {
-			if writeScopeCoversRef(task.Frontmatter.WriteScope, file) {
+			if writeScopeCoversRepoRef(task.Frontmatter.WriteScope, repo.Frontmatter.RepoID, file) {
 				continue
 			}
 			issues = append(issues, ValidationIssue{
@@ -637,6 +637,33 @@ func normalizeDeclaredBranches(values []string) []string {
 		out = append(out, trimmed)
 	}
 	return out
+}
+
+func splitScopePrefix(value string) (string, string, bool) {
+	trimmed := strings.TrimSpace(value)
+	if trimmed == "" {
+		return "", "", false
+	}
+	left, right, ok := strings.Cut(trimmed, ":")
+	if !ok || strings.TrimSpace(left) == "" || strings.TrimSpace(right) == "" {
+		return "", trimmed, false
+	}
+	if strings.ContainsAny(left, `/\`) {
+		return "", trimmed, false
+	}
+	return strings.TrimSpace(left), strings.TrimSpace(right), true
+}
+
+func branchRefForRepo(branchSpec, repoID string) (string, bool) {
+	repoID = strings.TrimSpace(repoID)
+	prefix, branch, ok := splitScopePrefix(branchSpec)
+	if !ok {
+		return strings.TrimSpace(branchSpec), true
+	}
+	if repoID == "" || !strings.EqualFold(prefix, repoID) {
+		return "", false
+	}
+	return strings.TrimSpace(branch), true
 }
 
 func validateReviewDocument(review ReviewDocument, taskByID map[string]TaskDocument, issues *[]ValidationIssue) {
@@ -786,12 +813,57 @@ func isTaskContractFileRef(ref string) bool {
 }
 
 func writeScopeCoversRef(writeScope []string, ref string) bool {
+	_, ref, _ = splitScopePrefix(ref)
 	ref = filepath.ToSlash(strings.TrimSpace(ref))
 	if ref == "" {
 		return false
 	}
 	for _, rawScope := range writeScope {
-		scope := filepath.ToSlash(strings.TrimSpace(rawScope))
+		_, scope, _ := splitScopePrefix(rawScope)
+		scope = filepath.ToSlash(strings.TrimSpace(scope))
+		if scope == "" {
+			continue
+		}
+		if scope == ref {
+			return true
+		}
+		if strings.ContainsAny(scope, "*?[") {
+			if ok, _ := filepath.Match(scope, ref); ok {
+				return true
+			}
+			if strings.HasSuffix(scope, "/**") {
+				prefix := strings.TrimSuffix(scope, "/**")
+				if ref == prefix || strings.HasPrefix(ref, prefix+"/") {
+					return true
+				}
+			}
+			continue
+		}
+		if !strings.Contains(filepath.Base(scope), ".") {
+			if ref == scope || strings.HasPrefix(ref, scope+"/") {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func writeScopeCoversRepoRef(writeScope []string, repoID, ref string) bool {
+	ref = filepath.ToSlash(strings.TrimSpace(ref))
+	repoID = strings.TrimSpace(repoID)
+	if ref == "" {
+		return false
+	}
+	for _, rawScope := range writeScope {
+		scopeRepoID, scope, ok := splitScopePrefix(rawScope)
+		if ok {
+			if repoID == "" || !strings.EqualFold(scopeRepoID, repoID) {
+				continue
+			}
+		} else {
+			scope = rawScope
+		}
+		scope = filepath.ToSlash(strings.TrimSpace(scope))
 		if scope == "" {
 			continue
 		}
@@ -1141,8 +1213,13 @@ func gitCommitExistsInRepos(repos []SourceRepoDocument, commit string) bool {
 func gitAnyBranchExistsInRepos(repos []SourceRepoDocument, branches []string) bool {
 	for _, repo := range repos {
 		localPath := strings.TrimSpace(repo.Frontmatter.LocalPath)
+		repoID := strings.TrimSpace(repo.Frontmatter.RepoID)
 		for _, branch := range branches {
-			if gitBranchExists(localPath, branch) {
+			branchName, ok := branchRefForRepo(branch, repoID)
+			if !ok || branchName == "" {
+				continue
+			}
+			if gitBranchExists(localPath, branchName) {
 				return true
 			}
 		}
@@ -1153,8 +1230,13 @@ func gitAnyBranchExistsInRepos(repos []SourceRepoDocument, branches []string) bo
 func gitAnyBranchContainsCommit(repos []SourceRepoDocument, branches []string, commit string) bool {
 	for _, repo := range repos {
 		localPath := strings.TrimSpace(repo.Frontmatter.LocalPath)
+		repoID := strings.TrimSpace(repo.Frontmatter.RepoID)
 		for _, branch := range branches {
-			if gitBranchContainsCommit(localPath, branch, commit) {
+			branchName, ok := branchRefForRepo(branch, repoID)
+			if !ok || branchName == "" {
+				continue
+			}
+			if gitBranchContainsCommit(localPath, branchName, commit) {
 				return true
 			}
 		}
