@@ -157,6 +157,8 @@ title: "Execute me"
 phase: P01
 status: executing
 execution_round: 2
+owner_agent: executor
+lease_until: "2026-03-24T13:00:00+08:00"
 target_repos: [repo-a]
 working_branches: [feat/t001]
 write_scope: [src/core]
@@ -170,6 +172,8 @@ title: "Review me"
 phase: P01
 status: reviewing
 review_round: 1
+owner_agent: reviewer
+lease_until: "2026-03-24T13:00:00+08:00"
 target_repos: [repo-a]
 head_commit: "abc123"
 last_run_path: "results/summary.md"
@@ -285,6 +289,8 @@ title: "Campaign-only review"
 phase: P01
 status: reviewing
 review_round: 1
+owner_agent: reviewer
+lease_until: "2026-03-24T13:00:00+08:00"
 target_repos: [repo-a]
 write_scope: [campaign:phases/P01/tasks/T001/**]
 last_run_path: "results/summary.md"
@@ -305,6 +311,45 @@ last_run_path: "results/summary.md"
 	}
 	if !containsAll(specs[0].Prompt, "Task id: T001", "Target commit: -", "Source repo changes required: no (campaign-only/archive-only task)", "do not require a source-repo `head_commit`", "task-local artifacts and campaign-repo diff instead") {
 		t.Fatalf("unexpected campaign-only reviewer prompt: %q", specs[0].Prompt)
+	}
+}
+
+func TestBuildDispatchSpecs_SkipsDanglingExecutingTaskWithoutOwnerLease(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Dangling execute"
+phase: P01
+status: executing
+execution_round: 2
+write_scope: [campaign:phases/P01/tasks/T001/**]
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	specs, err := buildDispatchSpecs(repo, now)
+	if err != nil {
+		t.Fatalf("build dispatch specs failed: %v", err)
+	}
+	if len(specs) != 0 {
+		t.Fatalf("expected dangling executing task to produce no dispatch specs, got %+v", specs)
 	}
 }
 

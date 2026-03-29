@@ -70,6 +70,11 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 		case TaskStatusDraft:
 			summary.DraftCount++
 		case TaskStatusExecuting:
+			if reason := activeDispatchBlockReason(task); reason != "" {
+				summary.BlockedCount++
+				summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+				continue
+			}
 			summary.ActiveCount++
 			summary.ExecutingCount++
 			summary.ActiveTasks = append(summary.ActiveTasks, view)
@@ -79,6 +84,11 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 			summary.ReviewPendingCount++
 			summary.ReviewPendingTasks = append(summary.ReviewPendingTasks, view)
 		case TaskStatusReviewing:
+			if reason := activeDispatchBlockReason(task); reason != "" {
+				summary.BlockedCount++
+				summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+				continue
+			}
 			summary.ActiveCount++
 			summary.ReviewCount++
 			summary.ReviewingCount++
@@ -223,6 +233,23 @@ func taskSummary(task TaskDocument) TaskSummary {
 func withBlockedReason(task TaskSummary, reason string) TaskSummary {
 	task.BlockedReason = strings.TrimSpace(reason)
 	return task
+}
+
+func activeDispatchBlockReason(task TaskDocument) string {
+	status := normalizeTaskStatus(task.Frontmatter.Status)
+	if status != TaskStatusExecuting && status != TaskStatusReviewing {
+		return ""
+	}
+	if strings.TrimSpace(task.Frontmatter.OwnerAgent) == "" && task.LeaseUntil.IsZero() {
+		return fmt.Sprintf("task is %s but owner_agent/lease_until are empty", status)
+	}
+	if strings.TrimSpace(task.Frontmatter.OwnerAgent) == "" {
+		return fmt.Sprintf("task is %s but owner_agent is empty", status)
+	}
+	if task.LeaseUntil.IsZero() {
+		return fmt.Sprintf("task is %s but lease_until is empty", status)
+	}
+	return ""
 }
 
 func dependencyBlockReason(task TaskDocument, byID map[string]TaskDocument) string {

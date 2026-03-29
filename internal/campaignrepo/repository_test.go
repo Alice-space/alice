@@ -439,6 +439,50 @@ last_run_path: "results/summary.md"
 	}
 }
 
+func TestSummarize_BlocksDanglingExecutingTaskWithoutOwnerLease(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Dangling execute"
+phase: P01
+status: executing
+execution_round: 2
+write_scope: [campaign:phases/P01/tasks/T001/**]
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	summary := Summarize(repo, time.Date(2026, 3, 24, 11, 0, 0, 0, time.UTC), 2)
+	if summary.ActiveCount != 0 {
+		t.Fatalf("expected dangling task not to count as active, got %d", summary.ActiveCount)
+	}
+	var found bool
+	for _, task := range summary.BlockedTasks {
+		if task.TaskID == "T001" && strings.Contains(task.BlockedReason, "owner_agent/lease_until are empty") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected dangling executing task to be blocked, got %+v", summary.BlockedTasks)
+	}
+}
+
 func TestSummarize_SkipsReviewDispatchWhenDiffEscapesWriteScope(t *testing.T) {
 	root := t.TempDir()
 	sourceRoot := filepath.Join(root, "source")

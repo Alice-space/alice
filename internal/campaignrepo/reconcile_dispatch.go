@@ -99,6 +99,9 @@ func buildDispatchSpecs(repo Repository, now time.Time) ([]DispatchTaskSpec, err
 			if task.Frontmatter.ExecutionRound <= 0 {
 				continue
 			}
+			if activeDispatchBlockReason(task) != "" {
+				continue
+			}
 			role := resolveExecutorRole(repo, task)
 			prompt, err := buildExecutorDispatchPrompt(repo, task, role)
 			if err != nil {
@@ -116,6 +119,9 @@ func buildDispatchSpecs(repo Repository, now time.Time) ([]DispatchTaskSpec, err
 			})
 		case TaskStatusReviewing:
 			if task.Frontmatter.ReviewRound <= 0 {
+				continue
+			}
+			if activeDispatchBlockReason(task) != "" {
 				continue
 			}
 			role := resolveReviewerRole(repo, task)
