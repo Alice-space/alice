@@ -481,6 +481,141 @@ write_scope: [src/**]
 	}
 }
 
+func TestReconcileAndPrepare_AutoRetriesReviewPendingArtifactBlocker(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 29, 20, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	sourceRoot := filepath.Join(root, "source")
+	initGitRepo(t, sourceRoot)
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship phase one"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+headCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Retry me"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+working_branches: [codearmy/t001]
+write_scope: [src/lib.rs]
+execution_round: 1
+review_status: pending
+head_commit: "`+headCommit+`"
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	result, err := ReconcileAndPrepare(root, now, 1, time.Hour)
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusExecuting {
+		t.Fatalf("expected task to be re-dispatched for execution, got %s", got)
+	}
+	if task.Frontmatter.ExecutionRound != 2 {
+		t.Fatalf("expected execution round 2 after auto retry, got %d", task.Frontmatter.ExecutionRound)
+	}
+	if task.Frontmatter.AutoRetryCount != 1 {
+		t.Fatalf("expected auto retry count 1, got %d", task.Frontmatter.AutoRetryCount)
+	}
+	if !strings.Contains(task.Frontmatter.LastBlockedReason, "working_branches") {
+		t.Fatalf("expected blocked reason to mention working_branches, got %q", task.Frontmatter.LastBlockedReason)
+	}
+	if task.Frontmatter.DispatchState != "executor_dispatched" {
+		t.Fatalf("expected executor_dispatched after auto retry, got %q", task.Frontmatter.DispatchState)
+	}
+	if len(result.DispatchTasks) != 1 || result.DispatchTasks[0].Kind != DispatchKindExecutor {
+		t.Fatalf("expected one executor dispatch task, got %+v", result.DispatchTasks)
+	}
+}
+
+func TestReconcileAndPrepare_StopsAutoRetryingAfterThreeAttempts(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 29, 20, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	sourceRoot := filepath.Join(root, "source")
+	initGitRepo(t, sourceRoot)
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship phase one"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+headCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Retry me"
+phase: P01
+status: review_pending
+target_repos: [repo-a]
+working_branches: [codearmy/t001]
+write_scope: [src/lib.rs]
+execution_round: 4
+auto_retry_count: 3
+review_status: pending
+head_commit: "`+headCommit+`"
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	result, err := ReconcileAndPrepare(root, now, 1, time.Hour)
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusReviewPending {
+		t.Fatalf("expected task to stay review_pending after retry budget is exhausted, got %s", got)
+	}
+	if task.Frontmatter.AutoRetryCount != 3 {
+		t.Fatalf("expected auto retry count to stay at 3, got %d", task.Frontmatter.AutoRetryCount)
+	}
+	if len(result.DispatchTasks) != 0 {
+		t.Fatalf("expected no dispatch tasks once retry budget is exhausted, got %+v", result.DispatchTasks)
+	}
+	if len(result.Summary.BlockedTasks) != 1 || result.Summary.BlockedTasks[0].TaskID != "T001" {
+		t.Fatalf("expected exhausted task to stay blocked in summary, got %+v", result.Summary.BlockedTasks)
+	}
+}
+
 func TestBuildDispatchSpecs_PlannerReviewerPromptChecksConsistency(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))

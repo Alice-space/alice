@@ -95,13 +95,16 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if !shouldAutoReconcileCampaign(item) {
 		return
 	}
+	previousBlockedReasons := loadPreviousBlockedReasons(item.CampaignRepoPath)
 	result, err := campaignrepo.ReconcileAndPrepare(item.CampaignRepoPath, now, item.MaxParallelTrials, campaignRepoDispatchLease, b.campaignRoleDefaults())
 	if err != nil {
 		logging.Warnf("campaign repo reconcile failed campaign=%s path=%s: %v", item.ID, item.CampaignRepoPath, err)
 		return
 	}
-	if len(result.Events) > 0 {
-		b.sendCampaignNotifications(item, result.Events)
+	events := append([]campaignrepo.ReconcileEvent(nil), result.Events...)
+	events = append(events, newSummaryBlockedEvents(item.ID, previousBlockedReasons, result.Summary)...)
+	if len(events) > 0 {
+		b.sendCampaignNotifications(item, events)
 	}
 	if err := b.syncCampaignDispatchTasks(item, result.DispatchTasks, now); err != nil {
 		logging.Warnf("sync dispatch tasks failed campaign=%s: %v", item.ID, err)

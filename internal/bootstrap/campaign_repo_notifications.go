@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -12,6 +14,100 @@ import (
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/logging"
 )
+
+func loadPreviousBlockedReasons(campaignRepoPath string) map[string]string {
+	path := filepath.Join(strings.TrimSpace(campaignRepoPath), "reports", "live-report.md")
+	if path == "" {
+		return map[string]string{}
+	}
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return map[string]string{}
+	}
+	blocked := make(map[string]string)
+	inBlockers := false
+	for _, line := range strings.Split(string(raw), "\n") {
+		trimmed := strings.TrimSpace(line)
+		switch {
+		case trimmed == "## Blockers":
+			inBlockers = true
+			continue
+		case inBlockers && strings.HasPrefix(trimmed, "## "):
+			return blocked
+		case !inBlockers || !strings.HasPrefix(trimmed, "- `"):
+			continue
+		}
+		taskID, reason, ok := parseBlockedReportLine(trimmed)
+		if !ok {
+			continue
+		}
+		blocked[taskID] = reason
+	}
+	return blocked
+}
+
+func parseBlockedReportLine(line string) (string, string, bool) {
+	line = strings.TrimSpace(line)
+	if !strings.HasPrefix(line, "- `") {
+		return "", "", false
+	}
+	line = strings.TrimPrefix(line, "- `")
+	end := strings.Index(line, "`")
+	if end <= 0 {
+		return "", "", false
+	}
+	taskID := strings.TrimSpace(line[:end])
+	if taskID == "" || taskID == "-" {
+		return "", "", false
+	}
+	reason := ""
+	if idx := strings.Index(line, " | "); idx >= 0 {
+		reason = strings.TrimSpace(line[idx+3:])
+	}
+	return taskID, reason, true
+}
+
+func newSummaryBlockedEvents(campaignID string, previous map[string]string, summary campaignrepo.Summary) []campaignrepo.ReconcileEvent {
+	if len(summary.BlockedTasks) == 0 {
+		return nil
+	}
+	var events []campaignrepo.ReconcileEvent
+	for _, task := range summary.BlockedTasks {
+		if !shouldNotifySummaryBlockedTask(task) {
+			continue
+		}
+		reason := strings.TrimSpace(task.BlockedReason)
+		if reason == "" {
+			continue
+		}
+		if strings.TrimSpace(previous[task.TaskID]) == reason {
+			continue
+		}
+		title := "任务阻塞"
+		if prevReason := strings.TrimSpace(previous[task.TaskID]); prevReason != "" && prevReason != reason {
+			title = "任务阻塞更新"
+		}
+		detail := fmt.Sprintf("任务 **%s** %s 当前被 runtime gate 挡住，尚未进入下一步。\n\n**原因**: %s", task.TaskID, strings.TrimSpace(task.Title), reason)
+		events = append(events, campaignrepo.ReconcileEvent{
+			Kind:       campaignrepo.EventTaskBlocked,
+			CampaignID: campaignID,
+			TaskID:     task.TaskID,
+			Title:      title,
+			Detail:     detail,
+			Severity:   "warning",
+		})
+	}
+	return events
+}
+
+func shouldNotifySummaryBlockedTask(task campaignrepo.TaskSummary) bool {
+	switch task.Status {
+	case campaignrepo.TaskStatusExecuting, campaignrepo.TaskStatusReviewing, campaignrepo.TaskStatusReviewPending:
+		return true
+	default:
+		return false
+	}
+}
 
 func (b *connectorRuntimeBuilder) sendCampaignNotifications(item campaign.Campaign, events []campaignrepo.ReconcileEvent) {
 	if b == nil || b.sender == nil || len(events) == 0 {

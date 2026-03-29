@@ -114,8 +114,10 @@ type TaskFrontmatter struct {
 	ReviewStatus      string     `yaml:"review_status" json:"review_status,omitempty"`
 	ExecutionRound    int        `yaml:"execution_round" json:"execution_round,omitempty"`
 	ReviewRound       int        `yaml:"review_round" json:"review_round,omitempty"`
+	AutoRetryCount    int        `yaml:"auto_retry_count" json:"auto_retry_count,omitempty"`
 	BaseCommit        string     `yaml:"base_commit" json:"base_commit,omitempty"`
 	HeadCommit        string     `yaml:"head_commit" json:"head_commit,omitempty"`
+	LastBlockedReason string     `yaml:"last_blocked_reason" json:"last_blocked_reason,omitempty"`
 	LastRunPath       string     `yaml:"last_run_path" json:"last_run_path,omitempty"`
 	LastReviewPath    string     `yaml:"last_review_path" json:"last_review_path,omitempty"`
 	WakeAtRaw         string     `yaml:"wake_at" json:"wake_at,omitempty"`

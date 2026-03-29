@@ -164,6 +164,8 @@ func buildExecutorDispatchPrompt(repo Repository, task TaskDocument, role RoleCo
 		"ReportSnippet":        blankForSummary(task.Frontmatter.ReportSnippetPath),
 		"ReviewStatus":         blankForSummary(task.Frontmatter.ReviewStatus),
 		"LastReviewPath":       blankForSummary(task.Frontmatter.LastReviewPath),
+		"AutoRetryCount":       task.Frontmatter.AutoRetryCount,
+		"LastBlockedReason":    blankForSummary(task.Frontmatter.LastBlockedReason),
 	})
 }
 
