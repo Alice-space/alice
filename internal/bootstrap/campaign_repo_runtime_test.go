@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
+	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/campaignrepo"
 )
 
@@ -260,5 +261,85 @@ func TestUpsertDispatchTask_ReactivatesCompletedTask(t *testing.T) {
 	}
 	if !updated.NextRunAt.Equal(runAt) {
 		t.Fatalf("unexpected next_run_at: got=%s want=%s", updated.NextRunAt.Format(time.RFC3339), runAt.Format(time.RFC3339))
+	}
+}
+
+func TestDeleteStaleCampaignAutomationTasks_DeletesOrphanedActiveTask(t *testing.T) {
+	store := automation.NewStore(t.TempDir() + "/automation.db")
+	builder := &connectorRuntimeBuilder{automationStore: store}
+
+	created, err := store.CreateTask(automation.Task{
+		Title: "orphaned dispatch",
+		Scope: automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+		Route: automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator: automation.Actor{
+			OpenID: "ou_actor",
+		},
+		ManageMode: automation.ManageModeCreatorOnly,
+		Schedule: automation.Schedule{
+			Type:         automation.ScheduleTypeInterval,
+			EverySeconds: 60,
+		},
+		Action: automation.Action{
+			Type:     automation.ActionTypeRunWorkflow,
+			Prompt:   "old prompt",
+			Workflow: "code_army",
+			StateKey: "campaign_dispatch:camp_demo:executor:T001:x3",
+		},
+		Status: automation.TaskStatusActive,
+	})
+	if err != nil {
+		t.Fatalf("create task failed: %v", err)
+	}
+
+	err = builder.deleteStaleCampaignAutomationTasks(map[string]automation.Task{
+		created.Action.StateKey: created,
+	}, map[string]struct{}{})
+	if err != nil {
+		t.Fatalf("delete stale dispatch tasks failed: %v", err)
+	}
+
+	updated, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get updated task failed: %v", err)
+	}
+	if updated.Status != automation.TaskStatusDeleted {
+		t.Fatalf("expected deleted status, got %s", updated.Status)
+	}
+	if !updated.NextRunAt.IsZero() {
+		t.Fatalf("expected next_run_at cleared, got %s", updated.NextRunAt.Format(time.RFC3339))
+	}
+}
+
+func TestShouldMarkCampaignCompleted(t *testing.T) {
+	item := campaign.Campaign{Status: campaign.StatusRunning}
+	summary := campaignrepo.Summary{
+		TaskCount:           3,
+		AcceptedCount:       2,
+		DoneCount:           1,
+		RejectedCount:       0,
+		ActiveCount:         0,
+		ReadyCount:          0,
+		ReworkCount:         0,
+		ReviewPendingCount:  0,
+		ReviewingCount:      0,
+		SelectedReadyCount:  0,
+		SelectedReviewCount: 0,
+		BlockedCount:        0,
+		WaitingCount:        0,
+	}
+	if !shouldMarkCampaignCompleted(item, summary) {
+		t.Fatal("expected fully terminal campaign summary to mark campaign completed")
+	}
+
+	summary.ReviewPendingCount = 1
+	if shouldMarkCampaignCompleted(item, summary) {
+		t.Fatal("expected pending review to keep campaign running")
+	}
+
+	summary.ReviewPendingCount = 0
+	item.Status = campaign.StatusHold
+	if shouldMarkCampaignCompleted(item, summary) {
+		t.Fatal("expected hold status to skip auto-completion")
 	}
 }

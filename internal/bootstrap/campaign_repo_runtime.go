@@ -14,7 +14,7 @@ import (
 )
 
 const (
-	campaignRepoReconcileInterval   = 5 * time.Minute
+	campaignRepoReconcileInterval   = 1 * time.Minute
 	campaignRepoDispatchLease       = 2 * time.Hour
 	campaignRepoTaskEverySeconds    = 60
 	campaignDispatchFailureCooldown = 1 * time.Minute
@@ -128,8 +128,8 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if err := b.syncCampaignWakeTasks(item, result.Summary); err != nil {
 		logging.Warnf("sync wake tasks failed campaign=%s: %v", item.ID, err)
 	}
-	if err := b.updateCampaignRepoSummary(item, result.Summary); err != nil {
-		logging.Warnf("patch campaign summary failed campaign=%s: %v", item.ID, err)
+	if err := b.updateCampaignRepoLifecycle(item, result.Summary); err != nil {
+		logging.Warnf("patch campaign lifecycle failed campaign=%s: %v", item.ID, err)
 	}
 }
 
@@ -150,13 +150,42 @@ func shouldAutoReconcileCampaign(item campaign.Campaign) bool {
 	}
 }
 
-func (b *connectorRuntimeBuilder) updateCampaignRepoSummary(item campaign.Campaign, summary campaignrepo.Summary) error {
+func shouldMarkCampaignCompleted(item campaign.Campaign, summary campaignrepo.Summary) bool {
+	item = campaign.NormalizeCampaign(item)
+	if item.Status != campaign.StatusRunning {
+		return false
+	}
+	if summary.TaskCount == 0 {
+		return false
+	}
+	if summary.DraftCount > 0 || summary.ActiveCount > 0 || summary.ReadyCount > 0 || summary.ReworkCount > 0 {
+		return false
+	}
+	if summary.ReviewPendingCount > 0 || summary.ReviewingCount > 0 || summary.WaitingCount > 0 || summary.BlockedCount > 0 {
+		return false
+	}
+	if summary.SelectedReadyCount > 0 || summary.SelectedReviewCount > 0 {
+		return false
+	}
+	terminalCount := summary.AcceptedCount + summary.DoneCount + summary.RejectedCount
+	return terminalCount == summary.TaskCount
+}
+
+func (b *connectorRuntimeBuilder) updateCampaignRepoLifecycle(item campaign.Campaign, summary campaignrepo.Summary) error {
+	item = campaign.NormalizeCampaign(item)
 	nextSummary := summary.SummaryLine()
-	if strings.TrimSpace(item.Summary) == nextSummary {
+	nextStatus := item.Status
+	if shouldMarkCampaignCompleted(item, summary) {
+		nextStatus = campaign.StatusCompleted
+	}
+	if strings.TrimSpace(item.Summary) == nextSummary && item.Status == nextStatus {
 		return nil
 	}
 	_, err := b.campaignStore.PatchCampaign(item.ID, func(current *campaign.Campaign) error {
 		current.Summary = nextSummary
+		if shouldMarkCampaignCompleted(*current, summary) {
+			current.Status = campaign.StatusCompleted
+		}
 		return nil
 	})
 	return err
