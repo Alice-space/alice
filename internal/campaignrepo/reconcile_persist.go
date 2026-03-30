@@ -39,6 +39,9 @@ func latestRelevantReview(task TaskDocument, reviews []ReviewDocument) (ReviewDo
 	var chosen ReviewDocument
 	found := false
 	for _, review := range reviews {
+		if !reviewMatchesTaskReviewer(task, review) {
+			continue
+		}
 		if targetRound > 0 && review.Frontmatter.ReviewRound > 0 && review.Frontmatter.ReviewRound != targetRound {
 			continue
 		}
@@ -61,6 +64,33 @@ func latestTaskReview(reviews []ReviewDocument) (ReviewDocument, bool) {
 		}
 	}
 	return chosen, true
+}
+
+func reviewMatchesTaskReviewer(task TaskDocument, review ReviewDocument) bool {
+	expected := normalizeReviewActorRole(task.Frontmatter.Reviewer.Role)
+	actual := normalizeReviewActorRole(review.Frontmatter.Reviewer.Role)
+	switch {
+	case actual == "":
+		return true
+	case expected == "":
+		return roleLooksLikeReviewer(actual)
+	case expected == actual:
+		return true
+	default:
+		return roleLooksLikeReviewer(expected) && roleLooksLikeReviewer(actual)
+	}
+}
+
+func normalizeReviewActorRole(raw string) string {
+	value := strings.ToLower(strings.TrimSpace(raw))
+	value = strings.ReplaceAll(value, "-", "_")
+	value = strings.ReplaceAll(value, " ", "_")
+	return value
+}
+
+func roleLooksLikeReviewer(role string) bool {
+	role = normalizeReviewActorRole(role)
+	return strings.Contains(role, "reviewer")
 }
 
 func compareReviewDocs(left, right ReviewDocument) int {

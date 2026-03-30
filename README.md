@@ -25,6 +25,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 - Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
 - `alice-code-army` uses Alice runtime role dispatch for planner / reviewer / executor flows; templates no longer hardwire concrete models
 - `alice-code-army` campaign repos now validate refined task packages (`task.md` / `context.md` / `plan.md`) via `repo-lint`, require review before `approve-plan`, and keep review files inside each task folder
+- `alice-code-army` now enforces post-run task invariants after each executor / reviewer round: executor rounds must hand off legally (`review_pending`, `waiting_external`, or `blocked`), and reviewer rounds must leave a valid task-local review artifact
 - `alice-code-army` waiting-for-human-approval cards now expose direct `Approve` / `Reject` buttons in Feishu, with stale-round protection
 - Embedded prompts, skills, config example, and `SOUL.md` example
 - Release installer for `systemd --user` deployments

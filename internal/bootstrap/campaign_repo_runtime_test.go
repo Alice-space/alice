@@ -52,6 +52,56 @@ func TestCampaignIDFromAutomationStateKey(t *testing.T) {
 	}
 }
 
+func TestDispatchKindAndTaskIDFromStateKey(t *testing.T) {
+	tests := []struct {
+		name     string
+		stateKey string
+		wantKind campaignrepo.DispatchKind
+		wantTask string
+		wantOK   bool
+	}{
+		{
+			name:     "executor dispatch",
+			stateKey: "campaign_dispatch:camp_demo:executor:T001:x1",
+			wantKind: campaignrepo.DispatchKindExecutor,
+			wantTask: "T001",
+			wantOK:   true,
+		},
+		{
+			name:     "reviewer dispatch",
+			stateKey: "campaign_dispatch:camp_demo:reviewer:T001:r2",
+			wantKind: campaignrepo.DispatchKindReviewer,
+			wantTask: "T001",
+			wantOK:   true,
+		},
+		{
+			name:     "planner dispatch is ignored",
+			stateKey: "campaign_dispatch:camp_demo:planner:plan-r1:r1",
+			wantOK:   false,
+		},
+		{
+			name:     "wake task is ignored",
+			stateKey: "campaign_wake:camp_demo:T001:2026-03-25T10:00:00Z",
+			wantOK:   false,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gotKind, gotTask, gotOK := dispatchKindAndTaskIDFromStateKey(tt.stateKey)
+			if gotOK != tt.wantOK {
+				t.Fatalf("unexpected ok state: got=%v want=%v", gotOK, tt.wantOK)
+			}
+			if gotKind != tt.wantKind {
+				t.Fatalf("unexpected dispatch kind: got=%q want=%q", gotKind, tt.wantKind)
+			}
+			if gotTask != tt.wantTask {
+				t.Fatalf("unexpected task id: got=%q want=%q", gotTask, tt.wantTask)
+			}
+		})
+	}
+}
+
 func TestShouldKeepExistingDispatchTask_RespectsFailureCooldown(t *testing.T) {
 	now := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
 	spec := campaignrepo.DispatchTaskSpec{

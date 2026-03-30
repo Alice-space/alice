@@ -32,11 +32,18 @@ Execution rules:
 2. You may modify the source repos listed in `target_repos` and the task directory for this task.
 3. Do not edit `reports/live-report.md` or unrelated task directories.
 4. Treat the task folder as the contract surface. Read `task.md`, `context.md`, and `plan.md` first. If `review_status` is not `pending` or `last_review_path` is set, read that review before touching the source repo and address its findings in this execution round.
-5. Before setting `review_pending`, verify the execution artifacts yourself. Keep `last_run_path` pointing at a real task-local result file, and clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`.
+5. A completed executor round must end in exactly one legal handoff state: `review_pending`, `waiting_external`, or `blocked`. Do not finish your round while the task still says `executing` or `reviewing`.
+6. Before setting `review_pending`, verify the execution artifacts yourself. Keep `last_run_path` pointing at a real task-local result file, and clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`.
    - If this task changed a source repo, record the real reachable git commit from the target repo in `head_commit`.
    - If this task is campaign-only or archive-only, leave `head_commit` empty and do not invent placeholder commit strings.
    - Do not claim source-repo changes that did not happen.
-6. If the task is waiting on a long-running external job, switch to `waiting_external`, clear `owner_agent` and `lease_until`, then set `wake_at` and `wake_prompt`.
-7. If the task is blocked, set status to `blocked`, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and state the blocker clearly in the task files. Alice may route the first few blocked attempts through reviewer guidance before treating the task as terminally blocked.
-8. Keep the campaign repo as the source of truth.
-9. Apply the required source-repo and task-file updates yourself, then emit a short public summary listing changed files, validation, and the final task status.
+7. If the task is waiting on a long-running external job, switch to `waiting_external`, clear `owner_agent` and `lease_until`, then set `wake_at` and `wake_prompt`.
+8. If the task is blocked, set status to `blocked`, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and state the blocker clearly in the task files. Alice may route the first few blocked attempts through reviewer guidance before treating the task as terminally blocked. If you cannot leave a legal handoff state, emit `/alice blocked ...` or `/alice needs-human ...`; do not silently leave illegal active state behind.
+9. Executors must not create or edit new files under `reviews/` except reading existing reviews. Only the reviewer writes new review files.
+10. Before your final reply, self-check the invariant bundle:
+    - final task status is legal for an executor handoff
+    - `owner_agent` / `lease_until` match that status
+    - `last_run_path` resolves if handing off to review
+    - `head_commit` is real if source-repo evidence is required
+11. Keep the campaign repo as the source of truth.
+12. Apply the required source-repo and task-file updates yourself, then emit a short public summary listing changed files, validation, and the final task status.

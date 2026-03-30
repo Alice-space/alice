@@ -984,7 +984,7 @@ owner_agent: ""
 lease_until: ""
 execution_round: 2
 review_round: 2
-review_status: review_pending
+review_status: pending
 base_commit: "`+baseCommit+`"
 head_commit: "`+headCommit+`"
 last_run_path: "results/summary.md"
@@ -1036,6 +1036,26 @@ created_at: "2026-03-24T10:30:00+08:00"
 	}
 	if task.Frontmatter.ReviewRound != 2 {
 		t.Fatalf("expected repaired task to dispatch reviewer round 2, got %d", task.Frontmatter.ReviewRound)
+	}
+}
+
+func TestTaskLooksReadyForReviewHandOff_AcceptsPendingAliases(t *testing.T) {
+	task := TaskDocument{
+		Frontmatter: TaskFrontmatter{
+			LastRunPath:  "results/summary.md",
+			ReviewStatus: "pending",
+		},
+	}
+	if !taskLooksReadyForReviewHandOff(task) {
+		t.Fatal("expected pending review status to be repairable")
+	}
+	task.Frontmatter.ReviewStatus = "review_pending"
+	if !taskLooksReadyForReviewHandOff(task) {
+		t.Fatal("expected review_pending alias to be repairable")
+	}
+	task.Frontmatter.ReviewStatus = "changes_requested"
+	if taskLooksReadyForReviewHandOff(task) {
+		t.Fatal("did not expect changes_requested to be treated as ready for review handoff")
 	}
 }
 

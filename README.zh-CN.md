@@ -24,6 +24,7 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 - 自带 skill 会释放到 `${ALICE_HOME:-~/.alice}/skills`，再链接到 `~/.agents/skills`，并通过 `~/.claude/skills` 暴露给 Claude
 - `alice-code-army` 通过 Alice runtime 按角色派发 planner / reviewer / executor 流程，模板不再把具体模型写死
 - `alice-code-army` 的 campaign repo 现在会用 `repo-lint` 校验细化后的 task package（`task.md` / `context.md` / `plan.md`），`approve-plan` 必须先过 review，review 文件也收进各自 task 文件夹
+- `alice-code-army` 现在会在每一轮 executor / reviewer 结束后强制校验 task invariant：executor 必须以合法 handoff 状态收尾（`review_pending`、`waiting_external` 或 `blocked`），reviewer 必须落下合法的 task-local review 文件
 - `alice-code-army` 的“等待人工批准”卡片现在会直接提供“批准 / 不批准”按钮，并带计划轮次过期保护；点击后会把原卡片更新成“已批准 / 已拒绝”的终态显示
 - 二进制内嵌 prompts、skills、配置示例和 `SOUL.md` 示例
 - 提供适合 `systemd --user` 的安装脚本

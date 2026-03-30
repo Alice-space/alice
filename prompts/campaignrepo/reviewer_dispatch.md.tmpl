@@ -35,4 +35,6 @@ Review rules:
 5. Verify that `last_run_path` resolves and that the reviewed diff stays inside `write_scope`, before approving. {{ if .SourceChangeRequired }}For source-repo tasks, also verify that `target_commit` and `working_branches` resolve in the listed local repos.{{ else }}For campaign-only/archive-only tasks, do not require a source-repo `head_commit`; review the task-local artifacts and campaign-repo diff instead.{{ end }} If a required commit or artifact reference does not resolve, or the diff escapes `write_scope`, that is at least `concern`.
 6. Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
 7. Do not change the task status yourself; Alice judge will apply the review verdict.
-8. Write the review file yourself, then emit a short public summary with the review file path, verdict, and key findings.
+8. Your round is not complete until a new task-local review file exists for the current `review_round`, with a non-empty verdict and `reviewer.role` matching the task reviewer contract. Do not leave executor-style response files in `reviews/`.
+9. If you cannot produce a valid review artifact, emit `/alice blocked ...` or `/alice needs-human ...` instead of replying as if review completed.
+10. Write the review file yourself, then emit a short public summary with the review file path, verdict, and key findings.

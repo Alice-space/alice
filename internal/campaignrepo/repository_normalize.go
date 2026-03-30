@@ -54,7 +54,7 @@ func normalizeReviewStatus(raw string) string {
 	value = strings.ReplaceAll(value, "-", "_")
 	value = strings.ReplaceAll(value, " ", "_")
 	switch value {
-	case "", "pending":
+	case "", "pending", "review_pending", "pending_review", "awaiting_review":
 		return "pending"
 	case "queued":
 		return "queued"

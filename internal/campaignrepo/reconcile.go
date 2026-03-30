@@ -483,11 +483,8 @@ func taskLooksReadyForReviewHandOff(task TaskDocument) bool {
 	if strings.TrimSpace(task.Frontmatter.LastRunPath) == "" {
 		return false
 	}
-	raw := strings.ToLower(strings.TrimSpace(task.Frontmatter.ReviewStatus))
-	raw = strings.ReplaceAll(raw, "-", "_")
-	raw = strings.ReplaceAll(raw, " ", "_")
-	switch raw {
-	case "review_pending", "pending_review", "awaiting_review":
+	switch normalizeReviewStatus(task.Frontmatter.ReviewStatus) {
+	case "pending", "queued":
 		return true
 	default:
 		return false

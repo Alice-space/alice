@@ -49,7 +49,7 @@ func (b *connectorRuntimeBuilder) runCampaignRepoReconcile() {
 	}
 }
 
-func (b *connectorRuntimeBuilder) handleCampaignRepoAutomationTaskCompletion(task automation.Task, _ error) {
+func (b *connectorRuntimeBuilder) handleCampaignRepoAutomationTaskCompletion(task automation.Task, runErr error) {
 	campaignID, ok := campaignIDFromAutomationStateKey(task.Action.StateKey)
 	if !ok {
 		return
@@ -64,6 +64,19 @@ func (b *connectorRuntimeBuilder) handleCampaignRepoAutomationTaskCompletion(tas
 	b.campaignRepoMu.Lock()
 	defer b.campaignRepoMu.Unlock()
 	b.handleCampaignRepoTaskSignals(campaignID, task)
+	if runErr == nil {
+		item, err := b.campaignStore.GetCampaign(campaignID)
+		if err != nil {
+			logging.Warnf("load campaign for post-run validation failed campaign=%s: %v", campaignID, err)
+		} else {
+			item = campaign.NormalizeCampaign(item)
+			if event, ok, err := validateCampaignRepoTaskCompletion(item, task); err != nil {
+				logging.Warnf("campaign repo post-run validation failed campaign=%s state_key=%s: %v", campaignID, task.Action.StateKey, err)
+			} else if ok {
+				b.sendCampaignNotifications(item, []campaignrepo.ReconcileEvent{event})
+			}
+		}
+	}
 	b.reconcileCampaignRepoLocked(campaignID)
 }
 
@@ -517,6 +530,109 @@ func campaignIDFromAutomationStateKey(stateKey string) (string, bool) {
 		return "", false
 	}
 	return campaignID, true
+}
+
+func dispatchKindAndTaskIDFromStateKey(stateKey string) (campaignrepo.DispatchKind, string, bool) {
+	stateKey = strings.TrimSpace(stateKey)
+	if stateKey == "" {
+		return "", "", false
+	}
+	parts := strings.Split(stateKey, ":")
+	if len(parts) < 5 || parts[0] != strings.TrimSuffix(campaignDispatchStatePrefix, ":") {
+		return "", "", false
+	}
+	kind := campaignrepo.DispatchKind(strings.TrimSpace(parts[2]))
+	taskID := strings.TrimSpace(parts[3])
+	if taskID == "" {
+		return "", "", false
+	}
+	switch kind {
+	case campaignrepo.DispatchKindExecutor, campaignrepo.DispatchKindReviewer:
+		return kind, taskID, true
+	default:
+		return "", "", false
+	}
+}
+
+func shouldSkipPostRunValidationForSignal(task automation.Task) bool {
+	signalKind := strings.ToLower(strings.TrimSpace(task.LastSignalKind))
+	switch signalKind {
+	case "blocked", "replan":
+		return true
+	default:
+		return false
+	}
+}
+
+func validateCampaignRepoTaskCompletion(item campaign.Campaign, task automation.Task) (campaignrepo.ReconcileEvent, bool, error) {
+	task = automation.NormalizeTask(task)
+	if strings.TrimSpace(item.CampaignRepoPath) == "" || shouldSkipPostRunValidationForSignal(task) {
+		return campaignrepo.ReconcileEvent{}, false, nil
+	}
+	kind, taskID, ok := dispatchKindAndTaskIDFromStateKey(task.Action.StateKey)
+	if !ok {
+		return campaignrepo.ReconcileEvent{}, false, nil
+	}
+	validation, err := campaignrepo.ValidateTaskPostRun(item.CampaignRepoPath, taskID, kind)
+	if err != nil || validation.Valid {
+		return campaignrepo.ReconcileEvent{}, false, err
+	}
+	reason := summarizeValidationIssues(validation.Issues, 3)
+	switch kind {
+	case campaignrepo.DispatchKindExecutor:
+		outcome, err := campaignrepo.HandleTaskBlocked(item.CampaignRepoPath, taskID, "post-run validation failed after executor round: "+reason)
+		if err != nil {
+			return campaignrepo.ReconcileEvent{}, false, err
+		}
+		title := "执行收尾校验失败"
+		detail := fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，已停止继续派发。\n\n**问题**:\n%s", taskID, reason)
+		if outcome.GuidanceRequested {
+			title = "执行收尾校验失败，转评审指导"
+			detail = fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，已转 reviewer 指导（第 %d/%d 次）。\n\n**问题**:\n%s", taskID, outcome.GuidanceAttempt, 3, reason)
+		} else if outcome.TerminalBlocked {
+			title = "执行收尾校验失败，任务阻塞"
+			detail = fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，且指导预算已耗尽，已进入真正阻塞状态。\n\n**问题**:\n%s", taskID, reason)
+		}
+		return campaignrepo.ReconcileEvent{
+			Kind:       campaignrepo.EventTaskBlocked,
+			CampaignID: item.ID,
+			TaskID:     taskID,
+			Title:      title,
+			Detail:     detail,
+			Severity:   "warning",
+		}, true, nil
+	case campaignrepo.DispatchKindReviewer:
+		if err := campaignrepo.MarkTaskBlocked(item.CampaignRepoPath, taskID, "post-run validation failed after reviewer round: "+reason); err != nil {
+			return campaignrepo.ReconcileEvent{}, false, err
+		}
+		return campaignrepo.ReconcileEvent{
+			Kind:       campaignrepo.EventTaskBlocked,
+			CampaignID: item.ID,
+			TaskID:     taskID,
+			Title:      "评审收尾校验失败，任务阻塞",
+			Detail:     fmt.Sprintf("任务 **%s** reviewer 回合结束后未通过状态校验，已阻止继续推进。\n\n**问题**:\n%s", taskID, reason),
+			Severity:   "error",
+		}, true, nil
+	default:
+		return campaignrepo.ReconcileEvent{}, false, nil
+	}
+}
+
+func summarizeValidationIssues(issues []campaignrepo.ValidationIssue, limit int) string {
+	if len(issues) == 0 {
+		return "- unknown validation failure"
+	}
+	if limit <= 0 || limit > len(issues) {
+		limit = len(issues)
+	}
+	lines := make([]string, 0, limit+1)
+	for _, issue := range issues[:limit] {
+		lines = append(lines, "- "+strings.TrimSpace(issue.Message))
+	}
+	if extra := len(issues) - limit; extra > 0 {
+		lines = append(lines, fmt.Sprintf("- 另外还有 %d 条校验问题", extra))
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (b *connectorRuntimeBuilder) campaignRoleDefaults() campaignrepo.CampaignRoleDefaults {
