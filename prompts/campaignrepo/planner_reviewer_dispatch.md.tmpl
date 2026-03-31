@@ -1,19 +1,31 @@
-Review whether round {{ .PlanRound }} is ready for human approval for campaign repo `{{ .CampaignRepo }}`.
-Campaign ID: {{ .CampaignID }}.
-All paths below are relative to that repo.
+评审第 {{ .PlanRound }} 轮计划是否已经可以交给人类审批，campaign repo 为 `{{ .CampaignRepo }}`。
+Campaign ID: {{ .CampaignID }}。
+下面提到的所有路径都相对于该 repo。
 
-Read `campaign.md`, `plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md`, `plans/merged/master-plan.md`, phase/task docs, and source repos as needed.
-Check that:
-- `master-plan.md` is concrete, not template-only
-- proposal/master-plan/phases/tasks agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism
-- each task is a folder `phases/Pxx/tasks/Txxx/` with `task.md`, `context.md`, `plan.md`, `progress.md`, `results/`, and `reviews/`
-- required headings from `_templates/` are preserved
-- standard executor/reviewer blocks use `workflow: code_army`, write_scope is usable, and task packages are executor-ready
-- treat `campaign.md` as baseline metadata only at this stage; do not require planner to replace static guidance text or placeholders there unless frontmatter/objective/source-repo facts are actually inconsistent
-- do not use `repo-lint --for-approval` in this review; that approval gate is for the later human `/alice approve-plan` step after runtime has advanced `plan_status` to `plan_approved`
+先读 `campaign.md`、`plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md`、`plans/merged/master-plan.md`、phase / task 文档，并在需要时读取 source repo。
 
-Write `plans/reviews/round-{{ printf "%03d" .PlanRound }}-review.md` with `review_id: "plan-review-r{{ .PlanRound }}"`, `plan_round`, `reviewer.role: {{ .ReviewerRole }}`, `verdict`, `blocking`, and `created_at`.
-Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
-Verdicts: `approve`, `concern`, `blocking`. Missing merged-plan content, placeholder task packages, or inconsistent artifacts are usually `concern`, not `blocking`.
-Run `alice-code-army repo-lint {{ .CampaignID }}` or `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`; any lint failure is at least `concern`.
-Do not modify source repos, `campaign.md`, or the proposal. Write the review yourself, then give a short public summary with the review path, verdict, and repo-lint result.
+写作语言要求：
+- review 正文和公开总结默认使用中文。
+- 保留 frontmatter key、文件名、状态 / verdict 枚举、role 名、workflow 名，以及 `_templates/` 规定的 English section headings 不变。
+
+重点检查：
+- `master-plan.md` 必须是具体计划，而不是模板残留。
+- proposal / master-plan / phases / tasks 在 phase 目标、task ID、depends_on、target_repos、write_scope、acceptance、parallelism 上必须一致。
+- 每个 task 都必须是 `phases/Pxx/tasks/Txxx/` 目录，并包含 `task.md`、`context.md`、`plan.md`、`progress.md`、`results/`、`reviews/`。
+- `_templates/` 规定的必需标题必须被保留。
+- 标准 executor / reviewer block 必须使用 `workflow: code_army`，`write_scope` 要能真正约束改动范围，task package 必须达到 executor-ready。
+- 在这个阶段把 `campaign.md` 视为 baseline metadata；除非 frontmatter / objective / source-repo facts 真不一致，不要要求 planner 去替换那里静态说明文字或占位提示。
+- 本轮评审不要使用 `repo-lint --for-approval`；那个更严格的审批 gate 属于后续人工 `/alice approve-plan`，前提是 runtime 已把 `plan_status` 推进到 `plan_approved`。
+
+粒度与可执行性判据：
+- 如果 executor 看完 task 文件夹后，仍然需要追问目标文件、依赖、命令、验收方式、交接条件或真实写入范围，这个 task 至少是 `concern`。
+- 如果一个 task 同时覆盖多个独立产物、多个互不相干 write_scope、多个松耦合 repo 改动，或者仍然停留在“先研究再决定怎么做”，这个 task 至少是 `concern`。
+- 如果 Goal / Relevant Files / Execution Steps / Acceptance 里充满泛词，没有具体路径、命令、产物或验证方法，这个 task 至少是 `concern`。
+- 如果 phase 切分解释不清依赖链、并行关系，或者对于一个明显复杂的目标只拆出了极少数宽泛 task，本轮 verdict 不应为 `approve`。
+- 对于发现过粗的 task，review 里要点名具体 task ID，并明确建议按 repo / 模块 / 文件 / 产物 / 依赖中的哪条轴继续拆分。
+
+请写入 `plans/reviews/round-{{ printf "%03d" .PlanRound }}-review.md`，frontmatter 至少包含 `review_id: "plan-review-r{{ .PlanRound }}"`、`plan_round`、`reviewer.role: {{ .ReviewerRole }}`、`verdict`、`blocking`、`created_at`。
+`created_at` 使用 RFC3339，例如 `2026-03-28T14:57:39+08:00`。
+Verdict 只允许：`approve`、`concern`、`blocking`。缺少 merged-plan 内容、task package 仍是占位、artifact 不一致，通常判为 `concern` 而不是 `blocking`；任务粒度过粗、只能靠聊天补 context、验收不可观察，也通常至少是 `concern`。
+运行 `alice-code-army repo-lint {{ .CampaignID }}` 或 `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`；任何 lint 失败至少都是 `concern`。
+不要修改 source repo、`campaign.md` 或 proposal。你要自己写 review 文件，然后给出一条简短中文公开总结，包含 review 路径、verdict、repo-lint 结果，以及优先级最高的返工 task ID。

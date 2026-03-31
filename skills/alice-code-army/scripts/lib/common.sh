@@ -99,3 +99,23 @@ default_campaign_repo_path() {
 escape_sed_replacement() {
   printf '%s' "$1" | sed -e 's/[\\/&]/\\&/g'
 }
+
+commit_campaign_repo_if_dirty() {
+  local repo_path="$1" message="${2:-chore(campaign): update repo state}"
+  [[ -n "$repo_path" && -d "$repo_path" ]] || return 0
+  require_cmd git
+  if ! git -C "$repo_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ -z "$(git -C "$repo_path" status --porcelain)" ]]; then
+    return 0
+  fi
+  git -C "$repo_path" add -A
+  if [[ -z "$(git -C "$repo_path" status --porcelain)" ]]; then
+    return 0
+  fi
+  git -C "$repo_path" \
+    -c user.name="Alice CodeArmy" \
+    -c user.email="alice-codearmy@local" \
+    commit -q -m "$message"
+}

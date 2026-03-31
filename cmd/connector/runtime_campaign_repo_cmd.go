@@ -120,6 +120,9 @@ func newRuntimeCampaignApprovePlanCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			if _, _, err := campaignrepo.CommitRepoChanges(item.CampaignRepoPath, "chore(campaign): approve plan and reconcile"); err != nil {
+				return err
+			}
 			patchBody, err := json.Marshal(map[string]string{
 				"status":  string(campaign.StatusRunning),
 				"summary": result.Summary.SummaryLine(),
@@ -186,6 +189,9 @@ func newRuntimeCampaignRepoReconcileCmd() *cobra.Command {
 				if err != nil {
 					return err
 				}
+			}
+			if _, _, err := campaignrepo.CommitRepoChanges(item.CampaignRepoPath, "chore(campaign): reconcile repo state"); err != nil {
+				return err
 			}
 			if updateRuntime && strings.TrimSpace(item.Summary) != result.Summary.SummaryLine() {
 				patchBody, err := json.Marshal(map[string]string{"summary": result.Summary.SummaryLine()})

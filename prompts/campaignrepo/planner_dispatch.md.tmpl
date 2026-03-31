@@ -1,19 +1,35 @@
-Plan round {{ .PlanRound }} for campaign repo `{{ .CampaignRepo }}`.
-Campaign ID: {{ .CampaignID }}.
-All paths below are relative to that repo.
+第 {{ .PlanRound }} 轮规划，campaign repo 为 `{{ .CampaignRepo }}`。
+Campaign ID: {{ .CampaignID }}。
+下面提到的所有路径都相对于该 repo。
 
-Read `campaign.md`, `repos/*.md`, `findings.md` when present, and the source repos from each repo ref `local_path`.
-Write:
-- `plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md` with `proposal_id: "plan-r{{ .PlanRound }}"`, `plan_round: {{ .PlanRound }}`, `status: submitted`, plus analysis/phases/tasks/risks
+先读 `campaign.md`、`repos/*.md`、`findings.md`（如果存在），以及每个 repo ref `local_path` 指向的 source repo。
+如果仓库里已经有 proposal / master-plan / phase / task 文件，优先在已有内容基础上继续细化、拆分和修正，不要无意义重写。
+
+你需要写入：
+- `plans/proposals/round-{{ printf "%03d" .PlanRound }}-plan.md`，frontmatter 至少包含 `proposal_id: "plan-r{{ .PlanRound }}"`、`plan_round: {{ .PlanRound }}`、`status: submitted`，正文包含 analysis / phases / tasks / risks
 - `plans/merged/master-plan.md`
 - `phases/Pxx/phase.md`
 - `phases/Pxx/tasks/Txxx/{task.md,context.md,plan.md,progress.md,results/README.md,reviews/README.md}`
 
-Rules:
-- Keep proposal/master-plan/phases/tasks consistent on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism.
-- Preserve required headings from `_templates/`: `task.md` Goal/Background/Acceptance/Deliverables, `context.md` Context/Relevant Repos/Relevant Files/Dependencies, `plan.md` Execution Steps/Validation/Handoff.
-- Preserve task frontmatter defaults from `_templates/task.md`: planner-written task packages must keep `status: draft` and must not emit `planned`, `ready`, `executing`, or any `review_*` status during planning.
-- Task packages must be executor-ready. Keep validation inside each task's `write_scope`. Verify claims from files or command output.
-- Standard executor/reviewer blocks use `workflow: code_army`. Keep task/review role blocks to `role` + `workflow` unless a local override is intentional. Never add `default_*` to `campaign.md`.
-- Do not modify source repos, `campaign.md`, or `reports/live-report.md`.
-- Run `alice-code-army repo-lint {{ .CampaignID }}` or `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`, fix failures, then give a short public summary.
+写作语言要求：
+- 所有新写的 markdown 正文、review 摘要和公开总结默认使用中文。
+- 保留 frontmatter key、文件名、状态枚举、role 名、workflow 名，以及 `_templates/` 规定的 English section headings 不变。
+
+规划规则：
+- proposal / master-plan / phases / tasks 在 phase 目标、task ID、depends_on、target_repos、write_scope、acceptance、parallelism 上必须一致。
+- 保留 `_templates/` 规定的必需标题：`task.md` 的 Goal / Background / Acceptance / Deliverables，`context.md` 的 Context / Relevant Repos / Relevant Files / Dependencies，`plan.md` 的 Execution Steps / Validation / Handoff。
+- 保留 `_templates/task.md` 的 frontmatter 默认值：planner 写出的 task package 必须保持 `status: draft`，planning 阶段不得产出 `planned`、`ready`、`executing` 或任何 `review_*` 状态。
+- task package 必须达到 executor-ready：executor 只靠 task 文件夹就能开工，不应再回聊天追问目标文件、依赖、命令、验收方式或 handoff 条件。
+- 任务粒度以“可执行性”优先，而不是追求 task 少。只要 write_scope、依赖或验收可以独立，就优先拆成更窄、更清晰的 task。
+- 如果一个 task 同时覆盖多个独立产物、多个互不相干的 write_scope、多个松耦合 repo 改动，或者仍然需要“先研究再决定做什么”，就继续拆分。
+- `task.md` 的 Goal 必须写清：要改哪个 repo / 模块 / 路径范围、预期 end state、任务边界；不要只写“优化”“完善”“支持”“重构”这类泛词。
+- `Acceptance` 必须可观察，尽量落到具体命令、测试、产物路径、diff 边界、指标、截图或报告；不要只写“结果正确”“代码整洁”。
+- `Deliverables` 必须落到具体产物：代码路径、文档路径、结果文件、报告片段、分支 / commit 证据等。
+- `context.md` 的 Relevant Files 必须点名具体路径或模块，不要只写 repo 名。
+- `plan.md` 的 Execution Steps 必须是按顺序可执行的动作，尽量点名文件、命令或操作；避免“分析一下”“处理相关逻辑”“完成必要修改”这类模糊步骤。
+- Validation 必须限制在当前 task 的 `write_scope` 内，并尽量给出真实命令或检查方式。所有 claim 都要来自已读文件或命令输出。
+- phase 设计里要让 reviewer 看得出依赖链和可并行组，避免把大目标直接压成少数几个笼统 task。
+- 标准 executor / reviewer block 统一使用 `workflow: code_army`。除非确实要做局部 override，否则 task / review 的角色块只保留 `role` + `workflow`。不要往 `campaign.md` 里加入 `default_*`。
+- 不要修改 source repo、`campaign.md` 或 `reports/live-report.md`。
+- 运行 `alice-code-army repo-lint {{ .CampaignID }}` 或 `$ALICE_RUNTIME_BIN runtime campaigns repo-lint {{ .CampaignID }}`，修完 lint 失败后再结束。
+- 最终给一条简短中文公开总结，说明本轮细化了哪些 phase / task、解决了哪些 lint 问题、还剩什么主要风险。

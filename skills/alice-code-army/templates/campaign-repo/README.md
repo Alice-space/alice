@@ -45,6 +45,9 @@
 - `campaign repo` 是主事实源，`source repo` 是真实代码改动面。
 - planner 负责 proposal 和 draft task 切分。
 - planner 必须把每个 task 细化成完整文件夹，不能只留一个 `T001.md` 空壳。
+- planner 切 task 的标准是“executor 不需要回聊天追问也能开工”。
+- 一个 task 尽量只覆盖一个明确产物，或一组紧耦合且可被同一 write scope 约束的改动。
+- 如果一个 task 同时跨多个松耦合 repo / 模块 / 产物，或者验收方式不止一条独立主线，应该继续拆分。
 - planner reviewer 只审 proposal / task 切分。
 - executor 可以改 source repo 和 task 目录。
 - reviewer 只写 task-local `reviews/` 文件，由 Alice judge 应用 verdict。

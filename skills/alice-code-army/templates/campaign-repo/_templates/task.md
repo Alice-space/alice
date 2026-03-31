@@ -33,13 +33,13 @@ result_paths: []
 # Task
 
 ## Goal
-- 待补充
+- 写清要改的 repo / 模块 / 路径范围、预期 end state 和任务边界
 
 ## Background
-- 待补充
+- 写清为什么要做、已知约束、上游依赖和前置事实
 
 ## Acceptance
-- 待补充
+- 写可观察的验收标准：命令、测试、产物、报告、diff 边界或指标
 
 ## Deliverables
-- 待补充
+- 写清具体产物路径、结果文件、文档或可追溯证据

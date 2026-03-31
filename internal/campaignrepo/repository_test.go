@@ -106,7 +106,7 @@ wake_prompt: "resume the cluster job"
 	if summary.WakeTasks[0].Title != "Demo Campaign · T005 · 唤醒" {
 		t.Fatalf("unexpected wake task title: %q", summary.WakeTasks[0].Title)
 	}
-	if !strings.Contains(summary.WakeTasks[0].Prompt, "Scheduled wake_at: 2026-03-24T10:00:00+08:00") {
+	if !strings.Contains(summary.WakeTasks[0].Prompt, "计划唤醒时间: 2026-03-24T10:00:00+08:00") {
 		t.Fatalf("expected wake prompt to come from template, got %+v", summary.WakeTasks[0])
 	}
 

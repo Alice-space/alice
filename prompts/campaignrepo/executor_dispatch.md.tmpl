@@ -1,13 +1,13 @@
-Continue the repo-first campaign as the executor.
+继续以执行者身份推进这个 repo-first campaign。
 
 Campaign repo: {{ .CampaignRepo }}
-Task file: {{ .TaskFile }}
-Task dir: {{ .TaskDir }}
-Task id: {{ .TaskID }}
-Task title: {{ .TaskTitle }}
-Executor role: {{ .ExecutorRole }}
-Execution round: {{ .ExecutionRound }}
-Target repos: {{ .TargetRepos | join ", " | default "-" }}
+Task 文件: {{ .TaskFile }}
+Task 目录: {{ .TaskDir }}
+Task ID: {{ .TaskID }}
+Task 标题: {{ .TaskTitle }}
+执行角色: {{ .ExecutorRole }}
+执行轮次: {{ .ExecutionRound }}
+目标 repos: {{ .TargetRepos | join ", " | default "-" }}
 Source repos:
 {{- if .SourceRepoRefs }}
 {{- range .SourceRepoRefs }}
@@ -16,34 +16,34 @@ Source repos:
 {{- else }}
 - none declared
 {{- end }}
-Working branches: {{ .WorkingBranches | join ", " | default "-" }}
+工作分支: {{ .WorkingBranches | join ", " | default "-" }}
 Write scope: {{ .WriteScope | join ", " | default "-" }}
-Source repo changes required: {{ if .SourceChangeRequired }}yes{{ else }}no (campaign-only/archive-only task){{ end }}
-Reviewer role: {{ .ReviewerRole }}
-Report snippet: {{ .ReportSnippet }}
-Review status: {{ .ReviewStatus }}
-Last review path: {{ .LastReviewPath }}
-Artifact auto retry count: {{ .AutoRetryCount }}
-Blocked guidance count: {{ .BlockGuidanceCount }}
-Last blocked reason: {{ .LastBlockedReason }}
+是否需要 source repo 改动: {{ if .SourceChangeRequired }}yes{{ else }}no（仅 campaign / archive 任务）{{ end }}
+评审角色: {{ .ReviewerRole }}
+报告摘要: {{ .ReportSnippet }}
+评审状态: {{ .ReviewStatus }}
+上次评审路径: {{ .LastReviewPath }}
+产物自动重试次数: {{ .AutoRetryCount }}
+阻塞指导次数: {{ .BlockGuidanceCount }}
+上次阻塞原因: {{ .LastBlockedReason }}
 
-Execution rules:
-1. Read `campaign.md`, the task markdown in the task dir, and the referenced source repos.
-2. You may modify the source repos listed in `target_repos` and the task directory for this task.
-3. Do not edit `reports/live-report.md` or unrelated task directories.
-4. Treat the task folder as the contract surface. Read `task.md`, `context.md`, and `plan.md` first. If `review_status` is not `pending` or `last_review_path` is set, read that review before touching the source repo and address its findings in this execution round.
-5. A completed executor round must end in exactly one legal handoff state: `review_pending`, `waiting_external`, or `blocked`. Do not finish your round while the task still says `executing` or `reviewing`.
-6. Before setting `review_pending`, verify the execution artifacts yourself. Keep `last_run_path` pointing at a real task-local result file, and clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`.
-   - If this task changed a source repo, record the real reachable git commit from the target repo in `head_commit`.
-   - If this task is campaign-only or archive-only, leave `head_commit` empty and do not invent placeholder commit strings.
-   - Do not claim source-repo changes that did not happen.
-7. If the task is waiting on a long-running external job, switch to `waiting_external`, clear `owner_agent` and `lease_until`, then set `wake_at` and `wake_prompt`.
-8. If the task is blocked, set status to `blocked`, clear `owner_agent`, `lease_until`, `wake_at`, and `wake_prompt`, and state the blocker clearly in the task files. Alice may route the first few blocked attempts through reviewer guidance before treating the task as terminally blocked. If you cannot leave a legal handoff state, emit `/alice blocked ...` or `/alice needs-human ...`; do not silently leave illegal active state behind.
-9. Executors must not create or edit new files under `reviews/` except reading existing reviews. Only the reviewer writes new review files.
-10. Before your final reply, self-check the invariant bundle:
-    - final task status is legal for an executor handoff
-    - `owner_agent` / `lease_until` match that status
-    - `last_run_path` resolves if handing off to review
-    - `head_commit` is real if source-repo evidence is required
-11. Keep the campaign repo as the source of truth.
-12. Apply the required source-repo and task-file updates yourself, then emit a short public summary listing changed files, validation, and the final task status.
+执行规则：
+1. 先读 `campaign.md`、task 目录里的 markdown，以及引用到的 source repo。
+2. 你可以修改 `target_repos` 列出的 source repo，以及当前 task 目录。
+3. 不要改 `reports/live-report.md`，也不要改无关 task 目录。
+4. 把 task 文件夹当作执行合同面。先读 `task.md`、`context.md`、`plan.md`。如果 `review_status` 不是 `pending`，或者 `last_review_path` 已设置，先读那份 review，再去碰 source repo，并在本轮显式消化它的结论。
+5. 一个完成的 executor round 必须且只能以一种合法交接状态结束：`review_pending`、`waiting_external` 或 `blocked`。结束时不要让 task 还停在 `executing` 或 `reviewing`。
+6. 在把状态设为 `review_pending` 之前，先自己验证执行产物。保持 `last_run_path` 指向一个真实存在的 task-local result 文件，并清空 `owner_agent`、`lease_until`、`wake_at`、`wake_prompt`。
+   - 如果这个 task 改了 source repo，把目标 repo 中真实可达的 git commit 写进 `head_commit`。
+   - 如果这是 campaign-only 或 archive-only task，`head_commit` 保持空，不要伪造 commit 字符串。
+   - 不要声称发生了并不存在的 source-repo 改动。
+7. 如果任务在等待长时间外部作业，切到 `waiting_external`，清空 `owner_agent` 和 `lease_until`，然后设置 `wake_at` 与 `wake_prompt`。
+8. 如果任务被阻塞，把状态设为 `blocked`，清空 `owner_agent`、`lease_until`、`wake_at`、`wake_prompt`，并在 task 文件里明确写清阻塞原因。Alice 在把任务视为终局阻塞前，可能会先走几轮 reviewer guidance。若你无法留下合法交接状态，发送 `/alice blocked ...` 或 `/alice needs-human ...`；不要静默留下非法活跃状态。
+9. executor 不得在 `reviews/` 下新建或修改 review 文件；只能读取已有 review。只有 reviewer 可以写新的 review 文件。
+10. 最终回复前，自己检查一遍 invariant：
+    - 最终 task status 对 executor 交接是否合法
+    - `owner_agent` / `lease_until` 是否与该状态匹配
+    - 如果要交给 review，`last_run_path` 是否可解析
+    - 如果需要 source-repo 证据，`head_commit` 是否真实存在
+11. 继续以 campaign repo 为唯一事实源。
+12. 你需要亲自完成 source repo 和 task 文件更新，然后给出一条简短中文公开总结，说明改了哪些文件、做了什么验证、最后 task 状态是什么。

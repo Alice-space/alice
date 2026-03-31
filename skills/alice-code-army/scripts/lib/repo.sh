@@ -77,5 +77,6 @@ init_campaign_repo() {
 
   materialize_campaign_repo_template "$payload" "$wanted_path"
   ensure_campaign_repo_git_init "$wanted_path"
+  commit_campaign_repo_if_dirty "$wanted_path" "chore(campaign): initialize repo"
   campaign_json "$campaign_id"
 }

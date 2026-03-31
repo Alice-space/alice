@@ -125,6 +125,11 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if _, err := campaignrepo.WriteLiveReport(item.CampaignRepoPath, result.Summary); err != nil {
 		logging.Warnf("write live report failed campaign=%s path=%s: %v", item.ID, item.CampaignRepoPath, err)
 	}
+	if _, committed, err := campaignrepo.CommitRepoChanges(item.CampaignRepoPath, "chore(campaign): reconcile repo state"); err != nil {
+		logging.Warnf("commit campaign repo failed campaign=%s path=%s: %v", item.ID, item.CampaignRepoPath, err)
+	} else if committed {
+		logging.Infof("committed campaign repo snapshot campaign=%s path=%s", item.ID, item.CampaignRepoPath)
+	}
 	if err := b.syncCampaignWakeTasks(item, result.Summary); err != nil {
 		logging.Warnf("sync wake tasks failed campaign=%s: %v", item.ID, err)
 	}

@@ -64,6 +64,7 @@ apply_command() {
         sed -i "s/^plan_round:.*/plan_round: $(( current_round + 1 ))/" "${repo_path}/campaign.md"
         update_campaign_plan_status "$repo_path" "planning"
       fi
+      commit_campaign_repo_if_dirty "$repo_path" "chore(campaign): apply replan guidance"
     fi
     patch_json="$(jq -cn --arg summary "$summary" '{summary:$summary}')"
     patch_campaign "$campaign_id" "$patch_json"
@@ -80,6 +81,7 @@ apply_command() {
     if [[ -n "$repo_path" ]]; then
       mkdir -p "$repo_path"
       printf '\n## Discovery (%s)\n\n%s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$discovery_finding" >> "${repo_path}/findings.md"
+      commit_campaign_repo_if_dirty "$repo_path" "chore(campaign): record discovery"
     fi
     patch_json="$(jq -cn --arg summary "$summary" '{summary:$summary}')"
     patch_campaign "$campaign_id" "$patch_json"

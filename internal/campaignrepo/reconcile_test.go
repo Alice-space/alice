@@ -354,7 +354,7 @@ last_run_path: "results/summary.md"
 	if executorSpec.Title != "Demo Campaign · T001 · 执行 · 第 2 轮" {
 		t.Fatalf("unexpected executor title: %q", executorSpec.Title)
 	}
-	if !containsAll(executorSpec.Prompt, "Task id: T001", "Executor role: executor.gemini", "Reviewer role: reviewer.kimi", "Write scope: src/core", "Review status: changes_requested", "Last review path: phases/P01/tasks/T001/reviews/R001.md", "read that review before touching the source repo", "Source repos:", "repo-a: local_path="+root) {
+	if !containsAll(executorSpec.Prompt, "Task ID: T001", "执行角色: executor.gemini", "评审角色: reviewer.kimi", "Write scope: src/core", "评审状态: changes_requested", "上次评审路径: phases/P01/tasks/T001/reviews/R001.md", "先读那份 review，再去碰 source repo", "Source repos:", "repo-a: local_path="+root) {
 		t.Fatalf("unexpected executor prompt: %q", executorSpec.Prompt)
 	}
 
@@ -372,7 +372,7 @@ last_run_path: "results/summary.md"
 		t.Fatalf("unexpected reviewer title: %q", reviewerSpec.Title)
 	}
 	expectedReviewFile := filepath.Join(root, "phases", "P01", "tasks", "T002", "reviews", "R001.md")
-	if !containsAll(reviewerSpec.Prompt, "Task id: T002", "Target commit: abc123", "Last run path: results/summary.md", "Source repo changes required: yes", "Write scope: -", "Suggested review file: "+expectedReviewFile, "Source repos:", "repo-a: local_path="+root, "Verify that `last_run_path` resolves", "also verify that `target_commit` and `working_branches` resolve", "diff stays inside `write_scope`", "Use RFC3339 for `created_at`") {
+	if !containsAll(reviewerSpec.Prompt, "Task ID: T002", "目标 commit: abc123", "上次运行产物路径: results/summary.md", "是否需要 source repo 改动: yes", "Write scope: -", "建议写入的 review 文件: "+expectedReviewFile, "Source repos:", "repo-a: local_path="+root, "先验证 `last_run_path` 可解析", "还要确认列出的本地 repo 中 `target_commit` 和 `working_branches` 真实可解析", "diff 没有跑出 `write_scope`", "`created_at` 使用 RFC3339") {
 		t.Fatalf("unexpected reviewer prompt: %q", reviewerSpec.Prompt)
 	}
 }
@@ -426,7 +426,7 @@ last_run_path: "results/summary.md"
 	if len(specs) != 1 || specs[0].Kind != DispatchKindReviewer {
 		t.Fatalf("expected single reviewer dispatch spec, got %+v", specs)
 	}
-	if !containsAll(specs[0].Prompt, "Task id: T001", "Target commit: -", "Source repo changes required: no (campaign-only/archive-only task)", "do not require a source-repo `head_commit`", "task-local artifacts and campaign-repo diff instead") {
+	if !containsAll(specs[0].Prompt, "Task ID: T001", "目标 commit: -", "是否需要 source repo 改动: no（仅 campaign / archive 任务）", "不要要求 source-repo `head_commit`", "直接审 task-local artifact 和 campaign-repo diff") {
 		t.Fatalf("unexpected campaign-only reviewer prompt: %q", specs[0].Prompt)
 	}
 }
@@ -518,22 +518,22 @@ role: source
 	}
 	if !containsAll(
 		spec.Prompt,
-		"Plan round 1 for campaign repo `"+root+"`",
+		"第 1 轮规划，campaign repo 为 `"+root+"`",
 		"Campaign ID: camp_demo",
-		"All paths below are relative to that repo.",
+		"下面提到的所有路径都相对于该 repo。",
 		"`plans/proposals/round-001-plan.md`",
 		"`plans/merged/master-plan.md`",
 		"`phases/Pxx/tasks/Txxx/{task.md,context.md,plan.md,progress.md,results/README.md,reviews/README.md}`",
-		"`context.md` Context/Relevant Repos/Relevant Files/Dependencies",
+		"`context.md` 的 Context / Relevant Repos / Relevant Files / Dependencies",
 		"`alice-code-army repo-lint camp_demo`",
 		"$ALICE_RUNTIME_BIN runtime campaigns repo-lint camp_demo",
-		"Keep proposal/master-plan/phases/tasks consistent",
-		"must keep `status: draft`",
-		"must not emit `planned`, `ready`, `executing`, or any `review_*` status during planning",
-		"Keep validation inside each task's `write_scope`",
-		"Verify claims from files or command output",
-		"Never add `default_*` to `campaign.md`",
-		"give a short public summary",
+		"proposal / master-plan / phases / tasks 在 phase 目标、task ID、depends_on、target_repos、write_scope、acceptance、parallelism 上必须一致",
+		"必须保持 `status: draft`",
+		"不得产出 `planned`、`ready`、`executing` 或任何 `review_*` 状态",
+		"executor 只靠 task 文件夹就能开工",
+		"优先拆成更窄、更清晰的 task",
+		"不要往 `campaign.md` 里加入 `default_*`",
+		"简短中文公开总结",
 	) {
 		t.Fatalf("unexpected planner prompt: %q", spec.Prompt)
 	}
@@ -805,19 +805,19 @@ write_scope: [src/**]
 	}
 	if !containsAll(
 		spec.Prompt,
-		"Review whether round 1 is ready for human approval for campaign repo `"+root+"`",
+		"评审第 1 轮计划是否已经可以交给人类审批，campaign repo 为 `"+root+"`",
 		"Campaign ID: camp_demo",
-		"All paths below are relative to that repo.",
+		"下面提到的所有路径都相对于该 repo。",
 		"`plans/proposals/round-001-plan.md`",
 		"`plans/merged/master-plan.md`",
 		"`alice-code-army repo-lint camp_demo`",
 		"$ALICE_RUNTIME_BIN runtime campaigns repo-lint camp_demo",
-		"Use RFC3339 for `created_at`",
-		"proposal/master-plan/phases/tasks agree on phase goals, task IDs, depends_on, target_repos, write_scope, acceptance, and parallelism",
-		"do not require planner to replace static guidance text or placeholders there unless frontmatter/objective/source-repo facts are actually inconsistent",
-		"do not use `repo-lint --for-approval` in this review",
-		"placeholder task packages, or inconsistent artifacts are usually `concern`, not `blocking`",
-		"give a short public summary with the review path, verdict, and repo-lint result",
+		"`created_at` 使用 RFC3339",
+		"proposal / master-plan / phases / tasks 在 phase 目标、task ID、depends_on、target_repos、write_scope、acceptance、parallelism 上必须一致",
+		"不要要求 planner 去替换那里静态说明文字或占位提示",
+		"本轮评审不要使用 `repo-lint --for-approval`",
+		"任务粒度过粗、只能靠聊天补 context、验收不可观察，也通常至少是 `concern`",
+		"优先级最高的返工 task ID",
 	) {
 		t.Fatalf("unexpected planner reviewer prompt: %q", spec.Prompt)
 	}

@@ -94,7 +94,7 @@ func buildWakePrompt(repo Repository, task TaskDocument) string {
 		return prompt
 	}
 	return strings.TrimSpace(fmt.Sprintf(
-		"Continue the repo-first campaign.\nCampaign repo: %s\nCampaign file: %s\nTask file: %s\nTask id: %s\nTask title: %s\nScheduled wake_at: %s\nWake prompt: %s\nRead the task context from the campaign repo, continue from the recorded state, then update the task files and live report. If the task is still blocked, explain the blocker clearly and request human help if needed.",
+		"继续推进这个 repo-first campaign。\nCampaign repo: %s\nCampaign file: %s\nTask 文件: %s\nTask ID: %s\nTask 标题: %s\n计划唤醒时间: %s\n唤醒提示: %s\n先从 campaign repo 读取 task 上下文，在已记录状态上继续推进，再更新 task 文件。若任务仍然阻塞，请明确说明阻塞原因，并在必要时请求人工帮助。",
 		repo.Root,
 		repo.Campaign.Path,
 		filepath.ToSlash(task.Path),

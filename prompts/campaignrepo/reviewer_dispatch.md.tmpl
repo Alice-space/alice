@@ -1,19 +1,19 @@
-Continue the repo-first campaign as the external reviewer.
+继续以外部评审者身份推进这个 repo-first campaign。
 
 Campaign repo: {{ .CampaignRepo }}
-Task file: {{ .TaskFile }}
-Task dir: {{ .TaskDir }}
-Task id: {{ .TaskID }}
-Task title: {{ .TaskTitle }}
-Reviewer role: {{ .ReviewerRole }}
-Review round: {{ .ReviewRound }}
-Review status: {{ .ReviewStatus }}
-Target commit: {{ .TargetCommit }}
-Last run path: {{ .LastRunPath }}
-Blocked guidance count: {{ .BlockGuidanceCount }}
-Last blocked reason: {{ .LastBlockedReason }}
+Task 文件: {{ .TaskFile }}
+Task 目录: {{ .TaskDir }}
+Task ID: {{ .TaskID }}
+Task 标题: {{ .TaskTitle }}
+评审角色: {{ .ReviewerRole }}
+评审轮次: {{ .ReviewRound }}
+评审状态: {{ .ReviewStatus }}
+目标 commit: {{ .TargetCommit }}
+上次运行产物路径: {{ .LastRunPath }}
+阻塞指导次数: {{ .BlockGuidanceCount }}
+上次阻塞原因: {{ .LastBlockedReason }}
 Write scope: {{ .WriteScope | join ", " | default "-" }}
-Source repo changes required: {{ if .SourceChangeRequired }}yes{{ else }}no (campaign-only/archive-only task){{ end }}
+是否需要 source repo 改动: {{ if .SourceChangeRequired }}yes{{ else }}no（仅 campaign / archive 任务）{{ end }}
 Source repos:
 {{- if .SourceRepoRefs }}
 {{- range .SourceRepoRefs }}
@@ -22,19 +22,19 @@ Source repos:
 {{- else }}
 - none declared
 {{- end }}
-Suggested review file: {{ .SuggestedReviewFile }}
+建议写入的 review 文件: {{ .SuggestedReviewFile }}
 
-Review rules:
-1. Read `campaign.md`, the task markdown, and the referenced results. {{ if .SourceChangeRequired }}Also inspect the relevant source repo diff or commit from the listed local paths.{{ else }}This task is campaign-only/archive-only, so focus on the task-local artifacts and campaign-repo diff instead of requiring a source-repo commit.{{ end }}
-2. Do not modify source repos.
-3. Write a new review markdown file at `{{ .SuggestedReviewFile }}` inside the task-local `reviews/` directory, using the template in `_templates/review.md`.
-4. Set verdict to one of `approve`, `concern`, or `blocking`, and make the findings concrete.
-   - Use `concern` for issues the executor can fix in the normal rework loop: acceptance gaps, missing tests, incorrect output, local code quality problems, or incomplete task-local artifacts.
-   - Use `blocking` only when the task cannot safely continue without human intervention, external dependency changes, task contract correction, or campaign-level replanning.
-   - If `last_blocked_reason` is non-empty and `block_guidance_count` is 1-3, treat this as a blocked-recovery round: prefer concrete recovery guidance plus `concern`, and reserve `blocking` for truly unrecoverable situations after the guidance budget is exhausted.
-5. Verify that `last_run_path` resolves and that the reviewed diff stays inside `write_scope`, before approving. {{ if .SourceChangeRequired }}For source-repo tasks, also verify that `target_commit` and `working_branches` resolve in the listed local repos.{{ else }}For campaign-only/archive-only tasks, do not require a source-repo `head_commit`; review the task-local artifacts and campaign-repo diff instead.{{ end }} If a required commit or artifact reference does not resolve, or the diff escapes `write_scope`, that is at least `concern`.
-6. Use RFC3339 for `created_at`, for example `2026-03-28T14:57:39+08:00`.
-7. Do not change the task status yourself; Alice judge will apply the review verdict.
-8. Your round is not complete until a new task-local review file exists for the current `review_round`, with a non-empty verdict and `reviewer.role` matching the task reviewer contract. Do not leave executor-style response files in `reviews/`.
-9. If you cannot produce a valid review artifact, emit `/alice blocked ...` or `/alice needs-human ...` instead of replying as if review completed.
-10. Write the review file yourself, then emit a short public summary with the review file path, verdict, and key findings.
+评审规则：
+1. 先读 `campaign.md`、task markdown、以及引用到的结果产物。{{ if .SourceChangeRequired }}还要从列出的本地路径里检查相关 source repo diff 或 commit。{{ else }}这是 campaign-only / archive-only task，因此重点看 task-local artifact 和 campaign-repo diff，不要强行要求 source-repo commit。{{ end }}
+2. 不要修改 source repo。
+3. 在 task-local `reviews/` 目录下的 `{{ .SuggestedReviewFile }}` 写一份新的 review markdown，使用 `_templates/review.md` 的结构。
+4. verdict 只能是 `approve`、`concern`、`blocking` 之一，发现必须具体。
+   - 对 executor 可以在普通返工回路里修掉的问题，用 `concern`：例如 acceptance 缺口、测试缺失、输出不正确、局部代码质量问题、task-local artifact 不完整。
+   - 只有任务在没有人工介入、外部依赖变更、task 合同修正或 campaign 级重规划的情况下无法安全继续时，才用 `blocking`。
+   - 如果 `last_blocked_reason` 非空且 `block_guidance_count` 在 1-3 之间，把它视作 blocked-recovery round：优先给出具体恢复路径并判 `concern`；只有在指导预算基本耗尽且确实不可恢复时才判 `blocking`。
+5. 在给出 `approve` 之前，先验证 `last_run_path` 可解析，并确认被审 diff 没有跑出 `write_scope`。{{ if .SourceChangeRequired }}对 source-repo task，还要确认列出的本地 repo 中 `target_commit` 和 `working_branches` 真实可解析。{{ else }}对 campaign-only / archive-only task，不要要求 source-repo `head_commit`；直接审 task-local artifact 和 campaign-repo diff。{{ end }}如果必须的 commit 或 artifact 引用无法解析，或者 diff 跑出了 `write_scope`，至少都是 `concern`。
+6. `created_at` 使用 RFC3339，例如 `2026-03-28T14:57:39+08:00`。
+7. 不要自己改 task status；review verdict 由 Alice judge 应用。
+8. 只有当当前 `review_round` 对应的一份新 task-local review 文件已经存在、其中 verdict 非空、且 `reviewer.role` 与 task reviewer 合同匹配时，本轮才算完成。不要在 `reviews/` 里留下 executor 风格的响应文件。
+9. 如果你无法产出合法 review artifact，请发送 `/alice blocked ...` 或 `/alice needs-human ...`，不要假装 review 已完成。
+10. 你要自己把 review 文件写出来，然后给出一条简短中文公开总结，包含 review 路径、verdict 和关键发现。
