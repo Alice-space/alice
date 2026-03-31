@@ -233,7 +233,7 @@ func ValidateCampaign(c Campaign) error {
 		return fmt.Errorf("invalid manage mode %q", c.ManageMode)
 	}
 	switch c.Status {
-	case StatusPlanned, StatusRunning, StatusHold, StatusMerged, StatusRejected, StatusCompleted, StatusCanceled:
+	case StatusPlanned, StatusPlanning, StatusPlanReviewPending, StatusPlanApproved, StatusRunning, StatusHold, StatusMerged, StatusRejected, StatusCompleted, StatusCanceled:
 	default:
 		return fmt.Errorf("invalid campaign status %q", c.Status)
 	}

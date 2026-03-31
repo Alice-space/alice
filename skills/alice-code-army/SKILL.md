@@ -193,6 +193,8 @@ task frontmatter 现在默认带两类角色：
   `"$CODE_ARMY_SH" approve-plan camp_xxx`
 - 应用一条 `/alice ...` 指令：
   `"$CODE_ARMY_SH" apply-command camp_xxx '/alice hold' feishu`
+- 从 `hold` 恢复 campaign；会优先按 repo `plan_status` 恢复到 planning / review pending / plan approved / running：
+  `"$CODE_ARMY_SH" apply-command camp_xxx '/alice resume' feishu`
 
 ## 自动化与回复模式
 

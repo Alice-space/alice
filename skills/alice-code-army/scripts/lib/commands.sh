@@ -20,6 +20,73 @@ create_repo_first() {
   init_campaign_repo "$campaign_id" "$requested_path"
 }
 
+normalize_plan_status() {
+  local raw="${1:-}"
+  raw="$(printf '%s' "$raw" | tr '[:upper:]' '[:lower:]' | tr -d '"' | tr -d "'" | tr ' -' '__')"
+  case "$raw" in
+    ""|idle)
+      printf 'idle\n'
+      ;;
+    planning)
+      printf 'planning\n'
+      ;;
+    plan_review|plan_review_pending|plan__review__pending)
+      printf 'plan_review_pending\n'
+      ;;
+    plan_reviewing|plan__reviewing)
+      printf 'plan_reviewing\n'
+      ;;
+    approved|plan_approved|plan__approved)
+      printf 'plan_approved\n'
+      ;;
+    human_approved|human__approved)
+      printf 'human_approved\n'
+      ;;
+    *)
+      printf '%s\n' "$raw"
+      ;;
+  esac
+}
+
+campaign_plan_status() {
+  local repo_path="$1"
+  local campaign_file="${repo_path}/campaign.md"
+  [[ -f "$campaign_file" ]] || return 0
+  sed -n 's/^plan_status:[[:space:]]*//p' "$campaign_file" | head -1 | tr -d '"' | tr -d "'"
+}
+
+infer_resume_status() {
+  local payload="$1" repo_path plan_status normalized
+  repo_path="$(jq -r '.campaign.campaign_repo_path // ""' <<<"$payload")"
+  if [[ -n "$repo_path" && -f "${repo_path}/campaign.md" ]]; then
+    plan_status="$(campaign_plan_status "$repo_path")"
+    normalized="$(normalize_plan_status "$plan_status")"
+    case "$normalized" in
+      idle)
+        printf 'planned\n'
+        return 0
+        ;;
+      planning)
+        printf 'planning\n'
+        return 0
+        ;;
+      plan_review_pending|plan_reviewing)
+        printf 'plan_review_pending\n'
+        return 0
+        ;;
+      plan_approved)
+        printf 'plan_approved\n'
+        return 0
+        ;;
+      human_approved)
+        printf 'running\n'
+        return 0
+        ;;
+    esac
+  fi
+  printf 'running\n'
+}
+
 apply_command() {
   local campaign_id="$1" command_text="$2" source="${3:-manual}"
   local payload patch_json summary
@@ -31,6 +98,42 @@ apply_command() {
   if [[ "$command_text" == "/alice hold" ]]; then
     summary="Campaign put on hold by guidance"
     patch_json="$(jq -cn --arg status "hold" --arg summary "$summary" '{status:$status, summary:$summary}')"
+    patch_campaign "$campaign_id" "$patch_json"
+  elif [[ "$command_text" =~ ^/alice[[:space:]]+resume([[:space:]]+(.+))?$ ]]; then
+    local current_status next_status resume_note
+    current_status="$(jq -r '.campaign.status // ""' <<<"$payload" | tr '[:upper:]' '[:lower:]')"
+    case "$current_status" in
+      merged|rejected|completed|canceled)
+        die "cannot resume terminal campaign with status: ${current_status}"
+        ;;
+      planned|planning|plan_review_pending|plan_approved|running)
+        run_campaigns get "$campaign_id"
+        return 0
+        ;;
+    esac
+    next_status="$(infer_resume_status "$payload")"
+    resume_note="${BASH_REMATCH[2]:-}"
+    case "$next_status" in
+      planned)
+        summary="Campaign resumed to planned state"
+        ;;
+      planning)
+        summary="Campaign resumed to planning phase"
+        ;;
+      plan_review_pending)
+        summary="Campaign resumed to plan review pending"
+        ;;
+      plan_approved)
+        summary="Campaign resumed to plan approved"
+        ;;
+      *)
+        summary="Campaign resumed"
+        ;;
+    esac
+    if [[ -n "$resume_note" ]]; then
+      summary="Campaign resumed: ${resume_note}"
+    fi
+    patch_json="$(jq -cn --arg status "$next_status" --arg summary "$summary" '{status:$status, summary:$summary}')"
     patch_campaign "$campaign_id" "$patch_json"
   elif [[ "$command_text" =~ ^/alice[[:space:]]+(needs-human|needs_human|needshuman|needs[[:space:]]+human)([[:space:]]+(.+))?$ ]]; then
     summary="${BASH_REMATCH[3]:-Needs human intervention requested}"
@@ -107,7 +210,7 @@ plan_status() {
     jq -cn --arg status "no_repo" '{"status":"ok","plan_status":$status,"plan_round":0}'
     return 0
   fi
-  plan_status="$(sed -n 's/^plan_status:[[:space:]]*//p' "${repo_path}/campaign.md" | head -1 | tr -d '"' | tr -d "'")"
+  plan_status="$(campaign_plan_status "$repo_path")"
   plan_round="$(sed -n 's/^plan_round:[[:space:]]*//p' "${repo_path}/campaign.md" | head -1)"
   jq -cn \
     --arg plan_status "${plan_status:-idle}" \

@@ -55,6 +55,7 @@ func TestServiceQuery_GroupScopeAndCampaignFiltering(t *testing.T) {
 	campaignStore := &campaignStoreStub{
 		items: []campaign.Campaign{
 			{ID: "camp_running", Status: campaign.StatusRunning},
+			{ID: "camp_planning", Status: campaign.StatusPlanning},
 			{ID: "camp_hold", Status: campaign.StatusHold},
 			{ID: "camp_merged", Status: campaign.StatusMerged},
 		},
@@ -91,10 +92,10 @@ func TestServiceQuery_GroupScopeAndCampaignFiltering(t *testing.T) {
 	if len(result.Tasks) != 1 || result.Tasks[0].ID != "task_1" {
 		t.Fatalf("unexpected tasks: %#v", result.Tasks)
 	}
-	if len(result.Campaigns) != 2 {
+	if len(result.Campaigns) != 3 {
 		t.Fatalf("expected only active campaigns, got %#v", result.Campaigns)
 	}
-	if result.Campaigns[0].ID != "camp_running" || result.Campaigns[1].ID != "camp_hold" {
+	if result.Campaigns[0].ID != "camp_running" || result.Campaigns[1].ID != "camp_planning" || result.Campaigns[2].ID != "camp_hold" {
 		t.Fatalf("unexpected active campaigns: %#v", result.Campaigns)
 	}
 	if result.TotalUsage.TotalTokens() != 15 {

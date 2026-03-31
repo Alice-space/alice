@@ -743,7 +743,7 @@ phases/P01/tasks/T001/reviews/R001.md
 | `plan-status CAMP_ID` | 查看 repo 里的 `plan_status` / `plan_round` | 计划阶段排障 |
 | `approve-plan CAMP_ID` | 人类批准计划 | planner reviewer 通过且 `repo-lint --for-approval` 通过之后 |
 | `patch CAMP_ID JSON` | 改 runtime campaign 字段 | 改 summary、状态、path 等 |
-| `apply-command CAMP_ID '/alice ...'` | 应用高频指导命令 | hold、needs-human、approve-plan、replan 等 |
+| `apply-command CAMP_ID '/alice ...'` | 应用高频指导命令 | hold、resume、needs-human、approve-plan、replan 等 |
 
 如果当前 campaign 已到“等待人工批准”阶段，飞书里的对应通知卡片现在也会直接提供“批准 / 不批准”按钮；按钮会校验 `plan_round`，旧卡不会误操作新一轮规划。点击之后，Alice 会把原卡片更新成“已批准 / 已拒绝”的终态显示，避免同一张卡重复操作。
 
@@ -764,6 +764,7 @@ phases/P01/tasks/T001/reviews/R001.md
 | 指令 | 作用 |
 | --- | --- |
 | `/alice hold` | 把 campaign 置为 `hold` |
+| `/alice resume` | 从 `hold` 恢复 campaign；优先按 repo `plan_status` 回到 planning / review pending / plan approved / running |
 | `/alice needs-human ...` | 标记需要人工介入，并把 campaign 置为 `hold` |
 | `/alice approve-plan` | 先过审批 gate，再把 plan 置为 `human_approved` 并立即 reconcile |
 | `/alice steer ...` | 更新方向摘要 |

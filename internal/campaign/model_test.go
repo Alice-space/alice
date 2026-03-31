@@ -56,3 +56,24 @@ func TestValidateCampaign(t *testing.T) {
 		t.Fatalf("expected campaign to be valid, got %v", err)
 	}
 }
+
+func TestValidateCampaign_AllowsPlanningStatuses(t *testing.T) {
+	statuses := []CampaignStatus{
+		StatusPlanning,
+		StatusPlanReviewPending,
+		StatusPlanApproved,
+	}
+	for _, status := range statuses {
+		item := Campaign{
+			ID:                "camp_1",
+			Objective:         "improve speed and quality",
+			Session:           SessionRoute{ScopeKey: "chat_id:oc_thread|thread:omt_1"},
+			Creator:           Actor{UserID: "ou_user"},
+			Status:            status,
+			MaxParallelTrials: 2,
+		}
+		if err := ValidateCampaign(item); err != nil {
+			t.Fatalf("expected status %q to be valid, got %v", status, err)
+		}
+	}
+}
