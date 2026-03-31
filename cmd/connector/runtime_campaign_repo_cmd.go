@@ -85,6 +85,56 @@ func newRuntimeCampaignRepoLintCmd() *cobra.Command {
 	return cmd
 }
 
+func newRuntimeCampaignTaskSelfCheckCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "task-self-check CAMPAIGN_ID TASK_ID KIND",
+		Short: "Run post-run self-check for one executor/reviewer task round",
+		Args:  cobra.ExactArgs(3),
+		RunE: withRuntimeClient(func(
+			ctx context.Context,
+			client *runtimeapi.Client,
+			session mcpbridge.SessionContext,
+			_ *cobra.Command,
+			args []string,
+		) error {
+			item, err := loadRuntimeCampaign(ctx, client, session, args[0])
+			if err != nil {
+				return err
+			}
+			taskID := strings.TrimSpace(args[1])
+			if taskID == "" {
+				return errors.New("task id is required")
+			}
+			kind := campaignrepo.DispatchKind(strings.ToLower(strings.TrimSpace(args[2])))
+			switch kind {
+			case campaignrepo.DispatchKindExecutor, campaignrepo.DispatchKindReviewer:
+			default:
+				return fmt.Errorf("kind must be %q or %q", campaignrepo.DispatchKindExecutor, campaignrepo.DispatchKindReviewer)
+			}
+
+			validation, err := campaignrepo.RunTaskSelfCheck(item.CampaignRepoPath, taskID, kind, currentTime())
+			if err != nil {
+				return err
+			}
+			payload := map[string]any{
+				"status":     "ok",
+				"campaign":   item,
+				"task_id":    taskID,
+				"kind":       kind,
+				"validation": validation,
+			}
+			if !validation.Valid {
+				payload["status"] = "invalid"
+				if printErr := printRuntimeJSON(payload); printErr != nil {
+					return printErr
+				}
+				return validation.Error()
+			}
+			return printRuntimeJSON(payload)
+		}),
+	}
+}
+
 func newRuntimeCampaignApprovePlanCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "approve-plan CAMPAIGN_ID",

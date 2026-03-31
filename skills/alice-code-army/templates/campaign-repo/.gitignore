@@ -1,5 +1,6 @@
 artifacts/
 tmp/
 logs/
+.worktrees/
 *.log
 *.tmp

@@ -83,6 +83,15 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		events = append(events, verdictEvents...)
 	}
 
+	integratedTasks, integrationEvents, err := integrateAcceptedTasks(&repo, campaignID)
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	if integratedTasks > 0 {
+		changed = true
+		events = append(events, integrationEvents...)
+	}
+
 	repairedReviewHandOffs, err := repairDanglingExecutorReviewHandOff(&repo)
 	if err != nil {
 		return ReconcileResult{}, err
@@ -505,9 +514,13 @@ func claimSelectedExecutorTasks(repo *Repository, summary Summary, now time.Time
 		}
 		task := &repo.Tasks[taskIndex]
 		role := resolveExecutorRole(*repo, *task)
+		if err := ensureTaskExecutionWorkspaces(repo, task); err != nil {
+			return claimed, events, err
+		}
 		task.Frontmatter.ExecutionRound++
 		task.Frontmatter.Status = TaskStatusExecuting
 		task.Frontmatter.DispatchState = "executor_dispatched"
+		clearTaskSelfCheck(task)
 		task.Frontmatter.OwnerAgent = roleLabel(role)
 		task.LeaseUntil = now.Add(leaseDuration)
 		task.WakeAt = time.Time{}
@@ -554,6 +567,7 @@ func claimSelectedReviewTasks(repo *Repository, summary Summary, now time.Time, 
 		task.Frontmatter.Status = TaskStatusReviewing
 		task.Frontmatter.DispatchState = "reviewer_dispatched"
 		task.Frontmatter.ReviewStatus = "reviewing"
+		clearTaskSelfCheck(task)
 		task.Frontmatter.OwnerAgent = roleLabel(role)
 		task.LeaseUntil = now.Add(leaseDuration)
 		task.WakeAt = time.Time{}

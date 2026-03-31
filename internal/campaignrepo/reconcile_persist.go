@@ -119,6 +119,13 @@ func persistTaskDocument(repo *Repository, index int) error {
 
 func normalizeTaskDocument(task TaskDocument) TaskDocument {
 	task.Frontmatter.Status = normalizeTaskStatus(task.Frontmatter.Status)
+	task.Frontmatter.DependsOn = normalizeStringList(task.Frontmatter.DependsOn)
+	task.Frontmatter.TargetRepos = normalizeStringList(task.Frontmatter.TargetRepos)
+	task.Frontmatter.WorkingBranches = normalizeStringList(task.Frontmatter.WorkingBranches)
+	task.Frontmatter.WorktreePaths = normalizeStringList(task.Frontmatter.WorktreePaths)
+	task.Frontmatter.WriteScope = normalizeStringList(task.Frontmatter.WriteScope)
+	task.Frontmatter.Artifacts = normalizeStringList(task.Frontmatter.Artifacts)
+	task.Frontmatter.ResultPaths = normalizeStringList(task.Frontmatter.ResultPaths)
 	task.Frontmatter.Executor = normalizeRoleConfig(task.Frontmatter.Executor)
 	task.Frontmatter.Reviewer = normalizeRoleConfig(task.Frontmatter.Reviewer)
 	task.Frontmatter.DispatchState = strings.ToLower(strings.TrimSpace(task.Frontmatter.DispatchState))
@@ -128,6 +135,12 @@ func normalizeTaskDocument(task TaskDocument) TaskDocument {
 	task.Frontmatter.HeadCommit = strings.TrimSpace(task.Frontmatter.HeadCommit)
 	task.Frontmatter.LastRunPath = filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastRunPath))
 	task.Frontmatter.LastReviewPath = filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastReviewPath))
+	task.Frontmatter.SelfCheckKind = strings.ToLower(strings.TrimSpace(task.Frontmatter.SelfCheckKind))
+	if task.Frontmatter.SelfCheckRound < 0 {
+		task.Frontmatter.SelfCheckRound = 0
+	}
+	task.Frontmatter.SelfCheckStatus = normalizeTaskSelfCheckStatus(task.Frontmatter.SelfCheckStatus)
+	task.Frontmatter.SelfCheckAtRaw = strings.TrimSpace(task.Frontmatter.SelfCheckAtRaw)
 	task.Frontmatter.WakePrompt = strings.TrimSpace(task.Frontmatter.WakePrompt)
 	task.Frontmatter.ReportSnippetPath = strings.TrimSpace(task.Frontmatter.ReportSnippetPath)
 	task.Path = filepath.ToSlash(strings.TrimSpace(task.Path))

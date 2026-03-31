@@ -23,6 +23,7 @@ func newRuntimeCampaignCmd() *cobra.Command {
 		newRuntimeCampaignPatchCmd(),
 		newRuntimeCampaignDeleteCmd(),
 		newRuntimeCampaignApprovePlanCmd(),
+		newRuntimeCampaignTaskSelfCheckCmd(),
 		newRuntimeCampaignRepoScanCmd(),
 		newRuntimeCampaignRepoLintCmd(),
 		newRuntimeCampaignRepoReconcileCmd(),

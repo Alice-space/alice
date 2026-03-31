@@ -280,6 +280,7 @@ func validateTaskDocument(root string, task TaskDocument, phases map[string]Phas
 	validateTaskStateContract(root, task, repos, issues)
 	validateTaskRoleWorkflows(task, issues)
 	validateTaskWriteScopeCoverage(task, issues)
+	validateTaskWorktreePaths(task, issues)
 }
 
 func validateTaskDependencies(task TaskDocument, taskByID map[string]TaskDocument, issues *[]ValidationIssue) {
@@ -376,6 +377,9 @@ func validateTaskStateContract(root string, task TaskDocument, repos map[string]
 			})
 		}
 	}
+	if status == TaskStatusExecuting || status == TaskStatusReviewPending || status == TaskStatusReviewing {
+		*issues = append(*issues, taskExecutionWorkspaceIssues(task, resolveTaskSourceRepos(task, repos))...)
+	}
 }
 
 func validateTaskStatusValue(root string, task TaskDocument, issues *[]ValidationIssue) {
@@ -450,6 +454,7 @@ func taskExecutionArtifactIssues(root string, task TaskDocument, repos map[strin
 	if len(targetRepos) == 0 {
 		return issues
 	}
+	issues = append(issues, taskExecutionWorkspaceIssues(task, targetRepos)...)
 
 	headCommit := strings.TrimSpace(task.Frontmatter.HeadCommit)
 	if headCommit == "" {
@@ -590,6 +595,7 @@ func taskRequiresSourceRepoEvidence(task TaskDocument) bool {
 	}
 	return len(task.Frontmatter.TargetRepos) > 0 ||
 		len(task.Frontmatter.WorkingBranches) > 0 ||
+		len(task.Frontmatter.WorktreePaths) > 0 ||
 		strings.TrimSpace(task.Frontmatter.BaseCommit) != "" ||
 		strings.TrimSpace(task.Frontmatter.HeadCommit) != ""
 }
@@ -1250,9 +1256,38 @@ func runGit(path string, args ...string) (string, error) {
 		return "", err
 	}
 	cmd := exec.Command(bin, append([]string{"-C", path}, args...)...)
+	cmd.Env = isolatedGitEnv(os.Environ())
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return "", fmt.Errorf("%w: %s", err, strings.TrimSpace(string(output)))
 	}
 	return strings.TrimSpace(string(output)), nil
+}
+
+func isolatedGitEnv(env []string) []string {
+	if len(env) == 0 {
+		return nil
+	}
+	filtered := make([]string, 0, len(env))
+	for _, entry := range env {
+		key := entry
+		if idx := strings.IndexByte(entry, '='); idx >= 0 {
+			key = entry[:idx]
+		}
+		switch key {
+		case "GIT_DIR",
+			"GIT_WORK_TREE",
+			"GIT_INDEX_FILE",
+			"GIT_COMMON_DIR",
+			"GIT_OBJECT_DIRECTORY",
+			"GIT_ALTERNATE_OBJECT_DIRECTORIES",
+			"GIT_PREFIX",
+			"GIT_SUPER_PREFIX",
+			"GIT_NAMESPACE":
+			continue
+		default:
+			filtered = append(filtered, entry)
+		}
+	}
+	return filtered
 }

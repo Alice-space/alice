@@ -40,6 +40,8 @@ type promptSourceRepoRef struct {
 	DocPath       string
 	LocalPath     string
 	DefaultBranch string
+	WorkingBranch string
+	WorktreePath  string
 }
 
 func buildDispatchSpecs(repo Repository, now time.Time) ([]DispatchTaskSpec, error) {
@@ -147,6 +149,7 @@ func buildDispatchSpecs(repo Repository, now time.Time) ([]DispatchTaskSpec, err
 func buildExecutorDispatchPrompt(repo Repository, task TaskDocument, role RoleConfig) (string, error) {
 	sourceChangeRequired := taskRequiresSourceRepoEvidence(task)
 	return renderCampaignPrompt(campaignRepoPromptExecutorDispatch, map[string]any{
+		"CampaignID":           repo.Campaign.Frontmatter.CampaignID,
 		"CampaignRepo":         repo.Root,
 		"CampaignFile":         repo.Campaign.Path,
 		"TaskFile":             filepath.ToSlash(task.Path),
@@ -158,6 +161,7 @@ func buildExecutorDispatchPrompt(repo Repository, task TaskDocument, role RoleCo
 		"TargetRepos":          task.Frontmatter.TargetRepos,
 		"SourceRepoRefs":       targetSourceRepoRefs(repo, task),
 		"WorkingBranches":      task.Frontmatter.WorkingBranches,
+		"WorktreePaths":        task.Frontmatter.WorktreePaths,
 		"WriteScope":           task.Frontmatter.WriteScope,
 		"SourceChangeRequired": sourceChangeRequired,
 		"ReviewerRole":         roleLabel(resolveReviewerRole(repo, task)),
@@ -167,6 +171,7 @@ func buildExecutorDispatchPrompt(repo Repository, task TaskDocument, role RoleCo
 		"AutoRetryCount":       task.Frontmatter.AutoRetryCount,
 		"BlockGuidanceCount":   task.Frontmatter.BlockGuidanceCount,
 		"LastBlockedReason":    blankForSummary(task.Frontmatter.LastBlockedReason),
+		"SelfCheckCommand":     promptSelfCheckCommand(repo.Campaign.Frontmatter.CampaignID, task.Frontmatter.TaskID, DispatchKindExecutor),
 	})
 }
 
@@ -192,6 +197,7 @@ func buildReviewerDispatchPrompt(repo Repository, task TaskDocument, role RoleCo
 		"WriteScope":           task.Frontmatter.WriteScope,
 		"SourceRepoRefs":       targetSourceRepoRefs(repo, task),
 		"SuggestedReviewFile":  filepath.Join(repo.Root, filepath.FromSlash(reviewPath)),
+		"SelfCheckCommand":     promptSelfCheckCommand(repo.Campaign.Frontmatter.CampaignID, task.Frontmatter.TaskID, DispatchKindReviewer),
 	})
 }
 
@@ -307,16 +313,21 @@ func targetSourceRepoRefs(repo Repository, task TaskDocument) []promptSourceRepo
 		return nil
 	}
 	var refs []promptSourceRepoRef
+	singleTarget := len(task.Frontmatter.TargetRepos) == 1
 	for _, doc := range repo.SourceRepos {
 		repoID := strings.TrimSpace(doc.Frontmatter.RepoID)
 		if _, ok := allowed[repoID]; !ok {
 			continue
 		}
+		workingBranch, _ := taskBranchForRepo(task.Frontmatter.WorkingBranches, repoID)
+		worktreePath, _ := taskWorktreePathForRepo(task.Frontmatter.WorktreePaths, repoID, singleTarget)
 		refs = append(refs, promptSourceRepoRef{
 			RepoID:        repoID,
 			DocPath:       filepath.Join(repo.Root, filepath.FromSlash(doc.Path)),
 			LocalPath:     strings.TrimSpace(doc.Frontmatter.LocalPath),
 			DefaultBranch: strings.TrimSpace(doc.Frontmatter.DefaultBranch),
+			WorkingBranch: workingBranch,
+			WorktreePath:  worktreePath,
 		})
 	}
 	sort.Slice(refs, func(i, j int) bool {
@@ -333,4 +344,13 @@ func maxInt(left, right int) int {
 		return left
 	}
 	return right
+}
+
+func promptSelfCheckCommand(campaignID, taskID string, kind DispatchKind) string {
+	return fmt.Sprintf(
+		`$HOME/.agents/skills/alice-code-army/scripts/alice-code-army.sh task-self-check %s %s %s`,
+		strings.TrimSpace(campaignID),
+		strings.TrimSpace(taskID),
+		strings.TrimSpace(string(kind)),
+	)
 }

@@ -105,6 +105,7 @@ type TaskFrontmatter struct {
 	DependsOn          []string   `yaml:"depends_on" json:"depends_on,omitempty"`
 	TargetRepos        []string   `yaml:"target_repos" json:"target_repos,omitempty"`
 	WorkingBranches    []string   `yaml:"working_branches" json:"working_branches,omitempty"`
+	WorktreePaths      []string   `yaml:"worktree_paths" json:"worktree_paths,omitempty"`
 	WriteScope         []string   `yaml:"write_scope" json:"write_scope,omitempty"`
 	OwnerAgent         string     `yaml:"owner_agent" json:"owner_agent,omitempty"`
 	LeaseUntilRaw      string     `yaml:"lease_until" json:"lease_until,omitempty"`
@@ -121,6 +122,10 @@ type TaskFrontmatter struct {
 	LastBlockedReason  string     `yaml:"last_blocked_reason" json:"last_blocked_reason,omitempty"`
 	LastRunPath        string     `yaml:"last_run_path" json:"last_run_path,omitempty"`
 	LastReviewPath     string     `yaml:"last_review_path" json:"last_review_path,omitempty"`
+	SelfCheckKind      string     `yaml:"self_check_kind" json:"self_check_kind,omitempty"`
+	SelfCheckRound     int        `yaml:"self_check_round" json:"self_check_round,omitempty"`
+	SelfCheckStatus    string     `yaml:"self_check_status" json:"self_check_status,omitempty"`
+	SelfCheckAtRaw     string     `yaml:"self_check_at" json:"self_check_at,omitempty"`
 	WakeAtRaw          string     `yaml:"wake_at" json:"wake_at,omitempty"`
 	WakePrompt         string     `yaml:"wake_prompt" json:"wake_prompt,omitempty"`
 	ReportSnippetPath  string     `yaml:"report_snippet_path" json:"report_snippet_path,omitempty"`

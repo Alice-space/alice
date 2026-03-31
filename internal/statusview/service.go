@@ -140,7 +140,7 @@ func filterActiveCampaigns(items []campaign.Campaign) []campaign.Campaign {
 	filtered := make([]campaign.Campaign, 0, len(items))
 	for _, item := range items {
 		switch item.Status {
-		case campaign.StatusPlanned, campaign.StatusRunning, campaign.StatusHold:
+		case campaign.StatusPlanned, campaign.StatusPlanning, campaign.StatusPlanReviewPending, campaign.StatusPlanApproved, campaign.StatusRunning, campaign.StatusHold:
 			filtered = append(filtered, item)
 		}
 	}

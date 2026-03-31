@@ -7,6 +7,7 @@ Task ID: {{ .TaskID }}
 Task 标题: {{ .TaskTitle }}
 评审角色: {{ .ReviewerRole }}
 评审轮次: {{ .ReviewRound }}
+收尾自检命令: {{ .SelfCheckCommand }}
 评审状态: {{ .ReviewStatus }}
 目标 commit: {{ .TargetCommit }}
 上次运行产物路径: {{ .LastRunPath }}
@@ -35,6 +36,7 @@ Source repos:
 5. 在给出 `approve` 之前，先验证 `last_run_path` 可解析，并确认被审 diff 没有跑出 `write_scope`。{{ if .SourceChangeRequired }}对 source-repo task，还要确认列出的本地 repo 中 `target_commit` 和 `working_branches` 真实可解析。{{ else }}对 campaign-only / archive-only task，不要要求 source-repo `head_commit`；直接审 task-local artifact 和 campaign-repo diff。{{ end }}如果必须的 commit 或 artifact 引用无法解析，或者 diff 跑出了 `write_scope`，至少都是 `concern`。
 6. `created_at` 使用 RFC3339，例如 `2026-03-28T14:57:39+08:00`。
 7. 不要自己改 task status；review verdict 由 Alice judge 应用。
-8. 只有当当前 `review_round` 对应的一份新 task-local review 文件已经存在、其中 verdict 非空、且 `reviewer.role` 与 task reviewer 合同匹配时，本轮才算完成。不要在 `reviews/` 里留下 executor 风格的响应文件。
-9. 如果你无法产出合法 review artifact，请发送 `/alice blocked ...` 或 `/alice needs-human ...`，不要假装 review 已完成。
-10. 你要自己把 review 文件写出来，然后给出一条简短中文公开总结，包含 review 路径、verdict 和关键发现。
+8. 在结束本轮前，必须运行一次收尾自检命令并确认退出码为 0；如果失败，先修 review/task frontmatter，再重复运行，直到通过。自检没过时，不允许结束本轮，也不要手工伪造 `self_check_*` 字段。
+9. 只有当当前 `review_round` 对应的一份新 task-local review 文件已经存在、其中 verdict 非空、且 `reviewer.role` 与 task reviewer 合同匹配时，本轮才算完成。不要在 `reviews/` 里留下 executor 风格的响应文件。
+10. 如果你无法产出合法 review artifact，请发送 `/alice blocked ...` 或 `/alice needs-human ...`，不要假装 review 已完成。
+11. 你要自己把 review 文件写出来，然后给出一条简短中文公开总结，包含 review 路径、verdict、关键发现，以及 self-check 是否通过。

@@ -136,3 +136,55 @@ func TestCampaignHandlers_CreateListAndMutate(t *testing.T) {
 		t.Fatalf("expected repo dir to be removed, stat err=%v", err)
 	}
 }
+
+func TestCampaignHandlers_PatchAllowsPlanningStatuses(t *testing.T) {
+	store := campaign.NewStore(filepath.Join(t.TempDir(), "campaigns.db"))
+	server := NewServer("", "", nil, nil, store, config.Config{})
+	httpServer := httptest.NewServer(server.engine)
+	defer httpServer.Close()
+
+	client := NewClient(httpServer.URL, "")
+	session := mcpbridge.SessionContext{
+		ReceiveIDType: "chat_id",
+		ReceiveID:     "oc_chat",
+		ActorUserID:   "ou_user",
+		ChatType:      "group",
+		SessionKey:    "chat_id:oc_chat|thread:omt_1",
+	}
+
+	created, err := client.CreateCampaign(t.Context(), session, CreateCampaignRequest{
+		Title:             "Plan State Campaign",
+		Objective:         "exercise planning status patching",
+		MaxParallelTrials: 2,
+	})
+	if err != nil {
+		t.Fatalf("create campaign failed: %v", err)
+	}
+	createdCampaign, ok := created["campaign"].(map[string]any)
+	if !ok {
+		t.Fatalf("expected campaign object, got %#v", created)
+	}
+	campaignID, _ := createdCampaign["id"].(string)
+	if campaignID == "" {
+		t.Fatalf("expected campaign id, got %#v", createdCampaign)
+	}
+
+	for _, status := range []campaign.CampaignStatus{
+		campaign.StatusPlanning,
+		campaign.StatusPlanReviewPending,
+		campaign.StatusPlanApproved,
+	} {
+		payload := []byte(`{"status":"` + string(status) + `"}`)
+		patched, err := client.PatchCampaign(t.Context(), session, campaignID, "application/merge-patch+json", payload)
+		if err != nil {
+			t.Fatalf("patch campaign to %q failed: %v", status, err)
+		}
+		patchedCampaign, ok := patched["campaign"].(map[string]any)
+		if !ok {
+			t.Fatalf("expected patched campaign object, got %#v", patched)
+		}
+		if got, _ := patchedCampaign["status"].(string); got != string(status) {
+			t.Fatalf("expected patched status %q, got %#v", status, patchedCampaign["status"])
+		}
+	}
+}

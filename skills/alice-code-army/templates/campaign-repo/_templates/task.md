@@ -6,6 +6,7 @@ status: draft
 depends_on: []
 target_repos: []
 working_branches: []
+worktree_paths: []
 write_scope: []
 owner_agent: ""
 lease_until: ""

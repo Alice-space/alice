@@ -123,7 +123,7 @@ wake_prompt: "resume the cluster job"
 	}
 }
 
-func TestSummarize_AcceptedDependencyUnblocksReadyTask(t *testing.T) {
+func TestSummarize_DoneDependencyUnblocksReadyTask(t *testing.T) {
 	root := t.TempDir()
 	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
 campaign_id: camp_demo
@@ -136,12 +136,12 @@ phase: P01
 status: active
 goal: "Ship the first phase"
 ---
-`)
+	`)
 	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
 task_id: T001
-title: "Accepted dependency"
+title: "Done dependency"
 phase: P01
-status: accepted
+status: done
 ---
 `)
 	mustWriteTestTaskPackage(t, root, "P01", "T002", `---
@@ -167,6 +167,55 @@ write_scope: [src/main.rs]
 	}
 	if len(summary.SelectedReady) != 1 || summary.SelectedReady[0].TaskID != "T002" {
 		t.Fatalf("unexpected selected ready tasks: %+v", summary.SelectedReady)
+	}
+}
+
+func TestSummarize_AcceptedSourceRepoDependencyStaysBlockedUntilIntegrated(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Accepted but not integrated"
+phase: P01
+status: accepted
+target_repos: [repo-a]
+write_scope: [src/main.rs]
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T002", `---
+task_id: T002
+title: "Follow-up task"
+phase: P01
+status: ready
+depends_on: [T001]
+target_repos: [repo-a]
+write_scope: [src/next.rs]
+---
+`)
+
+	_, summary, err := ScanFromPath(root, time.Date(2026, 3, 24, 11, 0, 0, 0, time.UTC), 2)
+	if err != nil {
+		t.Fatalf("scan campaign repo failed: %v", err)
+	}
+	if summary.ReadyCount != 0 {
+		t.Fatalf("expected ready_count=0, got %d", summary.ReadyCount)
+	}
+	if len(summary.SelectedReady) != 0 {
+		t.Fatalf("expected no selected ready tasks, got %+v", summary.SelectedReady)
+	}
+	if len(summary.BlockedTasks) != 1 || !strings.Contains(summary.BlockedTasks[0].BlockedReason, "accepted but not integrated yet") {
+		t.Fatalf("expected accepted-but-not-integrated blocker, got %+v", summary.BlockedTasks)
 	}
 }
 

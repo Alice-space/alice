@@ -183,6 +183,8 @@ task frontmatter 现在默认带两类角色：
   `"$CODE_ARMY_SH" repo-lint camp_xxx --for-approval`
 - 手动触发一次 repo reconcile，并刷新 live report / runtime summary：
   `"$CODE_ARMY_SH" repo-reconcile camp_xxx`
+- 对单个 executor / reviewer 回合做收尾自检；命令会回写 `self_check_*` 证明，且只有返回 0 才表示这轮可以合法结束：
+  `"$CODE_ARMY_SH" task-self-check camp_xxx T001 executor`
 - 查看单个 campaign：
   `"$CODE_ARMY_SH" get camp_xxx`
 - Patch campaign：
@@ -191,6 +193,8 @@ task frontmatter 现在默认带两类角色：
   `"$CODE_ARMY_SH" approve-plan camp_xxx`
 - 应用一条 `/alice ...` 指令：
   `"$CODE_ARMY_SH" apply-command camp_xxx '/alice hold' feishu`
+- 从 `hold` 恢复 campaign；会优先按 repo `plan_status` 恢复到 planning / review pending / plan approved / running：
+  `"$CODE_ARMY_SH" apply-command camp_xxx '/alice resume' feishu`
 
 ## 自动化与回复模式
 

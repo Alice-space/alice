@@ -131,6 +131,7 @@ func loadTaskDocuments(root string) ([]TaskDocument, error) {
 		frontmatter.DependsOn = normalizeStringList(frontmatter.DependsOn)
 		frontmatter.TargetRepos = normalizeStringList(frontmatter.TargetRepos)
 		frontmatter.WorkingBranches = normalizeStringList(frontmatter.WorkingBranches)
+		frontmatter.WorktreePaths = normalizeStringList(frontmatter.WorktreePaths)
 		frontmatter.WriteScope = normalizeStringList(frontmatter.WriteScope)
 		frontmatter.OwnerAgent = strings.TrimSpace(frontmatter.OwnerAgent)
 		frontmatter.LeaseUntilRaw = strings.TrimSpace(frontmatter.LeaseUntilRaw)
@@ -151,6 +152,12 @@ func loadTaskDocuments(root string) ([]TaskDocument, error) {
 		frontmatter.HeadCommit = strings.TrimSpace(frontmatter.HeadCommit)
 		frontmatter.LastRunPath = filepath.ToSlash(strings.TrimSpace(frontmatter.LastRunPath))
 		frontmatter.LastReviewPath = filepath.ToSlash(strings.TrimSpace(frontmatter.LastReviewPath))
+		frontmatter.SelfCheckKind = strings.ToLower(strings.TrimSpace(frontmatter.SelfCheckKind))
+		if frontmatter.SelfCheckRound < 0 {
+			frontmatter.SelfCheckRound = 0
+		}
+		frontmatter.SelfCheckStatus = normalizeTaskSelfCheckStatus(frontmatter.SelfCheckStatus)
+		frontmatter.SelfCheckAtRaw = strings.TrimSpace(frontmatter.SelfCheckAtRaw)
 		frontmatter.WakeAtRaw = strings.TrimSpace(frontmatter.WakeAtRaw)
 		frontmatter.WakePrompt = strings.TrimSpace(frontmatter.WakePrompt)
 		frontmatter.ReportSnippetPath = strings.TrimSpace(frontmatter.ReportSnippetPath)
