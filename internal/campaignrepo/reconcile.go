@@ -329,7 +329,8 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 		if !ok {
 			continue
 		}
-		if filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastReviewPath)) == filepath.ToSlash(review.Path) {
+		if filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastReviewPath)) == filepath.ToSlash(review.Path) &&
+			!reviewVerdictReadyForJudge(*task, review) {
 			continue
 		}
 		verdict := normalizeReviewVerdict(review.Frontmatter.Verdict, review.Frontmatter.Blocking)
@@ -416,6 +417,20 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 		applied++
 	}
 	return applied, events, nil
+}
+
+func reviewVerdictReadyForJudge(task TaskDocument, review ReviewDocument) bool {
+	if DispatchKind(strings.ToLower(strings.TrimSpace(task.Frontmatter.SelfCheckKind))) != DispatchKindReviewer {
+		return false
+	}
+	if normalizeTaskSelfCheckStatus(task.Frontmatter.SelfCheckStatus) != taskSelfCheckStatusPassed {
+		return false
+	}
+	targetRound := task.Frontmatter.ReviewRound
+	if review.Frontmatter.ReviewRound > 0 {
+		targetRound = review.Frontmatter.ReviewRound
+	}
+	return targetRound > 0 && task.Frontmatter.SelfCheckRound == targetRound
 }
 
 func requeueBlockedTasksForReviewerGuidance(repo *Repository, campaignID string) (int, []ReconcileEvent, error) {
