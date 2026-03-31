@@ -60,6 +60,11 @@ main() {
       shift
       run_campaigns repo-lint "$@"
       ;;
+    task-self-check)
+      [[ $# -eq 4 ]] || die "usage: $PROGRAM task-self-check CAMPAIGN_ID TASK_ID executor|reviewer"
+      shift
+      run_campaigns task-self-check "$@"
+      ;;
     patch)
       [[ $# -eq 3 ]] || die "usage: $PROGRAM patch CAMPAIGN_ID PATCH_JSON"
       mutate_campaign_and_return "patch" "$2" "$3"

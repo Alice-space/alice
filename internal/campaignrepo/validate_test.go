@@ -1110,6 +1110,103 @@ wake_prompt: "resume the cluster job"
 	}
 }
 
+func TestValidateRepository_FlagsTaskWorktreeFromWrongRepo(t *testing.T) {
+	repoA := t.TempDir()
+	initGitRepo(t, repoA)
+	repoAHead := gitHeadCommit(t, repoA)
+
+	repoB := t.TempDir()
+	initGitRepo(t, repoB)
+	repoBHead := gitHeadCommit(t, repoB)
+
+	wrongWorktreeRoot := t.TempDir()
+	wrongWorktree := filepath.Join(wrongWorktreeRoot, ".worktrees", "repo-a", "t001")
+	if err := ensureGitTaskWorktree(repoB, wrongWorktree, "codearmy/camp_demo/t001/repo-a", repoBHead); err != nil {
+		t.Fatalf("create wrong-repo worktree failed: %v", err)
+	}
+
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship the workflow"
+current_phase: P01
+source_repos: [repo-a]
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+repoA+`"
+default_branch: dev
+base_commit: "`+repoAHead+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Wrong worktree"
+phase: P01
+status: executing
+target_repos: [repo-a]
+working_branches: [repo-a:codearmy/camp_demo/t001/repo-a]
+worktree_paths: [repo-a:`+wrongWorktree+`]
+write_scope: [src/core]
+owner_agent: executor
+lease_until: "2026-03-31T16:30:00+08:00"
+---
+
+# Task
+
+## Goal
+- complete the work
+
+## Background
+- enough background
+
+## Acceptance
+- acceptance is clear
+
+## Deliverables
+- deliver the code
+`)
+
+	_, validation, err := Validate(root)
+	if err != nil {
+		t.Fatalf("validate failed: %v", err)
+	}
+	if validation.Valid {
+		t.Fatal("expected validation to fail for mismatched worktree repo")
+	}
+	for _, issue := range validation.Issues {
+		if issue.Code == "task_worktree_repo_mismatch" && strings.Contains(issue.Message, wrongWorktree) {
+			return
+		}
+	}
+	t.Fatalf("expected task_worktree_repo_mismatch, got %+v", validation.Issues)
+}
+
+func TestRunGit_IgnoresInheritedGitIndexFile(t *testing.T) {
+	root := t.TempDir()
+	initGitRepo(t, root)
+
+	t.Setenv("GIT_INDEX_FILE", filepath.Join(root, ".git", "index", "bad"))
+
+	output, err := runGit(root, "rev-parse", "--is-inside-work-tree")
+	if err != nil {
+		t.Fatalf("runGit should ignore inherited GIT_INDEX_FILE: %v", err)
+	}
+	if strings.TrimSpace(output) != "true" {
+		t.Fatalf("unexpected git output: %q", output)
+	}
+}
+
 func initGitRepo(t *testing.T, root string) {
 	t.Helper()
 	mustWriteTestFile(t, filepath.Join(root, "README.md"), "seed\n")

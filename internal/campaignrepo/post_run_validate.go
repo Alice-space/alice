@@ -4,24 +4,61 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
+)
+
+const (
+	taskSelfCheckStatusPassed = "passed"
+	taskSelfCheckStatusFailed = "failed"
 )
 
 func ValidateTaskPostRun(root, taskID string, kind DispatchKind) (ValidationResult, error) {
-	repo, err := Load(root)
+	repo, task, _, err := loadTaskForPostRun(root, taskID)
 	if err != nil {
 		return ValidationResult{}, err
 	}
+	return validateTaskPostRun(repo, task, kind, true), nil
+}
+
+func RunTaskSelfCheck(root, taskID string, kind DispatchKind, checkedAt time.Time) (ValidationResult, error) {
+	repo, task, index, err := loadTaskForPostRun(root, taskID)
+	if err != nil {
+		return ValidationResult{}, err
+	}
+	validation := validateTaskPostRun(repo, task, kind, false)
+	if checkedAt.IsZero() {
+		checkedAt = time.Now().Local()
+	}
+	task.Frontmatter.SelfCheckKind = string(kind)
+	task.Frontmatter.SelfCheckRound = taskPostRunRound(task, kind)
+	task.Frontmatter.SelfCheckStatus = taskSelfCheckStatusFailed
+	if validation.Valid {
+		task.Frontmatter.SelfCheckStatus = taskSelfCheckStatusPassed
+	}
+	task.Frontmatter.SelfCheckAtRaw = checkedAt.Format(time.RFC3339)
+	repo.Tasks[index] = task
+	if err := persistTaskDocument(&repo, index); err != nil {
+		return ValidationResult{}, err
+	}
+	return validation, nil
+}
+
+func loadTaskForPostRun(root, taskID string) (Repository, TaskDocument, int, error) {
+	repo, err := Load(root)
+	if err != nil {
+		return Repository{}, TaskDocument{}, -1, err
+	}
 	taskID = strings.TrimSpace(taskID)
-	for _, task := range repo.Tasks {
+	for idx, task := range repo.Tasks {
 		if strings.TrimSpace(task.Frontmatter.TaskID) != taskID {
 			continue
 		}
-		return validateTaskPostRun(repo, task, kind), nil
+		return repo, task, idx, nil
 	}
-	return ValidationResult{}, fmt.Errorf("task %s not found", taskID)
+	return Repository{}, TaskDocument{}, -1, fmt.Errorf("task %s not found", taskID)
 }
 
-func validateTaskPostRun(repo Repository, task TaskDocument, kind DispatchKind) ValidationResult {
+func validateTaskPostRun(repo Repository, task TaskDocument, kind DispatchKind, requireSelfCheckProof bool) ValidationResult {
 	var issues []ValidationIssue
 	switch kind {
 	case DispatchKindExecutor:
@@ -30,6 +67,9 @@ func validateTaskPostRun(repo Repository, task TaskDocument, kind DispatchKind) 
 		validateReviewerPostRunTask(repo, task, &issues)
 	default:
 		return ValidationResult{Valid: true}
+	}
+	if requireSelfCheckProof {
+		validateTaskSelfCheckProof(task, kind, &issues)
 	}
 	sort.Slice(issues, func(i, j int) bool {
 		if issues[i].Code != issues[j].Code {
@@ -136,4 +176,78 @@ func validateReviewerPostRunTask(repo Repository, task TaskDocument, issues *[]V
 			Message: fmt.Sprintf("review for task %s used round %d, but task is currently on review round %d", taskID, review.Frontmatter.ReviewRound, task.Frontmatter.ReviewRound),
 		})
 	}
+}
+
+func validateTaskSelfCheckProof(task TaskDocument, kind DispatchKind, issues *[]ValidationIssue) {
+	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+	recordedKind := DispatchKind(strings.ToLower(strings.TrimSpace(task.Frontmatter.SelfCheckKind)))
+	expectedRound := taskPostRunRound(task, kind)
+	if recordedKind == "" {
+		*issues = append(*issues, ValidationIssue{
+			Code:    "task_post_run_self_check_missing",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s finished a %s round but has no recorded self-check proof", taskID, kind),
+		})
+		return
+	}
+	if recordedKind != kind {
+		*issues = append(*issues, ValidationIssue{
+			Code:    "task_post_run_self_check_kind_mismatch",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s finished a %s round but latest self-check proof is tagged as %s", taskID, kind, recordedKind),
+		})
+	}
+	if task.Frontmatter.SelfCheckRound != expectedRound {
+		*issues = append(*issues, ValidationIssue{
+			Code:    "task_post_run_self_check_round_mismatch",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s finished %s round %d but latest self-check proof is for round %d", taskID, kind, expectedRound, task.Frontmatter.SelfCheckRound),
+		})
+	}
+	if normalizeTaskSelfCheckStatus(task.Frontmatter.SelfCheckStatus) != taskSelfCheckStatusPassed {
+		*issues = append(*issues, ValidationIssue{
+			Code:    "task_post_run_self_check_not_passed",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s finished a %s round but latest self-check status is %q instead of %q", taskID, kind, blankForSummary(task.Frontmatter.SelfCheckStatus), taskSelfCheckStatusPassed),
+		})
+	}
+	if strings.TrimSpace(task.Frontmatter.SelfCheckAtRaw) == "" {
+		*issues = append(*issues, ValidationIssue{
+			Code:    "task_post_run_self_check_timestamp_missing",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s finished a %s round but self_check_at is empty", taskID, kind),
+		})
+	}
+}
+
+func taskPostRunRound(task TaskDocument, kind DispatchKind) int {
+	switch kind {
+	case DispatchKindExecutor:
+		return task.Frontmatter.ExecutionRound
+	case DispatchKindReviewer:
+		return task.Frontmatter.ReviewRound
+	default:
+		return 0
+	}
+}
+
+func normalizeTaskSelfCheckStatus(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case taskSelfCheckStatusPassed:
+		return taskSelfCheckStatusPassed
+	case taskSelfCheckStatusFailed:
+		return taskSelfCheckStatusFailed
+	default:
+		return ""
+	}
+}
+
+func clearTaskSelfCheck(task *TaskDocument) {
+	if task == nil {
+		return
+	}
+	task.Frontmatter.SelfCheckKind = ""
+	task.Frontmatter.SelfCheckRound = 0
+	task.Frontmatter.SelfCheckStatus = ""
+	task.Frontmatter.SelfCheckAtRaw = ""
 }

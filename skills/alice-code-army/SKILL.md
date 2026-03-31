@@ -183,6 +183,8 @@ task frontmatter 现在默认带两类角色：
   `"$CODE_ARMY_SH" repo-lint camp_xxx --for-approval`
 - 手动触发一次 repo reconcile，并刷新 live report / runtime summary：
   `"$CODE_ARMY_SH" repo-reconcile camp_xxx`
+- 对单个 executor / reviewer 回合做收尾自检；命令会回写 `self_check_*` 证明，且只有返回 0 才表示这轮可以合法结束：
+  `"$CODE_ARMY_SH" task-self-check camp_xxx T001 executor`
 - 查看单个 campaign：
   `"$CODE_ARMY_SH" get camp_xxx`
 - Patch campaign：
