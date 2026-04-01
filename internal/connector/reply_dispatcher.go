@@ -48,7 +48,8 @@ func (d *replyDispatcher) reply(
 	}
 	preferThread := jobPrefersThreadReply(job)
 	if forceText {
-		if messageID, textErr := d.replyText(ctx, sourceMessageID, normalized, preferThread); textErr == nil {
+		plainText := sanitizeMarkdownForPlainText(normalized)
+		if messageID, textErr := d.replyText(ctx, sourceMessageID, plainText, preferThread); textErr == nil {
 			return messageID, nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
@@ -80,7 +81,8 @@ func (d *replyDispatcher) send(
 		return nil
 	}
 	if forceText {
-		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, normalized); textErr == nil {
+		plainText := sanitizeMarkdownForPlainText(normalized)
+		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, plainText); textErr == nil {
 			return nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
@@ -113,7 +115,8 @@ func (d *replyDispatcher) replyCardWithTitle(
 	}
 	preferThread := jobPrefersThreadReply(job)
 	if forceText {
-		if messageID, textErr := d.replyText(ctx, sourceMessageID, normalized, preferThread); textErr == nil {
+		plainText := sanitizeMarkdownForPlainText(normalized)
+		if messageID, textErr := d.replyText(ctx, sourceMessageID, plainText, preferThread); textErr == nil {
 			return messageID, nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
@@ -144,7 +147,8 @@ func (d *replyDispatcher) sendCardWithTitle(
 		return nil
 	}
 	if forceText {
-		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, normalized); textErr == nil {
+		plainText := sanitizeMarkdownForPlainText(normalized)
+		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, plainText); textErr == nil {
 			return nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
