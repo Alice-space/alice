@@ -15,15 +15,15 @@ import (
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 	"github.com/Alice-space/alice/internal/runtimeapi"
+	"github.com/spf13/cobra"
 	bolt "go.etcd.io/bbolt"
 )
-
-const localRuntimeStoreOpenTimeout = 10 * time.Second
 
 func deleteRuntimeCampaign(
 	ctx context.Context,
 	client *runtimeapi.Client,
 	session mcpbridge.SessionContext,
+	cmd *cobra.Command,
 	campaignID string,
 	deleteRepo bool,
 ) (map[string]any, error) {
@@ -34,7 +34,7 @@ func deleteRuntimeCampaign(
 	if !shouldFallbackToLocalCampaignDelete(err, campaignID) {
 		return nil, err
 	}
-	return deleteRuntimeCampaignLocally(session, campaignID, deleteRepo)
+	return deleteRuntimeCampaignLocally(session, campaignID, deleteRepo, localRuntimeStoreOpenTimeout(cmd))
 }
 
 func shouldFallbackToLocalCampaignDelete(err error, campaignID string) bool {
@@ -53,10 +53,11 @@ func deleteRuntimeCampaignLocally(
 	session mcpbridge.SessionContext,
 	campaignID string,
 	deleteRepo bool,
+	storeOpenTimeout time.Duration,
 ) (map[string]any, error) {
 	campaignStorePath, automationStorePath := localRuntimeStorePaths()
 
-	item, err := loadLocalCampaign(campaignStorePath, campaignID)
+	item, err := loadLocalCampaign(campaignStorePath, campaignID, storeOpenTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -75,11 +76,11 @@ func deleteRuntimeCampaignLocally(
 		deletedRepoPath = item.CampaignRepoPath
 	}
 
-	deletedTaskIDs, err := deleteLocalCampaignAutomationTasks(automationStorePath, session, item.ID)
+	deletedTaskIDs, err := deleteLocalCampaignAutomationTasks(automationStorePath, session, item.ID, storeOpenTimeout)
 	if err != nil {
 		return nil, err
 	}
-	if err := deleteLocalCampaignRecord(campaignStorePath, item.ID); err != nil {
+	if err := deleteLocalCampaignRecord(campaignStorePath, item.ID, storeOpenTimeout); err != nil {
 		return nil, err
 	}
 	return map[string]any{
@@ -91,11 +92,11 @@ func deleteRuntimeCampaignLocally(
 	}, nil
 }
 
-func loadLocalCampaign(path, campaignID string) (campaign.Campaign, error) {
+func loadLocalCampaign(path, campaignID string, storeOpenTimeout time.Duration) (campaign.Campaign, error) {
 	if !localFileExists(path) {
 		return campaign.Campaign{}, campaign.ErrCampaignNotFound
 	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: localRuntimeStoreOpenTimeout})
+	db, err := openLocalRuntimeStore(path, storeOpenTimeout)
 	if err != nil {
 		return campaign.Campaign{}, err
 	}
@@ -126,11 +127,11 @@ func loadLocalCampaign(path, campaignID string) (campaign.Campaign, error) {
 	return item, nil
 }
 
-func deleteLocalCampaignRecord(path, campaignID string) error {
+func deleteLocalCampaignRecord(path, campaignID string, storeOpenTimeout time.Duration) error {
 	if !localFileExists(path) {
 		return campaign.ErrCampaignNotFound
 	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: localRuntimeStoreOpenTimeout})
+	db, err := openLocalRuntimeStore(path, storeOpenTimeout)
 	if err != nil {
 		return err
 	}
@@ -213,11 +214,12 @@ func deleteLocalCampaignAutomationTasks(
 	path string,
 	session mcpbridge.SessionContext,
 	campaignID string,
+	storeOpenTimeout time.Duration,
 ) ([]string, error) {
 	if !localFileExists(path) {
 		return nil, nil
 	}
-	db, err := bolt.Open(path, 0o600, &bolt.Options{Timeout: localRuntimeStoreOpenTimeout})
+	db, err := openLocalRuntimeStore(path, storeOpenTimeout)
 	if err != nil {
 		return nil, err
 	}
@@ -264,6 +266,25 @@ func deleteLocalCampaignAutomationTasks(
 		})
 	})
 	return deleted, err
+}
+
+func localRuntimeStoreOpenTimeout(cmd *cobra.Command) time.Duration {
+	timeout := time.Duration(config.DefaultLocalRuntimeStoreOpenTimeoutSecs) * time.Second
+	runtimeCfg, err := currentRuntimeConfig(cmd)
+	if err != nil {
+		return timeout
+	}
+	if runtimeCfg.LocalRuntimeStoreOpenTimeout > 0 {
+		return runtimeCfg.LocalRuntimeStoreOpenTimeout
+	}
+	return timeout
+}
+
+func openLocalRuntimeStore(path string, timeout time.Duration) (*bolt.DB, error) {
+	if timeout <= 0 {
+		timeout = time.Duration(config.DefaultLocalRuntimeStoreOpenTimeoutSecs) * time.Second
+	}
+	return bolt.Open(path, 0o600, &bolt.Options{Timeout: timeout})
 }
 
 func localCanManageTask(task automation.Task, actorID string) bool {

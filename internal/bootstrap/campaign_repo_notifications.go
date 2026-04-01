@@ -11,6 +11,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/campaignrepo"
+	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/logging"
 )
@@ -117,7 +118,11 @@ func (b *connectorRuntimeBuilder) sendCampaignNotifications(item campaign.Campai
 	if !ok {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	timeout := b.cfg.CampaignNotificationTimeout
+	if timeout <= 0 {
+		timeout = time.Duration(config.DefaultCampaignNotificationTimeoutSecs) * time.Second
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	for _, event := range events {
 		title := campaignEventCardTitle(item.Title, item.ID, event)

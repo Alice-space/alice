@@ -43,10 +43,10 @@ func newRuntimeCampaignDeleteCmd() *cobra.Command {
 			ctx context.Context,
 			client *runtimeapi.Client,
 			session mcpbridge.SessionContext,
-			_ *cobra.Command,
+			cmd *cobra.Command,
 			args []string,
 		) error {
-			result, err := deleteRuntimeCampaign(ctx, client, session, args[0], deleteRepo)
+			result, err := deleteRuntimeCampaign(ctx, client, session, cmd, args[0], deleteRepo)
 			if err != nil {
 				return err
 			}

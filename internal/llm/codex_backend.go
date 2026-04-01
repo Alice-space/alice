@@ -20,6 +20,9 @@ func newCodexBackend(cfg CodexConfig, prompts *prompting.Loader) *codexBackend {
 	defaultRunner := corecodex.Runner{
 		Command:                cfg.Command,
 		Timeout:                cfg.Timeout,
+		DefaultIdleTimeout:     cfg.DefaultIdleTimeout,
+		HighIdleTimeout:        cfg.HighIdleTimeout,
+		XHighIdleTimeout:       cfg.XHighIdleTimeout,
 		DefaultModel:           cfg.Model,
 		DefaultReasoningEffort: cfg.ReasoningEffort,
 		Env:                    cfg.Env,

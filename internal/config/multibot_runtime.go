@@ -118,6 +118,13 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.QueueCapacity = bot.QueueCapacity
 	runtime.WorkerConcurrency = bot.WorkerConcurrency
 	runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs
+	runtime.AuthStatusTimeoutSecs = bot.AuthStatusTimeoutSecs
+	runtime.CampaignNotificationTimeoutSecs = bot.CampaignNotificationTimeoutSecs
+	runtime.RuntimeAPIShutdownTimeoutSecs = bot.RuntimeAPIShutdownTimeoutSecs
+	runtime.LocalRuntimeStoreOpenTimeoutSecs = bot.LocalRuntimeStoreOpenTimeoutSecs
+	runtime.CodexIdleTimeoutSecs = bot.CodexIdleTimeoutSecs
+	runtime.CodexHighIdleTimeoutSecs = bot.CodexHighIdleTimeoutSecs
+	runtime.CodexXHighIdleTimeoutSecs = bot.CodexXHighIdleTimeoutSecs
 	runtime.Permissions = mergeBotPermissions(BotPermissionsConfig{}, bot.Permissions)
 	runtime.CampaignRoleDefaults = bot.CampaignRoleDefaults
 

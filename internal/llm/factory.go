@@ -34,14 +34,17 @@ type ProfileRunnerConfig struct {
 }
 
 type CodexConfig struct {
-	Command           string
-	Timeout           time.Duration
-	Model             string
-	ReasoningEffort   string
-	Env               map[string]string
-	PromptPrefix      string
-	WorkspaceDir      string
-	DefaultExecPolicy ExecPolicyConfig
+	Command            string
+	Timeout            time.Duration
+	DefaultIdleTimeout time.Duration
+	HighIdleTimeout    time.Duration
+	XHighIdleTimeout   time.Duration
+	Model              string
+	ReasoningEffort    string
+	Env                map[string]string
+	PromptPrefix       string
+	WorkspaceDir       string
+	DefaultExecPolicy  ExecPolicyConfig
 	// ProfileOverrides maps outer profile name -> per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
 }

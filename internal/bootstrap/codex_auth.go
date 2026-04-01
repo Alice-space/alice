@@ -12,8 +12,6 @@ import (
 	"github.com/Alice-space/alice/internal/config"
 )
 
-const codexLoginStatusTimeout = 15 * time.Second
-
 type CodexLoginStatusReport struct {
 	Command   string
 	CodexHome string
@@ -21,7 +19,7 @@ type CodexLoginStatusReport struct {
 	Output    string
 }
 
-func CheckCodexLoginForCodexHome(command, codexHome string) (CodexLoginStatusReport, error) {
+func CheckCodexLoginForCodexHome(command, codexHome string, timeout time.Duration) (CodexLoginStatusReport, error) {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return CodexLoginStatusReport{}, fmt.Errorf("codex command is empty")
@@ -30,8 +28,11 @@ func CheckCodexLoginForCodexHome(command, codexHome string) (CodexLoginStatusRep
 	if codexHome == "" {
 		return CodexLoginStatusReport{}, fmt.Errorf("codex home is empty")
 	}
+	if timeout <= 0 {
+		timeout = time.Duration(config.DefaultAuthStatusTimeoutSecs) * time.Second
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), codexLoginStatusTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, command, "login", "status")

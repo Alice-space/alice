@@ -57,6 +57,13 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"queue_capacity",
 		"worker_concurrency",
 		"automation_task_timeout_secs",
+		"auth_status_timeout_secs",
+		"campaign_notification_timeout_secs",
+		"runtime_api_shutdown_timeout_secs",
+		"local_runtime_store_open_timeout_secs",
+		"codex_idle_timeout_secs",
+		"codex_high_idle_timeout_secs",
+		"codex_xhigh_idle_timeout_secs",
 	}
 	setKeys := make([]string, 0, len(legacyKeys))
 	for _, key := range legacyKeys {
@@ -183,16 +190,30 @@ func (cfg Config) ResolvedLLMProviders() []string {
 }
 
 type baseConfigValidation struct {
-	QueueCapacity             int `validate:"gt=0"`
-	WorkerConcurrency         int `validate:"gt=0"`
-	AutomationTaskTimeoutSecs int `validate:"gt=0"`
+	QueueCapacity                    int `validate:"gt=0"`
+	WorkerConcurrency                int `validate:"gt=0"`
+	AutomationTaskTimeoutSecs        int `validate:"gt=0"`
+	AuthStatusTimeoutSecs            int `validate:"gt=0"`
+	CampaignNotificationTimeoutSecs  int `validate:"gt=0"`
+	RuntimeAPIShutdownTimeoutSecs    int `validate:"gt=0"`
+	LocalRuntimeStoreOpenTimeoutSecs int `validate:"gt=0"`
+	CodexIdleTimeoutSecs             int `validate:"gt=0"`
+	CodexHighIdleTimeoutSecs         int `validate:"gt=0"`
+	CodexXHighIdleTimeoutSecs        int `validate:"gt=0"`
 }
 
 func validateBaseConfig(cfg Config, requireCredentials bool) error {
 	base := baseConfigValidation{
-		QueueCapacity:             cfg.QueueCapacity,
-		WorkerConcurrency:         cfg.WorkerConcurrency,
-		AutomationTaskTimeoutSecs: cfg.AutomationTaskTimeoutSecs,
+		QueueCapacity:                    cfg.QueueCapacity,
+		WorkerConcurrency:                cfg.WorkerConcurrency,
+		AutomationTaskTimeoutSecs:        cfg.AutomationTaskTimeoutSecs,
+		AuthStatusTimeoutSecs:            cfg.AuthStatusTimeoutSecs,
+		CampaignNotificationTimeoutSecs:  cfg.CampaignNotificationTimeoutSecs,
+		RuntimeAPIShutdownTimeoutSecs:    cfg.RuntimeAPIShutdownTimeoutSecs,
+		LocalRuntimeStoreOpenTimeoutSecs: cfg.LocalRuntimeStoreOpenTimeoutSecs,
+		CodexIdleTimeoutSecs:             cfg.CodexIdleTimeoutSecs,
+		CodexHighIdleTimeoutSecs:         cfg.CodexHighIdleTimeoutSecs,
+		CodexXHighIdleTimeoutSecs:        cfg.CodexXHighIdleTimeoutSecs,
 	}
 	if requireCredentials {
 		if strings.TrimSpace(cfg.FeishuAppID) == "" {
@@ -215,6 +236,20 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 				return errors.New("worker_concurrency must be > 0")
 			case "AutomationTaskTimeoutSecs":
 				return errors.New("automation_task_timeout_secs must be > 0")
+			case "AuthStatusTimeoutSecs":
+				return errors.New("auth_status_timeout_secs must be > 0")
+			case "CampaignNotificationTimeoutSecs":
+				return errors.New("campaign_notification_timeout_secs must be > 0")
+			case "RuntimeAPIShutdownTimeoutSecs":
+				return errors.New("runtime_api_shutdown_timeout_secs must be > 0")
+			case "LocalRuntimeStoreOpenTimeoutSecs":
+				return errors.New("local_runtime_store_open_timeout_secs must be > 0")
+			case "CodexIdleTimeoutSecs":
+				return errors.New("codex_idle_timeout_secs must be > 0")
+			case "CodexHighIdleTimeoutSecs":
+				return errors.New("codex_high_idle_timeout_secs must be > 0")
+			case "CodexXHighIdleTimeoutSecs":
+				return errors.New("codex_xhigh_idle_timeout_secs must be > 0")
 			}
 		}
 		return err

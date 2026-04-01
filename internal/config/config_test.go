@@ -75,6 +75,48 @@ feishu_app_secret: sss
 	if runtime.AutomationTaskTimeout != 100*time.Minute {
 		t.Fatalf("unexpected automation_task_timeout: %s", runtime.AutomationTaskTimeout)
 	}
+	if runtime.AuthStatusTimeoutSecs != DefaultAuthStatusTimeoutSecs {
+		t.Fatalf("unexpected auth_status_timeout_secs: %d", runtime.AuthStatusTimeoutSecs)
+	}
+	if runtime.AuthStatusTimeout != time.Duration(DefaultAuthStatusTimeoutSecs)*time.Second {
+		t.Fatalf("unexpected auth_status_timeout: %s", runtime.AuthStatusTimeout)
+	}
+	if runtime.CampaignNotificationTimeoutSecs != DefaultCampaignNotificationTimeoutSecs {
+		t.Fatalf("unexpected campaign_notification_timeout_secs: %d", runtime.CampaignNotificationTimeoutSecs)
+	}
+	if runtime.CampaignNotificationTimeout != time.Duration(DefaultCampaignNotificationTimeoutSecs)*time.Second {
+		t.Fatalf("unexpected campaign_notification_timeout: %s", runtime.CampaignNotificationTimeout)
+	}
+	if runtime.RuntimeAPIShutdownTimeoutSecs != DefaultRuntimeAPIShutdownTimeoutSecs {
+		t.Fatalf("unexpected runtime_api_shutdown_timeout_secs: %d", runtime.RuntimeAPIShutdownTimeoutSecs)
+	}
+	if runtime.RuntimeAPIShutdownTimeout != time.Duration(DefaultRuntimeAPIShutdownTimeoutSecs)*time.Second {
+		t.Fatalf("unexpected runtime_api_shutdown_timeout: %s", runtime.RuntimeAPIShutdownTimeout)
+	}
+	if runtime.LocalRuntimeStoreOpenTimeoutSecs != DefaultLocalRuntimeStoreOpenTimeoutSecs {
+		t.Fatalf("unexpected local_runtime_store_open_timeout_secs: %d", runtime.LocalRuntimeStoreOpenTimeoutSecs)
+	}
+	if runtime.LocalRuntimeStoreOpenTimeout != time.Duration(DefaultLocalRuntimeStoreOpenTimeoutSecs)*time.Second {
+		t.Fatalf("unexpected local_runtime_store_open_timeout: %s", runtime.LocalRuntimeStoreOpenTimeout)
+	}
+	if runtime.CodexIdleTimeoutSecs != DefaultCodexIdleTimeoutSecs {
+		t.Fatalf("unexpected codex_idle_timeout_secs: %d", runtime.CodexIdleTimeoutSecs)
+	}
+	if runtime.CodexIdleTimeout != time.Duration(DefaultCodexIdleTimeoutSecs)*time.Second {
+		t.Fatalf("unexpected codex_idle_timeout: %s", runtime.CodexIdleTimeout)
+	}
+	if runtime.CodexHighIdleTimeoutSecs != DefaultCodexHighIdleTimeoutSecs {
+		t.Fatalf("unexpected codex_high_idle_timeout_secs: %d", runtime.CodexHighIdleTimeoutSecs)
+	}
+	if runtime.CodexHighIdleTimeout != time.Duration(DefaultCodexHighIdleTimeoutSecs)*time.Second {
+		t.Fatalf("unexpected codex_high_idle_timeout: %s", runtime.CodexHighIdleTimeout)
+	}
+	if runtime.CodexXHighIdleTimeoutSecs != DefaultCodexXHighIdleTimeoutSecs {
+		t.Fatalf("unexpected codex_xhigh_idle_timeout_secs: %d", runtime.CodexXHighIdleTimeoutSecs)
+	}
+	if runtime.CodexXHighIdleTimeout != time.Duration(DefaultCodexXHighIdleTimeoutSecs)*time.Second {
+		t.Fatalf("unexpected codex_xhigh_idle_timeout: %s", runtime.CodexXHighIdleTimeout)
+	}
 	if runtime.ThinkingMessage != "正在思考中..." {
 		t.Fatalf("unexpected thinking_message: %s", runtime.ThinkingMessage)
 	}

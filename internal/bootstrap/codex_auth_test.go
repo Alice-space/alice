@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/Alice-space/alice/internal/config"
 )
@@ -22,7 +23,7 @@ printf 'unexpected args=%s %s CODEX_HOME=%s\n' "$1" "$2" "$CODEX_HOME" >&2
 exit 99
 `)
 
-	report, err := CheckCodexLoginForCodexHome(command, targetCodexHome)
+	report, err := CheckCodexLoginForCodexHome(command, targetCodexHome, time.Second)
 	if err != nil {
 		t.Fatalf("check login failed: %v", err)
 	}
@@ -44,7 +45,7 @@ printf 'Not logged in\n'
 exit 1
 `)
 
-	report, err := CheckCodexLoginForCodexHome(command, targetCodexHome)
+	report, err := CheckCodexLoginForCodexHome(command, targetCodexHome, time.Second)
 	if err != nil {
 		t.Fatalf("check login failed: %v", err)
 	}
@@ -71,7 +72,7 @@ printf 'unexpected CODEX_HOME=%s\n' "$CODEX_HOME" >&2
 exit 2
 `)
 
-	report, err := CheckCodexLoginForCodexHome(command, "")
+	report, err := CheckCodexLoginForCodexHome(command, "", time.Second)
 	if err != nil {
 		t.Fatalf("check login failed: %v", err)
 	}
