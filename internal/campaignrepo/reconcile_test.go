@@ -616,6 +616,125 @@ created_at: "2026-03-31T17:05:00+08:00"
 	}
 }
 
+func TestReconcileAndPrepare_RetriesResolvedIntegrationBlockAfterRepoFactCorrection(t *testing.T) {
+	sourceRoot := t.TempDir()
+	initGitRepo(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "base\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "seed source")
+	baseCommit := gitHeadCommit(t, sourceRoot)
+
+	root := t.TempDir()
+	branchName := "codearmy/camp_demo/t001/repo-a"
+	worktreePath := filepath.Join(root, ".worktrees", "repo-a", "t001")
+	if err := ensureGitTaskWorktree(sourceRoot, worktreePath, branchName, baseCommit); err != nil {
+		t.Fatalf("create task worktree failed: %v", err)
+	}
+	mustWriteTestFile(t, filepath.Join(worktreePath, "src", "lib.rs"), "integrated change\n")
+	runGitOrFail(t, worktreePath, "add", "src/lib.rs")
+	runGitOrFail(t, worktreePath, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "task change")
+	taskHead := gitHeadCommit(t, worktreePath)
+
+	now := time.Date(2026, 3, 31, 17, 20, 0, 0, time.FixedZone("CST", 8*3600))
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Retry integration after branch fact fix"
+phase: P01
+status: accepted
+target_repos: [repo-a]
+working_branches: [repo-a:`+branchName+`]
+worktree_paths: [repo-a:`+worktreePath+`]
+write_scope: [repo-a:src/lib.rs]
+review_round: 1
+base_commit: "`+baseCommit+`"
+head_commit: "`+taskHead+`"
+last_run_path: "results/summary.md"
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+review_status: approved
+dispatch_state: judge_applied
+self_check_kind: reviewer
+self_check_round: 1
+self_check_status: passed
+self_check_at: "2026-03-31T17:18:00+08:00"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: approve
+blocking: false
+target_commit: "`+taskHead+`"
+created_at: "2026-03-31T17:15:00+08:00"
+---
+`)
+
+	result, err := ReconcileAndPrepare(root, now, 1, time.Hour)
+	if err != nil {
+		t.Fatalf("first reconcile failed: %v", err)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusBlocked {
+		t.Fatalf("expected initial integration to block, got %s", got)
+	}
+	if task.Frontmatter.DispatchState != "integration_blocked" {
+		t.Fatalf("expected dispatch_state=integration_blocked, got %q", task.Frontmatter.DispatchState)
+	}
+	if !strings.Contains(task.Frontmatter.LastBlockedReason, "default branch main") {
+		t.Fatalf("expected stale main-branch blocker, got %q", task.Frontmatter.LastBlockedReason)
+	}
+
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: dev
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+
+	result, err = ReconcileAndPrepare(root, now.Add(time.Minute), 1, time.Hour)
+	if err != nil {
+		t.Fatalf("second reconcile failed: %v", err)
+	}
+	task = result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusDone {
+		t.Fatalf("expected corrected repo fact to unblock and integrate task, got %s", got)
+	}
+	if task.Frontmatter.DispatchState != "integrated" {
+		t.Fatalf("expected dispatch_state=integrated after retry, got %q", task.Frontmatter.DispatchState)
+	}
+	if task.Frontmatter.LastBlockedReason != "" {
+		t.Fatalf("expected blocker cleared after retry, got %q", task.Frontmatter.LastBlockedReason)
+	}
+	if !gitBranchContainsCommit(sourceRoot, "dev", taskHead) {
+		t.Fatalf("expected default branch to contain task head %s after retry integration", taskHead)
+	}
+}
+
 func TestBuildDispatchSpecs_Content(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
@@ -909,6 +1028,8 @@ created_at: "2026-03-31T16:00:00+08:00"
 		"task_worktree="+expectedWorktree,
 		"任务 worktree: "+expectedWorktreeSpec,
 		"只允许在那条 worktree 里改 source repo",
+		"所有 source-repo 编辑、测试和 git 检查都默认在 `task_worktree` 下执行",
+		"开始前先确认 `local_path` 干净",
 	) {
 		t.Fatalf("unexpected executor prompt: %q", prompt)
 	}

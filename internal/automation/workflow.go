@@ -26,6 +26,7 @@ type WorkflowRunRequest struct {
 	SessionKey      string
 	Scene           string
 	Prompt          string
+	WorkspaceDir    string
 	Provider        string
 	Model           string
 	Profile         string
@@ -87,6 +88,7 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 		AgentName:       workflowAgentName(workflow),
 		UserText:        prompt,
 		Scene:           normalizeWorkflowScene(req.Scene, req.SessionKey),
+		WorkspaceDir:    workflowWorkspaceDir(req),
 		Provider:        strings.TrimSpace(req.Provider),
 		Model:           strings.TrimSpace(req.Model),
 		Profile:         strings.TrimSpace(req.Profile),
@@ -103,6 +105,62 @@ func (r *PromptWorkflowRunner) Run(ctx context.Context, req WorkflowRunRequest) 
 		Message:  stripWorkflowCommandBlocks(reply),
 		Commands: extractWorkflowCommands(reply),
 	}, nil
+}
+
+func workflowWorkspaceDir(req WorkflowRunRequest) string {
+	if workspaceDir := strings.TrimSpace(req.WorkspaceDir); workspaceDir != "" {
+		return workspaceDir
+	}
+	if normalizeWorkflowName(req.Workflow) != "code_army" {
+		return ""
+	}
+	return inferCodeArmyTaskWorktree(req.Prompt)
+}
+
+var codeArmyTaskWorktreePattern = regexp.MustCompile(`(?m)(?:task_worktree=|任务 worktree:\s*)([^\n,]+)`)
+
+func inferCodeArmyTaskWorktree(prompt string) string {
+	matches := codeArmyTaskWorktreePattern.FindAllStringSubmatch(prompt, -1)
+	if len(matches) == 0 {
+		return ""
+	}
+	seen := map[string]struct{}{}
+	paths := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 2 {
+			continue
+		}
+		candidate := normalizeWorkflowPathSpec(match[1])
+		if candidate == "" {
+			continue
+		}
+		if _, ok := seen[candidate]; ok {
+			continue
+		}
+		seen[candidate] = struct{}{}
+		paths = append(paths, candidate)
+	}
+	if len(paths) != 1 {
+		return ""
+	}
+	return paths[0]
+}
+
+func normalizeWorkflowPathSpec(raw string) string {
+	value := strings.TrimSpace(raw)
+	if value == "" || value == "-" {
+		return ""
+	}
+	if idx := strings.Index(value, ","); idx >= 0 {
+		value = strings.TrimSpace(value[:idx])
+	}
+	if strings.HasPrefix(value, "/") {
+		return value
+	}
+	if idx := strings.Index(value, ":/"); idx > 0 {
+		return strings.TrimSpace(value[idx+1:])
+	}
+	return ""
 }
 
 func applyWorkflowSkillHint(workflow string, prompt string, env map[string]string) string {

@@ -70,6 +70,9 @@ func (b *codexBackend) Run(ctx context.Context, req RunRequest) (RunResult, erro
 			}
 		}
 	}
+	if strings.TrimSpace(req.WorkspaceDir) != "" {
+		runner.WorkspaceDir = strings.TrimSpace(req.WorkspaceDir)
+	}
 	policy := b.resolveExecPolicy(req)
 	reply, nextThreadID, usage, err := runner.RunWithThreadAndProgressAndUsage(
 		ctx,

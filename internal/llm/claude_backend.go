@@ -59,6 +59,9 @@ func (b *claudeBackend) Run(ctx context.Context, req RunRequest) (RunResult, err
 			}
 		}
 	}
+	if strings.TrimSpace(req.WorkspaceDir) != "" {
+		runner.WorkspaceDir = strings.TrimSpace(req.WorkspaceDir)
+	}
 	reply, nextThreadID, err := runner.RunWithThreadAndProgress(
 		ctx,
 		strings.TrimSpace(req.ThreadID),

@@ -36,6 +36,7 @@ type RunRequest struct {
 	Personality     string
 	NoReplyToken    string
 	PromptPrefix    string
+	WorkspaceDir    string
 	ExecPolicy      ExecPolicyConfig
 	Env             map[string]string
 	OnProgress      ProgressFunc

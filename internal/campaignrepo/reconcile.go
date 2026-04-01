@@ -90,6 +90,14 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		events = append(events, verdictEvents...)
 	}
 
+	retriedIntegrationBlocks, err := retryResolvedIntegrationBlocks(&repo)
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	if retriedIntegrationBlocks > 0 {
+		changed = true
+	}
+
 	integratedTasks, integrationEvents, err := integrateAcceptedTasks(&repo, campaignID)
 	if err != nil {
 		return ReconcileResult{}, err
@@ -168,6 +176,93 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		ClaimedReviewers: claimedReviewers,
 		Events:           events,
 	}, nil
+}
+
+func retryResolvedIntegrationBlocks(repo *Repository) (int, error) {
+	if repo == nil || len(repo.Tasks) == 0 {
+		return 0, nil
+	}
+
+	sourceRepoByID := make(map[string]SourceRepoDocument, len(repo.SourceRepos))
+	for _, repoDoc := range repo.SourceRepos {
+		if repoID := strings.TrimSpace(repoDoc.Frontmatter.RepoID); repoID != "" {
+			sourceRepoByID[repoID] = repoDoc
+		}
+	}
+
+	retried := 0
+	for idx := range repo.Tasks {
+		task := &repo.Tasks[idx]
+		if normalizeTaskStatus(task.Frontmatter.Status) != TaskStatusBlocked {
+			continue
+		}
+		if strings.TrimSpace(task.Frontmatter.DispatchState) != "integration_blocked" {
+			continue
+		}
+		if normalizeReviewStatus(task.Frontmatter.ReviewStatus) != "approved" {
+			continue
+		}
+		if !integrationBlockerIsRetryable(task.Frontmatter.LastBlockedReason) {
+			continue
+		}
+
+		targetRepos := resolveTaskSourceRepos(*task, sourceRepoByID)
+		if !integrationTargetsReadyForRetry(*task, targetRepos) {
+			continue
+		}
+
+		task.Frontmatter.Status = TaskStatusAccepted
+		task.Frontmatter.DispatchState = "integration_retry_pending"
+		task.Frontmatter.LastBlockedReason = ""
+		task.Frontmatter.OwnerAgent = ""
+		task.LeaseUntil = time.Time{}
+		task.WakeAt = time.Time{}
+		task.Frontmatter.WakePrompt = ""
+		if err := persistTaskDocument(repo, idx); err != nil {
+			return retried, err
+		}
+		retried++
+	}
+	return retried, nil
+}
+
+func integrationBlockerIsRetryable(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" {
+		return false
+	}
+	retryableFragments := []string{
+		"integration missing repo_id/local_path",
+		"is missing default_branch for integration",
+		"local_path is not a git worktree",
+		"local_path must stay on default branch",
+		"local_path has uncommitted changes",
+		"is missing a working_branch for integration",
+		"still points at default branch",
+		"does not exist locally for integration",
+		"does not contain reviewed head_commit",
+	}
+	for _, fragment := range retryableFragments {
+		if strings.Contains(reason, fragment) {
+			return true
+		}
+	}
+	return false
+}
+
+func integrationTargetsReadyForRetry(task TaskDocument, repos []SourceRepoDocument) bool {
+	if len(repos) == 0 {
+		return false
+	}
+	if issues := taskExecutionWorkspaceIssues(task, repos); len(issues) > 0 {
+		return false
+	}
+	for _, repoDoc := range repos {
+		if _, err := validateTaskIntegrationTarget(task, repoDoc); err != nil {
+			return false
+		}
+	}
+	return true
 }
 
 func retryReviewPendingArtifactBlockers(repo *Repository) (int, error) {
