@@ -254,6 +254,12 @@ result_paths: []
 | `head_commit` / `last_run_path` / `last_review_path` | 执行产物和审阅产物锚点 |
 | `wake_at` + `wake_prompt` | 长任务唤醒信息 |
 
+补充一条很重要的约束：
+
+- `working_branches` 写的是 task 私有工作分支，不是 source repo 的共享基线分支。
+- `main`、`dev`、`rCM` 这类分支不要直接填进 `working_branches`；最稳的做法是保持为空，让 Alice 自动生成隔离的 `codearmy/...` 分支。
+- 如果只是想说明“这项修复基于哪个上游分支/commit”，请写在 source repo facts、`base_commit` 或 task 正文里。
+
 ## 计划阶段现在是怎么跑的
 
 当前实现里，planner 和 planner reviewer 已经进入真实的 runtime reconcile 流程，不再只是文档约定。

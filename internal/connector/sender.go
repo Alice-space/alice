@@ -30,26 +30,12 @@ func (s *LarkSender) ResourceRootForScope(resourceScopeKey string) string {
 }
 
 func (s *LarkSender) SendText(ctx context.Context, receiveIDType, receiveID, text string) error {
-	content := textMessageContent(text)
-	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(receiveIDType).
-		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(receiveID).
-			MsgType("text").
-			Content(content).
-			Build()).
-		Build()
+	_, err := s.SendTextMessage(ctx, receiveIDType, receiveID, text)
+	return err
+}
 
-	return s.withFeishuRetry(ctx, func() error {
-		resp, err := s.client.Im.V1.Message.Create(ctx, req)
-		if err != nil {
-			return err
-		}
-		if !resp.Success() {
-			return &feishuAPIError{Code: resp.Code, Msg: resp.Msg, RequestID: resp.RequestId()}
-		}
-		return nil
-	})
+func (s *LarkSender) SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
+	return s.createMessage(ctx, receiveIDType, receiveID, "text", textMessageContent(text), "send text success but response message_id is empty")
 }
 
 func (s *LarkSender) AddReaction(ctx context.Context, messageID, emojiType string) error {
@@ -82,25 +68,12 @@ func (s *LarkSender) AddReaction(ctx context.Context, messageID, emojiType strin
 }
 
 func (s *LarkSender) SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error {
-	req := larkim.NewCreateMessageReqBuilder().
-		ReceiveIdType(receiveIDType).
-		Body(larkim.NewCreateMessageReqBodyBuilder().
-			ReceiveId(receiveID).
-			MsgType("interactive").
-			Content(cardContent).
-			Build()).
-		Build()
+	_, err := s.SendCardMessage(ctx, receiveIDType, receiveID, cardContent)
+	return err
+}
 
-	return s.withFeishuRetry(ctx, func() error {
-		resp, err := s.client.Im.V1.Message.Create(ctx, req)
-		if err != nil {
-			return err
-		}
-		if !resp.Success() {
-			return &feishuAPIError{Code: resp.Code, Msg: resp.Msg, RequestID: resp.RequestId()}
-		}
-		return nil
-	})
+func (s *LarkSender) SendCardMessage(ctx context.Context, receiveIDType, receiveID, cardContent string) (string, error) {
+	return s.createMessage(ctx, receiveIDType, receiveID, "interactive", cardContent, "send card success but response message_id is empty")
 }
 
 func (s *LarkSender) PatchCard(ctx context.Context, messageID, cardContent string) error {
@@ -118,6 +91,50 @@ func (s *LarkSender) PatchCard(ctx context.Context, messageID, cardContent strin
 
 	return s.withFeishuRetry(ctx, func() error {
 		resp, err := s.client.Im.V1.Message.Patch(ctx, req)
+		if err != nil {
+			return err
+		}
+		if !resp.Success() {
+			return &feishuAPIError{Code: resp.Code, Msg: resp.Msg, RequestID: resp.RequestId()}
+		}
+		return nil
+	})
+}
+
+func (s *LarkSender) UrgentApp(ctx context.Context, messageID, userIDType string, userIDs []string) error {
+	messageID = strings.TrimSpace(messageID)
+	userIDType = strings.TrimSpace(userIDType)
+	if messageID == "" {
+		return errors.New("message id is empty")
+	}
+	if userIDType == "" {
+		return errors.New("user id type is empty")
+	}
+	receivers := make([]string, 0, len(userIDs))
+	seen := make(map[string]struct{}, len(userIDs))
+	for _, raw := range userIDs {
+		userID := strings.TrimSpace(raw)
+		if userID == "" {
+			continue
+		}
+		if _, ok := seen[userID]; ok {
+			continue
+		}
+		seen[userID] = struct{}{}
+		receivers = append(receivers, userID)
+	}
+	if len(receivers) == 0 {
+		return errors.New("urgent receivers are empty")
+	}
+
+	req := larkim.NewUrgentAppMessageReqBuilder().
+		MessageId(messageID).
+		UserIdType(userIDType).
+		UrgentReceivers(larkim.NewUrgentReceiversBuilder().UserIdList(receivers).Build()).
+		Build()
+
+	return s.withFeishuRetry(ctx, func() error {
+		resp, err := s.client.Im.V1.Message.UrgentApp(ctx, req)
 		if err != nil {
 			return err
 		}
@@ -213,6 +230,43 @@ func (s *LarkSender) replyMessage(
 	var messageID string
 	err := s.withFeishuRetry(ctx, func() error {
 		resp, err := s.client.Im.V1.Message.Reply(ctx, req)
+		if err != nil {
+			return err
+		}
+		if !resp.Success() {
+			return &feishuAPIError{Code: resp.Code, Msg: resp.Msg, RequestID: resp.RequestId()}
+		}
+		if resp.Data == nil || resp.Data.MessageId == nil {
+			return errors.New(emptyMessageIDErr)
+		}
+		messageID = strings.TrimSpace(*resp.Data.MessageId)
+		if messageID == "" {
+			return errors.New(emptyMessageIDErr)
+		}
+		return nil
+	})
+	if err != nil {
+		return "", err
+	}
+	return messageID, nil
+}
+
+func (s *LarkSender) createMessage(
+	ctx context.Context,
+	receiveIDType, receiveID, msgType, content, emptyMessageIDErr string,
+) (string, error) {
+	req := larkim.NewCreateMessageReqBuilder().
+		ReceiveIdType(receiveIDType).
+		Body(larkim.NewCreateMessageReqBodyBuilder().
+			ReceiveId(receiveID).
+			MsgType(msgType).
+			Content(content).
+			Build()).
+		Build()
+
+	var messageID string
+	err := s.withFeishuRetry(ctx, func() error {
+		resp, err := s.client.Im.V1.Message.Create(ctx, req)
 		if err != nil {
 			return err
 		}

@@ -305,6 +305,78 @@ created_at: "2026-03-31T18:05:00+08:00"
 	}
 }
 
+func TestValidateTaskPostRun_ReviewerAcceptsJudgeAppliedReworkAfterConcern(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship phase one"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Reviewer concern becomes rework"
+phase: P01
+status: reviewing
+dispatch_state: reviewer_dispatched
+review_status: reviewing
+execution_round: 1
+review_round: 1
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+self_check_kind: reviewer
+self_check_round: 1
+self_check_status: passed
+self_check_at: "2026-03-31T18:06:00+08:00"
+owner_agent: reviewer.codex
+lease_until: "2026-03-31T18:30:00+08:00"
+write_scope:
+  - campaign:phases/P01/tasks/T001/**
+reviewer:
+  role: reviewer
+  workflow: code_army
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+reviewer:
+  role: reviewer
+  workflow: code_army
+verdict: concern
+blocking: false
+created_at: "2026-03-31T18:05:00+08:00"
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	applied, _, err := applyReviewVerdicts(&repo, "camp_demo")
+	if err != nil {
+		t.Fatalf("apply review verdicts failed: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("expected one applied review, got %d", applied)
+	}
+
+	runtimeValidation, err := ValidateTaskPostRun(root, "T001", DispatchKindReviewer)
+	if err != nil {
+		t.Fatalf("validate task post run failed: %v", err)
+	}
+	if !runtimeValidation.Valid {
+		t.Fatalf("expected runtime gate to accept judge-applied rework after concern, got %+v", runtimeValidation.Issues)
+	}
+}
+
 func TestLatestRelevantReview_IgnoresNonReviewerArtifacts(t *testing.T) {
 	task := TaskDocument{
 		Frontmatter: TaskFrontmatter{

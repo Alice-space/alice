@@ -136,12 +136,12 @@ func validateReviewerPostRunTask(repo Repository, task TaskDocument, issues *[]V
 	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
 	status := normalizeTaskStatus(task.Frontmatter.Status)
 	switch status {
-	case TaskStatusReviewing, TaskStatusReviewPending, TaskStatusBlocked:
+	case TaskStatusReviewing, TaskStatusReviewPending, TaskStatusRework, TaskStatusBlocked:
 	default:
 		*issues = append(*issues, ValidationIssue{
 			Code:    "task_reviewer_post_run_status_invalid",
 			Path:    task.Path,
-			Message: fmt.Sprintf("task %s reviewer round ended in unsupported status %s; reviewer should leave task in reviewing/review_pending or escalate to blocked", taskID, blankForSummary(status)),
+			Message: fmt.Sprintf("task %s reviewer round ended in unsupported status %s; reviewer should leave task in reviewing/review_pending, or allow judge-applied rework/blocked", taskID, blankForSummary(status)),
 		})
 	}
 

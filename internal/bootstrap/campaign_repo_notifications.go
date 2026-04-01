@@ -124,6 +124,7 @@ func (b *connectorRuntimeBuilder) sendCampaignNotifications(item campaign.Campai
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
+	urgentRecipients := campaignUrgentRecipientOpenIDs(item)
 	for _, event := range events {
 		title := campaignEventCardTitle(item.Title, item.ID, event)
 		cardContent, err := buildCampaignEventCard(title, event)
@@ -131,12 +132,78 @@ func (b *connectorRuntimeBuilder) sendCampaignNotifications(item campaign.Campai
 			logging.Warnf("build campaign event card failed campaign=%s kind=%s: %v", item.ID, event.Kind, err)
 			continue
 		}
-		if err := b.sender.SendCard(ctx, target.Route.ReceiveIDType, target.Route.ReceiveID, cardContent); err != nil {
+		messageID, sendErr := b.sender.SendCardMessage(ctx, target.Route.ReceiveIDType, target.Route.ReceiveID, cardContent)
+		if sendErr != nil {
 			// Fallback to text
 			text := fmt.Sprintf("**%s**\n%s", title, event.Detail)
-			if sendErr := b.sender.SendText(ctx, target.Route.ReceiveIDType, target.Route.ReceiveID, text); sendErr != nil {
+			messageID, sendErr = b.sender.SendTextMessage(ctx, target.Route.ReceiveIDType, target.Route.ReceiveID, text)
+			if sendErr != nil {
 				logging.Warnf("send campaign notification failed campaign=%s kind=%s: %v", item.ID, event.Kind, sendErr)
+				if shouldEscalateCampaignEvent(event) {
+					b.sendCampaignUrgentDirectMessage(ctx, item, target.Route.ReceiveIDType, target.Route.ReceiveID, event, title, urgentRecipients)
+				}
+				continue
 			}
+		}
+		if shouldEscalateCampaignEvent(event) {
+			if target.Route.ReceiveIDType == "chat_id" && messageID != "" && len(urgentRecipients) > 0 {
+				if err := b.sender.UrgentApp(ctx, messageID, "open_id", urgentRecipients); err != nil {
+					logging.Warnf("send urgent campaign notification failed campaign=%s kind=%s message=%s: %v", item.ID, event.Kind, messageID, err)
+				}
+			}
+			b.sendCampaignUrgentDirectMessage(ctx, item, target.Route.ReceiveIDType, target.Route.ReceiveID, event, title, urgentRecipients)
+		}
+	}
+}
+
+func shouldEscalateCampaignEvent(event campaignrepo.ReconcileEvent) bool {
+	switch event.Kind {
+	case campaignrepo.EventTaskBlocked:
+		return true
+	default:
+		return false
+	}
+}
+
+func campaignUrgentRecipientOpenIDs(item campaign.Campaign) []string {
+	creatorOpenID := strings.TrimSpace(item.Creator.OpenID)
+	if creatorOpenID == "" {
+		return nil
+	}
+	return []string{creatorOpenID}
+}
+
+func buildCampaignUrgentDirectText(campaignTitle, campaignID string, event campaignrepo.ReconcileEvent) string {
+	title := campaignEventCardTitle(campaignTitle, campaignID, event)
+	detail := strings.TrimSpace(strings.NewReplacer("**", "", "`", "").Replace(event.Detail))
+	if detail == "" {
+		return fmt.Sprintf("【Alice加急提醒】\n%s", title)
+	}
+	return fmt.Sprintf("【Alice加急提醒】\n%s\n\n%s", title, detail)
+}
+
+func (b *connectorRuntimeBuilder) sendCampaignUrgentDirectMessage(
+	ctx context.Context,
+	item campaign.Campaign,
+	primaryReceiveIDType, primaryReceiveID string,
+	event campaignrepo.ReconcileEvent,
+	title string,
+	urgentRecipients []string,
+) {
+	if b == nil || b.sender == nil || len(urgentRecipients) == 0 {
+		return
+	}
+	text := buildCampaignUrgentDirectText(item.Title, item.ID, event)
+	for _, openID := range urgentRecipients {
+		recipient := strings.TrimSpace(openID)
+		if recipient == "" {
+			continue
+		}
+		if primaryReceiveIDType == "open_id" && strings.TrimSpace(primaryReceiveID) == recipient {
+			continue
+		}
+		if err := b.sender.SendText(ctx, "open_id", recipient, text); err != nil {
+			logging.Warnf("send urgent direct campaign notification failed campaign=%s kind=%s user=%s title=%s: %v", item.ID, event.Kind, recipient, title, err)
 		}
 	}
 }

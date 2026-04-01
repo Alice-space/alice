@@ -1135,6 +1135,82 @@ last_run_path: "results/report-snippet.md"
 	}
 }
 
+func TestValidateRepository_RejectsReadyTaskReusingOccupiedSourceBranch(t *testing.T) {
+	root := t.TempDir()
+	sourceRoot := filepath.Join(root, "source")
+	if err := os.MkdirAll(sourceRoot, 0o755); err != nil {
+		t.Fatalf("mkdir source root failed: %v", err)
+	}
+	initGitRepo(t, sourceRoot)
+	runGitOrFail(t, sourceRoot, "checkout", "-b", "rCM")
+	headCommit := gitHeadCommit(t, sourceRoot)
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship the workflow"
+current_phase: P01
+source_repos: [repo-a]
+plan_round: 1
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: main
+base_commit: "`+headCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Bad shared branch"
+phase: P01
+status: ready
+target_repos: [repo-a]
+working_branches: [repo-a:rCM]
+write_scope: [repo-a:src/lib.rs]
+---
+
+# Task
+
+## Goal
+- complete the work
+
+## Background
+- enough background
+
+## Acceptance
+- acceptance is clear
+
+## Deliverables
+- deliver the code
+`)
+
+	_, validation, err := Validate(root)
+	if err != nil {
+		t.Fatalf("validate failed: %v", err)
+	}
+	if validation.Valid {
+		t.Fatal("expected shared source branch reuse to fail validation")
+	}
+	for _, issue := range validation.Issues {
+		if issue.Code == "task_working_branch_in_use" &&
+			strings.Contains(issue.Message, "repo-a:rCM") &&
+			strings.Contains(issue.Message, sourceRoot) {
+			return
+		}
+	}
+	t.Fatalf("expected task_working_branch_in_use issue, got %+v", validation.Issues)
+}
+
 func TestResumeWakeTask_RestoresExecutingState(t *testing.T) {
 	root := t.TempDir()
 	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---

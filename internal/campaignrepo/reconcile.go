@@ -415,8 +415,12 @@ func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileE
 		task.LeaseUntil = time.Time{}
 		task.WakeAt = time.Time{}
 		task.Frontmatter.WakePrompt = ""
-		if commit := strings.TrimSpace(review.Frontmatter.TargetCommit); commit != "" {
-			task.Frontmatter.HeadCommit = commit
+		if taskRequiresSourceRepoEvidence(*task) {
+			if commit := strings.TrimSpace(review.Frontmatter.TargetCommit); commit != "" {
+				task.Frontmatter.HeadCommit = commit
+			}
+		} else {
+			task.Frontmatter.HeadCommit = ""
 		}
 		if err := persistTaskDocument(repo, idx); err != nil {
 			return applied, events, err

@@ -72,6 +72,12 @@ task frontmatter 现在默认带两类角色：
 - `last_run_path`
 - `last_review_path`
 
+额外约束：
+
+- `working_branches` 表示 task 私有工作分支，不表示 source repo 的基线分支。
+- 不要把 `main`、`dev`、`rCM` 这类共享基线分支直接写进 `working_branches`；默认留空，让 runtime 生成独立的 `codearmy/...` task branch。
+- 如果 task 需要表达“基于哪个上游分支/commit 做修复”，放到 source repo facts、`base_commit` 或 task 正文里，不要复用 `working_branches`。
+
 ## 并行与防冲突
 
 并行的基本规则：

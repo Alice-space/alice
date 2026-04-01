@@ -320,6 +320,7 @@ func validateTaskDocument(root string, task TaskDocument, phases map[string]Phas
 			})
 		}
 	}
+	validateTaskWorkingBranchDeclarations(task, repos, issues)
 	validateTaskStatusValue(root, task, issues)
 	validateTaskStateContract(root, task, repos, issues)
 	validateTaskRoleWorkflows(task, issues)
@@ -596,6 +597,72 @@ func taskExecutionArtifactBlockReason(root string, task TaskDocument, repos map[
 		return ""
 	}
 	return issues[0].Message
+}
+
+func validateTaskWorkingBranchDeclarations(task TaskDocument, repos map[string]SourceRepoDocument, issues *[]ValidationIssue) {
+	status := normalizeTaskStatus(task.Frontmatter.Status)
+	switch status {
+	case TaskStatusDraft, TaskStatusReady, TaskStatusRework:
+	default:
+		return
+	}
+
+	workingBranches := normalizeDeclaredBranches(task.Frontmatter.WorkingBranches)
+	if len(workingBranches) == 0 {
+		return
+	}
+	targetRepos := resolveTaskSourceRepos(task, repos)
+	if len(targetRepos) == 0 {
+		return
+	}
+
+	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
+	singleTarget := len(targetRepos) == 1
+	for _, repoDoc := range targetRepos {
+		repoID := strings.TrimSpace(repoDoc.Frontmatter.RepoID)
+		localPath := strings.TrimSpace(repoDoc.Frontmatter.LocalPath)
+		if repoID == "" || localPath == "" || !gitWorktreeExists(localPath) {
+			continue
+		}
+		branchName, ok := taskBranchForRepo(workingBranches, repoID)
+		if !ok || branchName == "" {
+			continue
+		}
+		occupants, err := gitWorktreeBranchOccupants(localPath, branchName)
+		if err != nil {
+			*issues = append(*issues, ValidationIssue{
+				Code:    "task_working_branch_occupancy_unreadable",
+				Path:    task.Path,
+				Message: fmt.Sprintf("task %s could not inspect existing worktrees for declared branch %s in repo %s: %v", taskID, repoScopedValue(repoID, branchName), repoID, err),
+			})
+			continue
+		}
+		if len(occupants) == 0 {
+			continue
+		}
+		declaredWorktree, hasDeclaredWorktree := taskWorktreePathForRepo(task.Frontmatter.WorktreePaths, repoID, singleTarget)
+		declaredWorktree = filepath.Clean(strings.TrimSpace(declaredWorktree))
+		conflicts := make([]string, 0, len(occupants))
+		for _, occupant := range occupants {
+			occupant = filepath.Clean(strings.TrimSpace(occupant))
+			if occupant == "" {
+				continue
+			}
+			if hasDeclaredWorktree && occupant == declaredWorktree {
+				continue
+			}
+			conflicts = append(conflicts, occupant)
+		}
+		if len(conflicts) == 0 {
+			continue
+		}
+		sort.Strings(conflicts)
+		*issues = append(*issues, ValidationIssue{
+			Code:    "task_working_branch_in_use",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s declared working_branches %s, but branch %s is already checked out at %s; working_branches must point to a task-private branch or stay empty so Alice can generate one", taskID, strings.Join(workingBranches, ", "), repoScopedValue(repoID, branchName), strings.Join(conflicts, ", ")),
+		})
+	}
 }
 
 func resolveTaskSourceRepos(task TaskDocument, repos map[string]SourceRepoDocument) []SourceRepoDocument {
@@ -1209,6 +1276,79 @@ func isPlaceholderCandidate(value string) bool {
 func gitWorktreeExists(path string) bool {
 	_, err := runGit(path, "rev-parse", "--is-inside-work-tree")
 	return err == nil
+}
+
+type gitWorktreeEntry struct {
+	Path   string
+	Branch string
+}
+
+func gitWorktreeList(path string) ([]gitWorktreeEntry, error) {
+	output, err := runGit(path, "worktree", "list", "--porcelain")
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(output) == "" {
+		return nil, nil
+	}
+
+	lines := strings.Split(output, "\n")
+	entries := make([]gitWorktreeEntry, 0, len(lines))
+	current := gitWorktreeEntry{}
+	flush := func() {
+		if strings.TrimSpace(current.Path) == "" {
+			current = gitWorktreeEntry{}
+			return
+		}
+		current.Path = filepath.Clean(strings.TrimSpace(current.Path))
+		current.Branch = strings.TrimSpace(current.Branch)
+		entries = append(entries, current)
+		current = gitWorktreeEntry{}
+	}
+
+	for _, raw := range lines {
+		line := strings.TrimSpace(raw)
+		switch {
+		case strings.HasPrefix(line, "worktree "):
+			flush()
+			current.Path = strings.TrimSpace(strings.TrimPrefix(line, "worktree "))
+		case strings.HasPrefix(line, "branch "):
+			ref := strings.TrimSpace(strings.TrimPrefix(line, "branch "))
+			current.Branch = strings.TrimSpace(strings.TrimPrefix(ref, "refs/heads/"))
+		case line == "":
+			flush()
+		}
+	}
+	flush()
+	return entries, nil
+}
+
+func gitWorktreeBranchOccupants(path, branch string) ([]string, error) {
+	branch = strings.TrimSpace(branch)
+	if branch == "" {
+		return nil, nil
+	}
+	entries, err := gitWorktreeList(path)
+	if err != nil {
+		return nil, err
+	}
+	occupants := make([]string, 0, len(entries))
+	seen := make(map[string]struct{}, len(entries))
+	for _, entry := range entries {
+		if entry.Branch != branch {
+			continue
+		}
+		if entry.Path == "" {
+			continue
+		}
+		if _, ok := seen[entry.Path]; ok {
+			continue
+		}
+		seen[entry.Path] = struct{}{}
+		occupants = append(occupants, entry.Path)
+	}
+	sort.Strings(occupants)
+	return occupants, nil
 }
 
 func gitBranchExists(path, branch string) bool {

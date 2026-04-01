@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/campaignrepo"
 )
 
@@ -17,6 +18,36 @@ func TestCampaignEventCardTitle_UsesCampaignName(t *testing.T) {
 	})
 	if title != "Demo Campaign · 任务已派发执行" {
 		t.Fatalf("unexpected campaign event title: %q", title)
+	}
+}
+
+func TestShouldEscalateCampaignEvent_OnlyTaskBlocked(t *testing.T) {
+	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskBlocked}) {
+		t.Fatal("expected task_blocked to trigger urgent escalation")
+	}
+	if shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskDispatched}) {
+		t.Fatal("did not expect task_dispatched to trigger urgent escalation")
+	}
+}
+
+func TestCampaignUrgentRecipientOpenIDs_UsesCreator(t *testing.T) {
+	item := campaign.Campaign{Creator: campaign.Actor{OpenID: "ou_creator"}}
+	recipients := campaignUrgentRecipientOpenIDs(item)
+	if len(recipients) != 1 || recipients[0] != "ou_creator" {
+		t.Fatalf("unexpected urgent recipients: %+v", recipients)
+	}
+}
+
+func TestBuildCampaignUrgentDirectText_IncludesCampaignAndDetail(t *testing.T) {
+	text := buildCampaignUrgentDirectText("Demo Campaign", "camp_demo", campaignrepo.ReconcileEvent{
+		Kind:     campaignrepo.EventTaskBlocked,
+		TaskID:   "T101",
+		Title:    "任务阻塞",
+		Detail:   "任务 **T101** 遇到阻塞，无法继续执行。",
+		Severity: "warning",
+	})
+	if text != "【Alice加急提醒】\nDemo Campaign · 任务阻塞\n\n任务 T101 遇到阻塞，无法继续执行。" {
+		t.Fatalf("unexpected urgent direct text: %q", text)
 	}
 }
 

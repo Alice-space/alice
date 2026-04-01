@@ -285,14 +285,13 @@ func newRuntimeCampaignRepoReconcileCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			liveReportPath := ""
+			var commitResult campaignrepo.ReconcileCommitResult
 			if writeReport {
-				liveReportPath, err = campaignrepo.WriteLiveReport(item.CampaignRepoPath, result.Summary)
-				if err != nil {
-					return err
-				}
+				commitResult, err = campaignrepo.CommitReconcileSnapshot(item.CampaignRepoPath, &result.Summary)
+			} else {
+				commitResult, err = campaignrepo.CommitReconcileSnapshot(item.CampaignRepoPath, nil)
 			}
-			if _, _, err := campaignrepo.CommitRepoChanges(item.CampaignRepoPath, "chore(campaign): reconcile repo state"); err != nil {
+			if err != nil {
 				return err
 			}
 			if updateRuntime && strings.TrimSpace(item.Summary) != result.Summary.SummaryLine() {
@@ -321,7 +320,7 @@ func newRuntimeCampaignRepoReconcileCmd() *cobra.Command {
 				"summary":               result.Summary,
 				"dispatch_tasks":        result.DispatchTasks,
 				"synced_dispatch_tasks": syncedDispatchTasks,
-				"live_report_path":      liveReportPath,
+				"live_report_path":      commitResult.LiveReportPath,
 			})
 		}),
 	}
