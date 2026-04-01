@@ -133,6 +133,15 @@ func diffRestartRequiredFields(current, next config.Config) []string {
 	if current.WorkerConcurrency != next.WorkerConcurrency {
 		changed = append(changed, "worker_concurrency")
 	}
+	if current.AuthStatusTimeoutSecs != next.AuthStatusTimeoutSecs {
+		changed = append(changed, "auth_status_timeout_secs")
+	}
+	if current.CampaignNotificationTimeoutSecs != next.CampaignNotificationTimeoutSecs {
+		changed = append(changed, "campaign_notification_timeout_secs")
+	}
+	if current.RuntimeAPIShutdownTimeoutSecs != next.RuntimeAPIShutdownTimeoutSecs {
+		changed = append(changed, "runtime_api_shutdown_timeout_secs")
+	}
 	sort.Strings(changed)
 	return changed
 }
@@ -170,6 +179,12 @@ func applyReloadableFields(dst *config.Config, src config.Config, changed map[st
 
 	applyIntField(&dst.AutomationTaskTimeoutSecs, src.AutomationTaskTimeoutSecs, "automation_task_timeout_secs", changed)
 	applyDurationField(&dst.AutomationTaskTimeout, src.AutomationTaskTimeout, "automation_task_timeout", changed)
+	applyIntField(&dst.CodexIdleTimeoutSecs, src.CodexIdleTimeoutSecs, "codex_idle_timeout_secs", changed)
+	applyDurationField(&dst.CodexIdleTimeout, src.CodexIdleTimeout, "codex_idle_timeout", changed)
+	applyIntField(&dst.CodexHighIdleTimeoutSecs, src.CodexHighIdleTimeoutSecs, "codex_high_idle_timeout_secs", changed)
+	applyDurationField(&dst.CodexHighIdleTimeout, src.CodexHighIdleTimeout, "codex_high_idle_timeout", changed)
+	applyIntField(&dst.CodexXHighIdleTimeoutSecs, src.CodexXHighIdleTimeoutSecs, "codex_xhigh_idle_timeout_secs", changed)
+	applyDurationField(&dst.CodexXHighIdleTimeout, src.CodexXHighIdleTimeout, "codex_xhigh_idle_timeout", changed)
 
 	applyStringField(&dst.LogLevel, src.LogLevel, "log_level", changed)
 	applyStringField(&dst.LogFile, src.LogFile, "log_file", changed)
@@ -183,7 +198,10 @@ func llmRuntimeConfigChanged(current, next config.Config) bool {
 	return current.LLMProvider != next.LLMProvider ||
 		!llmProfileMapEqual(current.LLMProfiles, next.LLMProfiles) ||
 		current.GroupScenes != next.GroupScenes ||
-		!stringMapEqual(current.CodexEnv, next.CodexEnv)
+		!stringMapEqual(current.CodexEnv, next.CodexEnv) ||
+		current.CodexIdleTimeout != next.CodexIdleTimeout ||
+		current.CodexHighIdleTimeout != next.CodexHighIdleTimeout ||
+		current.CodexXHighIdleTimeout != next.CodexXHighIdleTimeout
 }
 
 func loggingConfigChanged(current, next config.Config) bool {

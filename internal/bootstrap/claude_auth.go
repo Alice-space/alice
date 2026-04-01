@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"os/exec"
 	"strings"
+	"time"
+
+	"github.com/Alice-space/alice/internal/config"
 )
 
 type ClaudeLoginStatusReport struct {
@@ -17,13 +20,16 @@ type ClaudeLoginStatusReport struct {
 	Output      string
 }
 
-func CheckClaudeLogin(command string) (ClaudeLoginStatusReport, error) {
+func CheckClaudeLogin(command string, timeout time.Duration) (ClaudeLoginStatusReport, error) {
 	command = strings.TrimSpace(command)
 	if command == "" {
 		return ClaudeLoginStatusReport{}, fmt.Errorf("claude command is empty")
 	}
+	if timeout <= 0 {
+		timeout = time.Duration(config.DefaultAuthStatusTimeoutSecs) * time.Second
+	}
 
-	ctx, cancel := context.WithTimeout(context.Background(), codexLoginStatusTimeout)
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, command, "auth", "status")

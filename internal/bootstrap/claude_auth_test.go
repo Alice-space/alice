@@ -4,6 +4,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 )
 
 func TestCheckClaudeLogin_LoggedIn(t *testing.T) {
@@ -16,7 +17,7 @@ printf 'unexpected args=%s %s\n' "$1" "$2" >&2
 exit 99
 `)
 
-	report, err := CheckClaudeLogin(command)
+	report, err := CheckClaudeLogin(command, time.Second)
 	if err != nil {
 		t.Fatalf("check login failed: %v", err)
 	}
@@ -37,7 +38,7 @@ printf '{"loggedIn":false,"authMethod":"","apiProvider":""}\n'
 exit 1
 `)
 
-	report, err := CheckClaudeLogin(command)
+	report, err := CheckClaudeLogin(command, time.Second)
 	if err != nil {
 		t.Fatalf("check login failed: %v", err)
 	}

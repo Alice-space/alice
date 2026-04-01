@@ -30,16 +30,17 @@ const runtimeAPIMaxListLimit = 200
 const runtimeAPIAuthRateLimit = 120
 
 type Server struct {
-	addr        string
-	token       string
-	sender      Sender
-	automation  *automation.Store
-	campaigns   *campaign.Store
-	runtimeMu   sync.RWMutex
-	runtime     automationRuntimeConfig
-	engine      *gin.Engine
-	httpSrv     *http.Server
-	authLimiter *authRateLimiter
+	addr            string
+	token           string
+	shutdownTimeout time.Duration
+	sender          Sender
+	automation      *automation.Store
+	campaigns       *campaign.Store
+	runtimeMu       sync.RWMutex
+	runtime         automationRuntimeConfig
+	engine          *gin.Engine
+	httpSrv         *http.Server
+	authLimiter     *authRateLimiter
 }
 
 type automationRuntimeConfig struct {
@@ -61,14 +62,15 @@ func NewServer(
 	engine.Use(gin.Recovery())
 
 	srv := &Server{
-		addr:        strings.TrimSpace(addr),
-		token:       strings.TrimSpace(token),
-		sender:      sender,
-		automation:  automationStore,
-		campaigns:   campaignStore,
-		runtime:     newAutomationRuntimeConfig(cfg),
-		engine:      engine,
-		authLimiter: newAuthRateLimiter(runtimeAPIAuthRateLimit, time.Minute),
+		addr:            strings.TrimSpace(addr),
+		token:           strings.TrimSpace(token),
+		shutdownTimeout: runtimeAPIShutdownTimeout(cfg),
+		sender:          sender,
+		automation:      automationStore,
+		campaigns:       campaignStore,
+		runtime:         newAutomationRuntimeConfig(cfg),
+		engine:          engine,
+		authLimiter:     newAuthRateLimiter(runtimeAPIAuthRateLimit, time.Minute),
 	}
 	engine.Use(srv.requestBodyLimitMiddleware(runtimeAPIRequestBodyLimitBytes))
 	engine.Use(srv.authMiddleware())
@@ -111,12 +113,20 @@ func (s *Server) Run(ctx context.Context) error {
 
 	select {
 	case <-ctx.Done():
-		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 		defer cancel()
 		return s.httpSrv.Shutdown(shutdownCtx)
 	case err := <-errCh:
 		return err
 	}
+}
+
+func runtimeAPIShutdownTimeout(cfg config.Config) time.Duration {
+	timeout := cfg.RuntimeAPIShutdownTimeout
+	if timeout <= 0 {
+		timeout = time.Duration(config.DefaultRuntimeAPIShutdownTimeoutSecs) * time.Second
+	}
+	return timeout
 }
 
 func (s *Server) requestBodyLimitMiddleware(limit int64) gin.HandlerFunc {

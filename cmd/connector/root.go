@@ -251,8 +251,12 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 				check = &codexLoginCheck{
 					Command:   codexCmd,
 					CodexHome: runtimeCfg.CodexHome,
+					Timeout:   runtimeCfg.AuthStatusTimeout,
 				}
 				codexAuthChecks[key] = check
+			}
+			if runtimeCfg.AuthStatusTimeout > check.Timeout {
+				check.Timeout = runtimeCfg.AuthStatusTimeout
 			}
 			check.Bots = append(check.Bots, runtimeCfg.BotID)
 		}
@@ -262,8 +266,12 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 			if !ok {
 				check = &claudeLoginCheck{
 					Command: claudeCmd,
+					Timeout: runtimeCfg.AuthStatusTimeout,
 				}
 				claudeAuthChecks[claudeCmd] = check
+			}
+			if runtimeCfg.AuthStatusTimeout > check.Timeout {
+				check.Timeout = runtimeCfg.AuthStatusTimeout
 			}
 			check.Bots = append(check.Bots, runtimeCfg.BotID)
 		}
@@ -285,7 +293,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	sort.Strings(authKeys)
 	for _, key := range authKeys {
 		check := codexAuthChecks[key]
-		report, authErr := bootstrap.CheckCodexLoginForCodexHome(check.Command, check.CodexHome)
+		report, authErr := bootstrap.CheckCodexLoginForCodexHome(check.Command, check.CodexHome, check.Timeout)
 		if authErr != nil {
 			return fmt.Errorf("check Codex login failed for bots %s: %w", check.botList(), authErr)
 		}
@@ -307,7 +315,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	sort.Strings(claudeKeys)
 	for _, key := range claudeKeys {
 		check := claudeAuthChecks[key]
-		report, authErr := bootstrap.CheckClaudeLogin(check.Command)
+		report, authErr := bootstrap.CheckClaudeLogin(check.Command, check.Timeout)
 		if authErr != nil {
 			return fmt.Errorf("check Claude login failed for bots %s: %w", check.botList(), authErr)
 		}
@@ -605,6 +613,7 @@ func ensureCodexHomeEnv(codexHome string) string {
 type codexLoginCheck struct {
 	Command   string
 	CodexHome string
+	Timeout   time.Duration
 	Bots      []string
 }
 
@@ -622,6 +631,7 @@ type bundledSkillSyncPlan struct {
 
 type claudeLoginCheck struct {
 	Command string
+	Timeout time.Duration
 	Bots    []string
 }
 

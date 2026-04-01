@@ -175,6 +175,13 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	}
 	cfg.LLMProfiles = finalizeLLMProfiles(cfg.LLMProfiles)
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
+	cfg.AuthStatusTimeout = time.Duration(cfg.AuthStatusTimeoutSecs) * time.Second
+	cfg.CampaignNotificationTimeout = time.Duration(cfg.CampaignNotificationTimeoutSecs) * time.Second
+	cfg.RuntimeAPIShutdownTimeout = time.Duration(cfg.RuntimeAPIShutdownTimeoutSecs) * time.Second
+	cfg.LocalRuntimeStoreOpenTimeout = time.Duration(cfg.LocalRuntimeStoreOpenTimeoutSecs) * time.Second
+	cfg.CodexIdleTimeout = time.Duration(cfg.CodexIdleTimeoutSecs) * time.Second
+	cfg.CodexHighIdleTimeout = time.Duration(cfg.CodexHighIdleTimeoutSecs) * time.Second
+	cfg.CodexXHighIdleTimeout = time.Duration(cfg.CodexXHighIdleTimeoutSecs) * time.Second
 
 	if len(cfg.Bots) == 0 {
 		if strings.TrimSpace(cfg.BotID) == "" {

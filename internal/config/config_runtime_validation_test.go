@@ -22,6 +22,22 @@ automation_task_timeout_secs: 0
 	}
 }
 
+func TestLoadFromFile_CodexIdleTimeoutSecsInvalid(t *testing.T) {
+	path := writeSingleBotConfig(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+codex_idle_timeout_secs: 0
+`)
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "codex_idle_timeout_secs must be > 0") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadFromFile_FeishuBotIDsTrimmed(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx

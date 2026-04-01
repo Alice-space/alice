@@ -178,7 +178,16 @@ bots:
 
     queue_capacity: 256
     worker_concurrency: 3
+    # Outer automation/task wrapper timeout (codearmy dispatcher, planner, reviewer, workflows).
     automation_task_timeout_secs: 6000
+    # Hidden runtime deadlines are also configurable.
+    auth_status_timeout_secs: 15
+    campaign_notification_timeout_secs: 30
+    runtime_api_shutdown_timeout_secs: 5
+    local_runtime_store_open_timeout_secs: 10
+    codex_idle_timeout_secs: 900
+    codex_high_idle_timeout_secs: 1800
+    codex_xhigh_idle_timeout_secs: 3600
 
   # ──────────────────────────────────────────────────────────────────────────
   # Example 2: multi-provider work bot (Codex for chat, Claude for work)
@@ -259,6 +268,13 @@ bots:
     queue_capacity: 256
     worker_concurrency: 3
     automation_task_timeout_secs: 6000
+    auth_status_timeout_secs: 15
+    campaign_notification_timeout_secs: 30
+    runtime_api_shutdown_timeout_secs: 5
+    local_runtime_store_open_timeout_secs: 10
+    codex_idle_timeout_secs: 900
+    codex_high_idle_timeout_secs: 1800
+    codex_xhigh_idle_timeout_secs: 3600
 
 # debug | info | warn | error
 log_level: "info"

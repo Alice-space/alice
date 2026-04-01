@@ -20,6 +20,9 @@ type Runner struct {
 	Command                string
 	Timeout                time.Duration
 	IdleTimeout            time.Duration
+	DefaultIdleTimeout     time.Duration
+	HighIdleTimeout        time.Duration
+	XHighIdleTimeout       time.Duration
 	DefaultModel           string
 	DefaultReasoningEffort string
 	Env                    map[string]string
@@ -34,9 +37,9 @@ const (
 	defaultChatSandbox   = "workspace-write"
 	defaultApprovalMode  = "never"
 	envAliceResourceRoot = "ALICE_MCP_RESOURCE_ROOT"
-	defaultIdleTimeout   = 90 * time.Second
-	highIdleTimeout      = 5 * time.Minute
-	xhighIdleTimeout     = 10 * time.Minute
+	defaultIdleTimeout   = 15 * time.Minute
+	highIdleTimeout      = 30 * time.Minute
+	xhighIdleTimeout     = time.Hour
 )
 
 var errCodexIdleTimeout = errors.New("codex idle timeout")
@@ -232,7 +235,7 @@ func (r Runner) runAttemptWithThreadAndProgressAndUsage(
 	}
 	idleTimeout := r.IdleTimeout
 	if idleTimeout <= 0 {
-		idleTimeout = defaultIdleTimeoutForReasoningEffort(reasoningEffort)
+		idleTimeout = r.idleTimeoutForReasoningEffort(reasoningEffort)
 	}
 	if idleTimeout > timeout {
 		idleTimeout = timeout
@@ -532,6 +535,29 @@ func defaultIdleTimeoutForReasoningEffort(reasoningEffort string) time.Duration 
 		return highIdleTimeout
 	default:
 		return defaultIdleTimeout
+	}
+}
+
+func (r Runner) idleTimeoutForReasoningEffort(reasoningEffort string) time.Duration {
+	defaultTimeout := r.DefaultIdleTimeout
+	if defaultTimeout <= 0 {
+		defaultTimeout = defaultIdleTimeout
+	}
+	highTimeout := r.HighIdleTimeout
+	if highTimeout <= 0 {
+		highTimeout = highIdleTimeout
+	}
+	xhighTimeout := r.XHighIdleTimeout
+	if xhighTimeout <= 0 {
+		xhighTimeout = xhighIdleTimeout
+	}
+	switch strings.ToLower(strings.TrimSpace(reasoningEffort)) {
+	case "xhigh":
+		return xhighTimeout
+	case "high":
+		return highTimeout
+	default:
+		return defaultTimeout
 	}
 }
 

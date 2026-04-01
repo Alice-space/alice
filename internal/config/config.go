@@ -21,6 +21,13 @@ const DefaultWorkerConcurrency = 3
 const DefaultHTTPSProxy = "http://127.0.0.1:8080"
 const DefaultALLProxy = "http://127.0.0.1:8080"
 const DefaultLLMTimeoutSecs = 172800
+const DefaultAuthStatusTimeoutSecs = 15
+const DefaultCampaignNotificationTimeoutSecs = 30
+const DefaultRuntimeAPIShutdownTimeoutSecs = 5
+const DefaultLocalRuntimeStoreOpenTimeoutSecs = 10
+const DefaultCodexIdleTimeoutSecs = 900
+const DefaultCodexHighIdleTimeoutSecs = 1800
+const DefaultCodexXHighIdleTimeoutSecs = 3600
 
 var configValidator = validator.New()
 
@@ -108,34 +115,41 @@ type BotPermissionsConfig struct {
 }
 
 type BotConfig struct {
-	Name                      string                      `mapstructure:"name"`
-	FeishuAppID               string                      `mapstructure:"feishu_app_id"`
-	FeishuAppSecret           string                      `mapstructure:"feishu_app_secret"`
-	FeishuBaseURL             string                      `mapstructure:"feishu_base_url"`
-	FeishuBotOpenID           string                      `mapstructure:"feishu_bot_open_id"`
-	FeishuBotUserID           string                      `mapstructure:"feishu_bot_user_id"`
-	TriggerMode               string                      `mapstructure:"trigger_mode"`
-	TriggerPrefix             string                      `mapstructure:"trigger_prefix"`
-	ImmediateFeedbackMode     string                      `mapstructure:"immediate_feedback_mode"`
-	ImmediateFeedbackReaction string                      `mapstructure:"immediate_feedback_reaction"`
-	LLMProfiles               map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
-	GroupScenes               *GroupScenesConfig          `mapstructure:"group_scenes"`
-	RuntimeHTTPAddr           string                      `mapstructure:"runtime_http_addr"`
-	RuntimeHTTPToken          string                      `mapstructure:"runtime_http_token"`
-	FailureMessage            string                      `mapstructure:"failure_message"`
-	ThinkingMessage           string                      `mapstructure:"thinking_message"`
-	ImageGeneration           ImageGenerationConfig       `mapstructure:"image_generation"`
-	AliceHome                 string                      `mapstructure:"alice_home"`
-	WorkspaceDir              string                      `mapstructure:"workspace_dir"`
-	PromptDir                 string                      `mapstructure:"prompt_dir"`
-	CodexHome                 string                      `mapstructure:"codex_home"`
-	SoulPath                  string                      `mapstructure:"soul_path"`
-	Env                       map[string]string           `mapstructure:"env"`
-	QueueCapacity             int                         `mapstructure:"queue_capacity"`
-	WorkerConcurrency         int                         `mapstructure:"worker_concurrency"`
-	AutomationTaskTimeoutSecs int                         `mapstructure:"automation_task_timeout_secs"`
-	Permissions               *BotPermissionsConfig       `mapstructure:"permissions"`
-	CampaignRoleDefaults      CampaignRoleDefaultsConfig  `mapstructure:"campaign_role_defaults"`
+	Name                             string                      `mapstructure:"name"`
+	FeishuAppID                      string                      `mapstructure:"feishu_app_id"`
+	FeishuAppSecret                  string                      `mapstructure:"feishu_app_secret"`
+	FeishuBaseURL                    string                      `mapstructure:"feishu_base_url"`
+	FeishuBotOpenID                  string                      `mapstructure:"feishu_bot_open_id"`
+	FeishuBotUserID                  string                      `mapstructure:"feishu_bot_user_id"`
+	TriggerMode                      string                      `mapstructure:"trigger_mode"`
+	TriggerPrefix                    string                      `mapstructure:"trigger_prefix"`
+	ImmediateFeedbackMode            string                      `mapstructure:"immediate_feedback_mode"`
+	ImmediateFeedbackReaction        string                      `mapstructure:"immediate_feedback_reaction"`
+	LLMProfiles                      map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
+	GroupScenes                      *GroupScenesConfig          `mapstructure:"group_scenes"`
+	RuntimeHTTPAddr                  string                      `mapstructure:"runtime_http_addr"`
+	RuntimeHTTPToken                 string                      `mapstructure:"runtime_http_token"`
+	FailureMessage                   string                      `mapstructure:"failure_message"`
+	ThinkingMessage                  string                      `mapstructure:"thinking_message"`
+	ImageGeneration                  ImageGenerationConfig       `mapstructure:"image_generation"`
+	AliceHome                        string                      `mapstructure:"alice_home"`
+	WorkspaceDir                     string                      `mapstructure:"workspace_dir"`
+	PromptDir                        string                      `mapstructure:"prompt_dir"`
+	CodexHome                        string                      `mapstructure:"codex_home"`
+	SoulPath                         string                      `mapstructure:"soul_path"`
+	Env                              map[string]string           `mapstructure:"env"`
+	QueueCapacity                    int                         `mapstructure:"queue_capacity"`
+	WorkerConcurrency                int                         `mapstructure:"worker_concurrency"`
+	AutomationTaskTimeoutSecs        int                         `mapstructure:"automation_task_timeout_secs"`
+	AuthStatusTimeoutSecs            int                         `mapstructure:"auth_status_timeout_secs"`
+	CampaignNotificationTimeoutSecs  int                         `mapstructure:"campaign_notification_timeout_secs"`
+	RuntimeAPIShutdownTimeoutSecs    int                         `mapstructure:"runtime_api_shutdown_timeout_secs"`
+	LocalRuntimeStoreOpenTimeoutSecs int                         `mapstructure:"local_runtime_store_open_timeout_secs"`
+	CodexIdleTimeoutSecs             int                         `mapstructure:"codex_idle_timeout_secs"`
+	CodexHighIdleTimeoutSecs         int                         `mapstructure:"codex_high_idle_timeout_secs"`
+	CodexXHighIdleTimeoutSecs        int                         `mapstructure:"codex_xhigh_idle_timeout_secs"`
+	Permissions                      *BotPermissionsConfig       `mapstructure:"permissions"`
+	CampaignRoleDefaults             CampaignRoleDefaultsConfig  `mapstructure:"campaign_role_defaults"`
 }
 
 type Config struct {
@@ -173,10 +187,24 @@ type Config struct {
 	CampaignRoleDefaults CampaignRoleDefaultsConfig `mapstructure:"campaign_role_defaults"`
 	Bots                 map[string]BotConfig       `mapstructure:"bots"`
 
-	QueueCapacity             int           `mapstructure:"queue_capacity"`
-	WorkerConcurrency         int           `mapstructure:"worker_concurrency"`
-	AutomationTaskTimeoutSecs int           `mapstructure:"automation_task_timeout_secs"`
-	AutomationTaskTimeout     time.Duration `mapstructure:"-"`
+	QueueCapacity                    int           `mapstructure:"queue_capacity"`
+	WorkerConcurrency                int           `mapstructure:"worker_concurrency"`
+	AutomationTaskTimeoutSecs        int           `mapstructure:"automation_task_timeout_secs"`
+	AutomationTaskTimeout            time.Duration `mapstructure:"-"`
+	AuthStatusTimeoutSecs            int           `mapstructure:"auth_status_timeout_secs"`
+	AuthStatusTimeout                time.Duration `mapstructure:"-"`
+	CampaignNotificationTimeoutSecs  int           `mapstructure:"campaign_notification_timeout_secs"`
+	CampaignNotificationTimeout      time.Duration `mapstructure:"-"`
+	RuntimeAPIShutdownTimeoutSecs    int           `mapstructure:"runtime_api_shutdown_timeout_secs"`
+	RuntimeAPIShutdownTimeout        time.Duration `mapstructure:"-"`
+	LocalRuntimeStoreOpenTimeoutSecs int           `mapstructure:"local_runtime_store_open_timeout_secs"`
+	LocalRuntimeStoreOpenTimeout     time.Duration `mapstructure:"-"`
+	CodexIdleTimeoutSecs             int           `mapstructure:"codex_idle_timeout_secs"`
+	CodexIdleTimeout                 time.Duration `mapstructure:"-"`
+	CodexHighIdleTimeoutSecs         int           `mapstructure:"codex_high_idle_timeout_secs"`
+	CodexHighIdleTimeout             time.Duration `mapstructure:"-"`
+	CodexXHighIdleTimeoutSecs        int           `mapstructure:"codex_xhigh_idle_timeout_secs"`
+	CodexXHighIdleTimeout            time.Duration `mapstructure:"-"`
 
 	LogLevel      string `mapstructure:"log_level"`
 	LogFile       string `mapstructure:"log_file"`

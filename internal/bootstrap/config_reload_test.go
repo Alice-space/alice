@@ -10,15 +10,18 @@ import (
 
 func TestDiffRestartRequiredFields(t *testing.T) {
 	current := config.Config{
-		FeishuAppID:       "cli_a",
-		FeishuAppSecret:   "sec_a",
-		FeishuBaseURL:     "https://open.feishu.cn",
-		RuntimeHTTPAddr:   "127.0.0.1:7331",
-		RuntimeHTTPToken:  "token_a",
-		WorkspaceDir:      "/workspace/a",
-		PromptDir:         "prompts",
-		QueueCapacity:     256,
-		WorkerConcurrency: 1,
+		FeishuAppID:                     "cli_a",
+		FeishuAppSecret:                 "sec_a",
+		FeishuBaseURL:                   "https://open.feishu.cn",
+		RuntimeHTTPAddr:                 "127.0.0.1:7331",
+		RuntimeHTTPToken:                "token_a",
+		WorkspaceDir:                    "/workspace/a",
+		PromptDir:                       "prompts",
+		QueueCapacity:                   256,
+		WorkerConcurrency:               1,
+		AuthStatusTimeoutSecs:           15,
+		CampaignNotificationTimeoutSecs: 30,
+		RuntimeAPIShutdownTimeoutSecs:   5,
 	}
 	next := current
 	next.TriggerMode = "prefix"
@@ -26,10 +29,16 @@ func TestDiffRestartRequiredFields(t *testing.T) {
 	next.RuntimeHTTPAddr = "127.0.0.1:7332"
 	next.QueueCapacity = 512
 	next.WorkerConcurrency = 3
+	next.AuthStatusTimeoutSecs = 20
+	next.CampaignNotificationTimeoutSecs = 45
+	next.RuntimeAPIShutdownTimeoutSecs = 8
 
 	got := diffRestartRequiredFields(current, next)
 	want := []string{
+		"auth_status_timeout_secs",
+		"campaign_notification_timeout_secs",
 		"queue_capacity",
+		"runtime_api_shutdown_timeout_secs",
 		"runtime_http_addr",
 		"worker_concurrency",
 	}
@@ -52,6 +61,12 @@ func TestApplyReloadableFields(t *testing.T) {
 		CodexEnv:                  map[string]string{"HTTPS_PROXY": "http://127.0.0.1:7890"},
 		AutomationTaskTimeoutSecs: 6000,
 		AutomationTaskTimeout:     100 * time.Minute,
+		CodexIdleTimeoutSecs:      90,
+		CodexIdleTimeout:          90 * time.Second,
+		CodexHighIdleTimeoutSecs:  300,
+		CodexHighIdleTimeout:      5 * time.Minute,
+		CodexXHighIdleTimeoutSecs: 600,
+		CodexXHighIdleTimeout:     10 * time.Minute,
 		LLMProfiles: map[string]config.LLMProfileConfig{
 			"chat": {Provider: config.DefaultLLMProvider, Model: "gpt-5.4-mini", ReasoningEffort: "low", Personality: "friendly"},
 		},
@@ -76,6 +91,12 @@ func TestApplyReloadableFields(t *testing.T) {
 	next.LogLevel = "debug"
 	next.AutomationTaskTimeoutSecs = 900
 	next.AutomationTaskTimeout = 15 * time.Minute
+	next.CodexIdleTimeoutSecs = 120
+	next.CodexIdleTimeout = 2 * time.Minute
+	next.CodexHighIdleTimeoutSecs = 420
+	next.CodexHighIdleTimeout = 7 * time.Minute
+	next.CodexXHighIdleTimeoutSecs = 900
+	next.CodexXHighIdleTimeout = 15 * time.Minute
 	next.LLMProfiles = map[string]config.LLMProfileConfig{
 		"chat": {Provider: config.DefaultLLMProvider, Model: "gpt-5.4-mini", ReasoningEffort: "medium", Personality: "friendly"},
 		"work": {Provider: config.DefaultLLMProvider, Model: "gpt-5.4", ReasoningEffort: "xhigh", Personality: "pragmatic"},
@@ -108,6 +129,15 @@ func TestApplyReloadableFields(t *testing.T) {
 	if current.AutomationTaskTimeout != 15*time.Minute {
 		t.Fatalf("automation timeout should be hot-reloaded, got=%s", current.AutomationTaskTimeout)
 	}
+	if current.CodexIdleTimeout != 2*time.Minute {
+		t.Fatalf("codex idle timeout should be hot-reloaded, got=%s", current.CodexIdleTimeout)
+	}
+	if current.CodexHighIdleTimeout != 7*time.Minute {
+		t.Fatalf("codex high idle timeout should be hot-reloaded, got=%s", current.CodexHighIdleTimeout)
+	}
+	if current.CodexXHighIdleTimeout != 15*time.Minute {
+		t.Fatalf("codex xhigh idle timeout should be hot-reloaded, got=%s", current.CodexXHighIdleTimeout)
+	}
 	if current.QueueCapacity != 256 {
 		t.Fatalf("queue_capacity should remain unchanged without restart, got=%d", current.QueueCapacity)
 	}
@@ -125,6 +155,15 @@ func TestApplyReloadableFields(t *testing.T) {
 	}
 	if _, ok := changed["group_scenes"]; !ok {
 		t.Fatalf("changed set should include group_scenes, got=%v", changed)
+	}
+	if _, ok := changed["codex_idle_timeout_secs"]; !ok {
+		t.Fatalf("changed set should include codex_idle_timeout_secs, got=%v", changed)
+	}
+	if _, ok := changed["codex_high_idle_timeout_secs"]; !ok {
+		t.Fatalf("changed set should include codex_high_idle_timeout_secs, got=%v", changed)
+	}
+	if _, ok := changed["codex_xhigh_idle_timeout_secs"]; !ok {
+		t.Fatalf("changed set should include codex_xhigh_idle_timeout_secs, got=%v", changed)
 	}
 	if _, ok := changed["log_level"]; !ok {
 		t.Fatalf("changed set should include log_level, got=%v", changed)

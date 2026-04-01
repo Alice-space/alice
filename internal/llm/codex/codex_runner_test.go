@@ -90,6 +90,24 @@ func TestDefaultIdleTimeoutForReasoningEffort(t *testing.T) {
 	}
 }
 
+func TestRunnerIdleTimeoutForReasoningEffort_UsesConfiguredOverrides(t *testing.T) {
+	runner := Runner{
+		DefaultIdleTimeout: 2 * time.Minute,
+		HighIdleTimeout:    6 * time.Minute,
+		XHighIdleTimeout:   12 * time.Minute,
+	}
+
+	if got := runner.idleTimeoutForReasoningEffort(""); got != 2*time.Minute {
+		t.Fatalf("unexpected default idle timeout: %s", got)
+	}
+	if got := runner.idleTimeoutForReasoningEffort("high"); got != 6*time.Minute {
+		t.Fatalf("unexpected high idle timeout: %s", got)
+	}
+	if got := runner.idleTimeoutForReasoningEffort("xhigh"); got != 12*time.Minute {
+		t.Fatalf("unexpected xhigh idle timeout: %s", got)
+	}
+}
+
 func TestRunnerRunWithThreadAndProgress_NewWorkSceneUsesDangerousBypass(t *testing.T) {
 	tempDir := t.TempDir()
 	fakeCodexPath := filepath.Join(tempDir, "fake-codex.sh")
