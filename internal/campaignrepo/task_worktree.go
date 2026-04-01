@@ -271,7 +271,18 @@ func ensureGitTaskWorktree(repoPath, worktreePath, branchName, baseRevision stri
 	}
 
 	if gitLocalBranchExists(repoPath, branchName) {
-		_, err := runGit(repoPath, "worktree", "add", worktreePath, branchName)
+		occupants, err := gitWorktreeBranchOccupants(repoPath, branchName)
+		if err != nil {
+			return fmt.Errorf("inspect existing worktrees for branch %s: %w", branchName, err)
+		}
+		for _, occupant := range occupants {
+			occupant = filepath.Clean(strings.TrimSpace(occupant))
+			if occupant == "" || occupant == worktreePath {
+				continue
+			}
+			return fmt.Errorf("branch %s is already checked out at %s; working_branches must use a task-private branch or stay empty so Alice can generate one", branchName, occupant)
+		}
+		_, err = runGit(repoPath, "worktree", "add", worktreePath, branchName)
 		return err
 	}
 	if baseRevision == "" {
