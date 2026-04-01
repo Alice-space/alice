@@ -32,6 +32,8 @@ Write scope: {{ .WriteScope | join ", " | default "-" }}
 执行规则：
 1. 先读 `campaign.md`、task 目录里的 markdown，以及引用到的 source repo。
 2. 你可以修改 `target_repos` 列出的 source repo，以及当前 task 目录；如果给出了 task-specific `task_worktree`，只允许在那条 worktree 里改 source repo，不要直接在 repo 根 worktree 上工作。
+   - 所有 source-repo 编辑、测试和 git 检查都默认在 `task_worktree` 下执行，不要把 `local_path` 当成可写工作区。
+   - 开始前先确认 `local_path` 干净；结束前再确认一次。只要发现 `local_path` 出现未提交改动，就说明你把改动泄漏到了根 worktree，必须先把泄漏改动迁回 `task_worktree` 并恢复 `local_path` clean，再继续；不要把这种可返工问题直接升级成 campaign 级 `blocked`。
 3. 不要改 `reports/live-report.md`，也不要改无关 task 目录。
 4. 把 task 文件夹当作执行合同面。先读 `task.md`、`context.md`、`plan.md`。如果 `review_status` 不是 `pending`，或者 `last_review_path` 已设置，先读那份 review，再去碰 source repo，并在本轮显式消化它的结论。
 5. 一个完成的 executor round 必须且只能以一种合法交接状态结束：`review_pending`、`waiting_external` 或 `blocked`。结束时不要让 task 还停在 `executing` 或 `reviewing`。

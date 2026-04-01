@@ -127,6 +127,21 @@ func integrateTaskIntoTargetRepos(task TaskDocument, repos []SourceRepoDocument)
 }
 
 func integrateTaskIntoTargetRepo(task TaskDocument, repoDoc SourceRepoDocument) (string, error) {
+	branchName, err := validateTaskIntegrationTarget(task, repoDoc)
+	if err != nil {
+		return "", err
+	}
+	repoID := strings.TrimSpace(repoDoc.Frontmatter.RepoID)
+	defaultBranch := strings.TrimSpace(repoDoc.Frontmatter.DefaultBranch)
+	localPath := strings.TrimSpace(repoDoc.Frontmatter.LocalPath)
+
+	if err := gitMergeBranchIntoCurrent(localPath, branchName); err != nil {
+		return "", fmt.Errorf("task %s repo %s merge %s -> %s failed: %w", strings.TrimSpace(task.Frontmatter.TaskID), repoID, branchName, defaultBranch, err)
+	}
+	return gitResolveCommit(localPath, "HEAD")
+}
+
+func validateTaskIntegrationTarget(task TaskDocument, repoDoc SourceRepoDocument) (string, error) {
 	taskID := strings.TrimSpace(task.Frontmatter.TaskID)
 	repoID := strings.TrimSpace(repoDoc.Frontmatter.RepoID)
 	localPath := strings.TrimSpace(repoDoc.Frontmatter.LocalPath)
@@ -169,11 +184,7 @@ func integrateTaskIntoTargetRepo(task TaskDocument, repoDoc SourceRepoDocument) 
 	if headCommit := strings.TrimSpace(task.Frontmatter.HeadCommit); headCommit != "" && !gitBranchContainsCommit(localPath, branchName, headCommit) {
 		return "", fmt.Errorf("task %s repo %s working_branch %s does not contain reviewed head_commit %s", taskID, repoID, branchName, headCommit)
 	}
-
-	if err := gitMergeBranchIntoCurrent(localPath, branchName); err != nil {
-		return "", fmt.Errorf("task %s repo %s merge %s -> %s failed: %w", taskID, repoID, branchName, defaultBranch, err)
-	}
-	return gitResolveCommit(localPath, "HEAD")
+	return branchName, nil
 }
 
 func gitWorktreeIsClean(path string) (bool, error) {

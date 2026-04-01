@@ -305,6 +305,69 @@ created_at: "2026-03-31T18:05:00+08:00"
 	}
 }
 
+func TestRunTaskSelfCheck_ReviewerAcceptsJudgeAppliedDoneAfterApprove(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship phase one"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Reviewer self-check after judge integration"
+phase: P01
+status: done
+dispatch_state: integrated
+review_status: approved
+execution_round: 1
+review_round: 2
+last_review_path: "phases/P01/tasks/T001/reviews/R002.md"
+write_scope:
+  - campaign:phases/P01/tasks/T001/**
+reviewer:
+  role: reviewer
+  workflow: code_army
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R002.md"), `---
+review_id: R002
+target_task: T001
+review_round: 2
+reviewer:
+  role: reviewer
+  workflow: code_army
+verdict: approve
+blocking: false
+created_at: "2026-03-31T18:05:00+08:00"
+---
+`)
+
+	checkedAt := time.Date(2026, 3, 31, 18, 6, 0, 0, time.FixedZone("CST", 8*3600))
+	validation, err := RunTaskSelfCheck(root, "T001", DispatchKindReviewer, checkedAt)
+	if err != nil {
+		t.Fatalf("run task self-check failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected reviewer self-check to pass after judge-applied done, got %+v", validation.Issues)
+	}
+
+	runtimeValidation, err := ValidateTaskPostRun(root, "T001", DispatchKindReviewer)
+	if err != nil {
+		t.Fatalf("validate task post run failed: %v", err)
+	}
+	if !runtimeValidation.Valid {
+		t.Fatalf("expected runtime gate to accept judge-applied done after approve, got %+v", runtimeValidation.Issues)
+	}
+}
+
 func TestValidateTaskPostRun_ReviewerAcceptsJudgeAppliedReworkAfterConcern(t *testing.T) {
 	root := t.TempDir()
 	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---

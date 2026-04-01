@@ -130,3 +130,48 @@ func TestPromptWorkflowRunner_AddsCodeArmySkillHintWhenRuntimeEnvPresent(t *test
 		t.Fatalf("expected original prompt to be preserved, got %q", backend.lastReq.UserText)
 	}
 }
+
+func TestPromptWorkflowRunner_InferCodeArmyWorkspaceDirFromTaskWorktree(t *testing.T) {
+	backend := &capturingWorkflowBackendStub{
+		result: llm.RunResult{Reply: "done"},
+	}
+	runner := NewPromptWorkflowRunner(backend)
+
+	_, err := runner.Run(context.Background(), WorkflowRunRequest{
+		Workflow: "code_army",
+		Prompt: strings.Join([]string{
+			"继续以执行者身份推进这个 repo-first campaign。",
+			"Source repos:",
+			"- repo-a: local_path=/tmp/source, default_branch=rCM, task_branch=codearmy/t001, task_worktree=/tmp/camp/.worktrees/repo-a/t001, repo_doc=/tmp/camp/repos/repo-a.md",
+			"任务 worktree: repo-a:/tmp/camp/.worktrees/repo-a/t001",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatalf("run workflow failed: %v", err)
+	}
+	if backend.lastReq.WorkspaceDir != "/tmp/camp/.worktrees/repo-a/t001" {
+		t.Fatalf("unexpected inferred workspace dir: %q", backend.lastReq.WorkspaceDir)
+	}
+}
+
+func TestPromptWorkflowRunner_ExplicitWorkspaceDirOverridesPromptInference(t *testing.T) {
+	backend := &capturingWorkflowBackendStub{
+		result: llm.RunResult{Reply: "done"},
+	}
+	runner := NewPromptWorkflowRunner(backend)
+
+	_, err := runner.Run(context.Background(), WorkflowRunRequest{
+		Workflow:     "code_army",
+		WorkspaceDir: "/tmp/override-worktree",
+		Prompt: strings.Join([]string{
+			"Source repos:",
+			"- repo-a: local_path=/tmp/source, default_branch=rCM, task_branch=codearmy/t001, task_worktree=/tmp/camp/.worktrees/repo-a/t001, repo_doc=/tmp/camp/repos/repo-a.md",
+		}, "\n"),
+	})
+	if err != nil {
+		t.Fatalf("run workflow failed: %v", err)
+	}
+	if backend.lastReq.WorkspaceDir != "/tmp/override-worktree" {
+		t.Fatalf("unexpected explicit workspace dir: %q", backend.lastReq.WorkspaceDir)
+	}
+}
