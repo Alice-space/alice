@@ -71,6 +71,8 @@ status: reviewing
 review_round: 1
 owner_agent: reviewer.claude
 lease_until: "2026-03-24T12:00:00+08:00"
+target_repos: [repo-a]
+write_scope: [repo-a:src/lib.rs]
 ---
 `)
 			mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
@@ -125,6 +127,62 @@ created_at: "2026-03-24T10:30:00+08:00"
 				t.Fatalf("expected head_commit from review, got %q", task.Frontmatter.HeadCommit)
 			}
 		})
+	}
+}
+
+func TestApplyReviewVerdicts_CampaignOnlyClearsHeadCommit(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Campaign-only review"
+phase: P01
+status: reviewing
+review_round: 1
+owner_agent: reviewer
+lease_until: "2026-03-24T12:00:00+08:00"
+target_repos: [repo-a]
+write_scope: [campaign:phases/P01/tasks/T001/**]
+head_commit: "stale-commit"
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: "concern"
+blocking: false
+target_commit: "campaign-head"
+created_at: "2026-03-24T10:30:00+08:00"
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	applied, _, err := applyReviewVerdicts(&repo, "")
+	if err != nil {
+		t.Fatalf("apply review verdicts failed: %v", err)
+	}
+	if applied != 1 {
+		t.Fatalf("unexpected applied count: got=%d want=1", applied)
+	}
+	if got := repo.Tasks[0].Frontmatter.HeadCommit; got != "" {
+		t.Fatalf("expected campaign-only review to clear head_commit, got %q", got)
 	}
 }
 
@@ -739,7 +797,7 @@ last_run_path: "results/summary.md"
 	if len(specs) != 1 || specs[0].Kind != DispatchKindReviewer {
 		t.Fatalf("expected single reviewer dispatch spec, got %+v", specs)
 	}
-	if !containsAll(specs[0].Prompt, "Task ID: T001", "目标 commit: -", "是否需要 source repo 改动: no（仅 campaign / archive 任务）", "不要要求 source-repo `head_commit`", "直接审 task-local artifact 和 campaign-repo diff") {
+	if !containsAll(specs[0].Prompt, "Task ID: T001", "目标 commit: -", "是否需要 source repo 改动: no（仅 campaign / archive 任务）", "不要要求 source-repo `head_commit`", "直接审 task-local artifact 和 campaign-repo diff", "`target_commit` 保持空字符串") {
 		t.Fatalf("unexpected campaign-only reviewer prompt: %q", specs[0].Prompt)
 	}
 }
