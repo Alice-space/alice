@@ -93,7 +93,7 @@ func integrateAcceptedTasks(repo *Repository, campaignID string) (int, []Reconci
 				TaskID:     taskID,
 				Title:      "任务集成受阻",
 				Detail:     fmt.Sprintf("任务 **%s** %s 已通过评审，但回主线集成失败。\n\n**原因**: %s", taskID, taskTitle, blankForSummary(task.Frontmatter.LastBlockedReason)),
-				Severity:   "warning",
+				Severity:   blockedReasonSeverity(task.Frontmatter.LastBlockedReason),
 			})
 			changed++
 			continue
@@ -278,15 +278,12 @@ func gitWorktreeIsClean(path string) (bool, error) {
 }
 
 func gitMergeBranchIntoCurrent(path, branch string) error {
-	_, err := runGit(
-		path,
-		"-c", "user.name=Alice CodeArmy",
-		"-c", "user.email=alice-codearmy@local",
-		"merge",
-		"--no-ff",
-		"--no-edit",
-		branch,
-	)
+	identityArgs, err := gitIdentityConfigArgs(path)
+	if err != nil {
+		return err
+	}
+	mergeArgs := append(identityArgs, "merge", "--no-ff", "--no-edit", branch)
+	_, err = runGit(path, mergeArgs...)
 	if err == nil {
 		return nil
 	}

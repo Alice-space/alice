@@ -2,11 +2,6 @@ package campaignrepo
 
 import "strings"
 
-const (
-	campaignRepoCommitterName  = "Alice CodeArmy"
-	campaignRepoCommitterEmail = "alice-codearmy@local"
-)
-
 func gitWorktreeDirty(path string) (bool, error) {
 	output, err := runGit(path, "status", "--porcelain")
 	if err != nil {
@@ -27,6 +22,10 @@ func CommitRepoChanges(root, message string) (string, bool, error) {
 	if err != nil || !dirty {
 		return "", false, err
 	}
+	identityArgs, err := gitIdentityConfigArgs(root)
+	if err != nil {
+		return "", false, err
+	}
 	if _, err := runGit(root, "add", "-A"); err != nil {
 		return "", false, err
 	}
@@ -38,12 +37,8 @@ func CommitRepoChanges(root, message string) (string, bool, error) {
 	if message == "" {
 		message = "chore(campaign): update repo state"
 	}
-	if _, err := runGit(
-		root,
-		"-c", "user.name="+campaignRepoCommitterName,
-		"-c", "user.email="+campaignRepoCommitterEmail,
-		"commit", "-m", message,
-	); err != nil {
+	commitArgs := append(identityArgs, "commit", "-m", message)
+	if _, err := runGit(root, commitArgs...); err != nil {
 		return "", false, err
 	}
 	head, err := runGit(root, "rev-parse", "HEAD")

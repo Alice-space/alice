@@ -1355,10 +1355,17 @@ func initGitRepo(t *testing.T, root string) {
 	t.Helper()
 	mustWriteTestFile(t, filepath.Join(root, "README.md"), "seed\n")
 	runGitOrFail(t, root, "init")
+	configureLocalGitIdentity(t, root)
 	runGitOrFail(t, root, "add", "README.md")
 	runGitOrFail(t, root, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "init")
 	runGitOrFail(t, root, "branch", "-M", "main")
 	runGitOrFail(t, root, "checkout", "-b", "dev")
+}
+
+func configureLocalGitIdentity(t *testing.T, root string) {
+	t.Helper()
+	runGitOrFail(t, root, "config", "user.name", "Test")
+	runGitOrFail(t, root, "config", "user.email", "test@example.com")
 }
 
 func gitHeadCommit(t *testing.T, root string) string {

@@ -11,14 +11,14 @@ require (
 	github.com/fsnotify/fsnotify v1.9.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-co-op/gocron/v2 v2.19.1
-	github.com/go-playground/validator/v10 v10.30.1
+	github.com/go-playground/validator/v10 v10.30.2
 	github.com/go-resty/resty/v2 v2.17.2
 	github.com/larksuite/oapi-sdk-go/v3 v3.5.3
 	github.com/oklog/run v1.2.0
 	github.com/oklog/ulid/v2 v2.1.1
 	github.com/openai/openai-go/v3 v3.30.0
 	github.com/robfig/cron/v3 v3.0.1
-	github.com/rs/zerolog v1.34.0
+	github.com/rs/zerolog v1.35.0
 	github.com/spf13/cobra v1.10.2
 	github.com/spf13/viper v1.21.0
 	go.etcd.io/bbolt v1.4.3
@@ -35,7 +35,7 @@ require (
 	github.com/bytedance/sonic v1.15.0 // indirect
 	github.com/bytedance/sonic/loader v0.5.0 // indirect
 	github.com/cloudwego/base64x v0.1.6 // indirect
-	github.com/gabriel-vasile/mimetype v1.4.12 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.13 // indirect
 	github.com/gin-contrib/sse v1.1.0 // indirect
 	github.com/go-playground/locales v0.14.1 // indirect
 	github.com/go-playground/universal-translator v0.18.1 // indirect
@@ -51,7 +51,7 @@ require (
 	github.com/json-iterator/go v1.1.12 // indirect
 	github.com/klauspost/cpuid/v2 v2.3.0 // indirect
 	github.com/leodido/go-urn v1.4.0 // indirect
-	github.com/mattn/go-colorable v0.1.13 // indirect
+	github.com/mattn/go-colorable v0.1.14 // indirect
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/reflectwalk v1.0.2 // indirect

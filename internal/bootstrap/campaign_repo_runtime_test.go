@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -158,6 +159,32 @@ func TestNewCampaignAutomationFailureEvent(t *testing.T) {
 	}
 }
 
+func TestNewCampaignRepoGitIdentityFailureEvent(t *testing.T) {
+	event, summary, ok := newCampaignRepoGitIdentityFailureEvent(campaign.Campaign{
+		ID:               "camp_demo",
+		Title:            "Demo Campaign",
+		CampaignRepoPath: "/tmp/camp-demo",
+	}, fmt.Errorf("git identity required for /tmp/camp-demo: set repo local user.name/user.email or global user.name/user.email before Alice commits or merges"))
+	if !ok {
+		t.Fatal("expected git identity failure to emit automation failure event")
+	}
+	if event.Kind != campaignrepo.EventAutomationFailed {
+		t.Fatalf("unexpected event kind: %+v", event)
+	}
+	if event.Severity != "error" {
+		t.Fatalf("expected error severity, got %+v", event)
+	}
+	if !strings.Contains(event.Detail, "Alice 不会再代写作者") {
+		t.Fatalf("expected identity detail wording, got %q", event.Detail)
+	}
+	if !strings.Contains(event.Detail, "repo-reconcile") {
+		t.Fatalf("expected suggested action in detail, got %q", event.Detail)
+	}
+	if !strings.Contains(summary, "git identity missing") {
+		t.Fatalf("unexpected blocked summary: %q", summary)
+	}
+}
+
 func TestShouldKeepExistingDispatchTask_RespectsFailureCooldown(t *testing.T) {
 	now := time.Date(2026, 3, 25, 10, 0, 0, 0, time.UTC)
 	spec := campaignrepo.DispatchTaskSpec{
@@ -274,6 +301,59 @@ func TestBuildDispatchAutomationTask_PreservesRunAt(t *testing.T) {
 	)
 	if !task.NextRunAt.Equal(runAt) {
 		t.Fatalf("unexpected next_run_at: got=%s want=%s", task.NextRunAt.Format(time.RFC3339), runAt.Format(time.RFC3339))
+	}
+}
+
+func TestHandleBlockedSignal_GitIdentityBecomesTerminalBlocked(t *testing.T) {
+	root := t.TempDir()
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "task.md"), `---
+task_id: T001
+title: "Replay on remote host"
+phase: P01
+status: executing
+owner_agent: executor
+lease_until: "2026-04-02T12:00:00+08:00"
+dispatch_state: executor_dispatched
+review_status: pending
+execution_round: 1
+---
+`)
+
+	builder := &connectorRuntimeBuilder{}
+	builder.handleBlockedSignal(campaign.Campaign{
+		ID:               "camp_demo",
+		CampaignRepoPath: root,
+	}, root, automation.Task{
+		Action: automation.Action{
+			StateKey: "campaign_dispatch:camp_demo:executor:T001:x1",
+		},
+	}, "git identity required for /tmp/source: set repo local user.name/user.email or global user.name/user.email before Alice commits or merges")
+
+	repo, err := campaignrepo.Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	updatedTask := repo.Tasks[0]
+	if got := updatedTask.Frontmatter.Status; got != campaignrepo.TaskStatusBlocked {
+		t.Fatalf("expected terminal blocked status, got %q", got)
+	}
+	if got := updatedTask.Frontmatter.DispatchState; got != "signal_blocked_terminal" {
+		t.Fatalf("expected terminal blocked dispatch state, got %q", got)
+	}
+	if got := updatedTask.Frontmatter.ReviewStatus; got != "blocked" {
+		t.Fatalf("expected blocked review status, got %q", got)
 	}
 }
 

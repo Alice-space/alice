@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/campaignrepo"
 )
 
@@ -49,27 +48,6 @@ func TestShouldSendCampaignEvent_SuppressesRetrying(t *testing.T) {
 	}
 	if !shouldSendCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskRecovered}) {
 		t.Fatal("expected task_recovered to be sent to chat")
-	}
-}
-
-func TestCampaignUrgentRecipientOpenIDs_UsesCreator(t *testing.T) {
-	item := campaign.Campaign{Creator: campaign.Actor{OpenID: "ou_creator"}}
-	recipients := campaignUrgentRecipientOpenIDs(item)
-	if len(recipients) != 1 || recipients[0] != "ou_creator" {
-		t.Fatalf("unexpected urgent recipients: %+v", recipients)
-	}
-}
-
-func TestBuildCampaignUrgentDirectText_IncludesCampaignAndDetail(t *testing.T) {
-	text := buildCampaignUrgentDirectText("Demo Campaign", "camp_demo", campaignrepo.ReconcileEvent{
-		Kind:     campaignrepo.EventTaskBlocked,
-		TaskID:   "T101",
-		Title:    "任务阻塞",
-		Detail:   "任务 **T101** 遇到阻塞，无法继续执行。",
-		Severity: "warning",
-	})
-	if text != "【Alice加急提醒】\nDemo Campaign · 任务阻塞\n\n任务 T101 遇到阻塞，无法继续执行。" {
-		t.Fatalf("unexpected urgent direct text: %q", text)
 	}
 }
 
@@ -297,6 +275,27 @@ func TestNewSummaryBlockedEvents_NotifiesTrueBlockedTasks(t *testing.T) {
 	}
 	if events[0].TaskID != "T301" {
 		t.Fatalf("expected T301 event, got %+v", events[0])
+	}
+}
+
+func TestNewSummaryBlockedEvents_GitIdentityEscalatesToError(t *testing.T) {
+	summary := campaignrepo.Summary{
+		BlockedTasks: []campaignrepo.TaskSummary{
+			{
+				TaskID:        "T401",
+				Title:         "Integrate fix",
+				Status:        campaignrepo.TaskStatusBlocked,
+				BlockedReason: "git identity required for /tmp/source: set repo local user.name/user.email or global user.name/user.email before Alice commits or merges",
+			},
+		},
+	}
+
+	events := newSummaryBlockedEvents("camp_demo", nil, summary)
+	if len(events) != 1 {
+		t.Fatalf("expected one blocked event, got %+v", events)
+	}
+	if events[0].Severity != "error" {
+		t.Fatalf("expected git identity blocker to escalate, got %+v", events[0])
 	}
 }
 
