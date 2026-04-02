@@ -26,8 +26,12 @@ Write scope: {{ .WriteScope | join ", " | default "-" }}
 评审状态: {{ .ReviewStatus }}
 上次评审路径: {{ .LastReviewPath }}
 产物自动重试次数: {{ .AutoRetryCount }}
+集成冲突恢复次数: {{ .IntegrationRetryCount }}
 阻塞指导次数: {{ .BlockGuidanceCount }}
 上次阻塞原因: {{ .LastBlockedReason }}
+{{- if .IntegrationConflictRecovery }}
+这是一次集成冲突恢复轮：上一轮把 task branch 回主线时发生了 merge conflict。你本轮的目标不是重做整个 task，而是在 `task_worktree` 中吸收默认分支的新变化、解掉冲突，并保留已批准改动的意图。
+{{- end }}
 
 执行规则：
 1. 先读 `campaign.md`、task 目录里的 markdown，以及引用到的 source repo。
@@ -35,7 +39,7 @@ Write scope: {{ .WriteScope | join ", " | default "-" }}
    - 所有 source-repo 编辑、测试和 git 检查都默认在 `task_worktree` 下执行，不要把 `local_path` 当成可写工作区。
    - 开始前先确认 `local_path` 干净；结束前再确认一次。只要发现 `local_path` 出现未提交改动，就说明你把改动泄漏到了根 worktree，必须先把泄漏改动迁回 `task_worktree` 并恢复 `local_path` clean，再继续；不要把这种可返工问题直接升级成 campaign 级 `blocked`。
 3. 不要改 `reports/live-report.md`，也不要改无关 task 目录。
-4. 把 task 文件夹当作执行合同面。先读 `task.md`、`context.md`、`plan.md`。如果 `review_status` 不是 `pending`，或者 `last_review_path` 已设置，先读那份 review，再去碰 source repo，并在本轮显式消化它的结论。
+4. 把 task 文件夹当作执行合同面。先读 `task.md`、`context.md`、`plan.md`。如果 `review_status` 不是 `pending`，或者 `last_review_path` 已设置，先读那份 review，再去碰 source repo，并在本轮显式消化它的结论。{{ if .IntegrationConflictRecovery }}如果 `last_blocked_reason` 显示 merge conflict，把这轮视作 integration-recovery：优先在 `task_worktree` 中把默认分支的新变化合入或等价重放到 task branch，只处理 `write_scope` 范围内的冲突，不要直接在 repo 根 worktree 的默认分支上解冲突。{{ end }}
 5. 一个完成的 executor round 必须且只能以一种合法交接状态结束：`review_pending`、`waiting_external` 或 `blocked`。结束时不要让 task 还停在 `executing` 或 `reviewing`。
 6. 在把状态设为 `review_pending` 之前，先自己验证执行产物。保持 `last_run_path` 指向一个真实存在的 task-local result 文件，并清空 `owner_agent`、`lease_until`、`wake_at`、`wake_prompt`。
    - 如果这个 task 改了 source repo，把目标 repo 中真实可达的 git commit 写进 `head_commit`。

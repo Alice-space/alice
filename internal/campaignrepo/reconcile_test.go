@@ -208,6 +208,7 @@ status: reviewing
 review_status: reviewing
 review_round: 1
 last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+write_scope: [campaign:reports/live-report.md]
 self_check_kind: reviewer
 self_check_round: 1
 self_check_status: passed
@@ -299,6 +300,77 @@ created_at: "2026-03-24T10:30:00+08:00"
 	task := repo.Tasks[0]
 	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusReviewing {
 		t.Fatalf("expected task to remain reviewing, got %s", got)
+	}
+}
+
+func TestApplyReviewVerdicts_SkipsSamePathReviewAfterStateMutation(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "State-bound same-path review"
+phase: P01
+status: reviewing
+review_status: reviewing
+review_round: 1
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+self_check_kind: reviewer
+self_check_round: 1
+self_check_status: passed
+self_check_at: "2026-03-24T10:31:00+08:00"
+owner_agent: reviewer.codex
+lease_until: "2026-03-24T12:00:00+08:00"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: concern
+blocking: false
+created_at: "2026-03-24T10:30:00+08:00"
+---
+`)
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	repo.Tasks[0].Frontmatter.SelfCheckDigest = taskSelfCheckSubjectDigest(repo.Tasks[0], DispatchKindReviewer)
+	if err := persistTaskDocument(&repo, 0); err != nil {
+		t.Fatalf("persist initial self-check digest failed: %v", err)
+	}
+
+	repo, err = Load(root)
+	if err != nil {
+		t.Fatalf("reload repo failed: %v", err)
+	}
+	repo.Tasks[0].Frontmatter.WriteScope = []string{"campaign:reports/final-report.md"}
+	if err := persistTaskDocument(&repo, 0); err != nil {
+		t.Fatalf("persist mutated reviewer task failed: %v", err)
+	}
+
+	repo, err = Load(root)
+	if err != nil {
+		t.Fatalf("reload mutated repo failed: %v", err)
+	}
+	applied, _, err := applyReviewVerdicts(&repo, "")
+	if err != nil {
+		t.Fatalf("apply review verdicts failed: %v", err)
+	}
+	if applied != 0 {
+		t.Fatalf("expected stale reviewer proof to be ignored, got %d applied verdict(s)", applied)
 	}
 }
 
@@ -735,6 +807,221 @@ role: source
 	}
 }
 
+func TestReconcileAndPrepare_RequeuesMergeConflictIntoExecutorRecovery(t *testing.T) {
+	sourceRoot := t.TempDir()
+	initGitRepo(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "base\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "seed source")
+	baseCommit := gitHeadCommit(t, sourceRoot)
+
+	root := t.TempDir()
+	branchName := "codearmy/camp_demo/t001/repo-a"
+	worktreePath := filepath.Join(root, ".worktrees", "repo-a", "t001")
+	if err := ensureGitTaskWorktree(sourceRoot, worktreePath, branchName, baseCommit); err != nil {
+		t.Fatalf("create task worktree failed: %v", err)
+	}
+	mustWriteTestFile(t, filepath.Join(worktreePath, "src", "lib.rs"), "task branch change\n")
+	runGitOrFail(t, worktreePath, "add", "src/lib.rs")
+	runGitOrFail(t, worktreePath, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "task change")
+	taskHead := gitHeadCommit(t, worktreePath)
+
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "default branch change\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "conflicting default branch change")
+
+	now := time.Date(2026, 3, 31, 17, 25, 0, 0, time.FixedZone("CST", 8*3600))
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: dev
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Recover merge conflict"
+phase: P01
+status: accepted
+target_repos: [repo-a]
+working_branches: [repo-a:`+branchName+`]
+worktree_paths: [repo-a:`+worktreePath+`]
+write_scope: [repo-a:src/lib.rs]
+execution_round: 1
+review_round: 1
+base_commit: "`+baseCommit+`"
+head_commit: "`+taskHead+`"
+last_run_path: "results/summary.md"
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+review_status: approved
+dispatch_state: judge_applied
+self_check_kind: reviewer
+self_check_round: 1
+self_check_status: passed
+self_check_at: "2026-03-31T17:24:00+08:00"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: approve
+blocking: false
+target_commit: "`+taskHead+`"
+created_at: "2026-03-31T17:23:00+08:00"
+---
+`)
+
+	result, err := ReconcileAndPrepare(root, now, 1, time.Hour)
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusExecuting {
+		t.Fatalf("expected merge conflict to requeue executor, got %s", got)
+	}
+	if task.Frontmatter.DispatchState != "executor_dispatched" {
+		t.Fatalf("expected executor to be redispatched, got %q", task.Frontmatter.DispatchState)
+	}
+	if task.Frontmatter.ReviewStatus != "changes_requested" {
+		t.Fatalf("expected changes_requested after conflict recovery, got %q", task.Frontmatter.ReviewStatus)
+	}
+	if task.Frontmatter.ExecutionRound != 2 {
+		t.Fatalf("expected execution_round=2 after redispatch, got %d", task.Frontmatter.ExecutionRound)
+	}
+	if task.Frontmatter.IntegrationRetryCount != 1 {
+		t.Fatalf("expected integration_retry_count=1, got %d", task.Frontmatter.IntegrationRetryCount)
+	}
+	if !strings.Contains(task.Frontmatter.LastBlockedReason, "CONFLICT") {
+		t.Fatalf("expected conflict reason to be preserved, got %q", task.Frontmatter.LastBlockedReason)
+	}
+	if !containsEventKind(result.Events, EventTaskRetrying) {
+		t.Fatalf("expected retrying event, got %+v", result.Events)
+	}
+	if !containsEventKind(result.Events, EventTaskDispatched) {
+		t.Fatalf("expected dispatch event, got %+v", result.Events)
+	}
+	if len(result.DispatchTasks) != 1 || result.DispatchTasks[0].Kind != DispatchKindExecutor {
+		t.Fatalf("expected one executor dispatch task, got %+v", result.DispatchTasks)
+	}
+	if !containsAll(result.DispatchTasks[0].Prompt, "这是一次集成冲突恢复轮", "把默认分支的新变化合入或等价重放到 task branch") {
+		t.Fatalf("expected integration recovery guidance in prompt, got %q", result.DispatchTasks[0].Prompt)
+	}
+}
+
+func TestReconcileAndPrepare_RequeuesExistingIntegrationConflictBlock(t *testing.T) {
+	sourceRoot := t.TempDir()
+	initGitRepo(t, sourceRoot)
+	mustWriteTestFile(t, filepath.Join(sourceRoot, "src", "lib.rs"), "base\n")
+	runGitOrFail(t, sourceRoot, "add", "src/lib.rs")
+	runGitOrFail(t, sourceRoot, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "seed source")
+	baseCommit := gitHeadCommit(t, sourceRoot)
+
+	root := t.TempDir()
+	branchName := "codearmy/camp_demo/t001/repo-a"
+	worktreePath := filepath.Join(root, ".worktrees", "repo-a", "t001")
+	if err := ensureGitTaskWorktree(sourceRoot, worktreePath, branchName, baseCommit); err != nil {
+		t.Fatalf("create task worktree failed: %v", err)
+	}
+	mustWriteTestFile(t, filepath.Join(worktreePath, "src", "lib.rs"), "task branch change\n")
+	runGitOrFail(t, worktreePath, "add", "src/lib.rs")
+	runGitOrFail(t, worktreePath, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "-m", "task change")
+	taskHead := gitHeadCommit(t, worktreePath)
+
+	now := time.Date(2026, 3, 31, 17, 30, 0, 0, time.FixedZone("CST", 8*3600))
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+source_repos: [repo-a]
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+sourceRoot+`"
+default_branch: dev
+base_commit: "`+baseCommit+`"
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Resume blocked integration conflict"
+phase: P01
+status: blocked
+target_repos: [repo-a]
+working_branches: [repo-a:`+branchName+`]
+worktree_paths: [repo-a:`+worktreePath+`]
+write_scope: [repo-a:src/lib.rs]
+execution_round: 1
+review_round: 1
+base_commit: "`+baseCommit+`"
+head_commit: "`+taskHead+`"
+last_run_path: "results/summary.md"
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+review_status: approved
+dispatch_state: integration_blocked
+last_blocked_reason: |-
+  task T001 repo repo-a merge `+branchName+` -> dev failed: exit status 1: Auto-merging src/lib.rs
+  CONFLICT (content): Merge conflict in src/lib.rs
+  Automatic merge failed; fix conflicts and then commit the result.
+self_check_kind: reviewer
+self_check_round: 1
+self_check_status: passed
+self_check_at: "2026-03-31T17:29:00+08:00"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+verdict: approve
+blocking: false
+target_commit: "`+taskHead+`"
+created_at: "2026-03-31T17:28:00+08:00"
+---
+`)
+
+	result, err := ReconcileAndPrepare(root, now, 1, time.Hour)
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusExecuting {
+		t.Fatalf("expected blocked conflict to requeue executor, got %s", got)
+	}
+	if task.Frontmatter.DispatchState != "executor_dispatched" {
+		t.Fatalf("expected executor dispatch after resuming blocked conflict, got %q", task.Frontmatter.DispatchState)
+	}
+	if task.Frontmatter.IntegrationRetryCount != 1 {
+		t.Fatalf("expected integration_retry_count=1, got %d", task.Frontmatter.IntegrationRetryCount)
+	}
+}
+
 func TestBuildDispatchSpecs_Content(t *testing.T) {
 	root := t.TempDir()
 	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
@@ -864,6 +1151,88 @@ last_run_path: "results/summary.md"
 	expectedReviewFile := filepath.Join(root, "phases", "P01", "tasks", "T002", "reviews", "R001.md")
 	if !containsAll(reviewerSpec.Prompt, "Task ID: T002", "目标 commit: abc123", "上次运行产物路径: results/summary.md", "是否需要 source repo 改动: yes", "Write scope: -", "建议写入的 review 文件: "+expectedReviewFile, "Source repos:", "repo-a: local_path="+root, "收尾自检命令:", "alice-code-army.sh task-self-check camp_demo T002 reviewer", "先验证 `last_run_path` 可解析", "还要确认列出的本地 repo 中 `target_commit` 和 `working_branches` 真实可解析", "diff 没有跑出 `write_scope`", "`created_at` 使用 RFC3339", "必须运行一次收尾自检命令并确认退出码为 0") {
 		t.Fatalf("unexpected reviewer prompt: %q", reviewerSpec.Prompt)
+	}
+}
+
+func TestBuildDispatchSpecs_IntegrationConflictPrompts(t *testing.T) {
+	root := t.TempDir()
+	now := time.Date(2026, 3, 24, 11, 0, 0, 0, time.FixedZone("CST", 8*3600))
+
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "repos", "repo-a.md"), `---
+repo_id: repo-a
+local_path: "`+root+`"
+default_branch: main
+role: source
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Conflict recovery executor"
+phase: P01
+status: executing
+execution_round: 2
+owner_agent: executor
+lease_until: "2026-03-24T13:00:00+08:00"
+target_repos: [repo-a]
+working_branches: [repo-a:feat/t001]
+worktree_paths: [repo-a:`+filepath.Join(root, ".worktrees", "repo-a", "t001")+`]
+write_scope: [repo-a:src/core]
+review_status: changes_requested
+integration_retry_count: 1
+last_blocked_reason: "merge failed: CONFLICT (content): Merge conflict in src/core"
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T002", `---
+task_id: T002
+title: "Conflict recovery reviewer"
+phase: P01
+status: reviewing
+review_round: 2
+owner_agent: reviewer
+lease_until: "2026-03-24T13:00:00+08:00"
+target_repos: [repo-a]
+head_commit: "abc123"
+last_run_path: "results/summary.md"
+integration_retry_count: 1
+last_blocked_reason: "merge failed: CONFLICT (content): Merge conflict in src/core"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T002", "results", "summary.md"), "# Summary\n")
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	specs, err := buildDispatchSpecs(repo, now)
+	if err != nil {
+		t.Fatalf("build dispatch specs failed: %v", err)
+	}
+	if len(specs) != 2 {
+		t.Fatalf("expected 2 dispatch specs, got %d", len(specs))
+	}
+
+	byKind := map[DispatchKind]DispatchTaskSpec{}
+	for _, spec := range specs {
+		byKind[spec.Kind] = spec
+	}
+	if !containsAll(byKind[DispatchKindExecutor].Prompt, "集成冲突恢复次数: 1", "这是一次集成冲突恢复轮", "把默认分支的新变化合入或等价重放到 task branch") {
+		t.Fatalf("unexpected integration recovery executor prompt: %q", byKind[DispatchKindExecutor].Prompt)
+	}
+	if !containsAll(byKind[DispatchKindReviewer].Prompt, "集成冲突恢复次数: 1", "这是一次集成冲突恢复后的评审", "既保留了此前已批准改动的意图，也兼容默认分支的新变化") {
+		t.Fatalf("unexpected integration recovery reviewer prompt: %q", byKind[DispatchKindReviewer].Prompt)
 	}
 }
 
@@ -2217,4 +2586,13 @@ func containsAll(text string, patterns ...string) bool {
 		}
 	}
 	return true
+}
+
+func containsEventKind(events []ReconcileEvent, want ReconcileEventKind) bool {
+	for _, event := range events {
+		if event.Kind == want {
+			return true
+		}
+	}
+	return false
 }

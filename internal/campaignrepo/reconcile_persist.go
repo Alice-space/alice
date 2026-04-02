@@ -141,6 +141,7 @@ func normalizeTaskDocument(task TaskDocument) TaskDocument {
 	}
 	task.Frontmatter.SelfCheckStatus = normalizeTaskSelfCheckStatus(task.Frontmatter.SelfCheckStatus)
 	task.Frontmatter.SelfCheckAtRaw = strings.TrimSpace(task.Frontmatter.SelfCheckAtRaw)
+	task.Frontmatter.SelfCheckDigest = strings.TrimSpace(task.Frontmatter.SelfCheckDigest)
 	task.Frontmatter.WakePrompt = strings.TrimSpace(task.Frontmatter.WakePrompt)
 	task.Frontmatter.ReportSnippetPath = strings.TrimSpace(task.Frontmatter.ReportSnippetPath)
 	task.Path = filepath.ToSlash(strings.TrimSpace(task.Path))

@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+const maxIntegrationConflictRetries = 3
+
 func integrateAcceptedTasks(repo *Repository, campaignID string) (int, []ReconcileEvent, error) {
 	if repo == nil || len(repo.Tasks) == 0 {
 		return 0, nil, nil
@@ -36,6 +38,7 @@ func integrateAcceptedTasks(repo *Repository, campaignID string) (int, []Reconci
 		case !taskRequiresSourceRepoEvidence(*task), len(targetRepos) == 0:
 			task.Frontmatter.Status = TaskStatusDone
 			task.Frontmatter.DispatchState = "integration_not_required"
+			task.Frontmatter.IntegrationRetryCount = 0
 			task.Frontmatter.LastBlockedReason = ""
 			task.Frontmatter.OwnerAgent = ""
 			task.LeaseUntil = time.Time{}
@@ -56,6 +59,24 @@ func integrateAcceptedTasks(repo *Repository, campaignID string) (int, []Reconci
 
 		mergeCommit, err := integrateTaskIntoTargetRepos(*task, targetRepos)
 		if err != nil {
+			if integrationFailureLooksLikeMergeConflict(err.Error()) {
+				task.Frontmatter.LastBlockedReason = err.Error()
+			}
+			if integrationFailureLooksLikeMergeConflict(err.Error()) && queueIntegrationConflictRecovery(task) {
+				if err := persistTaskDocument(repo, idx); err != nil {
+					return changed, events, err
+				}
+				events = append(events, ReconcileEvent{
+					Kind:       EventTaskRetrying,
+					CampaignID: campaignID,
+					TaskID:     taskID,
+					Title:      "任务集成冲突，回流执行修复",
+					Detail:     fmt.Sprintf("任务 **%s** %s 在回主线集成时发生 merge conflict，已回流给 executor 做第 %d 次集成冲突修复。", taskID, taskTitle, task.Frontmatter.IntegrationRetryCount),
+					Severity:   "warning",
+				})
+				changed++
+				continue
+			}
 			task.Frontmatter.Status = TaskStatusBlocked
 			task.Frontmatter.DispatchState = "integration_blocked"
 			task.Frontmatter.LastBlockedReason = err.Error()
@@ -83,6 +104,7 @@ func integrateAcceptedTasks(repo *Repository, campaignID string) (int, []Reconci
 		}
 		task.Frontmatter.Status = TaskStatusDone
 		task.Frontmatter.DispatchState = "integrated"
+		task.Frontmatter.IntegrationRetryCount = 0
 		task.Frontmatter.LastBlockedReason = ""
 		task.Frontmatter.OwnerAgent = ""
 		task.LeaseUntil = time.Time{}
@@ -102,6 +124,34 @@ func integrateAcceptedTasks(repo *Repository, campaignID string) (int, []Reconci
 		changed++
 	}
 	return changed, events, nil
+}
+
+func queueIntegrationConflictRecovery(task *TaskDocument) bool {
+	if task == nil {
+		return false
+	}
+	if task.Frontmatter.IntegrationRetryCount >= maxIntegrationConflictRetries {
+		return false
+	}
+	task.Frontmatter.IntegrationRetryCount++
+	task.Frontmatter.Status = TaskStatusRework
+	task.Frontmatter.DispatchState = "integration_conflict_requested"
+	task.Frontmatter.ReviewStatus = "changes_requested"
+	task.Frontmatter.OwnerAgent = ""
+	task.LeaseUntil = time.Time{}
+	task.WakeAt = time.Time{}
+	task.Frontmatter.WakePrompt = ""
+	return true
+}
+
+func integrationFailureLooksLikeMergeConflict(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	if reason == "" {
+		return false
+	}
+	return strings.Contains(reason, "automatic merge failed") ||
+		strings.Contains(reason, "conflict (content)") ||
+		strings.Contains(reason, "merge conflict in")
 }
 
 func integrateTaskIntoTargetRepos(task TaskDocument, repos []SourceRepoDocument) (string, error) {
