@@ -22,6 +22,7 @@ const clearCommandName = "/clear"
 const stopCommandName = "/stop"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
+const builtinCodeArmyTasksCardTitle = "CodeArmy Tasks"
 
 type codeArmyBuiltinCommand struct {
 	kind  string
@@ -154,7 +155,7 @@ func (p *Processor) processCodeArmyTasksCommand(ctx context.Context, job Job, qu
 	replyJob := job
 	replyJob.Scene = jobSceneChat
 	replyJob.CreateFeishuThread = false
-	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+	if err := p.replies.respondCardWithTitle(ctx, replyJob, builtinCodeArmyTasksCardTitle, reply); err != nil {
 		logging.Errorf("send codearmy tasks reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted

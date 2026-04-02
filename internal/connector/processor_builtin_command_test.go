@@ -392,14 +392,17 @@ depends_on: [T101]
 	if llmStub.calls != 0 {
 		t.Fatalf("expected codearmy tasks command to bypass llm, got %d llm calls", llmStub.calls)
 	}
-	if sender.replyRichMarkdownCalls != 1 || sender.replyRichMarkdownDirectCalls != 1 {
-		t.Fatalf("expected one direct rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
+	if sender.replyCardCalls != 1 || sender.replyCardDirectCalls != 1 {
+		t.Fatalf("expected one direct card reply, got card=%d direct=%d", sender.replyCardCalls, sender.replyCardDirectCalls)
 	}
-	if sender.replyCardCalls != 0 || sender.replyCardDirectCalls != 0 {
-		t.Fatalf("expected codearmy tasks command not to use cards, got card=%d direct=%d", sender.replyCardCalls, sender.replyCardDirectCalls)
+	if sender.replyRichMarkdownCalls != 0 || sender.replyRichMarkdownDirectCalls != 0 {
+		t.Fatalf("expected codearmy tasks command not to use rich markdown, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
 	}
-
-	reply := sender.replyMarkdownTexts[0]
+	card := parseReplyCard(t, sender.replyCards[0])
+	if got := card.Header.Title.Content; got != builtinCodeArmyTasksCardTitle {
+		t.Fatalf("unexpected card title: %q", got)
+	}
+	reply := card.Body.Elements[0].Content
 	for _, want := range []string{
 		"## CodeArmy Tasks",
 		"- campaign: `camp_front`",
