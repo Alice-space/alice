@@ -96,7 +96,7 @@ func newSummaryBlockedEvents(campaignID string, previous map[string]string, summ
 			TaskID:     task.TaskID,
 			Title:      title,
 			Detail:     detail,
-			Severity:   "warning",
+			Severity:   campaignBlockedEventSeverity(reason),
 		})
 	}
 	return events

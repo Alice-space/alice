@@ -230,14 +230,17 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	if len(events) > 0 {
 		b.sendCampaignNotifications(item, events)
 	}
-	if err := b.syncCampaignDispatchTasks(item, result.DispatchTasks, now); err != nil {
-		logging.Warnf("sync dispatch tasks failed campaign=%s: %v", item.ID, err)
-	}
 	commitResult, err := campaignrepo.CommitReconcileSnapshot(item.CampaignRepoPath, &result.Summary)
 	if err != nil {
 		logging.Warnf("commit campaign repo failed campaign=%s path=%s: %v", item.ID, item.CampaignRepoPath, err)
+		if b.handleCampaignRepoCommitFailure(item, err) {
+			return
+		}
 	} else if commitResult.RepoCommitted || commitResult.LiveReportCommitted {
 		logging.Infof("committed campaign repo snapshot campaign=%s path=%s", item.ID, item.CampaignRepoPath)
+	}
+	if err := b.syncCampaignDispatchTasks(item, result.DispatchTasks, now); err != nil {
+		logging.Warnf("sync dispatch tasks failed campaign=%s: %v", item.ID, err)
 	}
 	if err := b.syncCampaignWakeTasks(item, result.Summary); err != nil {
 		logging.Warnf("sync wake tasks failed campaign=%s: %v", item.ID, err)
@@ -247,6 +250,27 @@ func (b *connectorRuntimeBuilder) reconcileCampaignRepo(item campaign.Campaign, 
 	} else if shouldNotifyCompletion {
 		b.sendCampaignNotifications(item, []campaignrepo.ReconcileEvent{completionEvent})
 	}
+}
+
+func (b *connectorRuntimeBuilder) handleCampaignRepoCommitFailure(item campaign.Campaign, err error) bool {
+	if b == nil || b.campaignStore == nil {
+		return false
+	}
+	event, blockedSummary, ok := newCampaignRepoGitIdentityFailureEvent(item, err)
+	if !ok {
+		return false
+	}
+	alreadyBlocked := strings.TrimSpace(item.Summary) == blockedSummary
+	if _, patchErr := b.campaignStore.PatchCampaign(item.ID, func(current *campaign.Campaign) error {
+		current.Summary = blockedSummary
+		return nil
+	}); patchErr != nil {
+		logging.Warnf("patch campaign git identity block summary failed campaign=%s: %v", item.ID, patchErr)
+	}
+	if !alreadyBlocked {
+		b.sendCampaignNotifications(item, []campaignrepo.ReconcileEvent{event})
+	}
+	return true
 }
 
 type campaignAutomationTaskState struct {

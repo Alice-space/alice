@@ -83,16 +83,25 @@ func (b *connectorRuntimeBuilder) handleBlockedSignal(item campaign.Campaign, re
 	detail := fmt.Sprintf("任务 **%s** 遇到阻塞，无法继续执行。\n\n**原因**: %s", taskID, reason)
 	kind := campaignrepo.EventTaskBlocked
 	if repoPath != "" && taskID != "" {
-		outcome, err := campaignrepo.HandleTaskBlocked(repoPath, taskID, reason)
-		if err != nil {
-			logging.Warnf("handle task blocked failed campaign=%s task=%s: %v", item.ID, taskID, err)
-		} else if outcome.GuidanceRequested {
-			title = "任务遇到阻塞，转评审指导"
-			detail = fmt.Sprintf("任务 **%s** 遇到阻塞，已转 reviewer 指导（第 %d/%d 次）。\n\n**原因**: %s", taskID, outcome.GuidanceAttempt, 3, outcome.Reason)
-			kind = campaignrepo.EventTaskRetrying
-		} else if outcome.TerminalBlocked {
-			title = "任务阻塞"
-			detail = fmt.Sprintf("任务 **%s** 多次阻塞后仍未恢复，已进入真正阻塞状态。\n\n**原因**: %s", taskID, outcome.Reason)
+		if campaignrepo.LooksLikeGitIdentityProblem(reason) {
+			if err := campaignrepo.MarkTaskBlocked(repoPath, taskID, reason); err != nil {
+				logging.Warnf("mark task blocked for git identity failed campaign=%s task=%s: %v", item.ID, taskID, err)
+			} else {
+				title = "任务阻塞"
+				detail = fmt.Sprintf("任务 **%s** 缺少可用 git 身份，已进入真正阻塞状态。\n\n**原因**: %s", taskID, reason)
+			}
+		} else {
+			outcome, err := campaignrepo.HandleTaskBlocked(repoPath, taskID, reason)
+			if err != nil {
+				logging.Warnf("handle task blocked failed campaign=%s task=%s: %v", item.ID, taskID, err)
+			} else if outcome.GuidanceRequested {
+				title = "任务遇到阻塞，转评审指导"
+				detail = fmt.Sprintf("任务 **%s** 遇到阻塞，已转 reviewer 指导（第 %d/%d 次）。\n\n**原因**: %s", taskID, outcome.GuidanceAttempt, 3, outcome.Reason)
+				kind = campaignrepo.EventTaskRetrying
+			} else if outcome.TerminalBlocked {
+				title = "任务阻塞"
+				detail = fmt.Sprintf("任务 **%s** 多次阻塞后仍未恢复，已进入真正阻塞状态。\n\n**原因**: %s", taskID, outcome.Reason)
+			}
 		}
 	}
 	b.sendCampaignSignalNotification(item, campaignrepo.ReconcileEvent{
@@ -101,7 +110,7 @@ func (b *connectorRuntimeBuilder) handleBlockedSignal(item campaign.Campaign, re
 		TaskID:     taskID,
 		Title:      title,
 		Detail:     detail,
-		Severity:   "warning",
+		Severity:   campaignBlockedEventSeverity(reason),
 	})
 }
 

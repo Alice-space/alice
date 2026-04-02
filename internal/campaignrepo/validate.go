@@ -1481,7 +1481,13 @@ func isolatedGitEnv(env []string) []string {
 			"GIT_ALTERNATE_OBJECT_DIRECTORIES",
 			"GIT_PREFIX",
 			"GIT_SUPER_PREFIX",
-			"GIT_NAMESPACE":
+			"GIT_NAMESPACE",
+			"GIT_AUTHOR_NAME",
+			"GIT_AUTHOR_EMAIL",
+			"GIT_AUTHOR_DATE",
+			"GIT_COMMITTER_NAME",
+			"GIT_COMMITTER_EMAIL",
+			"GIT_COMMITTER_DATE":
 			continue
 		default:
 			filtered = append(filtered, entry)

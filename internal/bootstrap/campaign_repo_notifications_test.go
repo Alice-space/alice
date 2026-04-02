@@ -300,6 +300,27 @@ func TestNewSummaryBlockedEvents_NotifiesTrueBlockedTasks(t *testing.T) {
 	}
 }
 
+func TestNewSummaryBlockedEvents_GitIdentityEscalatesToError(t *testing.T) {
+	summary := campaignrepo.Summary{
+		BlockedTasks: []campaignrepo.TaskSummary{
+			{
+				TaskID:        "T401",
+				Title:         "Integrate fix",
+				Status:        campaignrepo.TaskStatusBlocked,
+				BlockedReason: "git identity required for /tmp/source: set repo local user.name/user.email or global user.name/user.email before Alice commits or merges",
+			},
+		},
+	}
+
+	events := newSummaryBlockedEvents("camp_demo", nil, summary)
+	if len(events) != 1 {
+		t.Fatalf("expected one blocked event, got %+v", events)
+	}
+	if events[0].Severity != "error" {
+		t.Fatalf("expected git identity blocker to escalate, got %+v", events[0])
+	}
+}
+
 func TestNewSummaryBlockedEvents_PostRunValidationUsesRecoveryWording(t *testing.T) {
 	summary := campaignrepo.Summary{
 		BlockedTasks: []campaignrepo.TaskSummary{
