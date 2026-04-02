@@ -22,7 +22,10 @@ func TestCampaignEventCardTitle_UsesCampaignName(t *testing.T) {
 	}
 }
 
-func TestShouldEscalateCampaignEvent_TaskBlockedAndAutomationFailure(t *testing.T) {
+func TestShouldEscalateCampaignEvent_ApprovalBlockedAndAutomationFailure(t *testing.T) {
+	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventHumanApprovalNeeded}) {
+		t.Fatal("expected human_approval_needed to trigger urgent escalation")
+	}
 	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskBlocked}) {
 		t.Fatal("expected task_blocked to trigger urgent escalation")
 	}

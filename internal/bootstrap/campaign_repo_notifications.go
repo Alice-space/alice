@@ -266,7 +266,7 @@ func shouldSendCampaignEvent(event campaignrepo.ReconcileEvent) bool {
 
 func shouldEscalateCampaignEvent(event campaignrepo.ReconcileEvent) bool {
 	switch event.Kind {
-	case campaignrepo.EventTaskBlocked, campaignrepo.EventAutomationFailed:
+	case campaignrepo.EventHumanApprovalNeeded, campaignrepo.EventTaskBlocked, campaignrepo.EventAutomationFailed:
 		return true
 	default:
 		return false
