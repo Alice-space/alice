@@ -498,6 +498,88 @@ execution_round: 1
 	}
 }
 
+func TestValidateCampaignRepoTaskCompletion_ReviewerValidationFailureBecomesWarningRecovery(t *testing.T) {
+	root := t.TempDir()
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+---
+`)
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "task.md"), `---
+task_id: T001
+title: "Review remote replay"
+phase: P01
+status: reviewing
+dispatch_state: reviewer_dispatched
+review_status: reviewing
+execution_round: 1
+review_round: 1
+owner_agent: reviewer
+lease_until: "2026-04-02T12:00:00+08:00"
+reviewer:
+  role: reviewer
+  workflow: code_army
+write_scope:
+  - campaign:phases/P01/tasks/T001/**
+---
+`)
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+reviewer:
+  role: reviewer
+  workflow: code_army
+verdict: approve
+blocking: false
+created_at: "2026-04-02T11:59:00+08:00"
+---
+`)
+
+	event, ok, err := validateCampaignRepoTaskCompletion(campaign.Campaign{
+		ID:               "camp_demo",
+		CampaignRepoPath: root,
+	}, automation.Task{
+		Action: automation.Action{
+			StateKey: "campaign_dispatch:camp_demo:reviewer:T001:r1",
+		},
+	})
+	if err != nil {
+		t.Fatalf("validate campaign repo task completion failed: %v", err)
+	}
+	if !ok {
+		t.Fatal("expected validation failure event to be returned")
+	}
+	if event.Kind != campaignrepo.EventTaskBlocked {
+		t.Fatalf("expected task_blocked event, got %+v", event)
+	}
+	if event.Severity != "warning" {
+		t.Fatalf("expected warning severity, got %+v", event)
+	}
+	if !strings.Contains(event.Title, "等待恢复") {
+		t.Fatalf("expected recovery wording in title, got %+v", event)
+	}
+
+	repo, err := campaignrepo.Load(root)
+	if err != nil {
+		t.Fatalf("load repo failed: %v", err)
+	}
+	task := repo.Tasks[0]
+	if got := task.Frontmatter.Status; got != campaignrepo.TaskStatusBlocked {
+		t.Fatalf("expected task to enter blocked recovery state, got %q", got)
+	}
+	if got := task.Frontmatter.DispatchState; got != "signal_blocked_terminal" {
+		t.Fatalf("expected signal_blocked_terminal dispatch state, got %q", got)
+	}
+}
+
 func TestRecoverCampaignRepoAfterStartup_ReactivatesInterruptedDispatchTask(t *testing.T) {
 	root := t.TempDir()
 	mustWriteBootstrapTestFile(t, filepath.Join(root, "campaign.md"), `---

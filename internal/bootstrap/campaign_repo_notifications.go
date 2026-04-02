@@ -86,6 +86,10 @@ func newSummaryBlockedEvents(campaignID string, previous map[string]string, summ
 			title = "任务阻塞更新"
 		}
 		detail := fmt.Sprintf("任务 **%s** %s 当前被 runtime gate 挡住，尚未进入下一步。\n\n**原因**: %s", task.TaskID, strings.TrimSpace(task.Title), reason)
+		if isPostRunValidationBlockedReason(reason) {
+			title = "收尾校验待恢复"
+			detail = fmt.Sprintf("任务 **%s** %s 的收尾校验尚未收口，当前处于恢复等待态。\n\n这类问题通常可通过继续运行、补齐合法交接产物或重新通过 self-check 解决，不需要人工加急介入。\n\n**原因**: %s", task.TaskID, strings.TrimSpace(task.Title), reason)
+		}
 		events = append(events, campaignrepo.ReconcileEvent{
 			Kind:       campaignrepo.EventTaskBlocked,
 			CampaignID: campaignID,
@@ -266,11 +270,18 @@ func shouldSendCampaignEvent(event campaignrepo.ReconcileEvent) bool {
 
 func shouldEscalateCampaignEvent(event campaignrepo.ReconcileEvent) bool {
 	switch event.Kind {
-	case campaignrepo.EventHumanApprovalNeeded, campaignrepo.EventTaskBlocked, campaignrepo.EventAutomationFailed:
+	case campaignrepo.EventHumanApprovalNeeded, campaignrepo.EventAutomationFailed:
 		return true
+	case campaignrepo.EventTaskBlocked:
+		return strings.EqualFold(strings.TrimSpace(event.Severity), "error")
 	default:
 		return false
 	}
+}
+
+func isPostRunValidationBlockedReason(reason string) bool {
+	reason = strings.ToLower(strings.TrimSpace(reason))
+	return strings.Contains(reason, "post-run validation failed")
 }
 
 func campaignUrgentRecipientOpenIDs(item campaign.Campaign) []string {
