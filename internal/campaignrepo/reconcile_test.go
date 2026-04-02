@@ -1782,6 +1782,236 @@ created_at: "2026-03-24T10:30:00+08:00"
 	}
 }
 
+func TestReconcileAndPrepare_RepairsTerminalPostRunValidationExecutorBlock(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Executor self-check proof was missing"
+phase: P01
+status: blocked
+dispatch_state: signal_blocked_terminal
+write_scope: [campaign:reports/live-report.md]
+execution_round: 2
+review_round: 1
+review_status: blocked
+last_run_path: "results/summary.md"
+last_review_path: "phases/P01/tasks/T001/reviews/R001.md"
+last_blocked_reason: "post-run validation failed after executor round: task T001 finished an executor round but has no recorded self-check proof"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R001.md"), `---
+review_id: R001
+target_task: T001
+review_round: 1
+reviewer:
+  role: reviewer.codex
+verdict: concern
+blocking: false
+created_at: "2026-03-24T10:30:00+08:00"
+---
+`)
+
+	checkedAt := time.Date(2026, 3, 28, 15, 30, 0, 0, time.FixedZone("CST", 8*3600))
+	validation, err := RunTaskSelfCheck(root, "T001", DispatchKindExecutor, checkedAt)
+	if err != nil {
+		t.Fatalf("executor self-check failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected executor self-check to pass, got %+v", validation.Issues)
+	}
+
+	now := time.Date(2026, 3, 28, 16, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	result, err := ReconcileAndPrepare(root, now, 2, time.Hour, pragmaticReviewerRoleDefaults())
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if result.AppliedReviews != 0 {
+		t.Fatalf("expected no review verdict to be applied, got %d", result.AppliedReviews)
+	}
+	if result.ClaimedReviewers != 1 {
+		t.Fatalf("expected repaired task to be dispatched for review, got %d reviewer claims", result.ClaimedReviewers)
+	}
+	if len(result.DispatchTasks) != 1 || result.DispatchTasks[0].Kind != DispatchKindReviewer {
+		t.Fatalf("expected one reviewer dispatch, got %+v", result.DispatchTasks)
+	}
+
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusReviewing {
+		t.Fatalf("expected task to move to reviewing, got %s", got)
+	}
+	if task.Frontmatter.OwnerAgent != "reviewer.codex" {
+		t.Fatalf("expected reviewer to own repaired task, got %q", task.Frontmatter.OwnerAgent)
+	}
+	if task.Frontmatter.ReviewRound != 2 {
+		t.Fatalf("expected fresh reviewer round 2, got %d", task.Frontmatter.ReviewRound)
+	}
+	if task.Frontmatter.LastBlockedReason != "" {
+		t.Fatalf("expected blocked reason to be cleared, got %q", task.Frontmatter.LastBlockedReason)
+	}
+}
+
+func TestReconcileAndPrepare_RepairsTerminalPostRunValidationReviewerBlock(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Reviewer proof was missing"
+phase: P01
+status: blocked
+dispatch_state: signal_blocked_terminal
+reviewer:
+  role: reviewer.codex
+write_scope: [campaign:reports/live-report.md]
+execution_round: 2
+review_round: 2
+review_status: blocked
+last_run_path: "results/summary.md"
+last_review_path: "phases/P01/tasks/T001/reviews/R002.md"
+last_blocked_reason: "post-run validation failed after reviewer round: task T001 finished a reviewer round but has no recorded self-check proof"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "reviews", "R002.md"), `---
+review_id: R002
+target_task: T001
+review_round: 2
+reviewer:
+  role: reviewer.codex
+verdict: approve
+blocking: false
+created_at: "2026-03-24T11:00:00+08:00"
+---
+`)
+
+	checkedAt := time.Date(2026, 3, 28, 15, 45, 0, 0, time.FixedZone("CST", 8*3600))
+	validation, err := RunTaskSelfCheck(root, "T001", DispatchKindReviewer, checkedAt)
+	if err != nil {
+		t.Fatalf("reviewer self-check failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected reviewer self-check to pass, got %+v", validation.Issues)
+	}
+
+	now := time.Date(2026, 3, 28, 16, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	result, err := ReconcileAndPrepare(root, now, 2, time.Hour, pragmaticReviewerRoleDefaults())
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if result.AppliedReviews != 1 {
+		t.Fatalf("expected repaired review verdict to be applied, got %d", result.AppliedReviews)
+	}
+	if result.ClaimedReviewers != 0 {
+		t.Fatalf("did not expect a fresh reviewer dispatch, got %d", result.ClaimedReviewers)
+	}
+	if len(result.DispatchTasks) != 0 {
+		t.Fatalf("expected no dispatch tasks after judge apply, got %+v", result.DispatchTasks)
+	}
+
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusDone {
+		t.Fatalf("expected task to become done after judge apply/integration, got %s", got)
+	}
+	if task.Frontmatter.DispatchState != "integration_not_required" {
+		t.Fatalf("expected dispatch_state=integration_not_required, got %q", task.Frontmatter.DispatchState)
+	}
+	if task.Frontmatter.LastBlockedReason != "" {
+		t.Fatalf("expected blocked reason to be cleared, got %q", task.Frontmatter.LastBlockedReason)
+	}
+}
+
+func TestReconcileAndPrepare_DoesNotRepairNonPostRunTerminalBlock(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship the first phase"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Real external blocker"
+phase: P01
+status: blocked
+dispatch_state: signal_blocked_terminal
+write_scope: [campaign:reports/live-report.md]
+execution_round: 2
+review_round: 1
+review_status: blocked
+last_run_path: "results/summary.md"
+last_blocked_reason: "missing IHEP cluster handoff"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	checkedAt := time.Date(2026, 3, 28, 15, 50, 0, 0, time.FixedZone("CST", 8*3600))
+	validation, err := RunTaskSelfCheck(root, "T001", DispatchKindExecutor, checkedAt)
+	if err != nil {
+		t.Fatalf("executor self-check failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected executor self-check to pass, got %+v", validation.Issues)
+	}
+
+	now := time.Date(2026, 3, 28, 16, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	result, err := ReconcileAndPrepare(root, now, 2, time.Hour, pragmaticReviewerRoleDefaults())
+	if err != nil {
+		t.Fatalf("reconcile failed: %v", err)
+	}
+	if result.AppliedReviews != 0 {
+		t.Fatalf("expected no applied reviews, got %d", result.AppliedReviews)
+	}
+	if result.ClaimedReviewers != 0 {
+		t.Fatalf("did not expect blocked task to dispatch reviewer, got %d", result.ClaimedReviewers)
+	}
+	if len(result.DispatchTasks) != 0 {
+		t.Fatalf("expected no dispatch tasks, got %+v", result.DispatchTasks)
+	}
+
+	task := result.Repository.Tasks[0]
+	if got := normalizeTaskStatus(task.Frontmatter.Status); got != TaskStatusBlocked {
+		t.Fatalf("expected task to remain blocked, got %s", got)
+	}
+	if task.Frontmatter.DispatchState != "signal_blocked_terminal" {
+		t.Fatalf("unexpected dispatch state: %q", task.Frontmatter.DispatchState)
+	}
+	if task.Frontmatter.LastBlockedReason != "missing IHEP cluster handoff" {
+		t.Fatalf("expected blocked reason to stay intact, got %q", task.Frontmatter.LastBlockedReason)
+	}
+}
+
 func TestTaskLooksReadyForReviewHandOff_AcceptsPendingAliases(t *testing.T) {
 	task := TaskDocument{
 		Frontmatter: TaskFrontmatter{
@@ -1964,6 +2194,20 @@ func boolYAML(value bool) string {
 		return "true"
 	}
 	return "false"
+}
+
+func pragmaticReviewerRoleDefaults() CampaignRoleDefaults {
+	return CampaignRoleDefaults{
+		Reviewer: RoleConfig{
+			Role:            "reviewer.codex",
+			Provider:        "codex",
+			Model:           "gpt-5.4",
+			Profile:         "reviewer",
+			Workflow:        "code_army",
+			ReasoningEffort: "high",
+			Personality:     "pragmatic",
+		},
+	}
 }
 
 func containsAll(text string, patterns ...string) bool {

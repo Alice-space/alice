@@ -28,15 +28,16 @@ Source repos:
 评审规则：
 1. 先读 `campaign.md`、task markdown、以及引用到的结果产物。{{ if .SourceChangeRequired }}还要从列出的本地路径里检查相关 source repo diff 或 commit。{{ else }}这是 campaign-only / archive-only task，因此重点看 task-local artifact 和 campaign-repo diff，不要强行要求 source-repo commit。{{ end }}
 2. 不要修改 source repo。
-3. 在 task-local `reviews/` 目录下的 `{{ .SuggestedReviewFile }}` 写一份新的 review markdown，使用 `_templates/review.md` 的结构。
-4. verdict 只能是 `approve`、`concern`、`blocking` 之一，发现必须具体。
+3. 在 task-local `reviews/` 目录下写一份新的 review markdown，默认文件名用 `{{ .SuggestedReviewFile }}`，结构使用 `_templates/review.md`。
+4. 在真正落盘 review 之前，以及最后一次运行 self-check 之前，都要重新打开最新的 `task.md` 确认 `review_round` 还等于当前 prompt 里的轮次；如果轮次已经前移，必须改用新的轮次和对应文件名，不要继续沿用旧 round/旧文件名。
+5. verdict 只能是 `approve`、`concern`、`blocking` 之一，发现必须具体。
    - 对 executor 可以在普通返工回路里修掉的问题，用 `concern`：例如 acceptance 缺口、测试缺失、输出不正确、局部代码质量问题、task-local artifact 不完整。
    - 只有任务在没有人工介入、外部依赖变更、task 合同修正或 campaign 级重规划的情况下无法安全继续时，才用 `blocking`。
    - 如果 `last_blocked_reason` 非空且 `block_guidance_count` 在 1-3 之间，把它视作 blocked-recovery round：优先给出具体恢复路径并判 `concern`；只有在指导预算基本耗尽且确实不可恢复时才判 `blocking`。
-5. 在给出 `approve` 之前，先验证 `last_run_path` 可解析，并确认被审 diff 没有跑出 `write_scope`。{{ if .SourceChangeRequired }}对 source-repo task，还要确认列出的本地 repo 中 `target_commit` 和 `working_branches` 真实可解析；如果 task 明确声明了独立 `task_worktree`，还要检查 `local_path` 是否保持 clean。若发现根 repo / baseline worktree 出现未提交改动，优先把它视为执行隔离失败并给 `concern`，让 executor 在下一轮迁回 `task_worktree` 后重做；只有确实已经需要人工修仓或外部介入时才升到 `blocking`。{{ else }}对 campaign-only / archive-only task，不要要求 source-repo `head_commit`；直接审 task-local artifact 和 campaign-repo diff，`target_commit` 保持空字符串。{{ end }}如果必须的 commit 或 artifact 引用无法解析，或者 diff 跑出了 `write_scope`，至少都是 `concern`。
-6. `created_at` 使用 RFC3339，例如 `2026-03-28T14:57:39+08:00`。
-7. 不要自己改 task status；review verdict 由 Alice judge 应用。
-8. 在结束本轮前，必须运行一次收尾自检命令并确认退出码为 0；如果失败，先修 review/task frontmatter，再重复运行，直到通过。自检没过时，不允许结束本轮，也不要手工伪造 `self_check_*` 字段。
-9. 只有当当前 `review_round` 对应的一份新 task-local review 文件已经存在、其中 verdict 非空、且 `reviewer.role` 与 task reviewer 合同匹配时，本轮才算完成。不要在 `reviews/` 里留下 executor 风格的响应文件。
-10. 如果你无法产出合法 review artifact，请发送 `/alice blocked ...` 或 `/alice needs-human ...`，不要假装 review 已完成。
-11. 你要自己把 review 文件写出来，然后给出一条简短中文公开总结，包含 review 路径、verdict、关键发现，以及 self-check 是否通过。
+6. 在给出 `approve` 之前，先验证 `last_run_path` 可解析，并确认被审 diff 没有跑出 `write_scope`。{{ if .SourceChangeRequired }}对 source-repo task，还要确认列出的本地 repo 中 `target_commit` 和 `working_branches` 真实可解析；如果 task 明确声明了独立 `task_worktree`，还要检查 `local_path` 是否保持 clean。若发现根 repo / baseline worktree 出现未提交改动，优先把它视为执行隔离失败并给 `concern`，让 executor 在下一轮迁回 `task_worktree` 后重做；只有确实已经需要人工修仓或外部介入时才升到 `blocking`。{{ else }}对 campaign-only / archive-only task，不要要求 source-repo `head_commit`；直接审 task-local artifact 和 campaign-repo diff，`target_commit` 保持空字符串。{{ end }}如果必须的 commit 或 artifact 引用无法解析，或者 diff 跑出了 `write_scope`，至少都是 `concern`。
+7. `created_at` 使用 RFC3339，例如 `2026-03-28T14:57:39+08:00`。
+8. 不要自己改 task status；review verdict 由 Alice judge 应用。
+9. 在结束本轮前，必须运行一次收尾自检命令并确认退出码为 0；如果失败，先修 review/task frontmatter，再重复运行，直到通过。自检没过时，不允许结束本轮，也不要手工伪造 `self_check_*` 字段。
+10. 只有当当前 `review_round` 对应的一份新 task-local review 文件已经存在、其中 verdict 非空、且 `reviewer.role` 与 task reviewer 合同匹配时，本轮才算完成。不要在 `reviews/` 里留下 executor 风格的响应文件。
+11. 如果你无法产出合法 review artifact，请发送 `/alice blocked ...` 或 `/alice needs-human ...`，不要假装 review 已完成。
+12. 你要自己把 review 文件写出来，然后给出一条简短中文公开总结，包含 review 路径、verdict、关键发现，以及 self-check 是否通过。

@@ -81,6 +81,14 @@ func ReconcileAndPrepare(root string, now time.Time, maxParallel int, leaseDurat
 		}, nil
 	}
 
+	repairedPostRunBlocks, err := repairTerminalPostRunValidationBlocks(&repo)
+	if err != nil {
+		return ReconcileResult{}, err
+	}
+	if repairedPostRunBlocks > 0 {
+		changed = true
+	}
+
 	appliedReviews, verdictEvents, err := applyReviewVerdicts(&repo, campaignID)
 	if err != nil {
 		return ReconcileResult{}, err
@@ -412,6 +420,96 @@ func planTransitionEvent(campaignID, campaignTitle, prevStatus, newStatus string
 		}, true
 	}
 	return ReconcileEvent{}, false
+}
+
+func repairTerminalPostRunValidationBlocks(repo *Repository) (int, error) {
+	if repo == nil || len(repo.Tasks) == 0 {
+		return 0, nil
+	}
+	reviewIndex := reviewsByTask(repo.Reviews)
+	repaired := 0
+	for idx := range repo.Tasks {
+		task := &repo.Tasks[idx]
+		if !taskEligibleForPostRunValidationRepair(*task) {
+			continue
+		}
+		if !recoverTerminalPostRunValidationBlock(task, reviewIndex[strings.TrimSpace(task.Frontmatter.TaskID)]) {
+			continue
+		}
+		if err := persistTaskDocument(repo, idx); err != nil {
+			return repaired, err
+		}
+		repaired++
+	}
+	return repaired, nil
+}
+
+func taskEligibleForPostRunValidationRepair(task TaskDocument) bool {
+	if normalizeTaskStatus(task.Frontmatter.Status) != TaskStatusBlocked {
+		return false
+	}
+	if strings.TrimSpace(task.Frontmatter.DispatchState) != "signal_blocked_terminal" {
+		return false
+	}
+	reason := strings.ToLower(strings.TrimSpace(task.Frontmatter.LastBlockedReason))
+	return strings.Contains(reason, "post-run validation failed")
+}
+
+func recoverTerminalPostRunValidationBlock(task *TaskDocument, reviews []ReviewDocument) bool {
+	if task == nil {
+		return false
+	}
+
+	switch DispatchKind(strings.ToLower(strings.TrimSpace(task.Frontmatter.SelfCheckKind))) {
+	case DispatchKindExecutor:
+		if !taskHasPassedPostRunSelfCheck(*task, DispatchKindExecutor) {
+			return false
+		}
+		if strings.TrimSpace(task.Frontmatter.LastRunPath) == "" {
+			return false
+		}
+		if review, ok := latestTaskReview(reviews); ok {
+			if round := review.Frontmatter.ReviewRound; round > 0 && task.Frontmatter.ReviewRound > round {
+				task.Frontmatter.ReviewRound = round
+			}
+		}
+		task.Frontmatter.Status = TaskStatusReviewPending
+		task.Frontmatter.DispatchState = "executor_completed"
+		task.Frontmatter.ReviewStatus = "pending"
+	case DispatchKindReviewer:
+		if !taskHasPassedPostRunSelfCheck(*task, DispatchKindReviewer) {
+			return false
+		}
+		review, ok := latestRelevantReview(*task, reviews)
+		if !ok {
+			return false
+		}
+		if normalizeReviewVerdict(review.Frontmatter.Verdict, review.Frontmatter.Blocking) == "" {
+			return false
+		}
+		task.Frontmatter.Status = TaskStatusReviewPending
+		task.Frontmatter.DispatchState = "reviewer_completed_recovered"
+		task.Frontmatter.ReviewStatus = "pending"
+	default:
+		return false
+	}
+
+	task.Frontmatter.LastBlockedReason = ""
+	clearTaskAssignment(task)
+	return true
+}
+
+func taskHasPassedPostRunSelfCheck(task TaskDocument, kind DispatchKind) bool {
+	if DispatchKind(strings.ToLower(strings.TrimSpace(task.Frontmatter.SelfCheckKind))) != kind {
+		return false
+	}
+	if normalizeTaskSelfCheckStatus(task.Frontmatter.SelfCheckStatus) != taskSelfCheckStatusPassed {
+		return false
+	}
+	if task.Frontmatter.SelfCheckRound <= 0 || task.Frontmatter.SelfCheckRound != taskPostRunRound(task, kind) {
+		return false
+	}
+	return strings.TrimSpace(task.Frontmatter.SelfCheckAtRaw) != ""
 }
 
 func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileEvent, error) {
