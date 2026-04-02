@@ -213,6 +213,8 @@ task frontmatter 现在默认带两类角色：
 - 但当前会话里的 automation dispatch task 已经变成 `paused`，或者上一轮没真正落下新的 `results/*` / `reviews/Rxxx.md`。
 - task frontmatter 里常会留下旧的 `self_check_status: failed`、旧 `last_review_path` 或旧 `last_run_path`，说明上一轮角色回合被打断了，而不是 campaign 已经正常收尾。
 
+从当前版本开始，Alice 在启动后会先自动跑一轮 startup recovery：立即 reconcile 所有仍可自动推进的 campaign，并尝试重置被更新打断的内部 dispatch / wake workflow task。所以遇到重启后的 CodeArmy 中断，预期应该先看到自动恢复；只有自动恢复后仍未重新出现新的 active dispatch，才需要手工执行下面的恢复步骤。
+
 推荐恢复顺序：
 
 1. 先确认是不是“单个派发回合被打断”，而不是 campaign 级 `hold`：

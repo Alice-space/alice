@@ -132,6 +132,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 ```
 
+After installer-driven self-update or service restart, Alice now performs an immediate CodeArmy recovery pass on startup: running campaign repos are reconciled right away, and interrupted internal `campaign_dispatch:*` / `campaign_wake:*` workflow tasks are reactivated automatically when they still match repo state. If a campaign cannot be resumed cleanly, the existing blocked / escalation path still applies.
+
 ## Development
 
 ```bash
