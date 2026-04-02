@@ -32,7 +32,7 @@ func integrateAcceptedTasks(repo *Repository, campaignID string) (int, []Reconci
 
 		taskID := strings.TrimSpace(task.Frontmatter.TaskID)
 		taskTitle := strings.TrimSpace(task.Frontmatter.Title)
-		targetRepos := resolveTaskSourceRepos(*task, sourceRepoByID)
+		targetRepos := integrationTargetRepos(*task, resolveTaskSourceRepos(*task, sourceRepoByID))
 
 		switch {
 		case !taskRequiresSourceRepoEvidence(*task), len(targetRepos) == 0:
@@ -174,6 +174,38 @@ func integrateTaskIntoTargetRepos(task TaskDocument, repos []SourceRepoDocument)
 		}
 	}
 	return mergedHead, nil
+}
+
+func integrationTargetRepos(task TaskDocument, repos []SourceRepoDocument) []SourceRepoDocument {
+	if len(repos) <= 1 {
+		return repos
+	}
+
+	// Multi-repo tasks may list read-context repos in target_repos. Only repos
+	// with an explicit non-campaign write_scope should participate in merge-back.
+	writableRepoIDs := make(map[string]struct{}, len(repos))
+	for _, rawScope := range task.Frontmatter.WriteScope {
+		repoID, scope, ok := splitScopePrefix(rawScope)
+		if !ok || strings.EqualFold(repoID, "campaign") || strings.TrimSpace(scope) == "" {
+			continue
+		}
+		writableRepoIDs[strings.ToLower(strings.TrimSpace(repoID))] = struct{}{}
+	}
+	if len(writableRepoIDs) == 0 {
+		return repos
+	}
+
+	filtered := make([]SourceRepoDocument, 0, len(repos))
+	for _, repoDoc := range repos {
+		repoID := strings.ToLower(strings.TrimSpace(repoDoc.Frontmatter.RepoID))
+		if _, ok := writableRepoIDs[repoID]; ok {
+			filtered = append(filtered, repoDoc)
+		}
+	}
+	if len(filtered) == 0 {
+		return repos
+	}
+	return filtered
 }
 
 func integrateTaskIntoTargetRepo(task TaskDocument, repoDoc SourceRepoDocument) (string, error) {

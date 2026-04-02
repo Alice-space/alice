@@ -210,7 +210,7 @@ func retryResolvedIntegrationBlocks(repo *Repository) (int, error) {
 		if normalizeReviewStatus(task.Frontmatter.ReviewStatus) != "approved" {
 			continue
 		}
-		targetRepos := resolveTaskSourceRepos(*task, sourceRepoByID)
+		targetRepos := integrationTargetRepos(*task, resolveTaskSourceRepos(*task, sourceRepoByID))
 		reason := strings.TrimSpace(task.Frontmatter.LastBlockedReason)
 		if integrationFailureLooksLikeMergeConflict(reason) {
 			if !queueIntegrationConflictRecovery(task) {
