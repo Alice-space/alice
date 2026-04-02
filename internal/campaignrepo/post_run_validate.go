@@ -1,8 +1,11 @@
 package campaignrepo
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -36,6 +39,7 @@ func RunTaskSelfCheck(root, taskID string, kind DispatchKind, checkedAt time.Tim
 		task.Frontmatter.SelfCheckStatus = taskSelfCheckStatusPassed
 	}
 	task.Frontmatter.SelfCheckAtRaw = checkedAt.Format(time.RFC3339)
+	task.Frontmatter.SelfCheckDigest = taskSelfCheckSubjectDigest(task, kind)
 	repo.Tasks[index] = task
 	if err := persistTaskDocument(&repo, index); err != nil {
 		return ValidationResult{}, err
@@ -218,6 +222,13 @@ func validateTaskSelfCheckProof(task TaskDocument, kind DispatchKind, issues *[]
 			Message: fmt.Sprintf("task %s finished a %s round but self_check_at is empty", taskID, kind),
 		})
 	}
+	if !taskSelfCheckProofMatchesCurrentState(task, kind) {
+		*issues = append(*issues, ValidationIssue{
+			Code:    "task_post_run_self_check_digest_mismatch",
+			Path:    task.Path,
+			Message: fmt.Sprintf("task %s finished a %s round but current task state no longer matches the recorded self-check proof", taskID, kind),
+		})
+	}
 }
 
 func taskPostRunRound(task TaskDocument, kind DispatchKind) int {
@@ -250,4 +261,51 @@ func clearTaskSelfCheck(task *TaskDocument) {
 	task.Frontmatter.SelfCheckRound = 0
 	task.Frontmatter.SelfCheckStatus = ""
 	task.Frontmatter.SelfCheckAtRaw = ""
+	task.Frontmatter.SelfCheckDigest = ""
+}
+
+func taskSelfCheckProofMatchesCurrentState(task TaskDocument, kind DispatchKind) bool {
+	digest := strings.TrimSpace(task.Frontmatter.SelfCheckDigest)
+	if digest == "" {
+		return true
+	}
+	return digest == taskSelfCheckSubjectDigest(task, kind)
+}
+
+func taskSelfCheckSubjectDigest(task TaskDocument, kind DispatchKind) string {
+	parts := []string{
+		"kind=" + strings.TrimSpace(string(kind)),
+		"task_id=" + strings.TrimSpace(task.Frontmatter.TaskID),
+		"phase=" + strings.TrimSpace(task.Frontmatter.Phase),
+		"target_repos=" + strings.Join(normalizeStringList(task.Frontmatter.TargetRepos), "|"),
+		"working_branches=" + strings.Join(normalizeStringList(task.Frontmatter.WorkingBranches), "|"),
+		"worktree_paths=" + strings.Join(normalizeStringList(task.Frontmatter.WorktreePaths), "|"),
+		"write_scope=" + strings.Join(normalizeStringList(task.Frontmatter.WriteScope), "|"),
+		"base_commit=" + strings.TrimSpace(task.Frontmatter.BaseCommit),
+		"head_commit=" + strings.TrimSpace(task.Frontmatter.HeadCommit),
+		"last_run_path=" + strings.TrimSpace(task.Frontmatter.LastRunPath),
+		"last_review_path=" + strings.TrimSpace(task.Frontmatter.LastReviewPath),
+	}
+	switch kind {
+	case DispatchKindExecutor:
+		parts = append(parts,
+			"status="+normalizeTaskStatus(task.Frontmatter.Status),
+			"execution_round="+strconv.Itoa(task.Frontmatter.ExecutionRound),
+			"last_blocked_reason="+strings.TrimSpace(task.Frontmatter.LastBlockedReason),
+			"wake_at="+formatOptionalTime(task.WakeAt),
+			"wake_prompt="+strings.TrimSpace(task.Frontmatter.WakePrompt),
+		)
+	case DispatchKindReviewer:
+		parts = append(parts,
+			"review_round="+strconv.Itoa(task.Frontmatter.ReviewRound),
+		)
+	default:
+		parts = append(parts,
+			"status="+normalizeTaskStatus(task.Frontmatter.Status),
+			"execution_round="+strconv.Itoa(task.Frontmatter.ExecutionRound),
+			"review_round="+strconv.Itoa(task.Frontmatter.ReviewRound),
+		)
+	}
+	sum := sha256.Sum256([]byte(strings.Join(parts, "\n")))
+	return hex.EncodeToString(sum[:])
 }

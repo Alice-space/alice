@@ -204,6 +204,39 @@ task frontmatter 现在默认带两类角色：
 - 从 `hold` 恢复 campaign；会优先按 repo `plan_status` 恢复到 planning / review pending / plan approved / running：
   `"$CODE_ARMY_SH" apply-command camp_xxx '/alice resume' feishu`
 
+## 重启 / 中断恢复
+
+常见症状：
+
+- 用户刚重启 Alice、runtime 或当前 bot 进程。
+- `"$CODE_ARMY_SH" get camp_xxx` / `repo-scan camp_xxx` 仍显示 campaign 是 `running`，且有 `active_tasks`，例如 task 还停在 `executing` / `reviewing`。
+- 但当前会话里的 automation dispatch task 已经变成 `paused`，或者上一轮没真正落下新的 `results/*` / `reviews/Rxxx.md`。
+- task frontmatter 里常会留下旧的 `self_check_status: failed`、旧 `last_review_path` 或旧 `last_run_path`，说明上一轮角色回合被打断了，而不是 campaign 已经正常收尾。
+
+从当前版本开始，Alice 在启动后会先自动跑一轮 startup recovery：立即 reconcile 所有仍可自动推进的 campaign，并尝试重置被更新打断的内部 dispatch / wake workflow task。所以遇到重启后的 CodeArmy 中断，预期应该先看到自动恢复；只有自动恢复后仍未重新出现新的 active dispatch，才需要手工执行下面的恢复步骤。
+
+推荐恢复顺序：
+
+1. 先确认是不是“单个派发回合被打断”，而不是 campaign 级 `hold`：
+   `"$CODE_ARMY_SH" get camp_xxx`
+   `"$CODE_ARMY_SH" repo-scan camp_xxx`
+2. 再看当前会话自动化任务，确认同一个 `state_key` 的 dispatch task 是否已经 `paused`：
+   `"$HOME/.agents/skills/alice-scheduler/scripts/alice-scheduler.sh" list`
+3. 如果 campaign 仍是 `running`，而 task 只是停在 `executing` / `reviewing`，优先直接执行：
+   `"$CODE_ARMY_SH" repo-reconcile camp_xxx`
+4. 不要先手工 patch task frontmatter，也不要急着用 `/alice resume`。`/alice resume` 主要用于 campaign 处于 `hold` 的场景；如果 campaign 本来就在 `running`，更常见的问题只是 dispatch task 被打断，此时 `repo-reconcile` 更稳。
+5. `repo-reconcile` 应该会按同一个 `campaign_dispatch:...` `state_key` 重建 dispatch task，把旧的 `paused` 任务替换成新的 `active` 任务；随后再用 `alice-scheduler` 的 `list` / `get` 复查，预期看到新的 task `status=active`，常伴随 `running=true`。
+6. 只有当 `repo-reconcile` 后依旧没有新的 active dispatch，或者 automation task 的 `last_result` 持续是 `error:` 且超过短暂 cooldown，才继续深挖 runtime 故障，必要时发 `/alice needs-human ...`。
+
+这类恢复场景下，助手的职责是先把 runtime 调度恢复起来，再汇报：
+
+- `campaign repo`
+- `campaign status`
+- 哪个 task / round 被打断
+- 新旧 automation task id 和 `state_key`
+- 恢复后是否已经重新进入 `active` / `running`
+- 下游还有哪些 task 继续被它阻塞
+
 ## 自动化与回复模式
 
 - reconcile / heartbeat 默认应该推进任务，而不是只汇报。

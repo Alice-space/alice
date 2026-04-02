@@ -198,6 +198,7 @@ func loadTaskDocuments(root string) ([]TaskDocument, []ValidationIssue, error) {
 		}
 		frontmatter.SelfCheckStatus = normalizeTaskSelfCheckStatus(frontmatter.SelfCheckStatus)
 		frontmatter.SelfCheckAtRaw = strings.TrimSpace(frontmatter.SelfCheckAtRaw)
+		frontmatter.SelfCheckDigest = strings.TrimSpace(frontmatter.SelfCheckDigest)
 		frontmatter.WakeAtRaw = strings.TrimSpace(frontmatter.WakeAtRaw)
 		frontmatter.WakePrompt = strings.TrimSpace(frontmatter.WakePrompt)
 		frontmatter.ReportSnippetPath = strings.TrimSpace(frontmatter.ReportSnippetPath)

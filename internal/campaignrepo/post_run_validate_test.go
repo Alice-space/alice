@@ -231,6 +231,9 @@ last_run_path: "results/summary.md"
 	if task.Frontmatter.SelfCheckAtRaw != checkedAt.Format(time.RFC3339) {
 		t.Fatalf("unexpected self_check_at: %q", task.Frontmatter.SelfCheckAtRaw)
 	}
+	if task.Frontmatter.SelfCheckDigest == "" {
+		t.Fatal("expected executor self-check digest to be recorded")
+	}
 
 	runtimeValidation, err := ValidateTaskPostRun(root, "T001", DispatchKindExecutor)
 	if err != nil {
@@ -302,6 +305,74 @@ created_at: "2026-03-31T18:05:00+08:00"
 	}
 	if !runtimeValidation.Valid {
 		t.Fatalf("expected runtime gate to accept reviewer self-check proof, got %+v", runtimeValidation.Issues)
+	}
+}
+
+func TestValidateTaskPostRun_RejectsStateMutationAfterExecutorSelfCheck(t *testing.T) {
+	root := t.TempDir()
+	mustWriteTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+current_phase: P01
+plan_status: human_approved
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship phase one"
+---
+`)
+	mustWriteTestTaskPackage(t, root, "P01", "T001", `---
+task_id: T001
+title: "Executor self-check mutation"
+phase: P01
+status: review_pending
+dispatch_state: executor_completed
+review_status: pending
+execution_round: 2
+write_scope:
+  - campaign:phases/P01/tasks/T001/**
+target_repos: []
+last_run_path: "results/summary.md"
+---
+`)
+	mustWriteTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T001", "results", "summary.md"), "# Summary\n")
+
+	checkedAt := time.Date(2026, 3, 31, 18, 0, 0, 0, time.FixedZone("CST", 8*3600))
+	validation, err := RunTaskSelfCheck(root, "T001", DispatchKindExecutor, checkedAt)
+	if err != nil {
+		t.Fatalf("run task self-check failed: %v", err)
+	}
+	if !validation.Valid {
+		t.Fatalf("expected executor self-check to pass, got %+v", validation.Issues)
+	}
+
+	repo, err := Load(root)
+	if err != nil {
+		t.Fatalf("reload repo failed: %v", err)
+	}
+	repo.Tasks[0].Frontmatter.LastRunPath = "results/mutated.md"
+	if err := persistTaskDocument(&repo, 0); err != nil {
+		t.Fatalf("persist mutated task failed: %v", err)
+	}
+
+	runtimeValidation, err := ValidateTaskPostRun(root, "T001", DispatchKindExecutor)
+	if err != nil {
+		t.Fatalf("validate task post run failed: %v", err)
+	}
+	if runtimeValidation.Valid {
+		t.Fatal("expected mutated executor task to fail state-bound self-check validation")
+	}
+	found := false
+	for _, issue := range runtimeValidation.Issues {
+		if issue.Code == "task_post_run_self_check_digest_mismatch" {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("expected digest mismatch issue, got %+v", runtimeValidation.Issues)
 	}
 }
 

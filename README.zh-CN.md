@@ -131,6 +131,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 ```
 
+现在通过 installer 自更新或服务重启后，Alice 会在启动阶段立即执行一轮 CodeArmy 恢复：马上 reconcile 仍在运行的 campaign repo，并自动重新激活那些仍然符合 repo 状态、但被更新打断的内部 `campaign_dispatch:*` / `campaign_wake:*` workflow 任务；如果无法安全恢复，仍沿用现有的 blocked / escalation 路径。
+
 ## 开发
 
 ```bash

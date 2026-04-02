@@ -193,6 +193,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 
 	b.app.SetAutomationRunner(automationEngine)
 	b.automationEngine = automationEngine
+	b.recoverCampaignRepoAfterStartup()
 	return nil
 }
 

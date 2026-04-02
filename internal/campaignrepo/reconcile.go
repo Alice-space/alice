@@ -210,17 +210,28 @@ func retryResolvedIntegrationBlocks(repo *Repository) (int, error) {
 		if normalizeReviewStatus(task.Frontmatter.ReviewStatus) != "approved" {
 			continue
 		}
-		if !integrationBlockerIsRetryable(task.Frontmatter.LastBlockedReason) {
+		targetRepos := resolveTaskSourceRepos(*task, sourceRepoByID)
+		reason := strings.TrimSpace(task.Frontmatter.LastBlockedReason)
+		if integrationFailureLooksLikeMergeConflict(reason) {
+			if !queueIntegrationConflictRecovery(task) {
+				continue
+			}
+			if err := persistTaskDocument(repo, idx); err != nil {
+				return retried, err
+			}
+			retried++
 			continue
 		}
-
-		targetRepos := resolveTaskSourceRepos(*task, sourceRepoByID)
+		if !integrationBlockerIsRetryable(reason) {
+			continue
+		}
 		if !integrationTargetsReadyForRetry(*task, targetRepos) {
 			continue
 		}
 
 		task.Frontmatter.Status = TaskStatusAccepted
 		task.Frontmatter.DispatchState = "integration_retry_pending"
+		task.Frontmatter.IntegrationRetryCount = 0
 		task.Frontmatter.LastBlockedReason = ""
 		task.Frontmatter.OwnerAgent = ""
 		task.LeaseUntil = time.Time{}
@@ -509,7 +520,10 @@ func taskHasPassedPostRunSelfCheck(task TaskDocument, kind DispatchKind) bool {
 	if task.Frontmatter.SelfCheckRound <= 0 || task.Frontmatter.SelfCheckRound != taskPostRunRound(task, kind) {
 		return false
 	}
-	return strings.TrimSpace(task.Frontmatter.SelfCheckAtRaw) != ""
+	if strings.TrimSpace(task.Frontmatter.SelfCheckAtRaw) == "" {
+		return false
+	}
+	return taskSelfCheckProofMatchesCurrentState(task, kind)
 }
 
 func applyReviewVerdicts(repo *Repository, campaignID string) (int, []ReconcileEvent, error) {
@@ -634,7 +648,9 @@ func reviewVerdictReadyForJudge(task TaskDocument, review ReviewDocument) bool {
 	if review.Frontmatter.ReviewRound > 0 {
 		targetRound = review.Frontmatter.ReviewRound
 	}
-	return targetRound > 0 && task.Frontmatter.SelfCheckRound == targetRound
+	return targetRound > 0 &&
+		task.Frontmatter.SelfCheckRound == targetRound &&
+		taskSelfCheckProofMatchesCurrentState(task, DispatchKindReviewer)
 }
 
 func requeueBlockedTasksForReviewerGuidance(repo *Repository, campaignID string) (int, []ReconcileEvent, error) {

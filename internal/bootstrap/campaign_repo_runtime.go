@@ -32,6 +32,13 @@ func (b *connectorRuntimeBuilder) registerCampaignRepoSystemTask() error {
 	})
 }
 
+func (b *connectorRuntimeBuilder) recoverCampaignRepoAfterStartup() {
+	if b == nil || b.automationStore == nil || b.campaignStore == nil {
+		return
+	}
+	b.runCampaignRepoReconcile()
+}
+
 func (b *connectorRuntimeBuilder) runCampaignRepoReconcile() {
 	if b == nil || b.campaignStore == nil {
 		return
@@ -455,6 +462,9 @@ func shouldKeepExistingDispatchTask(task automation.Task, spec campaignrepo.Disp
 		return false
 	}
 	if task.Status == automation.TaskStatusActive {
+		if isInterruptedCampaignInternalWorkflowTask(task) {
+			return false
+		}
 		return true
 	}
 	return keepFailedDispatchTaskCooling(task, now)
@@ -488,7 +498,28 @@ func shouldKeepExistingWakeTask(task automation.Task, spec campaignrepo.WakeTask
 	if !task.NextRunAt.IsZero() && !task.NextRunAt.Equal(spec.RunAt) {
 		return false
 	}
-	return task.Status == automation.TaskStatusActive
+	if task.Status != automation.TaskStatusActive {
+		return false
+	}
+	return !isInterruptedCampaignInternalWorkflowTask(task)
+}
+
+func isInterruptedCampaignInternalWorkflowTask(task automation.Task) bool {
+	task = automation.NormalizeTask(task)
+	if task.Status != automation.TaskStatusActive || task.Running {
+		return false
+	}
+	if task.Action.Type != automation.ActionTypeRunWorkflow || task.MaxRuns != 1 {
+		return false
+	}
+	stateKey := strings.TrimSpace(task.Action.StateKey)
+	if !strings.HasPrefix(stateKey, campaignDispatchStatePrefix) && !strings.HasPrefix(stateKey, campaignWakeStatePrefix) {
+		return false
+	}
+	if task.RunCount <= 0 {
+		return false
+	}
+	return task.NextRunAt.IsZero()
 }
 
 func (b *connectorRuntimeBuilder) upsertDispatchTask(task automation.Task, target automationTaskTarget, spec campaignrepo.DispatchTaskSpec) error {
