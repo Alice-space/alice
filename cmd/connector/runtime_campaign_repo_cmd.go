@@ -330,6 +330,89 @@ func newRuntimeCampaignRepoReconcileCmd() *cobra.Command {
 	return cmd
 }
 
+func newRuntimeCampaignTaskGuidanceCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "task-guidance CAMPAIGN_ID TASK_ID accept|resume GUIDANCE",
+		Short: "Apply human guidance to one repo-first task, then reconcile and sync runtime dispatch",
+		Args:  cobra.ExactArgs(4),
+		RunE: withRuntimeClient(func(
+			ctx context.Context,
+			client *runtimeapi.Client,
+			session mcpbridge.SessionContext,
+			cmd *cobra.Command,
+			args []string,
+		) error {
+			item, err := loadRuntimeCampaign(ctx, client, session, args[0])
+			if err != nil {
+				return err
+			}
+			roleDefaults, err := currentRuntimeCampaignRoleDefaults(cmd)
+			if err != nil {
+				return err
+			}
+			guidedTask, err := campaignrepo.ApplyTaskHumanGuidance(
+				item.CampaignRepoPath,
+				args[1],
+				args[2],
+				args[3],
+				currentTime(),
+			)
+			if err != nil {
+				return err
+			}
+			result, err := campaignrepo.ReconcileAndPrepare(item.CampaignRepoPath, currentTime(), item.MaxParallelTrials, 0, roleDefaults)
+			if err != nil {
+				return err
+			}
+			commitResult, err := campaignrepo.CommitReconcileSnapshot(item.CampaignRepoPath, &result.Summary)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(item.Summary) != result.Summary.SummaryLine() {
+				patchBody, err := json.Marshal(map[string]string{"summary": result.Summary.SummaryLine()})
+				if err != nil {
+					return err
+				}
+				patchResult, err := client.PatchCampaign(ctx, session, item.ID, "application/merge-patch+json", patchBody)
+				if err != nil {
+					return err
+				}
+				if updated, err := decodeRuntimeCampaign(patchResult); err == nil {
+					item = updated
+				}
+			}
+			syncedDispatchTasks, err := syncRuntimeDispatchTasks(ctx, client, session, item, result.DispatchTasks)
+			if err != nil {
+				return err
+			}
+			taskAfterReconcile, ok := runtimeCampaignTaskByID(result.Repository, args[1])
+			if !ok {
+				taskAfterReconcile = guidedTask
+			}
+			return printRuntimeJSON(map[string]any{
+				"status":                "ok",
+				"campaign":              item,
+				"task":                  taskAfterReconcile,
+				"guided_task":           guidedTask,
+				"summary":               result.Summary,
+				"dispatch_tasks":        result.DispatchTasks,
+				"synced_dispatch_tasks": syncedDispatchTasks,
+				"live_report_path":      commitResult.LiveReportPath,
+			})
+		}),
+	}
+}
+
+func runtimeCampaignTaskByID(repo campaignrepo.Repository, taskID string) (campaignrepo.TaskDocument, bool) {
+	taskID = strings.TrimSpace(taskID)
+	for _, task := range repo.Tasks {
+		if strings.TrimSpace(task.Frontmatter.TaskID) == taskID {
+			return task, true
+		}
+	}
+	return campaignrepo.TaskDocument{}, false
+}
+
 func loadRuntimeCampaign(
 	ctx context.Context,
 	client *runtimeapi.Client,

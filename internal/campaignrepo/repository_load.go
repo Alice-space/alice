@@ -188,10 +188,16 @@ func loadTaskDocuments(root string) ([]TaskDocument, []ValidationIssue, error) {
 		if frontmatter.BlockGuidanceCount < 0 {
 			frontmatter.BlockGuidanceCount = 0
 		}
+		if frontmatter.HumanGuidanceRound < 0 {
+			frontmatter.HumanGuidanceRound = 0
+		}
+		frontmatter.HumanGuidanceStatus = normalizeTaskHumanGuidanceAction(frontmatter.HumanGuidanceStatus)
 		frontmatter.BaseCommit = strings.TrimSpace(frontmatter.BaseCommit)
 		frontmatter.HeadCommit = strings.TrimSpace(frontmatter.HeadCommit)
 		frontmatter.LastRunPath = filepath.ToSlash(strings.TrimSpace(frontmatter.LastRunPath))
 		frontmatter.LastReviewPath = filepath.ToSlash(strings.TrimSpace(frontmatter.LastReviewPath))
+		frontmatter.LastHumanGuidancePath = filepath.ToSlash(strings.TrimSpace(frontmatter.LastHumanGuidancePath))
+		frontmatter.LastHumanGuidanceSummary = strings.TrimSpace(frontmatter.LastHumanGuidanceSummary)
 		frontmatter.SelfCheckKind = strings.ToLower(strings.TrimSpace(frontmatter.SelfCheckKind))
 		if frontmatter.SelfCheckRound < 0 {
 			frontmatter.SelfCheckRound = 0

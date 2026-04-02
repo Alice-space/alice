@@ -173,6 +173,9 @@ func buildExecutorDispatchPrompt(repo Repository, task TaskDocument, role RoleCo
 		"IntegrationRetryCount":       task.Frontmatter.IntegrationRetryCount,
 		"IntegrationConflictRecovery": taskNeedsIntegrationConflictRecovery(task),
 		"BlockGuidanceCount":          task.Frontmatter.BlockGuidanceCount,
+		"HumanGuidanceStatus":         blankForSummary(task.Frontmatter.HumanGuidanceStatus),
+		"LastHumanGuidancePath":       blankForSummary(task.Frontmatter.LastHumanGuidancePath),
+		"LastHumanGuidanceSummary":    blankForSummary(task.Frontmatter.LastHumanGuidanceSummary),
 		"LastBlockedReason":           blankForSummary(task.Frontmatter.LastBlockedReason),
 		"SelfCheckCommand":            promptSelfCheckCommand(repo.Campaign.Frontmatter.CampaignID, task.Frontmatter.TaskID, DispatchKindExecutor),
 	})

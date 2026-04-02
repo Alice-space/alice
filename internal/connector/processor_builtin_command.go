@@ -17,17 +17,31 @@ const helpCommandName = "/help"
 const statusCommandName = "/status"
 const codeArmyCommandName = "/codearmy"
 const codeArmyStatusSubcommand = "status"
+const codeArmyTasksSubcommand = "tasks"
 const clearCommandName = "/clear"
 const stopCommandName = "/stop"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
 
+type codeArmyBuiltinCommand struct {
+	kind  string
+	query string
+}
+
 func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, JobProcessState) {
 	if isHelpCommand(job.Text) {
 		return true, p.processHelpCommand(ctx, job)
 	}
-	if isStatusCommand(job.Text) || isCodeArmyStatusCommand(job.Text) {
+	if isStatusCommand(job.Text) {
 		return true, p.processStatusCommand(ctx, job)
+	}
+	if command, ok := parseCodeArmyBuiltinCommand(job.Text); ok {
+		switch command.kind {
+		case codeArmyStatusSubcommand:
+			return true, p.processStatusCommand(ctx, job)
+		case codeArmyTasksSubcommand:
+			return true, p.processCodeArmyTasksCommand(ctx, job, command.query)
+		}
 	}
 	if isClearCommand(job.Text) {
 		return true, p.processClearCommand(ctx, job)
@@ -39,7 +53,8 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 }
 
 func isBuiltinCommandText(text string) bool {
-	return isHelpCommand(text) || isStatusCommand(text) || isCodeArmyStatusCommand(text) || isClearCommand(text) || isStopCommand(text)
+	_, codeArmy := parseCodeArmyBuiltinCommand(text)
+	return isHelpCommand(text) || isStatusCommand(text) || codeArmy || isClearCommand(text) || isStopCommand(text)
 }
 
 func isHelpCommand(text string) bool {
@@ -75,12 +90,41 @@ func isStopCommand(text string) bool {
 }
 
 func isCodeArmyStatusCommand(text string) bool {
+	command, ok := parseCodeArmyBuiltinCommand(text)
+	return ok && command.kind == codeArmyStatusSubcommand
+}
+
+func isCodeArmyTasksCommand(text string) bool {
+	command, ok := parseCodeArmyBuiltinCommand(text)
+	return ok && command.kind == codeArmyTasksSubcommand
+}
+
+func parseCodeArmyBuiltinCommand(text string) (codeArmyBuiltinCommand, bool) {
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) < 2 {
-		return false
+		return codeArmyBuiltinCommand{}, false
 	}
-	return strings.EqualFold(strings.TrimSpace(fields[0]), codeArmyCommandName) &&
-		strings.EqualFold(strings.TrimSpace(fields[1]), codeArmyStatusSubcommand)
+	if !strings.EqualFold(strings.TrimSpace(fields[0]), codeArmyCommandName) {
+		return codeArmyBuiltinCommand{}, false
+	}
+
+	switch strings.ToLower(strings.TrimSpace(fields[1])) {
+	case codeArmyStatusSubcommand:
+		if len(fields) >= 3 && strings.EqualFold(strings.TrimSpace(fields[2]), codeArmyTasksSubcommand) {
+			return codeArmyBuiltinCommand{
+				kind:  codeArmyTasksSubcommand,
+				query: strings.TrimSpace(strings.Join(fields[3:], " ")),
+			}, true
+		}
+		return codeArmyBuiltinCommand{kind: codeArmyStatusSubcommand}, true
+	case codeArmyTasksSubcommand:
+		return codeArmyBuiltinCommand{
+			kind:  codeArmyTasksSubcommand,
+			query: strings.TrimSpace(strings.Join(fields[2:], " ")),
+		}, true
+	default:
+		return codeArmyBuiltinCommand{}, false
+	}
 }
 
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
@@ -101,6 +145,17 @@ func (p *Processor) processStatusCommand(ctx context.Context, job Job) JobProces
 	replyJob.CreateFeishuThread = false
 	if err := p.replies.respondCardWithTitle(ctx, replyJob, builtinStatusCardTitle, reply); err != nil {
 		logging.Errorf("send builtin status reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
+func (p *Processor) processCodeArmyTasksCommand(ctx context.Context, job Job, query string) JobProcessState {
+	reply := p.buildCodeArmyTasksMarkdown(job, query)
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send codearmy tasks reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted
 }
@@ -147,6 +202,10 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		"  显示内建命令，以及普通模式 / 工作模式的当前说明。",
 		"- `/status`",
 		"  显示当前会话 scope 下的 token 统计、活跃自动化任务，以及非终态的 code-army campaigns。",
+		"- `/codearmy status`",
+		"  显示当前 scope 下的 Code Army 摘要，和 `/status` 的 Code Army 部分一致。",
+		"- `/codearmy tasks [campaign 查询词]`",
+		"  显示某个 campaign 里每个 task 的当前状态；支持 campaign id / 标题 / repo 的模糊匹配。",
 		"- `/clear`",
 		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
 		"- `/stop`",

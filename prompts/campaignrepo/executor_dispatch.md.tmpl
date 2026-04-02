@@ -29,6 +29,12 @@ Write scope: {{ .WriteScope | join ", " | default "-" }}
 集成冲突恢复次数: {{ .IntegrationRetryCount }}
 阻塞指导次数: {{ .BlockGuidanceCount }}
 上次阻塞原因: {{ .LastBlockedReason }}
+{{- if ne .LastHumanGuidancePath "-" }}
+最近一次人工指导动作: {{ .HumanGuidanceStatus }}
+最近一次人工指导摘要: {{ .LastHumanGuidanceSummary }}
+最近一次人工指导文件: {{ .LastHumanGuidancePath }}
+这是一次人工脱困后的恢复轮。开始执行前先读 guidance 文件；它记录了上一次卡住的原因和人类裁决。
+{{- end }}
 {{- if .ArtifactRepairOnly }}
 这是一次 task-local artifact repair：优先补 task 结果、frontmatter、自检证据和 campaign-local 产物，不要无故扩大成新的 source diff 或新执行轮次。
 {{- end }}

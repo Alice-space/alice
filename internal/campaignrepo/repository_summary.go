@@ -62,10 +62,16 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 		return left.Path < right.Path
 	})
 
+	effectiveViews := make(map[string]TaskSummary, len(taskOrder))
+	for _, task := range taskOrder {
+		effectiveViews[taskSummaryKey(task)] = taskSummary(task)
+	}
+
 	activeReservations := make([]taskReservation, 0, len(taskOrder))
 	for _, task := range taskOrder {
 		status := normalizeTaskStatus(task.Frontmatter.Status)
 		view := taskSummary(task)
+		key := taskSummaryKey(task)
 		if phase := strings.TrimSpace(view.Phase); phase != "" {
 			summary.PhaseCounts[phase]++
 		}
@@ -74,39 +80,46 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 			summary.DraftCount++
 		case TaskStatusExecuting:
 			if reason := activeDispatchBlockReason(task); reason != "" {
+				blockedView := withBlockedReason(view, reason)
+				effectiveViews[key] = blockedView
 				summary.BlockedCount++
-				summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+				summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 				continue
 			}
+			effectiveViews[key] = view
 			summary.ActiveCount++
 			summary.ExecutingCount++
 			summary.ActiveTasks = append(summary.ActiveTasks, view)
 			activeReservations = append(activeReservations, buildReservation(task))
 		case TaskStatusReviewPending:
+			effectiveViews[key] = view
 			summary.ReviewCount++
 			summary.ReviewPendingCount++
 			summary.ReviewPendingTasks = append(summary.ReviewPendingTasks, view)
 		case TaskStatusReviewing:
 			if reason := activeDispatchBlockReason(task); reason != "" {
+				blockedView := withBlockedReason(view, reason)
+				effectiveViews[key] = blockedView
 				summary.BlockedCount++
-				summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+				summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 				continue
 			}
+			effectiveViews[key] = view
 			summary.ActiveCount++
 			summary.ReviewCount++
 			summary.ReviewingCount++
 			summary.ActiveTasks = append(summary.ActiveTasks, view)
 		case TaskStatusAccepted:
+			effectiveViews[key] = view
 			summary.AcceptedCount++
 			summary.AcceptedTasks = append(summary.AcceptedTasks, view)
 		case TaskStatusBlocked:
+			blockedView := withBlockedReason(view, strings.TrimSpace(task.Frontmatter.LastBlockedReason))
+			effectiveViews[key] = blockedView
 			summary.BlockedCount++
-			reason := strings.TrimSpace(task.Frontmatter.LastBlockedReason)
-			if reason == "" {
-				reason = "status is blocked"
-			}
-			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+			summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 		case TaskStatusWaitingExternal:
+			effectiveViews[key] = view
 			summary.WaitingCount++
 			if !task.WakeAt.IsZero() && strings.TrimSpace(task.Frontmatter.WakePrompt) != "" {
 				if !task.WakeAt.After(now) {
@@ -124,8 +137,10 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 				})
 			}
 		case TaskStatusDone:
+			effectiveViews[key] = view
 			summary.DoneCount++
 		case TaskStatusRejected:
+			effectiveViews[key] = view
 			summary.RejectedCount++
 		}
 	}
@@ -141,21 +156,29 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 			continue
 		}
 		view := taskSummary(task)
+		key := taskSummaryKey(task)
 		if reason := dependencyBlockReason(task, byID); reason != "" {
+			blockedView := withBlockedReason(view, reason)
+			effectiveViews[key] = blockedView
 			summary.BlockedCount++
-			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+			summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 			continue
 		}
 		if reason := leaseBlockReason(task, now); reason != "" {
+			blockedView := withBlockedReason(view, reason)
+			effectiveViews[key] = blockedView
 			summary.BlockedCount++
-			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+			summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 			continue
 		}
 		if reason := conflictBlockReason(task, selectedReservations); reason != "" {
+			blockedView := withBlockedReason(view, reason)
+			effectiveViews[key] = blockedView
 			summary.BlockedCount++
-			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+			summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 			continue
 		}
+		effectiveViews[key] = view
 		summary.ReadyCount++
 		if status == TaskStatusRework {
 			summary.ReworkCount++
@@ -177,21 +200,35 @@ func Summarize(repo Repository, now time.Time, maxParallel int) Summary {
 			continue
 		}
 		view := taskSummary(task)
+		key := taskSummaryKey(task)
 		if reason := taskExecutionArtifactBlockReason(repo.Root, task, sourceRepoByID); reason != "" {
+			blockedView := withBlockedReason(view, reason)
+			effectiveViews[key] = blockedView
 			summary.BlockedCount++
-			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+			summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 			continue
 		}
 		if reason := leaseBlockReason(task, now); reason != "" {
+			blockedView := withBlockedReason(view, reason)
+			effectiveViews[key] = blockedView
 			summary.BlockedCount++
-			summary.BlockedTasks = append(summary.BlockedTasks, withBlockedReason(view, reason))
+			summary.BlockedTasks = append(summary.BlockedTasks, blockedView)
 			continue
 		}
+		effectiveViews[key] = view
 		if !blockNewDispatch && len(summary.SelectedReview) < reviewSlots {
 			summary.SelectedReview = append(summary.SelectedReview, view)
 		}
 	}
 	summary.SelectedReviewCount = len(summary.SelectedReview)
+	summary.AllTasks = make([]TaskSummary, 0, len(taskOrder))
+	for _, task := range taskOrder {
+		view, ok := effectiveViews[taskSummaryKey(task)]
+		if !ok {
+			view = taskSummary(task)
+		}
+		summary.AllTasks = append(summary.AllTasks, view)
+	}
 	return summary
 }
 
@@ -240,8 +277,19 @@ func taskSummary(task TaskDocument) TaskSummary {
 }
 
 func withBlockedReason(task TaskSummary, reason string) TaskSummary {
+	task.Status = TaskStatusBlocked
 	task.BlockedReason = strings.TrimSpace(reason)
+	if task.BlockedReason == "" {
+		task.BlockedReason = "status is blocked"
+	}
 	return task
+}
+
+func taskSummaryKey(task TaskDocument) string {
+	if taskID := strings.TrimSpace(task.Frontmatter.TaskID); taskID != "" {
+		return taskID
+	}
+	return filepath.ToSlash(strings.TrimSpace(task.Path))
 }
 
 func activeDispatchBlockReason(task TaskDocument) string {

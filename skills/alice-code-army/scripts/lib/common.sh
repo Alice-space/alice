@@ -3,10 +3,11 @@
 usage() {
   cat <<EOF
 Usage:
-  $PROGRAM list|get|delete|create|bootstrap|init-repo|repo-scan|repo-reconcile|repo-lint|task-self-check|patch ...
+  $PROGRAM list|get|delete|create|bootstrap|init-repo|repo-scan|repo-reconcile|repo-lint|task-self-check|task-guidance|patch ...
   $PROGRAM approve-plan CAMPAIGN_ID
   $PROGRAM plan-status CAMPAIGN_ID
   $PROGRAM task-self-check CAMPAIGN_ID TASK_ID executor|reviewer
+  $PROGRAM task-guidance CAMPAIGN_ID TASK_ID accept|resume GUIDANCE
   $PROGRAM apply-command CAMPAIGN_ID COMMAND [SOURCE]
 
 Environment:

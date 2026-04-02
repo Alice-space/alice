@@ -97,6 +97,12 @@ wake_prompt: "resume the cluster job"
 	if len(summary.BlockedTasks) != 1 || summary.BlockedTasks[0].TaskID != "T003" {
 		t.Fatalf("unexpected blocked tasks: %+v", summary.BlockedTasks)
 	}
+	if len(summary.AllTasks) != 5 {
+		t.Fatalf("unexpected all task count: %d", len(summary.AllTasks))
+	}
+	if summary.AllTasks[2].TaskID != "T003" || summary.AllTasks[2].Status != TaskStatusBlocked {
+		t.Fatalf("expected T003 to show effective blocked status in all_tasks, got %+v", summary.AllTasks[2])
+	}
 	if len(summary.WakeDue) != 1 || summary.WakeDue[0].TaskID != "T005" {
 		t.Fatalf("unexpected wake due tasks: %+v", summary.WakeDue)
 	}

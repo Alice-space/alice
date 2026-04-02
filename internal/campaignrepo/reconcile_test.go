@@ -1992,6 +1992,20 @@ created_at: "2026-03-24T11:30:00+08:00"
 	if !containsEventKind(result.Events, EventTaskNeedsHuman) {
 		t.Fatalf("expected needs-human event, got %+v", result.Events)
 	}
+	foundTemplate := false
+	for _, event := range result.Events {
+		if event.Kind != EventTaskNeedsHuman {
+			continue
+		}
+		if strings.Contains(event.Detail, "/alice guide-task T001 accept <接受说明>") &&
+			strings.Contains(event.Detail, "/alice guide-task T001 resume <恢复说明>") {
+			foundTemplate = true
+			break
+		}
+	}
+	if !foundTemplate {
+		t.Fatalf("expected needs-human event to include guide-task templates, got %+v", result.Events)
+	}
 }
 
 func TestBuildDispatchSpecs_PlannerReviewerPromptChecksConsistency(t *testing.T) {

@@ -18,6 +18,8 @@ const (
 	dispatchStateArtifactRepairRequested  = "artifact_repair_requested"
 	dispatchStateArtifactRepairDispatched = "artifact_repair_dispatched"
 	dispatchStateJudgeWaitingReviewer     = "judge_waiting_reviewer_self_check"
+	dispatchStateHumanGuidanceRequested   = "human_guidance_requested"
+	dispatchStateHumanGuidanceApplied     = "human_guidance_applied"
 	dispatchStateNeedsHuman               = "needs_human"
 )
 
@@ -451,7 +453,7 @@ func escalateLoopingTasksToHuman(repo *Repository, campaignID string) (int, []Re
 			CampaignID: campaignID,
 			TaskID:     taskID,
 			Title:      "任务需要人工脱困",
-			Detail:     fmt.Sprintf("任务 **%s** %s 已停止自动返工并升级为人工处理：%s", taskID, taskTitle, reason),
+			Detail:     fmt.Sprintf("任务 **%s** %s 已停止自动返工并升级为人工处理：%s\n建议命令：`/alice guide-task %s accept <接受说明>` 或 `/alice guide-task %s resume <恢复说明>`", taskID, taskTitle, reason, taskID, taskID),
 			Severity:   "error",
 		})
 		escalated++

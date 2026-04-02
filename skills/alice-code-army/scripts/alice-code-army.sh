@@ -65,6 +65,11 @@ main() {
       shift
       run_campaigns task-self-check "$@"
       ;;
+    task-guidance)
+      [[ $# -eq 5 ]] || die "usage: $PROGRAM task-guidance CAMPAIGN_ID TASK_ID accept|resume GUIDANCE"
+      shift
+      run_campaigns task-guidance "$@"
+      ;;
     plan-self-check)
       [[ $# -eq 4 ]] || die "usage: $PROGRAM plan-self-check CAMPAIGN_ID planner|planner_reviewer PLAN_ROUND"
       shift

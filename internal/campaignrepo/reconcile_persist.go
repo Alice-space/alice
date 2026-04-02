@@ -130,11 +130,17 @@ func normalizeTaskDocument(task TaskDocument) TaskDocument {
 	task.Frontmatter.Reviewer = normalizeRoleConfig(task.Frontmatter.Reviewer)
 	task.Frontmatter.DispatchState = strings.ToLower(strings.TrimSpace(task.Frontmatter.DispatchState))
 	task.Frontmatter.ReviewStatus = normalizeReviewStatus(task.Frontmatter.ReviewStatus)
+	task.Frontmatter.HumanGuidanceStatus = normalizeTaskHumanGuidanceAction(task.Frontmatter.HumanGuidanceStatus)
 	task.Frontmatter.OwnerAgent = strings.TrimSpace(task.Frontmatter.OwnerAgent)
+	if task.Frontmatter.HumanGuidanceRound < 0 {
+		task.Frontmatter.HumanGuidanceRound = 0
+	}
 	task.Frontmatter.BaseCommit = strings.TrimSpace(task.Frontmatter.BaseCommit)
 	task.Frontmatter.HeadCommit = strings.TrimSpace(task.Frontmatter.HeadCommit)
 	task.Frontmatter.LastRunPath = filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastRunPath))
 	task.Frontmatter.LastReviewPath = filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastReviewPath))
+	task.Frontmatter.LastHumanGuidancePath = filepath.ToSlash(strings.TrimSpace(task.Frontmatter.LastHumanGuidancePath))
+	task.Frontmatter.LastHumanGuidanceSummary = strings.TrimSpace(task.Frontmatter.LastHumanGuidanceSummary)
 	task.Frontmatter.SelfCheckKind = strings.ToLower(strings.TrimSpace(task.Frontmatter.SelfCheckKind))
 	if task.Frontmatter.SelfCheckRound < 0 {
 		task.Frontmatter.SelfCheckRound = 0

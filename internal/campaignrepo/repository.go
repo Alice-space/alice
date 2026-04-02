@@ -105,41 +105,45 @@ type TaskDocument struct {
 }
 
 type TaskFrontmatter struct {
-	TaskID                string     `yaml:"task_id" json:"task_id,omitempty"`
-	Title                 string     `yaml:"title" json:"title,omitempty"`
-	Phase                 string     `yaml:"phase" json:"phase,omitempty"`
-	Status                string     `yaml:"status" json:"status,omitempty"`
-	DependsOn             []string   `yaml:"depends_on" json:"depends_on,omitempty"`
-	TargetRepos           []string   `yaml:"target_repos" json:"target_repos,omitempty"`
-	WorkingBranches       []string   `yaml:"working_branches" json:"working_branches,omitempty"`
-	WorktreePaths         []string   `yaml:"worktree_paths" json:"worktree_paths,omitempty"`
-	WriteScope            []string   `yaml:"write_scope" json:"write_scope,omitempty"`
-	OwnerAgent            string     `yaml:"owner_agent" json:"owner_agent,omitempty"`
-	LeaseUntilRaw         string     `yaml:"lease_until" json:"lease_until,omitempty"`
-	Executor              RoleConfig `yaml:"executor" json:"executor,omitempty"`
-	Reviewer              RoleConfig `yaml:"reviewer" json:"reviewer,omitempty"`
-	DispatchState         string     `yaml:"dispatch_state" json:"dispatch_state,omitempty"`
-	ReviewStatus          string     `yaml:"review_status" json:"review_status,omitempty"`
-	ExecutionRound        int        `yaml:"execution_round" json:"execution_round,omitempty"`
-	ReviewRound           int        `yaml:"review_round" json:"review_round,omitempty"`
-	AutoRetryCount        int        `yaml:"auto_retry_count" json:"auto_retry_count,omitempty"`
-	IntegrationRetryCount int        `yaml:"integration_retry_count" json:"integration_retry_count,omitempty"`
-	BlockGuidanceCount    int        `yaml:"block_guidance_count" json:"block_guidance_count,omitempty"`
-	BaseCommit            string     `yaml:"base_commit" json:"base_commit,omitempty"`
-	HeadCommit            string     `yaml:"head_commit" json:"head_commit,omitempty"`
-	LastBlockedReason     string     `yaml:"last_blocked_reason" json:"last_blocked_reason,omitempty"`
-	LastRunPath           string     `yaml:"last_run_path" json:"last_run_path,omitempty"`
-	LastReviewPath        string     `yaml:"last_review_path" json:"last_review_path,omitempty"`
-	SelfCheckKind         string     `yaml:"self_check_kind" json:"self_check_kind,omitempty"`
-	SelfCheckRound        int        `yaml:"self_check_round" json:"self_check_round,omitempty"`
-	SelfCheckStatus       string     `yaml:"self_check_status" json:"self_check_status,omitempty"`
-	SelfCheckAtRaw        string     `yaml:"self_check_at" json:"self_check_at,omitempty"`
-	SelfCheckDigest       string     `yaml:"self_check_digest" json:"self_check_digest,omitempty"`
-	WakeAtRaw             string     `yaml:"wake_at" json:"wake_at,omitempty"`
-	WakePrompt            string     `yaml:"wake_prompt" json:"wake_prompt,omitempty"`
-	ReportSnippetPath     string     `yaml:"report_snippet_path" json:"report_snippet_path,omitempty"`
-	Artifacts             []string   `yaml:"artifacts" json:"artifacts,omitempty"`
-	ResultPaths           []string   `yaml:"result_paths" json:"result_paths,omitempty"`
+	TaskID                   string     `yaml:"task_id" json:"task_id,omitempty"`
+	Title                    string     `yaml:"title" json:"title,omitempty"`
+	Phase                    string     `yaml:"phase" json:"phase,omitempty"`
+	Status                   string     `yaml:"status" json:"status,omitempty"`
+	DependsOn                []string   `yaml:"depends_on" json:"depends_on,omitempty"`
+	TargetRepos              []string   `yaml:"target_repos" json:"target_repos,omitempty"`
+	WorkingBranches          []string   `yaml:"working_branches" json:"working_branches,omitempty"`
+	WorktreePaths            []string   `yaml:"worktree_paths" json:"worktree_paths,omitempty"`
+	WriteScope               []string   `yaml:"write_scope" json:"write_scope,omitempty"`
+	OwnerAgent               string     `yaml:"owner_agent" json:"owner_agent,omitempty"`
+	LeaseUntilRaw            string     `yaml:"lease_until" json:"lease_until,omitempty"`
+	Executor                 RoleConfig `yaml:"executor" json:"executor,omitempty"`
+	Reviewer                 RoleConfig `yaml:"reviewer" json:"reviewer,omitempty"`
+	DispatchState            string     `yaml:"dispatch_state" json:"dispatch_state,omitempty"`
+	ReviewStatus             string     `yaml:"review_status" json:"review_status,omitempty"`
+	ExecutionRound           int        `yaml:"execution_round" json:"execution_round,omitempty"`
+	ReviewRound              int        `yaml:"review_round" json:"review_round,omitempty"`
+	AutoRetryCount           int        `yaml:"auto_retry_count" json:"auto_retry_count,omitempty"`
+	IntegrationRetryCount    int        `yaml:"integration_retry_count" json:"integration_retry_count,omitempty"`
+	BlockGuidanceCount       int        `yaml:"block_guidance_count" json:"block_guidance_count,omitempty"`
+	HumanGuidanceRound       int        `yaml:"human_guidance_round" json:"human_guidance_round,omitempty"`
+	HumanGuidanceStatus      string     `yaml:"human_guidance_status" json:"human_guidance_status,omitempty"`
+	BaseCommit               string     `yaml:"base_commit" json:"base_commit,omitempty"`
+	HeadCommit               string     `yaml:"head_commit" json:"head_commit,omitempty"`
+	LastBlockedReason        string     `yaml:"last_blocked_reason" json:"last_blocked_reason,omitempty"`
+	LastHumanGuidancePath    string     `yaml:"last_human_guidance_path" json:"last_human_guidance_path,omitempty"`
+	LastHumanGuidanceSummary string     `yaml:"last_human_guidance_summary" json:"last_human_guidance_summary,omitempty"`
+	LastRunPath              string     `yaml:"last_run_path" json:"last_run_path,omitempty"`
+	LastReviewPath           string     `yaml:"last_review_path" json:"last_review_path,omitempty"`
+	SelfCheckKind            string     `yaml:"self_check_kind" json:"self_check_kind,omitempty"`
+	SelfCheckRound           int        `yaml:"self_check_round" json:"self_check_round,omitempty"`
+	SelfCheckStatus          string     `yaml:"self_check_status" json:"self_check_status,omitempty"`
+	SelfCheckAtRaw           string     `yaml:"self_check_at" json:"self_check_at,omitempty"`
+	SelfCheckDigest          string     `yaml:"self_check_digest" json:"self_check_digest,omitempty"`
+	WakeAtRaw                string     `yaml:"wake_at" json:"wake_at,omitempty"`
+	WakePrompt               string     `yaml:"wake_prompt" json:"wake_prompt,omitempty"`
+	ReportSnippetPath        string     `yaml:"report_snippet_path" json:"report_snippet_path,omitempty"`
+	Artifacts                []string   `yaml:"artifacts" json:"artifacts,omitempty"`
+	ResultPaths              []string   `yaml:"result_paths" json:"result_paths,omitempty"`
 }
 
 type ReviewDocument struct {
@@ -277,6 +281,7 @@ type Summary struct {
 	RejectedCount        int               `json:"rejected_count"`
 	RepositoryIssueCount int               `json:"repository_issue_count"`
 	GeneratedAt          time.Time         `json:"generated_at"`
+	AllTasks             []TaskSummary     `json:"all_tasks,omitempty"`
 	ActiveTasks          []TaskSummary     `json:"active_tasks,omitempty"`
 	ReadyTasks           []TaskSummary     `json:"ready_tasks,omitempty"`
 	SelectedReady        []TaskSummary     `json:"selected_ready,omitempty"`

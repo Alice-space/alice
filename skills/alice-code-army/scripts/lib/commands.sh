@@ -143,6 +143,14 @@ apply_command() {
       '{status:$status, summary:$summary}')"
     patch_campaign "$campaign_id" "$patch_json"
     summary="Needs human intervention: ${summary}"
+  elif [[ "$command_text" =~ ^/alice[[:space:]]+(guide-task|guide_task|guidetask)[[:space:]]+([^[:space:]]+)[[:space:]]+(accept|resume)([[:space:]]+(.+))?$ ]]; then
+    local task_id action guidance_text
+    task_id="${BASH_REMATCH[2]}"
+    action="${BASH_REMATCH[3]}"
+    guidance_text="${BASH_REMATCH[5]:-}"
+    [[ -n "$guidance_text" ]] || die "guide-task requires non-empty guidance text"
+    run_campaigns task-guidance "$campaign_id" "$task_id" "$action" "$guidance_text"
+    return 0
   elif [[ "$command_text" == "/alice approve-plan" ]]; then
     approve_plan "$campaign_id" >/dev/null
     summary="Plan approved by human after repo-lint and plan review gate"

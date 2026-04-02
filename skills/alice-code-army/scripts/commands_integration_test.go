@@ -16,8 +16,16 @@ type commandTestCampaign struct {
 }
 
 type commandTestState struct {
-	Status   string              `json:"status"`
-	Campaign commandTestCampaign `json:"campaign"`
+	Status           string                   `json:"status"`
+	Campaign         commandTestCampaign      `json:"campaign"`
+	LastTaskGuidance *commandTestTaskGuidance `json:"last_task_guidance,omitempty"`
+}
+
+type commandTestTaskGuidance struct {
+	CampaignID string `json:"campaign_id"`
+	TaskID     string `json:"task_id"`
+	Action     string `json:"action"`
+	Guidance   string `json:"guidance"`
 }
 
 func TestAliceCodeArmyApplyCommandResumeInfersPlanReviewPending(t *testing.T) {
@@ -86,6 +94,43 @@ func TestAliceCodeArmyApplyCommandResumeRejectsTerminalCampaign(t *testing.T) {
 	}
 }
 
+func TestAliceCodeArmyApplyCommandGuideTaskRoutesToTaskGuidance(t *testing.T) {
+	requireShellDeps(t)
+
+	tempDir := t.TempDir()
+	statePath := filepath.Join(tempDir, "state.json")
+	writeCommandTestState(t, statePath, commandTestState{
+		Status: "ok",
+		Campaign: commandTestCampaign{
+			Status: "running",
+		},
+	})
+
+	cmd := exec.Command("bash", scriptPath(t), "apply-command", "camp_demo", "/alice guide-task T306 accept Accept current Mode B handoff", "feishu")
+	cmd.Env = append(os.Environ(),
+		"ALICE_RUNTIME_BIN="+writeFakeAliceBinary(t, tempDir),
+		"ALICE_TEST_STATE_FILE="+statePath,
+	)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("apply-command guide-task failed: %v\n%s", err, output)
+	}
+
+	state := readCommandTestState(t, statePath)
+	if state.LastTaskGuidance == nil {
+		t.Fatalf("expected fake runtime to record task guidance, state=%+v", state)
+	}
+	if state.LastTaskGuidance.CampaignID != "camp_demo" || state.LastTaskGuidance.TaskID != "T306" || state.LastTaskGuidance.Action != "accept" {
+		t.Fatalf("unexpected task guidance payload: %+v", state.LastTaskGuidance)
+	}
+	if state.LastTaskGuidance.Guidance != "Accept current Mode B handoff" {
+		t.Fatalf("unexpected guidance text: %+v", state.LastTaskGuidance)
+	}
+	if !strings.Contains(string(output), "\"task_id\": \"T306\"") {
+		t.Fatalf("expected task-guidance output to include task id, got %q", output)
+	}
+}
+
 func scriptPath(t *testing.T) string {
 	t.Helper()
 	wd, err := os.Getwd()
@@ -121,6 +166,22 @@ case "$cmd" in
     jq --argjson patch "$patch_json" '.campaign |= (. + $patch)' "$state_file" > "$tmp"
     mv "$tmp" "$state_file"
     cat "$state_file"
+    ;;
+  task-guidance)
+    if [[ "$#" -ne 4 ]]; then
+      echo "unexpected task-guidance args: $*" >&2
+      exit 1
+    fi
+    tmp="${state_file}.tmp"
+    jq \
+      --arg campaign_id "$1" \
+      --arg task_id "$2" \
+      --arg action "$3" \
+      --arg guidance "$4" \
+      '.last_task_guidance = {campaign_id:$campaign_id, task_id:$task_id, action:$action, guidance:$guidance}' \
+      "$state_file" > "$tmp"
+    mv "$tmp" "$state_file"
+    jq -n --arg status "ok" --arg task_id "$2" --arg action "$3" '{"status":$status,"task_id":$task_id,"action":$action}'
     ;;
   *)
     echo "unexpected subcommand: $cmd" >&2
