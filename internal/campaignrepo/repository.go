@@ -277,6 +277,7 @@ type Summary struct {
 	RejectedCount        int               `json:"rejected_count"`
 	RepositoryIssueCount int               `json:"repository_issue_count"`
 	GeneratedAt          time.Time         `json:"generated_at"`
+	AllTasks             []TaskSummary     `json:"all_tasks,omitempty"`
 	ActiveTasks          []TaskSummary     `json:"active_tasks,omitempty"`
 	ReadyTasks           []TaskSummary     `json:"ready_tasks,omitempty"`
 	SelectedReady        []TaskSummary     `json:"selected_ready,omitempty"`

@@ -58,6 +58,8 @@ func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
 		"## Alice 内建命令",
 		"`/help`",
 		"`/status`",
+		"`/codearmy status`",
+		"`/codearmy tasks [campaign 查询词]`",
 		"`/clear`",
 		"`/stop`",
 		"`普通模式`",
@@ -298,6 +300,123 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testi
 	}
 }
 
+func TestProcessor_CodeArmyTasksCommand_ListsEveryTaskStateWithFuzzyCampaignMatch(t *testing.T) {
+	llmStub := &llmCallCountingStub{}
+	sender := &senderStub{}
+	processor := NewProcessor(llmStub, sender, "failed", "thinking")
+
+	campaignStore := campaign.NewStore(filepath.Join(t.TempDir(), "campaigns.db"))
+	processor.SetStatusStores(nil, campaignStore)
+
+	root := t.TempDir()
+	writeConnectorTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_front
+title: "Product Front Door"
+current_phase: P01
+plan_status: human_approved
+plan_round: 2
+---
+`)
+	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
+phase: P01
+status: active
+goal: "Ship landing pages"
+---
+`)
+	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T100", "task.md"), `---
+task_id: T100
+title: "Baseline snapshot"
+phase: P01
+status: done
+---
+`)
+	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T101", "task.md"), `---
+task_id: T101
+title: "Build front page"
+phase: P01
+status: executing
+owner_agent: executor
+lease_until: "2026-04-02T18:00:00+08:00"
+dispatch_state: executor_dispatched
+execution_round: 1
+---
+`)
+	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T102", "task.md"), `---
+task_id: T102
+title: "Publish candidate"
+phase: P01
+status: ready
+depends_on: [T101]
+---
+`)
+
+	if _, err := campaignStore.CreateCampaign(campaign.Campaign{
+		ID:                "camp_front",
+		Title:             "Product Front Door",
+		Objective:         "ship site",
+		Repo:              "lizhihao/codearmy-site",
+		CampaignRepoPath:  root,
+		Session:           campaign.SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_1", ReceiveIDType: "chat_id", ReceiveID: "oc_chat", ChatType: "group"},
+		Creator:           campaign.Actor{OpenID: "ou_actor"},
+		Status:            campaign.StatusRunning,
+		MaxParallelTrials: 2,
+	}); err != nil {
+		t.Fatalf("create selected campaign failed: %v", err)
+	}
+	if _, err := campaignStore.CreateCampaign(campaign.Campaign{
+		ID:                "camp_detector",
+		Title:             "Detector Scan",
+		Objective:         "scan detector",
+		Repo:              "lizhihao/detector-scan",
+		CampaignRepoPath:  filepath.Join(t.TempDir(), "campaigns", "detector"),
+		Session:           campaign.SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_1", ReceiveIDType: "chat_id", ReceiveID: "oc_chat", ChatType: "group"},
+		Creator:           campaign.Actor{OpenID: "ou_actor"},
+		Status:            campaign.StatusPlanning,
+		MaxParallelTrials: 1,
+	}); err != nil {
+		t.Fatalf("create secondary campaign failed: %v", err)
+	}
+
+	state := processor.ProcessJobState(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		ChatType:        "group",
+		SenderOpenID:    "ou_actor",
+		SourceMessageID: "om_src",
+		SessionKey:      "chat_id:oc_chat|thread:omt_2|message:om_src",
+		Text:            "/codearmy tasks front door",
+	})
+	if state != JobProcessCompleted {
+		t.Fatalf("expected completed state, got %s", state)
+	}
+	if llmStub.calls != 0 {
+		t.Fatalf("expected codearmy tasks command to bypass llm, got %d llm calls", llmStub.calls)
+	}
+	if sender.replyRichMarkdownCalls != 1 || sender.replyRichMarkdownDirectCalls != 1 {
+		t.Fatalf("expected one direct rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
+	}
+	if sender.replyCardCalls != 0 || sender.replyCardDirectCalls != 0 {
+		t.Fatalf("expected codearmy tasks command not to use cards, got card=%d direct=%d", sender.replyCardCalls, sender.replyCardDirectCalls)
+	}
+
+	reply := sender.replyMarkdownTexts[0]
+	for _, want := range []string{
+		"## CodeArmy Tasks",
+		"- campaign: `camp_front`",
+		"### P01",
+		"`T100` | status `done` | Baseline snapshot",
+		"`T101` | status `executing` | Build front page | dispatch `executor_dispatched` | owner `executor`",
+		"`T102` | status `blocked` | Publish candidate | dependency `T101` not done yet",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("expected codearmy tasks reply to contain %q, got %q", want, reply)
+		}
+	}
+	if strings.Contains(reply, "Detector Scan") {
+		t.Fatalf("expected fuzzy match to resolve uniquely to front campaign, got %q", reply)
+	}
+}
+
 type replyCardPayload struct {
 	Header struct {
 		Title struct {
@@ -387,6 +506,27 @@ func TestIsCodeArmyStatusCommand(t *testing.T) {
 	}
 }
 
+func TestIsCodeArmyTasksCommand(t *testing.T) {
+	for _, text := range []string{
+		"/codearmy tasks",
+		"  /codearmy   tasks  front door ",
+		"/codearmy status tasks camp_x",
+	} {
+		if !isCodeArmyTasksCommand(text) {
+			t.Fatalf("expected %q to be recognized as codearmy tasks command", text)
+		}
+	}
+	for _, text := range []string{
+		"/codearmy",
+		"/codearmy task",
+		"/codearmy status detail",
+	} {
+		if isCodeArmyTasksCommand(text) {
+			t.Fatalf("expected %q to be rejected as codearmy tasks command", text)
+		}
+	}
+}
+
 func TestIsClearCommand(t *testing.T) {
 	for _, text := range []string{
 		"/clear",
@@ -426,5 +566,15 @@ func TestIsStopCommand(t *testing.T) {
 		if isStopCommand(text) {
 			t.Fatalf("expected %q to be rejected as stop command", text)
 		}
+	}
+}
+
+func writeConnectorTestFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s failed: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s failed: %v", path, err)
 	}
 }
