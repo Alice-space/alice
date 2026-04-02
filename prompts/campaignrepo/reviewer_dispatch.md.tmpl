@@ -38,10 +38,12 @@ Source repos:
    - 对 executor 可以在普通返工回路里修掉的问题，用 `concern`：例如 acceptance 缺口、测试缺失、输出不正确、局部代码质量问题、task-local artifact 不完整。
    - 只有任务在没有人工介入、外部依赖变更、task 合同修正或 campaign 级重规划的情况下无法安全继续时，才用 `blocking`。
    - 如果 `last_blocked_reason` 非空且 `block_guidance_count` 在 1-3 之间，把它视作 blocked-recovery round：优先给出具体恢复路径并判 `concern`；只有在指导预算基本耗尽且确实不可恢复时才判 `blocking`。
+   - 远端作业尚未结束、远端产物/路径暂未出现、短暂环境抖动、上一轮被打断、self-check 失败但可通过继续运行或补齐产物修复，这些都默认是 `concern`，不是 `blocking`。
 6. 在给出 `approve` 之前，先验证 `last_run_path` 可解析，并确认被审 diff 没有跑出 `write_scope`。{{ if .SourceChangeRequired }}对 source-repo task，还要确认列出的本地 repo 中 `target_commit` 和 `working_branches` 真实可解析；如果 task 明确声明了独立 `task_worktree`，还要检查 `local_path` 是否保持 clean。若发现根 repo / baseline worktree 出现未提交改动，优先把它视为执行隔离失败并给 `concern`，让 executor 在下一轮迁回 `task_worktree` 后重做；只有确实已经需要人工修仓或外部介入时才升到 `blocking`。{{ else }}对 campaign-only / archive-only task，不要要求 source-repo `head_commit`；直接审 task-local artifact 和 campaign-repo diff，`target_commit` 保持空字符串。{{ end }}{{ if .IntegrationConflictRecovery }}如果这是集成冲突恢复轮，还要特别确认：新 commit 既保留了原已批准改动，又吸收了默认分支的新变化，没有通过删改需求来“假性解决”冲突。{{ end }}如果必须的 commit 或 artifact 引用无法解析，或者 diff 跑出了 `write_scope`，至少都是 `concern`。
 7. `created_at` 使用 RFC3339，例如 `2026-03-28T14:57:39+08:00`。
 8. 不要自己改 task status；review verdict 由 Alice judge 应用。
 9. 在结束本轮前，必须运行一次收尾自检命令并确认退出码为 0；如果失败，先修 review/task frontmatter，再重复运行，直到通过。自检没过时，不允许结束本轮，也不要手工伪造 `self_check_*` 字段。
 10. 只有当当前 `review_round` 对应的一份新 task-local review 文件已经存在、其中 verdict 非空、且 `reviewer.role` 与 task reviewer 合同匹配时，本轮才算完成。不要在 `reviews/` 里留下 executor 风格的响应文件。
 11. 如果你无法产出合法 review artifact，请发送 `/alice blocked ...` 或 `/alice needs-human ...`，不要假装 review 已完成。
+    - 但对可等待、可继续运行、可重试解决的问题，不要建议 `needs-human`，也不要用 `blocking` 放大；应明确写成 `concern`，并指出 executor 应继续执行、重跑 self-check，或把 task 留在 `waiting_external` 等待唤醒。
 12. 你要自己把 review 文件写出来，然后给出一条简短中文公开总结，包含 review 路径、verdict、关键发现，以及 self-check 是否通过。

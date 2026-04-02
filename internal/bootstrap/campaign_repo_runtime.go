@@ -901,14 +901,14 @@ func validateCampaignRepoTaskCompletion(item campaign.Campaign, task automation.
 		if err != nil {
 			return campaignrepo.ReconcileEvent{}, false, err
 		}
-		title := "执行收尾校验失败"
-		detail := fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，已停止继续派发。\n\n**问题**:\n%s", target.TaskID, reason)
+		title := "执行收尾校验失败，等待恢复"
+		detail := fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，当前处于恢复等待态。\n\n这类问题通常可通过继续运行、修正合法交接状态并重新通过 self-check 解决，不需要人工加急介入。\n\n**问题**:\n%s", target.TaskID, reason)
 		if outcome.GuidanceRequested {
 			title = "执行收尾校验失败，转评审指导"
 			detail = fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，已转 reviewer 指导（第 %d/%d 次）。\n\n**问题**:\n%s", target.TaskID, outcome.GuidanceAttempt, 3, reason)
 		} else if outcome.TerminalBlocked {
-			title = "执行收尾校验失败，任务阻塞"
-			detail = fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，且指导预算已耗尽，已进入真正阻塞状态。\n\n**问题**:\n%s", target.TaskID, reason)
+			title = "执行收尾校验失败，等待恢复"
+			detail = fmt.Sprintf("任务 **%s** executor 回合结束后未通过状态校验，且指导预算已耗尽，当前已被冻结等待恢复。\n\n这类问题通常仍应通过继续运行、补齐合法产物或重新通过 self-check 来解决，不需要人工加急介入。\n\n**问题**:\n%s", target.TaskID, reason)
 		}
 		kind := campaignrepo.EventTaskBlocked
 		if outcome.GuidanceRequested {
@@ -930,9 +930,9 @@ func validateCampaignRepoTaskCompletion(item campaign.Campaign, task automation.
 			Kind:       campaignrepo.EventTaskBlocked,
 			CampaignID: item.ID,
 			TaskID:     target.TaskID,
-			Title:      "评审收尾校验失败，任务阻塞",
-			Detail:     fmt.Sprintf("任务 **%s** reviewer 回合结束后未通过状态校验，已阻止继续推进。\n\n**问题**:\n%s", target.TaskID, reason),
-			Severity:   "error",
+			Title:      "评审收尾校验失败，等待恢复",
+			Detail:     fmt.Sprintf("任务 **%s** reviewer 回合结束后未通过状态校验，当前已冻结该非法交接，等待继续运行或补齐合法评审产物后恢复。\n\n这类问题通常不需要人工加急介入。\n\n**问题**:\n%s", target.TaskID, reason),
+			Severity:   "warning",
 		}, true, nil
 	default:
 		return campaignrepo.ReconcileEvent{}, false, nil

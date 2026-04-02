@@ -22,15 +22,18 @@ func TestCampaignEventCardTitle_UsesCampaignName(t *testing.T) {
 	}
 }
 
-func TestShouldEscalateCampaignEvent_ApprovalBlockedAndAutomationFailure(t *testing.T) {
+func TestShouldEscalateCampaignEvent_ApprovalErrorBlockedAndAutomationFailure(t *testing.T) {
 	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventHumanApprovalNeeded}) {
 		t.Fatal("expected human_approval_needed to trigger urgent escalation")
 	}
-	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskBlocked}) {
-		t.Fatal("expected task_blocked to trigger urgent escalation")
+	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskBlocked, Severity: "error"}) {
+		t.Fatal("expected error-level task_blocked to trigger urgent escalation")
 	}
 	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventAutomationFailed}) {
 		t.Fatal("expected automation_failed to trigger urgent escalation")
+	}
+	if shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskBlocked, Severity: "warning"}) {
+		t.Fatal("did not expect warning-level task_blocked to trigger urgent escalation")
 	}
 	if shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskRetrying}) {
 		t.Fatal("did not expect task_retrying to trigger urgent escalation")
@@ -294,6 +297,30 @@ func TestNewSummaryBlockedEvents_NotifiesTrueBlockedTasks(t *testing.T) {
 	}
 	if events[0].TaskID != "T301" {
 		t.Fatalf("expected T301 event, got %+v", events[0])
+	}
+}
+
+func TestNewSummaryBlockedEvents_PostRunValidationUsesRecoveryWording(t *testing.T) {
+	summary := campaignrepo.Summary{
+		BlockedTasks: []campaignrepo.TaskSummary{
+			{
+				TaskID:        "T304",
+				Title:         "Replay Run 9541",
+				Status:        campaignrepo.TaskStatusBlocked,
+				BlockedReason: "post-run validation failed after reviewer round: task T304 finished a reviewer round but has no recorded self-check proof",
+			},
+		},
+	}
+
+	events := newSummaryBlockedEvents("camp_demo", nil, summary)
+	if len(events) != 1 {
+		t.Fatalf("expected one blocked event, got %+v", events)
+	}
+	if events[0].Title != "收尾校验待恢复" {
+		t.Fatalf("expected recovery title, got %+v", events[0])
+	}
+	if !strings.Contains(events[0].Detail, "不需要人工加急介入") {
+		t.Fatalf("expected recovery detail wording, got %+v", events[0])
 	}
 }
 
