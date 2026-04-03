@@ -257,7 +257,7 @@ if repo.Tasks[taskIndex].Path != selected.Path {
 - `R19` 已修复：automation task 新增 `DeletedAt` 字段；task 进入 `deleted` 状态时自动写入删除时间并清空 `next_run_at` / `running`；`ClaimDueTasks` 新增 30 天 retention 清理，物理删除过期 deleted task。对旧数据缺失 `DeletedAt` 的场景，清理逻辑回退使用 `UpdatedAt` 作为兼容时间基准。
 - `R44` 已修复：`internal/campaignrepo` 新增核心单测，补齐 `applyReviewVerdicts` 的 approve / blocking / reject / 空 verdict 路径，`buildDispatchSpecs` 的 stateKey / role / prompt 内容断言，以及 `latestRelevantReview` 的 round 匹配与时间排序验证。
 - `R5` 补充项已修复：`claimSelectedExecutorTasks` / `claimSelectedReviewTasks` 在 `persistTaskDocument` 后新增 path 防御性断言，显式防止未来 slice 重排导致的 index stale。
-- `R49` 已按新增审稿要求修改：本轮未直接实现 planner runtime，但已提交详细设计文档 `docs/R49-plan-phase-design.md`。不在本轮直接落完整 planner 状态机的理由是：这会同时引入新的 campaign/task 状态、dispatch kind、prompt、plans 文档模型、CLI/skill 指令和 reconcile 分支，已经超出“修审稿 blocking 项”的安全范围；因此按新增意见先提交完整设计，作为下一个里程碑的 P0 开发输入，而不是在当前补丁里塞入半套实现。
+- `R49` 已按新增审稿要求修改：本轮未直接实现 planner runtime，但已提交详细设计文档 `docs/legacy/r49-plan-phase/R49-plan-phase-design.md`。不在本轮直接落完整 planner 状态机的理由是：这会同时引入新的 campaign/task 状态、dispatch kind、prompt、plans 文档模型、CLI/skill 指令和 reconcile 分支，已经超出“修审稿 blocking 项”的安全范围；因此按新增意见先提交完整设计，作为下一个里程碑的 P0 开发输入，而不是在当前补丁里塞入半套实现。
 - 验证已完成：除新增要求的 `./internal/campaignrepo` 外，本轮还重新跑了 `go test ./...` 全量测试并通过。为完成这次验证，顺手修正了几处与既有已修复行为不一致的旧测试/测试辅助函数，使测试预期与当前代码保持一致。
 
 ---

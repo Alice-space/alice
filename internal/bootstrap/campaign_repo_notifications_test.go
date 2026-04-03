@@ -1,6 +1,7 @@
 package bootstrap
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -8,7 +9,9 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/campaignrepo"
+	"github.com/Alice-space/alice/internal/connector"
 )
 
 func TestCampaignEventCardTitle_UsesCampaignName(t *testing.T) {
@@ -21,9 +24,12 @@ func TestCampaignEventCardTitle_UsesCampaignName(t *testing.T) {
 	}
 }
 
-func TestShouldEscalateCampaignEvent_ApprovalErrorBlockedAndAutomationFailure(t *testing.T) {
+func TestShouldEscalateCampaignEvent_ApprovalNeedsHumanErrorBlockedAndAutomationFailure(t *testing.T) {
 	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventHumanApprovalNeeded}) {
 		t.Fatal("expected human_approval_needed to trigger urgent escalation")
+	}
+	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskNeedsHuman}) {
+		t.Fatal("expected task_needs_human to trigger urgent escalation")
 	}
 	if !shouldEscalateCampaignEvent(campaignrepo.ReconcileEvent{Kind: campaignrepo.EventTaskBlocked, Severity: "error"}) {
 		t.Fatal("expected error-level task_blocked to trigger urgent escalation")
@@ -65,10 +71,14 @@ func TestBuildCampaignEventCard_HumanApprovalAddsButtons(t *testing.T) {
 	}
 
 	var card struct {
+		Config   map[string]any   `json:"config"`
 		Elements []map[string]any `json:"elements"`
 	}
 	if err := json.Unmarshal([]byte(cardContent), &card); err != nil {
 		t.Fatalf("unmarshal card failed: %v", err)
+	}
+	if got, ok := card.Config["update_multi"].(bool); !ok || !got {
+		t.Fatalf("expected legacy approval card update_multi=true, got %#v", card.Config["update_multi"])
 	}
 	if len(card.Elements) != 2 {
 		t.Fatalf("expected legacy markdown + action elements, got %d", len(card.Elements))
@@ -144,10 +154,14 @@ func TestBuildCampaignPlanDecisionCard_ApprovedRemovesActions(t *testing.T) {
 	}
 
 	var card struct {
+		Config   map[string]any   `json:"config"`
 		Elements []map[string]any `json:"elements"`
 	}
 	if err := json.Unmarshal([]byte(cardContent), &card); err != nil {
 		t.Fatalf("unmarshal card failed: %v", err)
+	}
+	if got, ok := card.Config["update_multi"].(bool); !ok || !got {
+		t.Fatalf("expected terminal decision card update_multi=true, got %#v", card.Config["update_multi"])
 	}
 	if len(card.Elements) != 2 {
 		t.Fatalf("expected two legacy markdown elements, got %d", len(card.Elements))
@@ -186,6 +200,62 @@ func TestBuildCampaignPlanDecisionCard_RejectedShowsNextRound(t *testing.T) {
 	}
 	if content, _ := text["content"].(string); content == "" || !containsRound(content, 4) {
 		t.Fatalf("expected next round in content, got %#v", text["content"])
+	}
+}
+
+func TestHandleCampaignPlanApprovalCardAction_RejectsApprovalValidationFailure(t *testing.T) {
+	root := t.TempDir()
+	mustWriteBootstrapTestFile(t, filepath.Join(root, "campaign.md"), `---
+campaign_id: camp_demo
+title: "Demo Campaign"
+objective: "Ship the workflow"
+current_phase: P01
+plan_round: 1
+plan_status: plan_approved
+---
+`)
+
+	store := campaign.NewStore(filepath.Join(t.TempDir(), "campaigns.db"))
+	if _, err := store.CreateCampaign(campaign.Campaign{
+		ID:               "camp_demo",
+		Title:            "Demo Campaign",
+		Objective:        "Ship the workflow",
+		CampaignRepoPath: root,
+		Session: campaign.SessionRoute{
+			ScopeKey:      "chat_id:oc_chat|scene:work|thread:omt_demo",
+			ReceiveIDType: "chat_id",
+			ReceiveID:     "oc_chat",
+			ChatType:      "group",
+		},
+		Creator: campaign.Actor{
+			OpenID: "ou_actor",
+		},
+		Status: campaign.StatusPlanApproved,
+	}); err != nil {
+		t.Fatalf("create campaign failed: %v", err)
+	}
+
+	builder := &connectorRuntimeBuilder{campaignStore: store}
+	_, err := builder.HandleCardAction(context.Background(), connector.CardActionRequest{
+		Kind:          connector.CardActionKindCampaignPlanApproval,
+		CampaignID:    "camp_demo",
+		Decision:      connector.CardActionDecisionApprove,
+		ActorOpenID:   "ou_actor",
+		OpenMessageID: "om_card",
+	})
+	if err == nil {
+		t.Fatal("expected approval validation failure")
+	}
+	if !strings.Contains(err.Error(), "当前计划未通过批准前校验") {
+		t.Fatalf("expected validation failure message, got %v", err)
+	}
+
+	loaded, err := store.GetCampaign("camp_demo")
+	if err != nil {
+		t.Fatalf("reload campaign failed: %v", err)
+	}
+	if loaded.Status != campaign.StatusPlanApproved {
+		t.Fatalf("expected campaign status to remain plan_approved, got %q", loaded.Status)
 	}
 }
 

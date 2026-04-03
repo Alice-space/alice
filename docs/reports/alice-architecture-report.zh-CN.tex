@@ -1,0 +1,407 @@
+\documentclass[12pt,a4paper]{ctexart}
+
+\usepackage[a4paper,margin=2.4cm]{geometry}
+\usepackage{booktabs}
+\usepackage{longtable}
+\usepackage{tabularx}
+\usepackage{array}
+\usepackage{enumitem}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{fancyhdr}
+
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue!50!black,
+  urlcolor=blue!50!black,
+  pdftitle={Alice 当前运行时架构设计报告},
+  pdfauthor={OpenAI Codex},
+  pdfsubject={Alice runtime architecture},
+  pdfcreator={XeLaTeX}
+}
+
+\pagestyle{fancy}
+\fancyhf{}
+\lhead{Alice 架构设计报告}
+\rhead{\today}
+\cfoot{\thepage}
+\setlength{\headheight}{15pt}
+
+\setlist[itemize]{nosep,leftmargin=2em}
+\setlist[enumerate]{nosep,leftmargin=2.2em}
+\renewcommand{\arraystretch}{1.25}
+
+\title{\textbf{Alice 当前运行时架构设计报告}}
+\author{基于仓库最新实现整理}
+\date{2026年4月2日}
+
+\begin{document}
+
+\maketitle
+\tableofcontents
+\newpage
+
+\section{摘要}
+
+本文面向当前仓库中的真实实现，描述 Alice 作为多 bot 运行时的核心结构、消息主链路、自动化执行体系、repo-first campaign 编排、配置模型、持久化状态与扩展边界。报告不再沿用历史设计稿中的抽象层次，而是直接对应当前代码路径，例如 \texttt{cmd/connector}、\texttt{internal/bootstrap}、\texttt{internal/connector}、\texttt{internal/automation} 与 \texttt{internal/campaignrepo}。整体上，Alice 已经形成一套以飞书消息接入、会话级串行执行、本地 runtime API、automation 调度以及 campaign repo 主事实源为核心的工程化运行时。
+
+\section{设计目标与总体原则}
+
+\subsection{设计目标}
+
+Alice 当前实现主要服务于三类需求：
+
+\begin{itemize}
+  \item 在单个进程中托管多个 bot runtime，并允许每个 bot 拥有独立 workspace、prompt 覆盖与运行状态。
+  \item 在飞书群聊与话题环境中同时支持低门槛对话场景与显式任务场景，并保持会话恢复、线程隔离与串行执行。
+  \item 为长期自动化与 code-army 协作提供本地 runtime API、automation task 与 repo-first campaign 编排能力。
+\end{itemize}
+
+\subsection{架构原则}
+
+当前实现体现出以下几条稳定原则：
+
+\begin{itemize}
+  \item \textbf{多 bot 单进程}：统一进程负责配置展开、资源同步和 runtime 生命周期管理。
+  \item \textbf{磁盘优先}：prompt、skill、workspace、会话状态和 campaign repo 均以本地文件系统为主要载体。
+  \item \textbf{会话串行}：同一 session 上的任务严格串行，并支持版本递增与旧任务抢占中断。
+  \item \textbf{repo-first}：runtime 数据库只做轻量索引，campaign repo 才是编排主事实源。
+  \item \textbf{可扩展但边界清晰}：扩展主要集中在 LLM provider、prompt、runtime API handler、bundled skill 与 campaignrepo 逻辑，而非通过分散的隐式插件机制。
+\end{itemize}
+
+\section{进程模型与启动装配}
+
+\subsection{总体进程模型}
+
+Alice 是纯多 bot runtime。一个 \texttt{alice} 进程从同一个 \texttt{config.yaml} 中读取多个 \texttt{bots.<id>} 配置，再为每个 bot 构建独立的 \texttt{ConnectorRuntime}，最后由统一的 \texttt{RuntimeManager} 管理这些 runtime。
+
+每个 bot 当前的主运行时组件可以概括为：
+
+\begin{verbatim}
+ConnectorRuntime
+  |- App
+  |- Processor
+  |- llm.MultiBackend
+  |- LarkSender
+  |- automation.Engine
+  |- runtimeapi.Server
+  |- automation.Store
+  `- campaign.Store
+\end{verbatim}
+
+\subsection{启动链路}
+
+启动入口位于 \texttt{cmd/connector}。从代码职责来看，启动过程依次完成：
+
+\begin{enumerate}
+  \item 读取并校验总配置。
+  \item 将多 bot 配置展开为 bot 级 \texttt{Config}。
+  \item 按需检查 CLI 登录态。
+  \item 同步内嵌 bundled skills 到本地目录。
+  \item 构建每个 bot 的 \texttt{ConnectorRuntime}。
+  \item 启动 runtime manager，并选择飞书连接或 runtime-only 模式。
+\end{enumerate}
+
+当前显式支持三种运行方式：
+
+\begin{itemize}
+  \item \texttt{alice --feishu-websocket}：连接真实飞书 WebSocket，处理在线消息。
+  \item \texttt{alice --runtime-only}：不连飞书，仅运行 automation 和本地 runtime API。
+  \item \texttt{alice-headless --runtime-only}：仅用于无飞书连接的隔离运行。
+\end{itemize}
+
+单 bot 模式支持部分热更新；多 bot 模式则故意关闭热更新，要求配置变更后直接重启进程。
+
+\section{运行目录与状态持久化}
+
+\subsection{bot 级目录结构}
+
+每个 bot 默认拥有独立运行根目录：
+
+\begin{verbatim}
+${ALICE_HOME}/bots/<bot_id>/
+\end{verbatim}
+
+其中最关键的路径如下。
+
+\begin{longtable}{p{0.26\textwidth} p{0.66\textwidth}}
+\toprule
+路径 & 作用 \\
+\midrule
+\endhead
+\texttt{workspace/} & bot 工作区，以及 \texttt{SOUL.md} 所在位置。 \\
+\texttt{prompts/} & bot 级 prompt 覆盖目录，优先级高于内嵌模板。 \\
+\texttt{run/connector/automation.db} & automation task 的 bbolt 持久化库。 \\
+\texttt{run/connector/campaigns.db} & runtime 层轻量 campaign 索引库。 \\
+\texttt{run/connector/session\_state.json} & session alias、provider thread id、usage 统计、scope key 等会话状态。 \\
+\texttt{run/connector/runtime\_state.json} & 连接器级可变运行时状态。 \\
+\texttt{run/connector/resources/scopes/...} & 会话范围内下载的附件与允许再次上传回飞书的本地产物。 \\
+\bottomrule
+\end{longtable}
+
+\subsection{持久化策略}
+
+当前系统并不追求集中式数据库，而是将状态分散在更适合各自职责的存储中：
+
+\begin{itemize}
+  \item 需要高频更新和 claim 的 automation task 使用 bbolt。
+  \item 会话恢复与运行时别名保存在 JSON 文件。
+  \item campaign 编排主体放在 repo 文件树中，由 \texttt{internal/campaignrepo} 加载和回写。
+  \item source repo 依然是最终代码改动面，不被 runtime 状态替代。
+\end{itemize}
+
+这种分层使得 runtime 状态、编排状态和代码状态保持职责分离。
+
+\section{核心包级职责}
+
+\begin{longtable}{p{0.24\textwidth} p{0.68\textwidth}}
+\toprule
+模块 & 当前职责 \\
+\midrule
+\endhead
+\texttt{cmd/connector} & CLI 入口、启动模式选择、认证预检查、skill 同步、runtime manager 启动。 \\
+\texttt{internal/config} & 配置结构、默认值、校验、路径推导、多 bot 展开。 \\
+\texttt{internal/bootstrap} & 运行时装配、sender/processor/app/engine 构建、runtime API 接线、campaign reconcile 桥接。 \\
+\texttt{internal/connector} & 飞书消息接入、场景路由、会话串行、提示组装、回复派发、附件下载、内建命令。 \\
+\texttt{internal/llm} & provider 无关接口与 \texttt{codex}、\texttt{claude}、\texttt{gemini}、\texttt{kimi} 适配。 \\
+\texttt{internal/prompting} & 模板加载、磁盘优先/内嵌兜底、sprig helper、缓存。 \\
+\texttt{internal/runtimeapi} & 本地鉴权 HTTP API，供 bundled skills 和 runtime 脚本访问。 \\
+\texttt{internal/automation} & task 模型、调度、claim、执行、system task 管理。 \\
+\texttt{internal/campaign} & 轻量 campaign 索引与 CRUD。 \\
+\texttt{internal/campaignrepo} & repo-first 编排、校验、reconcile、dispatch spec、post-run 校验、live-report 刷新。 \\
+\texttt{internal/statusview} & \texttt{/status} 等聚合视图。 \\
+\texttt{internal/imagegen} & 可选图片生成与编辑链路。 \\
+\bottomrule
+\end{longtable}
+
+此外，\texttt{internal/mcpbridge}、\texttt{internal/runtimecfg}、\texttt{internal/sessionkey}、\texttt{internal/messaging} 和 \texttt{internal/storeutil} 等包承担桥接、路径、key 规范化和存储工具职责。
+
+\section{入站消息与会话执行主链路}
+
+\subsection{消息接入}
+
+单个 bot 的飞书连接由 \texttt{internal/connector.App} 管理。消息主链路可概括为：
+
+\begin{enumerate}
+  \item 飞书通过 WebSocket 推送 \texttt{im.message.receive\_v1}。
+  \item \texttt{App} 将事件归一化为内部 \texttt{Job}。
+  \item 路由逻辑决定该消息属于忽略、内建命令、\texttt{chat} scene 或 \texttt{work} scene。
+  \item 任务被放入队列，并按 session 进行串行执行。
+  \item 如果同一 session 上出现更新的 job，旧 job 会被 supersede 并中断。
+  \item 被接受的 job 交给 \texttt{Processor} 处理。
+\end{enumerate}
+
+\subsection{scene 路由}
+
+群聊与话题群当前支持两个主场景：
+
+\begin{itemize}
+  \item \texttt{chat}：低门槛闲聊模式，通常以整个群共享 session。
+  \item \texttt{work}：显式任务模式，通常按 thread 建立独立 session。
+\end{itemize}
+
+若新式 \texttt{group\_scenes.chat} 与 \texttt{group\_scenes.work} 都关闭，则系统退回旧的 \texttt{trigger\_mode}/\texttt{trigger\_prefix} 逻辑。
+
+\subsection{session key 与串行控制}
+
+Alice 为每个会话维护 canonical session key 与若干 alias。典型 key 包括：
+
+\begin{itemize}
+  \item \texttt{\{receive\_id\_type\}:\{receive\_id\}}
+  \item \texttt{\{receive\_id\_type\}:\{receive\_id\}|scene:\{scene\}}
+  \item \texttt{\{receive\_id\_type\}:\{receive\_id\}|scene:\{scene\}|thread:\{thread\_id\}}
+\end{itemize}
+
+\texttt{session\_state.json} 记录 provider thread id、work-thread alias、usage 统计与最后活动时间；而进程内的 runtime store 则维护 session mutex、最新版本号、pending job 与 cancel handle。这一设计将“可恢复状态”和“进程内并发协调状态”分离开来。
+
+\section{Prompt 组装、LLM 调度与回复}
+
+\subsection{Prompt 组装}
+
+\texttt{internal/connector.Processor} 负责单条 job 的执行。在调用模型前，它会：
+
+\begin{enumerate}
+  \item 解析当前 bot 的 \texttt{SOUL.md}。
+  \item 将入站附件下载到当前 scope 的资源目录。
+  \item 生成当前会话的环境变量桥。
+  \item 依据模板渲染最终 prompt。
+\end{enumerate}
+
+当前仓库中的 prompt 已明确分层，包括：
+
+\begin{itemize}
+  \item \texttt{prompts/llm/initial\_prompt.md.tmpl}
+  \item \texttt{prompts/connector/bot\_soul.md.tmpl}
+  \item \texttt{prompts/connector/current\_user\_input.md.tmpl}
+  \item \texttt{prompts/connector/reply\_context.md.tmpl}
+  \item \texttt{prompts/connector/runtime\_skill\_hint.md.tmpl}
+  \item 一组 \texttt{prompts/campaignrepo/*} 派发模板
+\end{itemize}
+
+其中，\texttt{chat} scene 允许注入 \texttt{SOUL.md}，而 \texttt{work} scene 则刻意跳过 bot soul，以避免人格文本污染任务执行指令。
+
+\subsection{LLM 选择链}
+
+当前模型选择分为两层：
+
+\begin{enumerate}
+  \item scene 先选择外层 \texttt{llm\_profiles.<name>}。
+  \item \texttt{llm.MultiBackend} 再根据该 profile 中的 provider、model、profile、reasoning 等字段转发至具体后端。
+\end{enumerate}
+
+仓库当前适配的 provider 为 \texttt{codex}、\texttt{claude}、\texttt{gemini} 和 \texttt{kimi}。
+
+\subsection{回复派发}
+
+Alice 当前清楚地区分四类输出：
+
+\begin{itemize}
+  \item 立即 ack 或 reaction。
+  \item backend 流式进度消息。
+  \item 最终文本或卡片回复。
+  \item 后续文件、图片等附件发送。
+\end{itemize}
+
+\texttt{internal/connector/sender.go} 及相关文件负责 send、reply、patch card、reaction、图片和文件上传下载。若目标场景不支持 thread reply，系统会自动回退到普通 reply。
+
+\section{Runtime API、Bundled Skills 与 Automation}
+
+\subsection{Runtime API}
+
+Alice 暴露本地鉴权 HTTP API，主要服务于 bundled skill 与 runtime 脚本。当前实际提供的主要接口包括：
+
+\begin{itemize}
+  \item \texttt{POST /api/v1/messages/image}
+  \item \texttt{POST /api/v1/messages/file}
+  \item \texttt{GET|POST|PATCH|DELETE /api/v1/automation/tasks}
+  \item \texttt{GET|POST|PATCH|DELETE /api/v1/campaigns}
+\end{itemize}
+
+当前并不存在独立的文本发送 API；纯文本回复仍应走正常消息主链路。Runtime API 主要承担附件回传、automation 管理与 campaign 管理职责。
+
+\subsection{安全与上下文桥}
+
+Runtime API 当前具备以下防护：
+
+\begin{itemize}
+  \item bearer token 鉴权。
+  \item 请求体大小限制。
+  \item 进程内认证频率限制。
+  \item 上传前校验本地路径必须位于当前 session 的 resource root 下。
+\end{itemize}
+
+与 skill 及自动化任务共享的上下文变量包括 \texttt{ALICE\_RUNTIME\_API\_BASE\_URL}、\texttt{ALICE\_RUNTIME\_API\_TOKEN}、\texttt{ALICE\_RUNTIME\_BIN} 以及一组保留兼容命名的 \texttt{ALICE\_MCP\_*} 环境变量。
+
+\subsection{Bundled Skills}
+
+当前仓库实际内置并同步的 bundled skills 包括：
+
+\begin{itemize}
+  \item \texttt{skills/alice-message}
+  \item \texttt{skills/alice-scheduler}
+  \item \texttt{skills/alice-code-army}
+  \item \texttt{skills/feishu-task}
+  \item \texttt{skills/file-printing}
+\end{itemize}
+
+\subsection{Automation 子系统}
+
+\texttt{internal/automation} 使用 bbolt 存储 task，并在进程内完成调度与执行。当前 task scope 为 \texttt{user} 与 \texttt{chat}；action 类型为 \texttt{send\_text}、\texttt{run\_llm} 和 \texttt{run\_workflow}。
+
+执行模型具有以下特点：
+
+\begin{itemize}
+  \item 周期性 tick 后 claim 到期任务。
+  \item system task 独立注册与调度。
+  \item task 运行环境继承和交互式消息同样的会话上下文桥。
+  \item workflow task 复用 LLM backend，但使用 workflow 专属 agent name、环境变量和 workspace hint。
+\end{itemize}
+
+当前 bootstrap 阶段注册的重要 system task 包括会话状态刷盘任务以及 campaign-repo reconcile 任务。
+
+\section{Campaign 编排：轻量索引与 Repo-First 双层结构}
+
+\subsection{双层模型}
+
+Alice 当前的 code-army 路径分为 runtime 轻量层与 repo-first 主事实层：
+
+\begin{itemize}
+  \item \texttt{internal/campaign}：保存会话范围内的轻量 campaign 记录。
+  \item \texttt{internal/campaignrepo}：负责读取和修改 campaign repo，推进 plan 阶段、校验任务、生成 dispatch spec、刷新报告和执行 post-run 校验。
+\end{itemize}
+
+桥接逻辑由 \texttt{internal/bootstrap/campaign\_repo\_runtime.go} 与 \texttt{internal/bootstrap/campaign\_repo\_workflow\_guard.go} 完成。前者将 reconcile 结果连接到 automation、通知和生命周期更新；后者在 planning gate 和 terminal campaign 周围阻止不合法的 workflow 执行。
+
+\subsection{Plan Gate 与执行推进}
+
+当前 plan 状态链路已显式建模为：
+
+\begin{center}
+\texttt{idle} $\rightarrow$ \texttt{planning} $\rightarrow$ \texttt{plan\_review\_pending/reviewing} $\rightarrow$ \texttt{plan\_approved} $\rightarrow$ \texttt{human\_approved}
+\end{center}
+
+当人工批准后，草稿任务才会被提升为可执行任务。这说明计划阶段与执行阶段在代码上已经被清晰隔离，而不是旧设计中的模糊混用。
+
+\subsection{关键设计含义}
+
+这一路径背后的含义是：
+
+\begin{itemize}
+  \item runtime DB 不是编排真相源，只保存索引和会话视角。
+  \item campaign repo 中的文档、状态和任务树才是编排真相源。
+  \item source repo 依然是最终代码变更的真相源。
+\end{itemize}
+
+因此，Alice 的 campaign 架构已经从“数据库驱动的任务系统”转向“repo contract 驱动的协调运行时”。
+
+\section{配置模型、可观测性与扩展边界}
+
+\subsection{配置模型}
+
+当前关键配置项包括：
+
+\begin{itemize}
+  \item \texttt{bots.<id>}
+  \item \texttt{llm\_profiles}
+  \item \texttt{group\_scenes.chat}
+  \item \texttt{group\_scenes.work}
+  \item \texttt{permissions}
+  \item \texttt{campaign\_role\_defaults}
+  \item \texttt{runtime\_http\_addr}
+  \item \texttt{workspace\_dir}、\texttt{prompt\_dir}、\texttt{codex\_home}
+\end{itemize}
+
+\texttt{RuntimeConfigs()} 会补齐 bot 默认路径，并在多 bot 场景下自动递增默认 runtime API 端口。外层 \texttt{llm\_profiles} 键是稳定的运行时选择器，而 provider-specific profile 仍作为 profile 内字段传给具体 CLI。
+
+\subsection{可观测性}
+
+当前可观测面主要包括：
+
+\begin{itemize}
+  \item \texttt{zerolog} 结构化日志与 \texttt{lumberjack} 滚动日志文件。
+  \item \texttt{session\_state.json} 中的 usage 计数。
+  \item \texttt{/status}、\texttt{/codearmy ...} 等命令背后的聚合视图。
+  \item \texttt{debug} 级别下的每轮 markdown trace。
+\end{itemize}
+
+这些信息足以支持绝大多数运行时排障，而无需额外引入独立观测服务。
+
+\subsection{扩展边界}
+
+当前代码中真正稳定受支持的扩展点是：
+
+\begin{itemize}
+  \item LLM provider adapter。
+  \item \texttt{prompts/} 模板体系。
+  \item \texttt{skills/} bundled skill。
+  \item runtime API handler。
+  \item \texttt{internal/campaignrepo} 的 repo-first 编排逻辑。
+\end{itemize}
+
+反过来说，当前实现里明确\textbf{不存在}独立的 runtime memory 子系统，也不存在承载业务逻辑的 MCP server；只保留了与既有 skill 兼容的 \texttt{ALICE\_MCP\_*} 环境变量命名。
+
+\section{结论}
+
+与历史设计稿相比，当前 Alice 已经演化为一套清晰的多 bot 运行时平台：上层由飞书消息接入与本地 runtime API 对外提供交互面，中层由会话串行控制、prompt 组装与多 provider LLM 调度形成统一执行面，下层由 automation、campaign index 与 repo-first campaignrepo 形成长期任务和协作编排面。其最重要的结构性变化在于，campaign runtime 不再把数据库当作主事实源，而是把 repo contract 当作编排核心；而多 bot 装配、显式 scene 路由与本地技能 API，则使系统从早期“单体对话 bot”稳定升级为“工程化协作运行时”。
+
+\end{document}

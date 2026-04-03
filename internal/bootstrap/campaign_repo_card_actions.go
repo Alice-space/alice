@@ -63,8 +63,15 @@ func (b *connectorRuntimeBuilder) approveCampaignPlanFromCard(
 	item campaign.Campaign,
 	openMessageID string,
 ) (connector.CardActionResult, error) {
-	if _, _, err := campaignrepo.ApprovePlan(item.CampaignRepoPath); err != nil {
+	_, validation, err := campaignrepo.ApprovePlan(item.CampaignRepoPath)
+	if err != nil {
 		return connector.CardActionResult{}, err
+	}
+	if !validation.Valid {
+		if validationErr := validation.Error(); validationErr != nil {
+			return connector.CardActionResult{}, fmt.Errorf("当前计划未通过批准前校验：%w", validationErr)
+		}
+		return connector.CardActionResult{}, errors.New("当前计划未通过批准前校验")
 	}
 	if _, err := b.campaignStore.PatchCampaign(item.ID, func(current *campaign.Campaign) error {
 		current.Status = campaign.StatusRunning

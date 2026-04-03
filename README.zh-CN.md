@@ -98,9 +98,10 @@ Alice 现在使用纯多 bot 配置模型。
 
 其他文档：
 
+- [文档索引](./docs/README.md)
 - [架构文档](./docs/architecture.zh-CN.md)
 - [Architecture](./docs/architecture.md)
-- [飞书消息流说明](./docs/feishu-message-flow.zh-CN.md)
+- [CodeArmy 使用指南](./docs/codearmy.zh-CN.md)
 - [CodeArmy 隔离调试手册](./docs/codearmy-isolated-debug.zh-CN.md)
 
 Alice 现在要求显式选择启动模式：真实飞书连接使用 `--feishu-websocket`，只跑本地 runtime/API 使用 `--runtime-only`。如果是隔离调试或临时 rerun runtime，必须使用 `alice-headless --runtime-only`；headless binary 不再允许启动飞书长连接。
