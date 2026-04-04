@@ -287,7 +287,7 @@ func shouldSendCampaignEvent(event campaignrepo.ReconcileEvent) bool {
 
 func shouldEscalateCampaignEvent(event campaignrepo.ReconcileEvent) bool {
 	switch event.Kind {
-	case campaignrepo.EventHumanApprovalNeeded, campaignrepo.EventAutomationFailed:
+	case campaignrepo.EventHumanApprovalNeeded, campaignrepo.EventTaskNeedsHuman, campaignrepo.EventAutomationFailed:
 		return true
 	case campaignrepo.EventTaskBlocked:
 		return strings.EqualFold(strings.TrimSpace(event.Severity), "error")
@@ -358,6 +358,7 @@ func buildLegacyCampaignEventCard(title, colorTemplate string, blocks []string, 
 		"config": map[string]any{
 			"wide_screen_mode": true,
 			"enable_forward":   true,
+			"update_multi":     true,
 		},
 		"header": map[string]any{
 			"title": map[string]any{

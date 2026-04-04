@@ -1,32 +1,51 @@
 # Usage Guide
 
-This document explains how Alice is operated as a system, how `chat` and `work` scenes behave, and how to configure bots for common Feishu workflows.
+This guide is operator-facing. It explains how to run Alice, how `chat` and `work` behave in Feishu, and which configuration knobs matter in day-to-day use. For the package-level code map, see [Architecture](./architecture.md).
 
-## System Model
+## 1. System Model
 
-Alice is a Feishu long-connection connector with a multi-bot runtime model:
+Alice is a Feishu connector with a pure multi-bot runtime model.
 
-- One `alice` process can host multiple bots from a single `config.yaml`.
-- Each bot owns its own workspace, prompts, and `SOUL.md`; `CODEX_HOME` is shared by default unless a bot overrides it.
-- Each incoming message is routed into a scene, then into an LLM backend (`codex`, `claude`, `gemini`, or `kimi`).
-- Alice can also expose a local runtime HTTP API used by bundled skills such as `alice-message` and `alice-scheduler`.
+- One `alice` process can host multiple bots from one `config.yaml`.
+- Each bot gets its own `alice_home`, workspace, prompt overrides, runtime state, and `SOUL.md`.
+- Bots share `CODEX_HOME` by default unless a bot overrides `codex_home`.
+- Each accepted message is routed into a scene and then into a selected LLM profile.
+- Alice can also expose a local runtime API used by bundled skills and automation tasks.
 
-At a high level:
+High-level flow:
 
 1. Feishu sends `im.message.receive_v1` over WebSocket.
-2. Alice builds a `Job` from the event.
-3. The bot's routing rules decide whether the message belongs to `chat`, `work`, or should be ignored.
-4. Alice assembles prompt context, runs the selected backend, and sends progress/replies back to Feishu.
+2. Alice normalizes the event into a `Job`.
+3. Scene routing decides whether that job should be ignored, treated as a built-in command, handled as `chat`, or handled as `work`.
+4. Alice runs the configured backend and sends progress/replies back to Feishu.
 
-## Runtime Layout
+## 2. Startup Modes
 
-For each bot, Alice resolves these paths:
+Startup mode is explicit.
 
-- `alice_home`: bot runtime root
-- `workspace_dir`: workspace files, including `SOUL.md`
-- `prompt_dir`: prompt templates
-- `codex_home`: shared CLI home for Codex-compatible tools by default, with optional per-bot override
-- `runtime_http_addr`: local runtime API for skills and automation
+- `alice --feishu-websocket`
+  Real Feishu connector mode.
+- `alice --runtime-only`
+  Local runtime/API-only mode. Automation and bundled skills still work; Feishu WebSocket does not start.
+- `alice-headless --runtime-only`
+  Headless runtime-only mode for isolated debugging or temporary reruns.
+
+`alice-headless` may not be used with `--feishu-websocket`.
+
+## 3. Runtime Layout
+
+For each bot, Alice resolves these important paths:
+
+- `alice_home`
+  Bot runtime root
+- `workspace_dir`
+  Bot workspace, including `SOUL.md`
+- `prompt_dir`
+  Bot-specific prompt override root
+- `codex_home`
+  Shared or overridden CLI home for Codex-compatible tools
+- `runtime_http_addr`
+  Local runtime API bind address
 
 By default, a bot named `chat_bot` lives under:
 
@@ -34,84 +53,121 @@ By default, a bot named `chat_bot` lives under:
 ${ALICE_HOME}/bots/chat_bot/
 ```
 
-If `bots.<id>.codex_home` is empty, Alice uses `CODEX_HOME` from the process environment or falls back to `~/.codex`.
+Important persisted files under that bot root:
 
-## Operating Alice
+- `run/connector/automation.db`
+- `run/connector/campaigns.db`
+- `run/connector/session_state.json`
+- `run/connector/runtime_state.json`
+- `run/connector/resources/scopes/...`
 
-Typical operator flow:
+## 4. Config Concepts That Matter
 
-1. Install or build Alice.
-2. Copy and edit `config.yaml`.
-3. Set Feishu app credentials for each bot.
-4. Pick an LLM provider and verify the CLI login state.
-5. Start Alice in foreground or through `systemd --user`.
-6. Talk to the bot in Feishu.
+The keys operators usually care about most:
 
-## Scene Routing
+- `bots.<id>`
+  One bot runtime
+- `llm_profiles`
+  Named execution profiles
+- `group_scenes.chat`
+  Conversational group-chat scene
+- `group_scenes.work`
+  Explicit task/thread scene
+- `permissions`
+  Gates runtime message, automation, and campaign operations
+- `campaign_role_defaults`
+  Default code-army role to profile mapping
+- `workspace_dir` / `prompt_dir` / `codex_home`
+  Runtime directories
 
-Alice supports two primary scenes in group or topic-group chats:
+Important detail: `group_scenes.*.llm_profile` points to the outer key under `llm_profiles`. If that selected profile also contains an inner provider-specific `profile`, Alice still uses the outer key as the runtime selector and only passes the inner `profile` value to the provider CLI.
 
-- `chat`: low-friction conversational mode
-- `work`: explicit task mode for focused threads
+## 5. Group Scene Routing
 
-These are configured under `bots.<id>.group_scenes`.
+Alice supports two primary scenes in group and topic-group chats:
+
+- `chat`
+  Low-friction conversational mode
+- `work`
+  Explicit task execution mode
 
 ### Chat Scene
 
-`chat` is for normal conversation.
+Recommended shape:
 
-Recommended behavior:
-
-- `enabled: true`
-- `session_scope: per_chat`
-- `llm_profile: chat`
-- `no_reply_token: "[[NO_REPLY]]"`
-- `create_feishu_thread: false`
+```yaml
+group_scenes:
+  chat:
+    enabled: true
+    session_scope: "per_chat"
+    llm_profile: "chat"
+    no_reply_token: "[[NO_REPLY]]"
+    create_feishu_thread: false
+```
 
 What it does:
 
-- The whole chat shares one scene session.
-- Alice responds without requiring a dedicated work trigger.
-- `/clear` rotates to a new chat session.
-- If the model returns `no_reply_token`, Alice stays silent.
+- one long-lived scene session per chat
+- no dedicated work trigger required
+- `/clear` rotates to a new chat session
+- if the model returns the configured suppress token, Alice stays silent
 
-Use `chat` when you want a bot that behaves like a persistent group participant.
+Use `chat` when the bot should behave like a persistent participant in the group.
 
 ### Work Scene
 
-`work` is for explicit task execution.
+Recommended shape:
 
-Recommended behavior:
-
-- `enabled: true`
-- `trigger_tag: "#work"`
-- `session_scope: per_thread`
-- `llm_profile: work`
-- `create_feishu_thread: true`
+```yaml
+group_scenes:
+  work:
+    enabled: true
+    trigger_tag: "#work"
+    session_scope: "per_thread"
+    llm_profile: "work"
+    create_feishu_thread: true
+```
 
 What it does:
 
-- A new work thread starts from a root message that matches the work trigger.
-- By default this means a message like `#work @bot ...`.
-- Alice creates or continues a dedicated work session for that Feishu thread.
-- Replies stay scoped to the work thread instead of contaminating the bot's casual chat memory.
+- a new work session starts from a root message that matches the work trigger
+- by default that usually means something like `#work @bot ...`
+- Alice creates or resumes a dedicated work-scoped session for that thread
+- replies stay in the task thread instead of mixing with casual chat state
 
-Use `work` when you want thread-local task execution, coding help, or automation-style interactions.
+Use `work` when you want thread-local engineering, debugging, planning, or automation tasks.
+
+### Built-In Commands
+
+These commands bypass the normal LLM flow:
+
+- `/help`
+  Show the built-in command help card
+- `/status`
+  Show usage totals, active automation tasks, and active code-army campaigns in the current scope
+- `/codearmy status`
+  Show the code-army summary
+- `/codearmy tasks [query]`
+  Show task-level status for a matching campaign
+- `/clear`
+  Rotate the current group `chat` session
+- `/stop`
+  Stop the current in-flight run for that session
 
 ### Fallback Triggering
 
 If both `group_scenes.chat.enabled` and `group_scenes.work.enabled` are `false`, Alice falls back to legacy trigger matching:
 
-- `trigger_mode: at`: only messages that mention the bot are accepted
-- `trigger_mode: prefix`: only messages starting with `trigger_prefix` are accepted
+- `trigger_mode: at`
+  Only messages that mention the bot are accepted
+- `trigger_mode: prefix`
+  Only messages starting with `trigger_prefix` are accepted
 
-This fallback is mostly for simpler or older setups. New deployments should prefer explicit `group_scenes`.
+New deployments should prefer explicit `group_scenes`.
 
-## Recommended Patterns
+## 6. Recommended Patterns
 
 ### Chat-Only Bot
-
-Use this when the bot should behave like a normal group assistant:
 
 ```yaml
 group_scenes:
@@ -126,8 +182,6 @@ group_scenes:
 
 ### Split Chat + Work Bot
 
-Use this when the same bot should chat casually but also support explicit task threads:
-
 ```yaml
 llm_profiles:
   chat:
@@ -136,8 +190,7 @@ llm_profiles:
     reasoning_effort: "low"
   work:
     provider: "claude"
-    model: "claude-sonnet-4-20250514"
-    reasoning_effort: "high"
+    model: "claude-sonnet-4-6"
 
 group_scenes:
   chat:
@@ -153,18 +206,17 @@ group_scenes:
     create_feishu_thread: true
 ```
 
-Different scenes can use different providers. If a profile omits `provider`, Alice falls back to the default provider.
-`group_scenes.*.llm_profile` always points to the outer key under `llm_profiles`. If that profile also sets an inner `profile`, Alice keeps the outer key as the runtime selector and only passes the inner value to the provider CLI.
+Different scenes may use different providers and different CLI commands.
 
-## `SOUL.md`
+## 7. `SOUL.md`
 
-Each bot can define persona and image metadata in `workspace/SOUL.md`.
+Each bot can define persona and machine-readable reply metadata in `workspace/SOUL.md`.
 
-Current machine-readable frontmatter keys:
+Current frontmatter keys:
 
-- `image_refs`: reference images used for roleplay image generation
-- `image_generation`: bot-level image generation policy stored with the soul, such as the minimum reply-will score required before Alice auto-generates an image
-- `output_contract`: parsed reply metadata contract used for hidden-block stripping, silence suppression, and motion extraction
+- `image_refs`
+- `image_generation`
+- `output_contract`
 
 Example:
 
@@ -191,34 +243,60 @@ output_contract:
 
 Notes:
 
-- Relative paths are resolved relative to the directory containing `SOUL.md`.
-- The frontmatter is parsed by Alice and stripped before the remaining body is appended to the LLM prompt.
-- If you want the model to emit the matching tags or suppress token, write the corresponding instruction and examples directly in the `SOUL.md` body.
+- relative paths are resolved relative to the directory containing `SOUL.md`
+- Alice parses and strips the frontmatter before appending the remaining body to the prompt
+- `SOUL.md` is used for `chat`; work-scene runs intentionally skip bot-soul injection
 
-## Runtime API And Bundled Skills
+## 8. Runtime API And Bundled Skills
 
-Alice also exposes a local runtime HTTP API. Bundled skills use that API to:
+Alice exposes a local runtime API. Bundled skills use that API to:
 
-- send messages or attachments
-- schedule automation tasks
-- interact with campaigns and other runtime state
+- send attachments back to Feishu
+- create and manage automation tasks
+- create and manage runtime campaign records
 
-This is why operators normally interact with Alice in Feishu while skills interact with Alice through the local runtime endpoint.
+Current bundled skills in this repository:
 
-## Troubleshooting
+- `alice-message`
+- `alice-scheduler`
+- `alice-code-army`
+- `feishu-task`
+- `file-printing`
+
+Current runtime permissions:
+
+- `permissions.runtime_message`
+- `permissions.runtime_automation`
+- `permissions.runtime_campaigns`
+- `permissions.allowed_skills`
+
+Important boundary: plain text replies normally go through the main reply pipeline. The runtime message API is for image/file sends and related captions.
+
+## 9. Typical Operator Flow
+
+1. Install Alice from release or build from source.
+2. Copy and edit `config.yaml`.
+3. Fill `bots.*.feishu_app_id` and `bots.*.feishu_app_secret`.
+4. Verify the target provider CLI is installed and logged in.
+5. Start Alice with the correct startup mode.
+6. Test the bot in Feishu with `/help`, then with normal `chat` or `work` traffic.
+
+## 10. Troubleshooting
 
 - Bot never responds in group chats:
-  Check `group_scenes`, `trigger_mode`, and whether `feishu_bot_open_id` / `feishu_bot_user_id` are configured.
+  Check `group_scenes`, `trigger_mode`, and whether `feishu_bot_open_id` / `feishu_bot_user_id` are configured correctly.
 - `work` mode never starts:
-  Check that `group_scenes.work.enabled` is true, `trigger_tag` is set, and the triggering message matches the expected pattern.
+  Check that `group_scenes.work.enabled` is true, `trigger_tag` is set, and the triggering message actually matches the expected pattern.
 - Wrong model or reasoning level:
-  Check `llm_profiles` and confirm the scene points at the right profile.
-- Skills fail to send attachments:
-  Check `runtime_http_addr`, `runtime_http_token`, and runtime permissions.
+  Check `llm_profiles` and confirm the scene points at the expected outer profile key.
+- Bundled skills cannot send attachments or manage tasks:
+  Check `runtime_http_addr`, `runtime_http_token`, and the `permissions.*` runtime gates.
+- Config changes do not apply:
+  Single-bot mode supports limited hot reload; multi-bot mode requires a restart.
 
 ## Related Docs
 
 - [README](../README.md)
 - [Chinese Usage Guide](./usage.zh-CN.md)
 - [Architecture](./architecture.md)
-- [Feishu Message Flow (Chinese)](./feishu-message-flow.zh-CN.md)
+- [Documentation Index](./README.md)

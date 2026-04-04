@@ -267,8 +267,6 @@ Wants=network-online.target
 [Service]
 Type=simple
 Environment=ALICE_HOME=$ALICE_HOME
-Environment=HOME=$HOME
-Environment=PATH=$HOME/.local/bin:$HOME/bin:/usr/local/bin:/usr/bin:/bin
 WorkingDirectory=$ALICE_HOME
 ExecStart=$BIN_PATH --feishu-websocket
 Restart=on-failure

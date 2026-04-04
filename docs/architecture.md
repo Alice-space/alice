@@ -2,115 +2,166 @@
 
 [中文版本](./architecture.zh-CN.md)
 
-This document describes the current target architecture after the runtime/skills refactor shipped on March 13, 2026.
+This document describes the architecture that is actually implemented in the current repository. It is intentionally code-first: package names, runtime objects, and file paths match the live code under `cmd/connector`, `internal/`, `prompts/`, and `skills/`.
 
-## Design goals
+## 1. Process Model
 
-- Keep the connector process focused on orchestration, not prompt literals or tool-specific business logic.
-- Treat LLM backends as interchangeable adapters.
-- Move chat-scoped operational capabilities into reusable skills that talk to Alice through a local HTTP API.
-- Keep runtime skills and the local HTTP API as the only supported expansion surface.
-- Make debug traces auditable: every agent call should record markdown input/output/tool activity.
+Alice is a multi-bot runtime. One `alice` process can host multiple bots from one `config.yaml`.
 
-## Component map
+At startup, the process:
+
+1. Loads `config.yaml`
+2. Expands `bots.*` into per-bot runtime configs
+3. Verifies CLI auth where needed
+4. Syncs embedded bundled skills into the local skill directories
+5. Builds one `ConnectorRuntime` per bot
+6. Runs all runtimes under one `RuntimeManager`
+
+The main runtime object per bot is:
+
+```text
+ConnectorRuntime
+  ├─ App
+  ├─ Processor
+  ├─ llm.MultiBackend
+  ├─ LarkSender
+  ├─ automation.Engine
+  ├─ runtimeapi.Server
+  ├─ automation.Store
+  └─ campaign.Store
+```
+
+Startup mode is explicit:
+
+- `--feishu-websocket`: connect to Feishu and process live events
+- `--runtime-only`: run automation and the local runtime API without the Feishu WebSocket
+- `alice-headless`: runtime-only only; it may not start the Feishu connector
+
+## 2. Bootstrap Path
+
+The process entrypoint is `cmd/connector`.
+
+Key bootstrap steps:
+
+- `cmd/connector/root.go`
+  Handles CLI flags, startup mode selection, config creation, PID locking, logging, auth preflight, bundled-skill sync, and runtime manager startup.
+- `internal/config`
+  Owns the pure multi-bot config model, path derivation, normalization, validation, and per-bot runtime expansion.
+- `internal/bootstrap`
+  Builds the per-bot runtime graph and wires cross-cutting features such as prompt loading, runtime API auth, campaign reconcile loops, and config hot reload.
+
+`BuildRuntimeManager` expands `Config` into `[]Config` via `RuntimeConfigs()`, then builds one `ConnectorRuntime` for each bot.
+
+Current hot-reload behavior:
+
+- single-bot mode: partial config hot reload is supported
+- multi-bot mode: hot reload is intentionally disabled; restart the process after config changes
+
+## 3. Runtime Layout And Persisted State
+
+Each bot gets its own runtime root under:
+
+```text
+${ALICE_HOME}/bots/<bot_id>/
+```
+
+Important per-bot paths:
+
+- `workspace/`
+  Bot workspace and `SOUL.md`
+- `prompts/`
+  Optional prompt overrides for that bot
+- `run/connector/automation.db`
+  Persistent automation task store
+- `run/connector/campaigns.db`
+  Persistent lightweight campaign index
+- `run/connector/session_state.json`
+  Session aliases, provider thread ids, usage counters, work-thread metadata
+- `run/connector/runtime_state.json`
+  Mutable connector runtime state
+- `run/connector/resources/scopes/<scope_type>/<scope_id>/`
+  Downloaded inbound attachments and uploadable local artifacts scoped to the current conversation
+
+The source tree also embeds:
+
+- `prompts/`
+- `skills/`
+- `config.example.yaml`
+- `SOUL.md.example`
+
+Disk files override embedded prompt files when present; embedded assets are the fallback.
+
+## 4. Package Map
+
+Core packages:
 
 - `cmd/connector`
-  Starts the Feishu connector, automation engine, local runtime HTTP API, and the `runtime` skill-facing subcommands in one binary.
+  CLI entrypoint, `runtime` subcommands, and `skills sync`.
+- `internal/bootstrap`
+  Runtime construction, path resolution, auth checks, skill materialization, campaign reconcile bridging, and config reload.
+- `internal/config`
+  Config schema, validation, defaults, path derivation, and multi-bot expansion.
 - `internal/connector`
-  Handles Feishu websocket intake, queueing, session serialization, interruption, reply dispatch, and per-run env injection.
+  Feishu ingress, message normalization, scene routing, queueing, session serialization, interruption, prompt assembly, reply dispatch, attachment download, session persistence, built-in commands, and optional image generation.
 - `internal/llm`
-  Backend factory plus provider adapters for `codex`, `claude`, `gemini`, and `kimi`.
+  Provider-agnostic backend contract plus provider adapters for `codex`, `claude`, `gemini`, and `kimi`.
 - `internal/prompting`
-  File-backed prompt/template renderer using Go templates plus `sprig`.
-- `internal/memory`
-  Scoped memory storage and prompt assembly, plus HTTP-friendly snapshot/update helpers.
-- `internal/automation`
-  Task persistence/execution for `send_text` and `run_llm`.
+  Template loader with disk-first / embedded-fallback behavior, `sprig` helpers, and compiled-template caching.
 - `internal/runtimeapi`
-  Local authenticated HTTP server and client used by skills.
+  Local authenticated HTTP server and client used by bundled skills and runtime-facing shell scripts.
+- `internal/automation`
+  Task model, persistence, claiming, execution, system-task scheduling, and workflow dispatch.
+- `internal/campaign`
+  Lightweight runtime campaign index scoped to a conversation.
+- `internal/campaignrepo`
+  Repo-first campaign loader, validator, reconciler, dispatch planner, post-run validation, and live-report generation.
 - `internal/statusview`
-  Aggregates scoped usage, automation, and campaign snapshots for `/status` style views.
+  Aggregates usage, automation, and campaign data for `/status` and related cards.
 - `internal/imagegen`
-  Image generation and editing adapters plus output safety guards.
+  Optional OpenAI-backed image generation and edit pipeline.
+
+Support packages:
+
+- `internal/mcpbridge`
+  Session-context environment bridge; the `ALICE_MCP_*` names are still used for backward compatibility even though business logic no longer runs through MCP.
+- `internal/runtimecfg`
+  Helpers for scene-derived profile selection and thread-reply preference.
+- `internal/sessionkey`
+  Canonical session-key and visibility-key helpers.
 - `internal/messaging`
-  Narrow sender/uploader port definitions shared by runtime and connector layers.
+  Narrow sender/uploader interfaces shared across connector and runtime API layers.
 - `internal/storeutil`
-  Shared helpers for bbolt open/version/parent-dir handling.
-- `skills/`
-  Runtime-facing operational skills such as `alice-memory`, `alice-message`, `alice-scheduler`, and `alice-code-army`.
+  Shared bbolt helpers and string utilities.
+- `internal/logging`
+  Zerolog plus rotating file output configuration.
+- `internal/buildinfo`
+  Version reporting.
 
-## Prompt system
+## 5. Inbound Message Pipeline
 
-Prompts are no longer embedded as large string literals in code paths.
+`internal/connector.App` owns the live Feishu connection and the per-bot job queue.
 
-- Prompt root: `prompts/`
-- LLM initial prompt template: `prompts/llm/initial_prompt.md.tmpl`
-- Memory prompt template: `prompts/memory/prompt.md.tmpl`
-- Connector context templates:
-  - `prompts/connector/current_user_input.md.tmpl`
-  - `prompts/connector/reply_context.md.tmpl`
-  - `prompts/connector/runtime_skill_hint.md.tmpl`
-  - `prompts/connector/idle_summary.md.tmpl`
-  - `prompts/connector/synthetic_mention.md.tmpl`
-- Campaign repo workflow templates:
-  - `prompts/campaignrepo/executor_dispatch.md.tmpl`
-  - `prompts/campaignrepo/reviewer_dispatch.md.tmpl`
+High-level flow:
 
-`internal/prompting` loads templates from disk, caches compiled templates with `xxhash`, and exposes `sprig` helpers.
+1. Feishu delivers `im.message.receive_v1` over WebSocket.
+2. `App` normalizes the event into a `Job`.
+3. `routeIncomingJob` decides whether the message should be ignored, treated as a built-in command, handled as `chat`, or handled as `work`.
+4. The job is queued and serialized by session.
+5. If a newer job supersedes the current one for the same session, the in-flight run is interrupted.
+6. `Processor` executes the accepted job.
 
-Current behavior:
+Scene routing rules:
 
-- `App`, `Processor`, and LLM runners accept an injected loader when bootstrap provides one.
-- If no loader is injected, they fall back to `internal/prompting.DefaultLoader()`, which searches upward for the repo `prompts/` directory.
-- Non-test business prompts now live in template files only; string-literal fallbacks have been removed.
+- group/topic-group chats can use `group_scenes.chat` and `group_scenes.work`
+- work threads are identified by a trigger plus a stable work-scene session key
+- if both scenes are disabled, Alice falls back to legacy `trigger_mode` / `trigger_prefix`
+- built-in commands such as `/help`, `/status`, `/clear`, `/stop`, and `/codearmy ...` bypass the LLM path
 
-## Backend abstraction
+## 6. Session Keys, Aliases, And Serialization
 
-The backend factory now supports:
+Alice routes and resumes work through canonical session keys plus aliases.
 
-- `codex`
-- `claude`
-- `gemini`
-- `kimi`
-
-Key behaviors:
-
-- Shared high-level `llm.Backend` contract remains stable.
-- `kimi` uses the local `kimi` CLI in print/stream-json mode and reuses Alice session ids as Kimi session ids.
-
-## Runtime HTTP API
-
-The connector now exposes a local authenticated HTTP API, intended for skills and thin proxies.
-
-Current API groups:
-
-- `/api/v1/messages/*`
-  Send text/image/file into the current chat context.
-- `/api/v1/memory/*`
-  Inspect memory context, rewrite long-term memory, append daily summaries.
-- `/api/v1/automation/*`
-  Create/list/get/patch/delete scheduled tasks.
-- `/api/v1/campaigns/*`
-  Manage code-army campaigns, trials, guidance, reviews, and pitfalls in the current conversation scope.
-
-Configuration:
-
-- `runtime_http_addr`
-- `runtime_http_token`
-
-If `runtime_http_token` is omitted, the connector generates a per-process token and injects it into agent environments.
-
-Current runtime hardening:
-
-- Request bodies are capped to a small JSON-sized limit because runtime API endpoints pass paths/metadata, not bulk file data.
-- Bearer-authenticated requests are rate-limited in-process to reduce brute-force pressure on the local token.
-- Attachment payloads are uploaded from local paths instead of posting raw file bytes through the API.
-
-## Session key routing
-
-Alice routes work by a canonical session key with optional aliases.
-
-Common format:
+Common formats:
 
 - `{receive_id_type}:{receive_id}`
 - `{receive_id_type}:{receive_id}|scene:{scene}`
@@ -120,104 +171,255 @@ Common format:
 Special cases:
 
 - work-scene seed key: `{receive_id_type}:{receive_id}|scene:work|seed:{source_message_id}`
-- chat reset alias: append `|reset:{message_id}` when rotating a chat-scoped session
+- chat reset alias: `{chat_key}|reset:{message_id}`
 
-These aliases let Alice resume the same logical session when later Feishu events arrive as root messages, replies, or thread replies.
+What is persisted in `session_state.json`:
 
-## Codex execution policy defaults
+- provider thread id
+- work-thread id alias
+- session aliases
+- usage counters
+- last-message timestamp
+- scope key for status aggregation
 
-The bundled default for Codex work-scene runs is intentionally powerful:
+`internal/connector/runtime_store.go` keeps the live in-memory coordination state:
 
-- sandbox: `danger-full-access`
-- approval mode: `never`
+- latest version per session
+- pending job per session
+- active run cancellation handle
+- per-session mutex for serialization
+- superseded-version tracking
 
-This is a deliberate tradeoff so work-scene agents can edit the workspace and run local tooling without interactive approval loops. It should only be enabled for trusted local workspaces and trusted bundled skills; operators who need a stricter posture should override the Codex scene policy in config.
+## 7. Prompt Assembly And LLM Execution
 
-## Skills model
+`internal/connector.Processor` is the execution core for one accepted job.
 
-Operational modules are now exposed as skills instead of being reachable only through MCP tools:
+Before an LLM call it:
 
-- `skills/alice-memory`
-  Inspect/update current chat memory through `alice runtime memory ...`.
+- loads and parses `SOUL.md` if needed
+- downloads inbound attachments into the scoped resource directory
+- derives runtime env vars for the current conversation
+- prepares prompt text
+
+Current prompt assets:
+
+- `prompts/llm/initial_prompt.md.tmpl`
+- `prompts/connector/bot_soul.md.tmpl`
+- `prompts/connector/current_user_input.md.tmpl`
+- `prompts/connector/reply_context.md.tmpl`
+- `prompts/connector/runtime_skill_hint.md.tmpl`
+- `prompts/connector/synthetic_mention.md.tmpl`
+- `prompts/campaignrepo/planner_dispatch.md.tmpl`
+- `prompts/campaignrepo/planner_reviewer_dispatch.md.tmpl`
+- `prompts/campaignrepo/executor_dispatch.md.tmpl`
+- `prompts/campaignrepo/reviewer_dispatch.md.tmpl`
+- `prompts/campaignrepo/wake_dispatch.md.tmpl`
+
+Important prompt behavior:
+
+- first-turn or non-resumed runs render the current-user-input template and may append reply context, bot soul, and runtime-skill hints
+- resumed provider threads send only the current user input; Alice relies on the provider-side thread/session to hold prior context
+- `chat` runs can prepend `SOUL.md`; `work` runs intentionally skip bot-soul injection
+
+The LLM layer is selected like this:
+
+1. scene selects an outer `llm_profiles.<name>`
+2. the outer profile chooses provider/model/profile/reasoning/personality/prompt prefix
+3. `llm.MultiBackend` dispatches to the correct provider adapter
+
+Currently supported providers:
+
+- `codex`
+- `claude`
+- `gemini`
+- `kimi`
+
+## 8. Reply Dispatch And Optional Image Generation
+
+Alice distinguishes between:
+
+- immediate acknowledgement
+- streamed progress messages from the backend
+- final replies
+- file/image follow-ups
+
+Current behavior:
+
+- work-scene messages usually receive an immediate reaction or `收到！`
+- backend progress messages are sent as threaded replies when possible
+- final replies are posted via the reply dispatcher
+- thread replies fall back to direct replies when Feishu does not support threaded replies for that target
+- optional roleplay image generation can run after the textual reply is produced
+
+`internal/connector/sender.go` and related files own:
+
+- message send / reply / patch-card operations
+- reactions
+- upload of images and files
+- attachment download
+- scoped resource-root resolution
+
+## 9. Runtime API And Bundled Skills
+
+Alice exposes a local authenticated runtime API intended for bundled skills and thin runtime scripts.
+
+Current HTTP surface:
+
+- `POST /api/v1/messages/image`
+- `POST /api/v1/messages/file`
+- `GET|POST|PATCH|DELETE /api/v1/automation/tasks`
+- `GET|POST|PATCH|DELETE /api/v1/campaigns`
+
+There is no standalone text-send endpoint in the current runtime API. Plain text is normally returned through the main reply pipeline; the message API is for attachments and attachment captions.
+
+Current safeguards:
+
+- bearer token auth
+- request-body size limit
+- in-process auth rate limiting
+- local-path validation against the session resource root before upload
+
+Runtime-facing shell entrypoints:
+
+- `alice runtime message ...`
+- `alice runtime automation ...`
+- `alice runtime campaigns ...`
+
+Bundled skills shipped in the current tree:
+
 - `skills/alice-message`
-  Send image/file attachments through `alice runtime message ...`; plain text is forwarded by the main reply pipeline.
 - `skills/alice-scheduler`
-  Manage automation tasks through `alice runtime automation ...`.
 - `skills/alice-code-army`
-  Acts as the long-running optimization orchestration skill, using `alice runtime campaigns ...` as a lightweight campaign index while the campaign repository's markdown/frontmatter structure serves as the primary source of truth; Alice backend periodically reconciles the campaign repo to refresh live-report and wake tasks, and runtime-dispatched planner/executor/reviewer workflows operate directly against that repo-first state.
+- `skills/feishu-task`
+- `skills/file-printing`
 
-These skills rely on:
+Runtime context is injected through:
 
 - `ALICE_RUNTIME_API_BASE_URL`
 - `ALICE_RUNTIME_API_TOKEN`
 - `ALICE_RUNTIME_BIN`
-- existing session env such as `ALICE_MCP_RECEIVE_ID`, `ALICE_MCP_SESSION_KEY`, and related actor metadata
+- `ALICE_MCP_RECEIVE_ID_TYPE`
+- `ALICE_MCP_RECEIVE_ID`
+- `ALICE_MCP_SOURCE_MESSAGE_ID`
+- `ALICE_MCP_ACTOR_USER_ID`
+- `ALICE_MCP_ACTOR_OPEN_ID`
+- `ALICE_MCP_CHAT_TYPE`
+- `ALICE_MCP_SESSION_KEY`
 
-Bundled runtime skill scripts resolve the runtime binary in this order:
+## 10. Automation Subsystem
 
-1. `ALICE_RUNTIME_BIN`
-2. `${ALICE_HOME:-$HOME/.alice}/bin/alice`
-3. `alice` from `PATH`
+`internal/automation` persists tasks in bbolt and executes them in-process.
 
-## MCP strategy
+Current task scopes:
 
-Alice no longer exposes business operations through MCP.
+- `user`
+- `chat`
 
-Current posture:
+Current task actions:
 
-- Skills + runtime HTTP are the primary path for memory/scheduling/campaign/message operations.
-- Bundled skills call the same `alice` binary with `runtime ...` arguments.
-- The remaining `mcp` naming is limited to session-context env keys such as `ALICE_MCP_RECEIVE_ID`, which are still used as stable runtime context variables.
+- `send_text`
+- `run_llm`
+- `run_workflow`
 
-This preserves stable session env keys while avoiding duplicated business handlers across skills and core runtime code.
+Execution model:
 
-## Debug traces
+- due tasks are claimed on a periodic tick
+- long-lived system tasks are scheduled separately
+- task env inherits the same conversation context bridge used for interactive runs
+- workflow tasks call the same LLM backend but with workflow-specific agent names, env vars, and workspace hints
 
-When `log_level=debug`, every agent call emits a markdown trace containing:
+Built-in system tasks registered during bootstrap:
+
+- periodic session/runtime state flush
+- periodic campaign-repo reconcile
+
+## 11. Campaign Index And Repo-First Orchestration
+
+Alice’s code-army path is intentionally split into two layers.
+
+Runtime layer:
+
+- `internal/campaign`
+  Stores lightweight campaign records scoped to a conversation
+- `internal/runtimeapi/campaign_handlers.go`
+  Exposes CRUD and management entrypoints for those records
+
+Repo-first layer:
+
+- `internal/campaignrepo`
+  Loads the campaign repository, validates its contract, reconciles state, generates dispatch specs, writes live reports, applies review verdicts, repairs invalid task states, resumes wake tasks, and performs post-run checks
+
+Bridge layer:
+
+- `internal/bootstrap/campaign_repo_runtime.go`
+  Connects reconcile results to runtime automation tasks, notifications, startup recovery, wake scheduling, and runtime status updates
+- `internal/bootstrap/campaign_repo_workflow_guard.go`
+  Blocks or reshapes invalid workflow runs around plan gates and terminal campaigns
+
+Design rule:
+
+- the runtime DB is a lightweight index
+- the campaign repository is the primary source of truth
+- source repos remain the actual code-change surface
+
+## 12. Configuration Model
+
+The config model is pure multi-bot.
+
+Important keys:
+
+- `bots.<id>`
+- `llm_profiles`
+- `group_scenes.chat`
+- `group_scenes.work`
+- `permissions`
+- `campaign_role_defaults`
+- `runtime_http_addr`
+- `workspace_dir`
+- `prompt_dir`
+- `codex_home`
+
+Behavior worth calling out:
+
+- `RuntimeConfigs()` derives missing bot paths and increments default runtime API ports across bots
+- each outer `llm_profiles` key is a stable runtime selector
+- provider-specific profile selectors still live inside each profile via the inner `profile` field
+- runtime permissions gate bundled skills and runtime API surfaces independently
+
+Default execution posture for work-capable profiles is intentionally permissive. For example, Claude and Kimi defaults reflect their current non-interactive CLI behavior, and work-oriented Codex profiles commonly run with `danger-full-access` plus `never`. Operators who need a stricter posture should override the per-profile permissions explicitly.
+
+## 13. Observability And Debugging
+
+Current observability surfaces:
+
+- structured logs via `zerolog`
+- rotating log files via `lumberjack`
+- session usage counters stored in `session_state.json`
+- `/status` and `/codearmy ...` built-in cards powered by `statusview`
+- per-run markdown debug traces when `log_level=debug`
+
+Debug traces include, when the backend exposes them:
 
 - provider
 - agent name
 - thread/session id
 - model/profile
 - rendered input
-- observed tool calls
+- observed tool activity
 - final output or error
 
-This applies to:
+## 14. Extension Boundaries
 
-- normal assistant runs
-- scheduler-triggered `run_llm`
-- backend adapters that can surface tool activity (`codex`, `kimi`, and partial `claude`)
+The supported extension surfaces in the current codebase are:
 
-## Library adoption in this refactor
+- `llm` provider adapters
+- prompt templates under `prompts/`
+- bundled skills under `skills/`
+- runtime API handlers
+- repo-first campaign orchestration under `internal/campaignrepo`
 
-Actively used:
+Notably absent from the current implementation:
 
-- `github.com/Masterminds/sprig/v3`
-- `github.com/cespare/xxhash/v2`
-- `github.com/evanphx/json-patch/v5`
-- `github.com/go-co-op/gocron/v2`
-- `github.com/go-playground/validator/v10`
-- `github.com/gin-gonic/gin`
-- `github.com/go-resty/resty/v2`
-- `github.com/oklog/run`
-- `github.com/oklog/ulid/v2`
-- `github.com/rs/zerolog`
-- `github.com/spf13/cobra`
-- `github.com/cenkalti/backoff/v4`
-- `github.com/cyphar/filepath-securejoin`
-- `go.etcd.io/bbolt`
-- `gopkg.in/natefinch/lumberjack.v2`
-- `gopkg.in/yaml.v3`
-
-## End-to-end flow
-
-1. Feishu event enters `internal/connector`.
-2. Connector serializes work per session and builds per-run env.
-3. Env includes current chat context plus runtime HTTP auth.
-4. LLM backend renders prompt templates from disk and runs `codex`/`claude`/`kimi`.
-5. Skills invoked by the agent call `alice runtime ...`, which then talks to the runtime HTTP API.
-6. Runtime HTTP API operates memory, automation, campaign state, and message sending using the same session context.
-7. Automation tasks are persisted in `automation.db` through `bbolt`.
-8. Runtime logs are emitted through `zerolog`, with optional file rotation handled by `lumberjack`.
-9. Debug traces record each agent call in markdown for replay/audit.
+- no active `internal/memory` package
+- no runtime memory API
+- no business-logic MCP server; only backward-compatible session env naming remains

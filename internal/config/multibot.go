@@ -25,7 +25,6 @@ type bundledSkillSpec struct {
 
 var defaultBundledSkills = []bundledSkillSpec{
 	{Name: "alice-code-army", Allowed: allowRuntimeCampaignSkill},
-	{Name: "alice-memory"},
 	{Name: "alice-message", Allowed: allowRuntimeMessageSkill},
 	{Name: "alice-scheduler", Allowed: allowRuntimeAutomationSkill},
 	{Name: "feishu-task"},

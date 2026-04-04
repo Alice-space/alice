@@ -1,117 +1,176 @@
 # 使用说明
 
-本文说明 Alice 作为一个完整系统如何使用，以及 `chat` / `work` 两种模式在飞书里的行为和推荐配置。
+这份文档面向实际操作者，说明 Alice 怎么运行、`chat` / `work` 在飞书里怎么工作，以及哪些配置最值得关注。包级代码结构请看 [架构文档](./architecture.zh-CN.md)。
 
-## 系统模型
+## 1. 系统模型
 
-Alice 是一个支持多 bot 的飞书长连接连接器：
+Alice 是一个纯多 bot runtime。
 
-- 一个 `alice` 进程可以同时托管多个 bot
-- 每个 bot 都有自己的工作区、提示词目录和 `SOUL.md`，默认共享 `CODEX_HOME`
-- 每条飞书消息会先进入路由层，再被分到某个 scene，最后交给对应 LLM CLI
-- Alice 还会暴露本地 runtime HTTP API，给 `alice-message`、`alice-scheduler` 这类自带 skill 使用
+- 一个 `alice` 进程可以从同一个 `config.yaml` 托管多个 bot
+- 每个 bot 都有自己的 `alice_home`、workspace、prompt 覆盖目录、runtime state 和 `SOUL.md`
+- 默认共享 `CODEX_HOME`，除非 bot 显式覆盖 `codex_home`
+- 每条被接受的消息都会先路由到 scene，再路由到选中的 LLM profile
+- Alice 还会暴露本地 runtime API，给 bundled skills 和 automation task 使用
 
-整体流程是：
+粗略流程：
 
 1. 飞书通过 WebSocket 推送 `im.message.receive_v1`
-2. Alice 把事件解析成内部 `Job`
-3. 根据 bot 配置决定走 `chat`、`work`，还是直接忽略
-4. 组装上下文、调用 LLM、把进度和最终回复发回飞书
+2. Alice 把事件归一化成 `Job`
+3. scene 路由决定这条消息应被忽略、当成内建命令、走 `chat`，还是走 `work`
+4. Alice 调用选中的 backend，把进度和最终回复发回飞书
 
-## 运行时目录
+## 2. 启动模式
 
-每个 bot 都会解析出自己的运行目录：
+启动模式现在必须显式指定。
 
-- `alice_home`：bot 运行根目录
-- `workspace_dir`：工作区，包含 `SOUL.md`
-- `prompt_dir`：prompt 模板目录
-- `codex_home`：默认共享的 Codex 类 CLI 目录，也可以按 bot 单独覆盖
-- `runtime_http_addr`：本地 runtime API 地址
+- `alice --feishu-websocket`
+  真实飞书连接模式
+- `alice --runtime-only`
+  本地 runtime/API-only 模式。automation 和 bundled skills 仍然可用，但不会启动飞书 WebSocket
+- `alice-headless --runtime-only`
+  用于隔离调试或临时 rerun 的 headless runtime-only 模式
 
-例如 bot id 是 `chat_bot` 时，默认目录在：
+`alice-headless` 不能搭配 `--feishu-websocket`。
+
+## 3. 运行目录
+
+对每个 bot，Alice 重点会解析这些路径：
+
+- `alice_home`
+  bot runtime 根目录
+- `workspace_dir`
+  bot 工作区，包含 `SOUL.md`
+- `prompt_dir`
+  bot 级 prompt 覆盖目录
+- `codex_home`
+  Codex 类工具共享或覆盖的 CLI home
+- `runtime_http_addr`
+  本地 runtime API 监听地址
+
+默认情况下，一个名为 `chat_bot` 的 bot 位于：
 
 ```text
 ${ALICE_HOME}/bots/chat_bot/
 ```
 
-如果 `bots.<id>.codex_home` 留空，Alice 会先继承进程环境里的 `CODEX_HOME`，否则默认回退到 `~/.codex`。
+这个 bot 根目录下最关键的持久化文件：
 
-## Alice 怎么用
+- `run/connector/automation.db`
+- `run/connector/campaigns.db`
+- `run/connector/session_state.json`
+- `run/connector/runtime_state.json`
+- `run/connector/resources/scopes/...`
 
-典型操作流程：
+## 4. 最重要的配置概念
 
-1. 安装或编译 Alice
-2. 复制并编辑 `config.yaml`
-3. 给每个 bot 配好飞书应用凭据
-4. 选定 LLM provider，并确认对应 CLI 已登录
-5. 前台运行或交给 `systemd --user` 托管
-6. 在飞书里直接和 bot 对话
+日常最常碰到的 key：
 
-## Scene 路由
+- `bots.<id>`
+  一个 bot runtime
+- `llm_profiles`
+  命名执行档位
+- `group_scenes.chat`
+  群聊闲聊场景
+- `group_scenes.work`
+  显式任务场景
+- `permissions`
+  控制 runtime message / automation / campaign 能力
+- `campaign_role_defaults`
+  code-army 角色到 profile 的默认映射
+- `workspace_dir` / `prompt_dir` / `codex_home`
+  运行目录
 
-在群聊或话题群里，Alice 主要支持两种 scene：
+一个容易混淆的点：
 
-- `chat`：低门槛的日常对话模式
-- `work`：显式触发的任务模式
+- `group_scenes.*.llm_profile` 指向的是 `llm_profiles` 的外层 key
+- 如果那个 profile 里还写了 provider-specific 的内层 `profile`，Alice 仍然把外层 key 当运行时选择器，只把内层值传给 provider CLI
 
-这两者配置在 `bots.<id>.group_scenes` 下。
+## 5. 群聊 Scene 路由
 
-### Chat 模式
+Alice 在群聊和话题群里支持两种主要 scene：
 
-`chat` 适合常规聊天。
+- `chat`
+  低门槛闲聊模式
+- `work`
+  显式任务执行模式
 
-推荐配置：
+### Chat Scene
 
-- `enabled: true`
-- `session_scope: per_chat`
-- `llm_profile: chat`
-- `no_reply_token: "[[NO_REPLY]]"`
-- `create_feishu_thread: false`
+推荐形态：
 
-行为是：
+```yaml
+group_scenes:
+  chat:
+    enabled: true
+    session_scope: "per_chat"
+    llm_profile: "chat"
+    no_reply_token: "[[NO_REPLY]]"
+    create_feishu_thread: false
+```
 
-- 整个群共用一个 chat scene session
-- 不需要额外的 work 触发词
-- 发送 `/clear` 会切到新的 chat session
-- 如果模型输出 `no_reply_token`，Alice 会静默不发言
+行为：
 
-适合“让 bot 像群成员一样参与聊天”的场景。
+- 整个群共享一个 chat scene session
+- 不需要显式 work trigger 也能响应
+- `/clear` 会轮换到新的 chat session
+- 如果模型返回 suppress token，Alice 会保持静默
 
-### Work 模式
+如果你希望 bot 像群里的常驻成员那样参与对话，用 `chat`。
 
-`work` 适合显式任务处理。
+### Work Scene
 
-推荐配置：
+推荐形态：
 
-- `enabled: true`
-- `trigger_tag: "#work"`
-- `session_scope: per_thread`
-- `llm_profile: work`
-- `create_feishu_thread: true`
+```yaml
+group_scenes:
+  work:
+    enabled: true
+    trigger_tag: "#work"
+    session_scope: "per_thread"
+    llm_profile: "work"
+    create_feishu_thread: true
+```
 
-行为是：
+行为：
 
-- 只有命中 work 触发条件的根消息才会开启 work thread
-- 通常就是 `#work @bot ...`
-- Alice 会为这个飞书 thread 创建或复用一条独立 work session
-- 后续都在这个任务 thread 里继续，不污染 bot 的日常聊天上下文
+- 一条匹配 work trigger 的根消息会启动新的 work session
+- 默认通常是 `#work @bot ...`
+- Alice 会为那个 thread 创建或恢复专用 work session
+- 回复保持在任务 thread 内，不会和闲聊状态混在一起
 
-适合编码、排障、执行任务、自动化操作这类强上下文工作。
+当你需要 thread-local 的排障、编码、计划或自动化任务时，用 `work`。
 
-### 旧触发模式回退
+### 内建命令
+
+这些命令会绕过正常的 LLM 主链路：
+
+- `/help`
+  查看内建命令帮助卡片
+- `/status`
+  查看当前 scope 下的 usage、活跃 automation task、活跃 code-army campaign
+- `/codearmy status`
+  查看 code-army 摘要
+- `/codearmy tasks [query]`
+  查看匹配 campaign 的 task 级状态
+- `/clear`
+  轮换当前群聊 `chat` session
+- `/stop`
+  停止当前 session 正在运行的回复
+
+### 回退触发模式
 
 如果 `group_scenes.chat.enabled` 和 `group_scenes.work.enabled` 都是 `false`，Alice 会回退到旧触发逻辑：
 
-- `trigger_mode: at`：只有艾特 bot 的消息会处理
-- `trigger_mode: prefix`：只有命中 `trigger_prefix` 的消息会处理
+- `trigger_mode: at`
+  只有提到 bot 的消息才接受
+- `trigger_mode: prefix`
+  只有以 `trigger_prefix` 开头的消息才接受
 
-新部署一般建议直接用 `group_scenes`，不要再依赖旧逻辑。
+新部署应优先使用显式 `group_scenes`。
 
-## 推荐配置模式
+## 6. 推荐配置模式
 
-### 只有 Chat 的 bot
-
-适合“普通群助理”：
+### 纯 Chat Bot
 
 ```yaml
 group_scenes:
@@ -124,9 +183,7 @@ group_scenes:
     enabled: false
 ```
 
-### 同时支持 Chat + Work 的 bot
-
-适合“平时聊天，显式进工作线程后开始认真干活”：
+### Chat + Work 混合 Bot
 
 ```yaml
 llm_profiles:
@@ -136,8 +193,7 @@ llm_profiles:
     reasoning_effort: "low"
   work:
     provider: "claude"
-    model: "claude-sonnet-4-20250514"
-    reasoning_effort: "high"
+    model: "claude-sonnet-4-6"
 
 group_scenes:
   chat:
@@ -153,18 +209,17 @@ group_scenes:
     create_feishu_thread: true
 ```
 
-不同 scene 可以使用不同 provider；如果某个 profile 没写 `provider`，Alice 会回退到默认 provider。
-`group_scenes.*.llm_profile` 指向的始终是 `llm_profiles` 的外层名字；如果该 profile 还配置了内层 `profile`，Alice 会把外层名字作为 runtime 里的稳定选择器，只把内层值传给具体 provider CLI。
+不同 scene 可以选不同 provider，也可以用不同 CLI 命令。
 
-## `SOUL.md`
+## 7. `SOUL.md`
 
-每个 bot 的人格和生图元数据都可以放在 `workspace/SOUL.md`。
+每个 bot 的人格和机器可读回复元数据都可以写在 `workspace/SOUL.md`。
 
-当前支持的机器可读 frontmatter 字段：
+当前 frontmatter 键：
 
-- `image_refs`：给角色生图使用的参考图
-- `image_generation`：跟随人格走的生图策略，比如自动生图所需的最小 `reply_will` 分数
-- `output_contract`：回复元数据协议，Alice 会在发送前据此解析隐藏块、静默 token 和动作字段
+- `image_refs`
+- `image_generation`
+- `output_contract`
 
 示例：
 
@@ -192,37 +247,62 @@ output_contract:
 说明：
 
 - 相对路径相对于当前 `SOUL.md` 所在目录解析
-- Alice 解析后会把 frontmatter 从正文里剥掉，不会直接塞进 LLM prompt
-- 如果你希望模型输出这些标签或静默 token，请直接把对应说明和示例写在 `SOUL.md` 正文里
+- Alice 会先解析并剥离 frontmatter，再把正文拼到 prompt 里
+- `SOUL.md` 只用于 `chat`；`work` 场景故意不注入 bot soul
 
-## Runtime API 与自带 Skill
+## 8. Runtime API 与 Bundled Skills
 
-Alice 还提供本地 runtime HTTP API。自带 skill 通过它来：
+Alice 会暴露本地 runtime API。bundled skill 通过它来：
 
-- 发文本、图片、文件
-- 创建和管理定时任务
-- 操作 campaign 等运行时状态
+- 把附件发回飞书
+- 创建和管理 automation task
+- 创建和管理 runtime campaign 记录
 
-所以通常是：
+当前仓库里实际自带的 skill：
 
-- 人类用户在飞书里和 Alice 对话
-- skill 通过本地 runtime API 和 Alice 协作
+- `alice-message`
+- `alice-scheduler`
+- `alice-code-army`
+- `feishu-task`
+- `file-printing`
 
-## 常见排查
+当前 runtime 权限控制：
 
-- 群里完全不回：
-  先检查 `group_scenes`、`trigger_mode`，以及 `feishu_bot_open_id` / `feishu_bot_user_id`
-- `work` 模式进不去：
-  检查 `group_scenes.work.enabled`、`trigger_tag`，以及触发消息是否符合预期
-- 模型或思考强度不对：
-  检查 `llm_profiles`，以及 scene 指向的 profile 名称
-- skill 发附件失败：
-  检查 `runtime_http_addr`、`runtime_http_token` 和 runtime 权限
+- `permissions.runtime_message`
+- `permissions.runtime_automation`
+- `permissions.runtime_campaigns`
+- `permissions.allowed_skills`
+
+一个重要边界：
+
+- 纯文本回复正常应走主回复链路
+- runtime message API 主要用于图片 / 文件发送以及相关 caption
+
+## 9. 典型操作流程
+
+1. 通过 release 安装，或从源码构建 Alice
+2. 复制并编辑 `config.yaml`
+3. 填好 `bots.*.feishu_app_id` 和 `bots.*.feishu_app_secret`
+4. 确认目标 provider CLI 已安装并登录
+5. 用正确的启动模式启动 Alice
+6. 在飞书里先试 `/help`，再测试正常的 `chat` 或 `work` 流量
+
+## 10. 排障
+
+- 群里完全不回复：
+  先检查 `group_scenes`、`trigger_mode`，以及 `feishu_bot_open_id` / `feishu_bot_user_id` 是否配置正确。
+- `work` 模式起不来：
+  检查 `group_scenes.work.enabled` 是否为 true，`trigger_tag` 是否设置，触发消息是否真的匹配。
+- 模型或推理强度不对：
+  检查 `llm_profiles`，确认 scene 指向的是你预期的外层 profile key。
+- bundled skill 发附件或建任务失败：
+  检查 `runtime_http_addr`、`runtime_http_token` 和 `permissions.*` runtime gate。
+- 改了配置却没生效：
+  单 bot 模式支持有限热更新；多 bot 模式需要重启。
 
 ## 相关文档
 
-- [README](../README.md)
-- [English Usage Guide](./usage.md)
+- [README](../README.zh-CN.md)
+- [英文 Usage Guide](./usage.md)
 - [架构文档](./architecture.zh-CN.md)
-- [CodeArmy 使用指南](./codearmy.zh-CN.md)
-- [飞书消息流说明](./feishu-message-flow.zh-CN.md)
+- [文档索引](./README.md)

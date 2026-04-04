@@ -293,6 +293,18 @@ func TestEngine_RunUserTask_RunWorkflow_NeedsHumanPausesTaskAndWarns(t *testing.
 	if got := cardTitleFromJSON(t, sender.lastCard); got != "Demo Campaign · T001 · 执行 · 第 1 轮" {
 		t.Fatalf("unexpected warning card title: %q", got)
 	}
+	if sender.urgentAppCalls != 1 {
+		t.Fatalf("expected one urgent escalation, got %d", sender.urgentAppCalls)
+	}
+	if sender.urgentMessageID != "om_card" {
+		t.Fatalf("unexpected urgent message id: %q", sender.urgentMessageID)
+	}
+	if sender.urgentUserIDType != "user_id" {
+		t.Fatalf("unexpected urgent user id type: %q", sender.urgentUserIDType)
+	}
+	if len(sender.urgentUserIDs) != 1 || sender.urgentUserIDs[0] != "ou_actor" {
+		t.Fatalf("unexpected urgent receivers: %#v", sender.urgentUserIDs)
+	}
 
 	stored, err := store.GetTask(created.ID)
 	if err != nil {
@@ -367,6 +379,18 @@ func TestEngine_RunUserTask_RunWorkflow_PreflightNeedsHumanSkipsRunner(t *testin
 	if !strings.Contains(sender.lastCard, "campaign is still planning") {
 		t.Fatalf("warning card missing reason: %q", sender.lastCard)
 	}
+	if sender.urgentAppCalls != 1 {
+		t.Fatalf("expected preflight needs_human to trigger urgent escalation, got %d", sender.urgentAppCalls)
+	}
+	if sender.urgentMessageID != "om_card" {
+		t.Fatalf("unexpected urgent message id: %q", sender.urgentMessageID)
+	}
+	if sender.urgentUserIDType != "user_id" {
+		t.Fatalf("unexpected urgent user id type: %q", sender.urgentUserIDType)
+	}
+	if len(sender.urgentUserIDs) != 1 || sender.urgentUserIDs[0] != "ou_actor" {
+		t.Fatalf("unexpected urgent receivers: %#v", sender.urgentUserIDs)
+	}
 
 	stored, err := store.GetTask(created.ID)
 	if err != nil {
@@ -440,6 +464,9 @@ func TestEngine_RunUserTask_RunWorkflow_PreflightCompletedSkipsRunner(t *testing
 	}
 	if !strings.Contains(sender.lastCard, "campaign 已全部运行结束，自动收尾") {
 		t.Fatalf("completion card missing result: %q", sender.lastCard)
+	}
+	if sender.urgentAppCalls != 0 {
+		t.Fatalf("did not expect completion signal to trigger urgent escalation, got %d", sender.urgentAppCalls)
 	}
 
 	stored, err := store.GetTask(created.ID)

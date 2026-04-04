@@ -241,7 +241,7 @@ Session key 格式 `{type}:{id}|scene:{scene}|thread:{thread}|message:{msg}` 是
 
 当前 Code Army 只实现了 executor → reviewer 两阶段流程。SKILL.md 描述的计划阶段完全没有运行时代码支撑。
 
-**详细设计已完成**，见 `docs/R49-plan-phase-design.md`。核心要点：
+**详细设计已完成**，见 `docs/legacy/r49-plan-phase/R49-plan-phase-design.md`。核心要点：
 
 **三阶段流程**：
 

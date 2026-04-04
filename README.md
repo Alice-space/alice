@@ -99,9 +99,10 @@ Alice's operating model and `chat` / `work` scene behavior are documented in:
 
 Additional docs:
 
+- [Documentation Index](./docs/README.md)
 - [Architecture](./docs/architecture.md)
 - [架构文档](./docs/architecture.zh-CN.md)
-- [Feishu Message Flow (Chinese)](./docs/feishu-message-flow.zh-CN.md)
+- [CodeArmy Guide (Chinese)](./docs/codearmy.zh-CN.md)
 - [CodeArmy Isolated Debug Runbook](./docs/codearmy-isolated-debug.md)
 
 Connector startup mode is now explicit: use `--feishu-websocket` for the real Feishu connector, or `--runtime-only` for local runtime/API-only execution. For isolated debug or temporary rerun runtimes, use `alice-headless --runtime-only`; headless binaries no longer allow Feishu websocket startup.

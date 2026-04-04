@@ -11,6 +11,15 @@ import (
 	"github.com/Alice-space/alice/internal/logging"
 )
 
+type taskMessageSender interface {
+	SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error)
+	SendCardMessage(ctx context.Context, receiveIDType, receiveID, cardContent string) (string, error)
+}
+
+type taskUrgentSender interface {
+	UrgentApp(ctx context.Context, messageID, userIDType string, userIDs []string) error
+}
+
 func (e *Engine) runUserTasks(ctx context.Context, now time.Time) {
 	if e.store == nil || e.sender == nil {
 		return
@@ -135,22 +144,103 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 		return taskDispatch{}, err
 	}
 	if dispatch.forceCard {
-		if err := e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.cardContent); err == nil {
+		messageID, err := e.sendCardDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.cardContent)
+		if err == nil {
+			e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 			return dispatch, nil
 		}
 		if strings.TrimSpace(dispatch.text) == "" {
 			return dispatch, errors.New("warning card send failed and no text fallback is available")
 		}
-		return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
+		messageID, err = e.sendTextDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
+		if err != nil {
+			return dispatch, err
+		}
+		e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
+		return dispatch, nil
 	}
 	if taskPrefersCard(task) {
 		cardContent, err := buildTaskCardContent(task, dispatch.text)
 		if err != nil {
 			return dispatch, err
 		}
-		return dispatch, e.sender.SendCard(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, cardContent)
+		messageID, err := e.sendCardDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, cardContent)
+		if err != nil {
+			return dispatch, err
+		}
+		e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
+		return dispatch, nil
 	}
-	return dispatch, e.sender.SendText(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
+	messageID, err := e.sendTextDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
+	if err != nil {
+		return dispatch, err
+	}
+	e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
+	return dispatch, nil
+}
+
+func (e *Engine) sendTextDispatch(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
+	if sender, ok := any(e.sender).(taskMessageSender); ok {
+		return sender.SendTextMessage(ctx, receiveIDType, receiveID, text)
+	}
+	if err := e.sender.SendText(ctx, receiveIDType, receiveID, text); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+func (e *Engine) sendCardDispatch(ctx context.Context, receiveIDType, receiveID, cardContent string) (string, error) {
+	if sender, ok := any(e.sender).(taskMessageSender); ok {
+		return sender.SendCardMessage(ctx, receiveIDType, receiveID, cardContent)
+	}
+	if err := e.sender.SendCard(ctx, receiveIDType, receiveID, cardContent); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+func (e *Engine) maybeSendTaskUrgent(ctx context.Context, task Task, dispatch taskDispatch, messageID string) {
+	if !shouldUrgentTaskSignal(task, dispatch, messageID) {
+		return
+	}
+	sender, ok := any(e.sender).(taskUrgentSender)
+	if !ok {
+		return
+	}
+	userIDType, userID, ok := taskUrgentRecipient(task.Creator)
+	if !ok {
+		return
+	}
+	if err := sender.UrgentApp(ctx, messageID, userIDType, []string{userID}); err != nil {
+		logging.Warnf(
+			"send automation urgent notification failed id=%s state_key=%s message=%s: %v",
+			task.ID,
+			task.Action.StateKey,
+			messageID,
+			err,
+		)
+	}
+}
+
+func shouldUrgentTaskSignal(task Task, dispatch taskDispatch, messageID string) bool {
+	task = NormalizeTask(task)
+	if strings.TrimSpace(messageID) == "" {
+		return false
+	}
+	if task.Route.ReceiveIDType != "chat_id" {
+		return false
+	}
+	return dispatch.signal != nil && dispatch.signal.kind == taskSignalNeedsHuman
+}
+
+func taskUrgentRecipient(actor Actor) (string, string, bool) {
+	if openID := strings.TrimSpace(actor.OpenID); openID != "" {
+		return "open_id", openID, true
+	}
+	if userID := strings.TrimSpace(actor.UserID); userID != "" {
+		return "user_id", userID, true
+	}
+	return "", "", false
 }
 
 func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch, error) {
