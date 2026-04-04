@@ -66,13 +66,14 @@ type taskSignal struct {
 }
 
 type taskDispatch struct {
-	text         string
-	cardContent  string
-	forceCard    bool
-	signal       *taskSignal
-	signals      []taskSignal
-	completed    bool
-	nextThreadID string
+	text           string
+	cardContent    string
+	forceCard      bool
+	signal         *taskSignal
+	signals        []taskSignal
+	completed      bool
+	nextThreadID   string
+	firstMessageID string // Feishu message ID of the first sent message; used to bootstrap source_message_id
 }
 
 func primaryWorkflowSignal(signals []taskSignal) *taskSignal {

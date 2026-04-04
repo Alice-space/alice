@@ -14,6 +14,7 @@ const (
 	EnvActorOpenID     = "ALICE_MCP_ACTOR_OPEN_ID"
 	EnvChatType        = "ALICE_MCP_CHAT_TYPE"
 	EnvSessionKey      = "ALICE_MCP_SESSION_KEY"
+	EnvResumeThreadID  = "ALICE_MCP_RESUME_THREAD_ID"
 )
 
 type SessionContext struct {
@@ -25,6 +26,10 @@ type SessionContext struct {
 	ActorOpenID     string
 	ChatType        string
 	SessionKey      string
+	// ResumeThreadID is the Claude Code session UUID of the current session.
+	// Skills can read ALICE_MCP_RESUME_THREAD_ID to use it as
+	// action.resume_thread_id when creating resume-mode scheduled tasks.
+	ResumeThreadID string
 }
 
 func (c SessionContext) Validate() error {
@@ -59,6 +64,9 @@ func (c SessionContext) ToEnv() map[string]string {
 	if sessionKey := strings.TrimSpace(c.SessionKey); sessionKey != "" {
 		env[EnvSessionKey] = sessionKey
 	}
+	if resumeThreadID := strings.TrimSpace(c.ResumeThreadID); resumeThreadID != "" {
+		env[EnvResumeThreadID] = resumeThreadID
+	}
 	return env
 }
 
@@ -75,5 +83,6 @@ func SessionContextFromEnv(getenv func(key string) string) SessionContext {
 		ActorOpenID:     strings.TrimSpace(getenv(EnvActorOpenID)),
 		ChatType:        strings.TrimSpace(getenv(EnvChatType)),
 		SessionKey:      strings.TrimSpace(getenv(EnvSessionKey)),
+		ResumeThreadID:  strings.TrimSpace(getenv(EnvResumeThreadID)),
 	}
 }

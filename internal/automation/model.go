@@ -86,6 +86,7 @@ type Action struct {
 	StateKey        string     `json:"state_key,omitempty"`
 	SessionKey      string     `json:"session_key,omitempty"`
 	ResumeThreadID  string     `json:"resume_thread_id,omitempty"`
+	SourceMessageID string     `json:"source_message_id,omitempty"`
 	ReasoningEffort string     `json:"reasoning_effort,omitempty"`
 	Personality     string     `json:"personality,omitempty"`
 	PromptPrefix    string     `json:"prompt_prefix,omitempty"`
@@ -145,6 +146,7 @@ func NormalizeTask(task Task) Task {
 	task.Action.StateKey = strings.TrimSpace(task.Action.StateKey)
 	task.Action.SessionKey = strings.TrimSpace(task.Action.SessionKey)
 	task.Action.ResumeThreadID = strings.TrimSpace(task.Action.ResumeThreadID)
+	task.Action.SourceMessageID = strings.TrimSpace(task.Action.SourceMessageID)
 	task.Action.ReasoningEffort = strings.ToLower(strings.TrimSpace(task.Action.ReasoningEffort))
 	task.Action.Personality = strings.ToLower(strings.TrimSpace(task.Action.Personality))
 	task.Action.MentionUserIDs = storeutil.UniqueNonEmptyStrings(task.Action.MentionUserIDs)

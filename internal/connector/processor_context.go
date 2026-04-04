@@ -214,6 +214,7 @@ func sessionKeyForJob(job Job) string {
 
 func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 	scopeKey := resourceScopeKeyForJob(job)
+	sk := sessionKeyForJob(job)
 	sessionContext := mcpbridge.SessionContext{
 		ReceiveIDType:   strings.TrimSpace(job.ReceiveIDType),
 		ReceiveID:       strings.TrimSpace(job.ReceiveID),
@@ -221,7 +222,8 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 		ActorUserID:     strings.TrimSpace(job.SenderUserID),
 		ActorOpenID:     strings.TrimSpace(job.SenderOpenID),
 		ChatType:        strings.TrimSpace(job.ChatType),
-		SessionKey:      sessionKeyForJob(job),
+		SessionKey:      sk,
+		ResumeThreadID:  p.getThreadID(sk),
 	}
 	type resourceRootProvider interface {
 		ResourceRootForScope(resourceScopeKey string) string
