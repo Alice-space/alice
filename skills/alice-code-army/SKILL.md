@@ -1,251 +1,234 @@
 ---
 name: alice-code-army
-description: 以 campaign 仓库为主事实源，结合 Alice 调度、多模型执行与审阅，组织长期代码/研究协作。适用于多阶段、多子任务、多 repo 的并行推进，以及 repo-native 的计划、进度、评审与报告收敛。
+description: 以 Orchestrator-native 模式组织长期代码/研究协作。Claude Sonnet 4.6 直接作为编排者，调用 Opus 规划、Codex 执行、Sonnet 审阅，不依赖 Alice runtime 的模型调度。适用于多阶段、多子任务、多 repo 的长期并行推进。
 ---
 
-# Alice 代码军队
+# Alice Code Army — Orchestrator-Native Edition
 
-`alice-code-army` 现在采用 repo-first 约定：
+## 设计原则
 
-- `campaign repo` 做主事实源：计划、阶段、任务、评审、报告都以仓库里的 markdown/frontmatter 为主。
-- `Alice runtime` 做轻量索引层：记录当前会话绑定哪个 campaign、当前 scheduler task、当前运行态。
-- `source repos` 做真实代码变更面：task 改的代码仍落在原始代码仓库，而不是复制到 campaign repo。
-- Alice backend 会周期扫描 `campaign repo`：自动刷新 `reports/live-report.md`，并把 task 的 `wake_at` / `wake_prompt` 同步成真正的 automation wake task。
-- Alice runtime 会按角色调度 planner / planner reviewer / executor / reviewer workflow，并处理 review verdict、wake task 和 reconcile；每个角色实际用哪个 provider / model / profile 由 `config.yaml` 里的 `campaign_role_defaults` 和 `llm_profiles` 决定，`campaign.md` 不再承载这类默认值；task frontmatter 只在少数需要 one-off override 的场景下使用。proposal merge 和 human approval 仍需要 repo 文件与人工 gate 配合。
+- **Claude Sonnet 4.6 是 Orchestrator**：直接在长生命周期 session（timeout 10 天）中运行，负责规划、调度、审阅与用户沟通。
+- **模型调度由 Orchestrator 决定**：不依赖 Alice runtime 的 `config.yaml` profiles。
+- **Campaign repo 是进度日志和灾难恢复检查点**：真正的上下文和知识在 Orchestrator 的 session 里，repo 是辅助记录层。
+- **编排 Claude 直接说话即可发飞书**：其文字输出通过 `onThinking → sendAgentMessage` 自动推送飞书，不需要 alice-message。
 
-运行时优先直接使用 `$HOME/.agents/skills/alice-code-army/scripts/alice-code-army.sh` 管理当前会话下的 campaign。脚本会自动使用 Alice 注入的当前 thread/session 上下文和 runtime HTTP API。
+## 角色分工
 
-只有在你已经进入当前 skill 目录时，才把它简写成相对路径 `scripts/alice-code-army.sh`。不要把它写成 `alice/scripts/alice-code-army.sh`，也不要假设 release 二进制运行时存在 Alice 源码仓。
-
-维护约束：当前会话里 `.agents/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
+| 角色 | 模型 | 调用方式 |
+|------|------|---------|
+| **Orchestrator** | Claude Sonnet 4.6（我自己） | 长期 session，直接执行 |
+| **Planner** | Claude Opus | `Agent` tool，`subagent_type=Plan, model=opus` |
+| **Executor** | Codex GPT-5.4 medium | `codex:rescue` skill，`--model gpt-5.4-medium` |
+| **Reviewer** | Claude Sonnet | Orchestrator 自身审阅，或 `Agent` tool |
 
 ## 何时使用
 
-- 用户要做长期优化、研究协作、并行多 task、多 repo 任务推进。
-- 用户要把计划、任务、评审、报告沉淀在一个 campaign repo 里。
-- 用户希望按角色把 planner / reviewer / executor 交给 Alice runtime 调度，而不是把模型写死在模板里。
-- 用户希望长任务能自动唤醒、周期汇报、持续收敛。
+- 用户发 `#work` 消息，需要长期多阶段任务推进。
+- 需要 Plan → Execute → Review 完整工作流。
+- 任务预计超过单次对话，需要持续运行数小时到数天。
+- 用户想让 Orchestrator 自主调度多个 agent，自己只做高层决策。
 
-## 主数据面
+## 启动编排 Session
 
-默认约定：
+用户用 `#work` 触发后，和 Orchestrator 充分沟通，确认以下内容后再开始编排：
 
-- `README.md`：给新 agent 的入场说明和建议阅读顺序。
-- `campaign.md`：总目标、gate、方向、阶段、当前结论。
-- `plans/`：多模型 proposal、人类意见、merged plan。
-- `phases/Pxx/phase.md`：阶段定义。
-- `phases/Pxx/tasks/Txxx/`：完整 task package，里面有 `task.md`、`context.md`、`plan.md`、`progress.md`、`results/`、`reviews/`。
-- `reports/`：live report、phase report、final report。
-- `paper/`：论文或最终文档。
-- `repos/*.md`：source repo 引用信息，包括本地路径、远端、默认分支、工作分支。
-- `docs/research-contract.md` / `findings.md` / `EXPERIMENT_LOG.md`：研究约束、关键发现、实验日志。
+1. **目标（objective）**：要完成什么，成功标准是什么
+2. **源代码仓库**：本地路径、远端、基线分支
+3. **阶段划分**：大致几个阶段，每阶段的产出
+4. **约束**：不能做什么、安全要求、资源限制
 
-## Task 约定
+确认后，创建 campaign repo 并开始编排循环。
 
-一个 task 不只是单个 markdown，而是一个小工作包。常见内容包括：
+## Campaign Repo 结构
 
-- `task.md`：任务元数据与目标
-- `context.md`：背景、repo、关键文件、依赖
-- `plan.md`：执行方案
-- `progress.md`：执行日志
-- `reviews/*.md`：task-local 审阅记录
-- `results/*.md`：结果摘要、指标、产物路径
-- `scripts/`：task 专属小脚本
+```
+<campaign-repo>/
+├── README.md               # 入场说明和阅读顺序
+├── campaign.md             # 总目标、gate、约束、当前结论
+├── plan.md                 # 当前执行计划（Opus 产出，Orchestrator 维护）
+├── phases/
+│   └── P01/
+│       ├── phase.md        # 阶段目标和当前状态
+│       └── tasks/
+│           └── T001/
+│               ├── task.md       # 任务元数据
+│               ├── progress.md   # 执行日志
+│               ├── results/      # 结果文件
+│               └── reviews/      # 审阅记录
+├── checkpoints/            # 灾难恢复检查点
+├── repos/                  # 源代码仓库引用
+│   └── <repo-id>.md
+└── reports/
+    └── live-report.md      # 实时进度报告
+```
 
-真实业务代码继续放在 source repo。大数据和大产物只记录路径、checksum、摘要，不默认进 git。
+task.md frontmatter 的 `status` 字段只需：`pending` / `executing` / `review_pending` / `done` / `failed`
 
-task frontmatter 现在默认带两类角色：
+### 写入时机（保证可恢复）
 
-- `executor`：默认 `executor`
-- `reviewer`：默认 `reviewer`
+- **执行前**：写 `task.md status=executing`（意图写入）
+- **执行后**：写 `task.md status=review_pending` + `progress.md` + `results/`
+- **审阅后**：写 `reviews/Rxxx.md` + 更新 `task.md status=done/failed`
+- **每阶段完成**：更新 `phase.md` + 写 `checkpoints/checkpoint-{timestamp}.md`
 
-这些 role 是角色名，不是模型名。默认模板只保留角色标签和 workflow；实际模型选择统一来自 `config.yaml`。只有确实需要单个 task 偏离全局角色配置时，才在 task frontmatter 里显式补 provider / model / profile。
+## 编排循环
 
-并带这类执行态字段：
+每轮循环的标准步骤：
 
-- `dispatch_state`
-- `review_status`
-- `execution_round`
-- `review_round`
-- `base_commit`
-- `head_commit`
-- `last_run_path`
-- `last_review_path`
+```
+1. 检查收件箱（cat ~/.alice/codearmy/{campaign_id}/control.md）
+2. 如有控制命令，先执行
+3. 确认下一批 ready tasks（status=pending，依赖满足）
+4. 对每个 ready task：
+   a. 写 task.md status=executing
+   b. 调 codex:rescue 执行（--wait 阻塞等待）
+   c. 写执行结果到 progress.md / results/
+   d. Orchestrator 自审或调 Agent 做 review
+   e. 写 reviews/Rxxx.md，更新 task status
+5. 写 checkpoints/checkpoint-{timestamp}.md
+6. 更新 live-report.md
+7. 直接输出阶段性进度（自动推送飞书）
+8. 回到步骤 1
+```
 
-额外约束：
+### 检查收件箱
 
-- `working_branches` 表示 task 私有工作分支，不表示 source repo 的基线分支。
-- 不要把 `main`、`dev`、`rCM` 这类共享基线分支直接写进 `working_branches`；默认留空，让 runtime 生成独立的 `codearmy/...` task branch。
-- 如果 task 需要表达“基于哪个上游分支/commit 做修复”，放到 source repo facts、`base_commit` 或 task 正文里，不要复用 `working_branches`。
+在每次 `codex:rescue` 或 `Agent` 工具**返回后**，主动执行：
 
-## 并行与防冲突
+```bash
+cat ~/.alice/codearmy/{campaign_id}/control.md 2>/dev/null && \
+  rm -f ~/.alice/codearmy/{campaign_id}/control.md
+```
 
-并行的基本规则：
+如果文件存在，解析并执行其中的命令，然后继续。
 
-- 同一个 task 必须有独立 `owner_agent`、`lease_until`、`working_branch`、`write_scope`。
-- 同一个 source repo 可以并行多个 task，但只有在 `write_scope` 不重叠时才允许。
-- 同文件或同模块的重叠改动，不应并行；要么改成依赖链，要么合并成一个 task。
-- 开发分支可以并行，回主线集成应串行。
+### 收件箱格式
 
-长任务约定：
+```markdown
+---
+command: pause|resume|abort|replan
+message: "附加说明（可选）"
+---
+```
 
-- task 可以写 `wake_at` / `wake_prompt`
-- reconcile 读到后，应通过 `alice-scheduler` 创建或更新唤醒任务
-- 到时间后 runtime 会先把 task 明确恢复到 `executing`，再继续该 task 的 workflow
+用户通过交互 session 向编排 Claude 发命令：
 
-## 核心流程
+```bash
+mkdir -p ~/.alice/codearmy/<campaign_id>
+cat > ~/.alice/codearmy/<campaign_id>/control.md << 'EOF'
+---
+command: pause
+message: 等我审阅 P01 的结果
+---
+EOF
+```
 
-1. 新建 campaign，并直接 scaffold 一个 campaign repo。
-2. 先补齐 objective、source repos、研究约束等 baseline facts，再由 Alice runtime 按角色派发 planner / planner reviewer workflow。
-   到这一步为止，默认只补 baseline facts；不要自己代写 planner proposal、master plan、phase/task tree，除非用户明确要求手工 backfill。
-3. 人工合并 proposal，生成 merged plan。
-4. 按 merged plan 展开阶段和 refined task package 文件树。
-5. runtime reconcile 只派发依赖满足、write scope 不冲突的 ready tasks。
-6. Alice judge 先读取 review 文件并把 verdict 回写成 `accepted / rework / blocked / rejected`。
-7. executor 在 source repo 分支/worktree 上执行，并把 task 状态推进到 `review_pending / waiting_external / blocked`。
-8. reviewer 只写 task-local `phases/Pxx/tasks/Txxx/reviews/Rxxx.md`，不直接改 source repo。普通可返工问题优先给 `concern`，只有需要人类介入、外部依赖变更或 campaign 级重规划时才给 `blocking`。
-9. curator / reporter 汇总为 live report、phase report、paper。
-10. Alice 后台 system task 会持续做 repo reconcile、planner/planner reviewer/executor/reviewer dispatch 和 wake task 同步，不需要每次都靠人工重跑一遍脚本。
+## 调用 Codex 执行任务
 
-## Workflow Guardrails
+使用 `codex:rescue` skill，指定 `gpt-5.4-medium`：
 
-默认模式是“让 runtime 角色真正执行 workflow”，不是“助手手工代写所有角色产物”。除非用户明确要求手工 backfill / bypass workflow，否则必须遵守：
+```
+Skill: codex:rescue
+Args: --wait --write --model gpt-5.4-medium --effort medium <任务描述>
+```
 
-- `create` / `bootstrap` / `repo-reconcile` 之后，只能手工补 baseline facts：
-  `README.md`
-  `campaign.md` 里的 objective / lineage / source_repos
-  `repos/*.md`
-  `docs/research-contract.md`
-  `findings.md`
-  以及必要的 archive / repo inventory
-- 不要手工代写 planner 产物：
-  `plans/proposals/*.md`
-  `plans/reviews/*.md`
-  `plans/merged/master-plan.md`
-  `phases/Pxx/phase.md` 的计划性结论
-  `phases/Pxx/tasks/Txxx/` 的 refined task package
-- 不要手工代写 executor / reviewer 产物：
-  `progress.md`
-  `results/*`
-  `reviews/Rxxx.md`
-  以及把 task 直接推进到 `done / accepted / review_pending`
-- 一旦 `repo-reconcile` 已经返回 `dispatch_tasks`，就视为对应角色已被 runtime 接管；助手应汇报当前 `plan_status`、`dispatch_tasks`、`下一步`，而不是继续冒充 planner / reviewer / executor。
-- 如果用户要求“严格按 codearmy workflow”，在 `bootstrap` 成功并看到 planner dispatch 后，应立即停在那一步，等待 planner / planner reviewer / executor 的正式输出。
-- 如果确实要绕过 workflow（例如纯历史 backfill、runtime 当前不可用、或用户明确要求手工迁移），必须先在回复里明确标注：
-  `manual backfill / bypass workflow`
-  并说明为什么不能走正式 planner / executor 路径。
-- role personality 必须使用当前 runtime 支持的取值；对 codex 侧，至少保证落在：
-  `none`
-  `friendly`
-  `pragmatic`
-  不要在模板或 campaign frontmatter 里继续写 `analytical` 这类 runtime 不接受的值。
+- `--wait`：阻塞直到 Codex 完成（编排 Claude 挂起，不消耗 token）
+- `--write`：允许 Codex 写文件
+- `--model gpt-5.4-medium`：廉价执行模型
+- 高质量 review 时改用 `gpt-5.4` + `--effort high`
 
-## Migration Campaign 特别规则
+## 调用 Opus 规划
 
-- “迁移 campaign” 也必须先走 planner / planner reviewer / human approval 的主流程；不要因为目标是迁移，就直接手工宣布 migration 完成。
-- `campaign repo 已创建` 不等于 `workflow 已走完`；只有 planner proposal、plan review、master plan、task package 和后续执行态都按 runtime workflow 产出时，才能说进入了正式 codearmy 流程。
-- 对 archive 型任务，手工允许补的是事实清单和边界约束，不允许手工代替 planner / executor 完成计划和执行记录。
+```python
+Agent(subagent_type="Plan", model="opus", prompt="...")
+```
 
-## 角色边界
+提供完整的背景、目标、约束、现有代码结构，让 Opus 产出 `plan.md` 的内容。
 
-- `Alice`：orchestrator / judge / integrator
-- `Planner`：产出 proposal 和 draft tasks；具体 provider / model 由 Alice runtime 调度
-- `Planner Reviewer`：审阅 proposal 和 draft task 切分；具体 provider / model 由 Alice runtime 调度
-- `Executor`：执行 task，可写 source repo 和 task 目录；具体 provider / model 由 Alice runtime 调度
-- `Reviewer`：外部审阅者，只写 review 文件和审阅结论；具体 provider / model 由 Alice runtime 调度
+## 进度通知飞书
 
-硬规则：
+**直接输出文字即可**。编排 Claude 的 assistant text 自动经 `onThinking → sendAgentMessage` 推送飞书。
 
-- reviewer 不直接改 source repo
-- executor 不直接裁决自己是否通过
-- task 进入 `review_pending` 后，review round 由 Alice 派发 reviewer
-- review verdict 由 Alice judge 应用到 task frontmatter
+需要发送图片/文件时，才使用 `alice-message` skill。
 
-## 常用命令
+示例输出：
+```
+✅ Phase P01 完成：3 个 task 全部 done，详见 reports/live-report.md
+⏭️ 开始 Phase P02：T004 T005 T006 已就绪，调度 Codex 执行中...
+⚠️ T003 执行失败，原因：<xxx>，需要人工介入，已暂停。
+```
 
-- 建议先定义脚本入口：
-  `CODE_ARMY_SH="$HOME/.agents/skills/alice-code-army/scripts/alice-code-army.sh"`
-- 列出当前 thread 下的 campaign：
-  `"$CODE_ARMY_SH" list`
-- 删除一个 campaign：
-  `"$CODE_ARMY_SH" delete camp_xxx`
-- 删除一个 campaign，并顺手删除本地 campaign repo：
-  `"$CODE_ARMY_SH" delete camp_xxx --delete-repo`
-- 新建 campaign，并默认直接 scaffold campaign repo：
-  `"$CODE_ARMY_SH" create <<'JSON'`
-  `{ "title": "Detector Scan", "objective": "完成 repo-native 的多阶段研究协作", "repo": "group/source-repo", "campaign_repo_path": "./campaigns/detector-scan", "max_parallel_trials": 6 }`
-  `JSON`
-- 安全启动一个 campaign：create + baseline facts + repo-reconcile，一次性拉起正式 planner dispatch：
-  `"$CODE_ARMY_SH" bootstrap <<'JSON'`
-  `{ "title": "Detector Scan", "objective": "完成 repo-native 的多阶段研究协作", "repo": "group/source-repo", "campaign_repo_path": "./campaigns/detector-scan", "max_parallel_trials": 6, "source_repos": [ { "repo_id": "repo-a", "local_path": "/path/to/repo-a" } ], "research_contract": { "constraints": ["先完成 planning，再进入执行"] } }`
-  `JSON`
-- 为已有 campaign 手动初始化或补建 campaign repo：
-  `"$CODE_ARMY_SH" init-repo camp_xxx ./campaigns/detector-scan`
-- 扫描 campaign repo，查看当前 ready / blocked / wake 状态：
-  `"$CODE_ARMY_SH" repo-scan camp_xxx`
-- 校验 campaign repo 是否满足 repo-first contract：
-  `"$CODE_ARMY_SH" repo-lint camp_xxx`
-- 在人类批准前执行更严格的 gate 校验：
-  `"$CODE_ARMY_SH" repo-lint camp_xxx --for-approval`
-- 手动触发一次 repo reconcile，并刷新 live report / runtime summary：
-  `"$CODE_ARMY_SH" repo-reconcile camp_xxx`
-- 对单个 executor / reviewer 回合做收尾自检；命令会回写 `self_check_*` 证明，且只有返回 0 才表示这轮可以合法结束：
-  `"$CODE_ARMY_SH" task-self-check camp_xxx T001 executor`
-- 对单个 planner / planner reviewer 回合做收尾自检；命令会回写 campaign-level self-check 证明，且只有返回 0 才表示这一轮规划产物可以合法结束：
-  `"$CODE_ARMY_SH" plan-self-check camp_xxx planner 2`
-- 查看单个 campaign：
-  `"$CODE_ARMY_SH" get camp_xxx`
-- Patch campaign：
-  `"$CODE_ARMY_SH" patch camp_xxx '{"summary":"direction updated"}'`
-- 人类批准计划，只有在 planner review、merged plan 和 refined task package 都通过校验后才会成功：
-  `"$CODE_ARMY_SH" approve-plan camp_xxx`
-- 应用一条 `/alice ...` 指令：
-  `"$CODE_ARMY_SH" apply-command camp_xxx '/alice hold' feishu`
-- 从 `hold` 恢复 campaign；会优先按 repo `plan_status` 恢复到 planning / review pending / plan approved / running：
-  `"$CODE_ARMY_SH" apply-command camp_xxx '/alice resume' feishu`
+## 用户交互
 
-## 重启 / 中断恢复
+### 查询进度（Fork Session）
 
-常见症状：
+用户想了解编排细节（不打断编排进程）：
 
-- 用户刚重启 Alice、runtime 或当前 bot 进程。
-- `"$CODE_ARMY_SH" get camp_xxx` / `repo-scan camp_xxx` 仍显示 campaign 是 `running`，且有 `active_tasks`，例如 task 还停在 `executing` / `reviewing`。
-- 但当前会话里的 automation dispatch task 已经变成 `paused`，或者上一轮没真正落下新的 `results/*` / `reviews/Rxxx.md`。
-- task frontmatter 里常会留下旧的 `self_check_status: failed`、旧 `last_review_path` 或旧 `last_run_path`，说明上一轮角色回合被打断了，而不是 campaign 已经正常收尾。
+```bash
+# Orchestrator 启动时输出的 session_id
+SESSION_FILE="$HOME/.claude/projects/<project_hash>/<session_id>.jsonl"
+FORK_ID=$(python3 -c "import uuid; print(uuid.uuid4())")
+cp "$SESSION_FILE" "$HOME/.claude/projects/<project_hash>/${FORK_ID}.jsonl"
+claude --resume "$FORK_ID"
+```
 
-从当前版本开始，Alice 在启动后会先自动跑一轮 startup recovery：立即 reconcile 所有仍可自动推进的 campaign，并尝试重置被更新打断的内部 dispatch / wake workflow task。所以遇到重启后的 CodeArmy 中断，预期应该先看到自动恢复；只有自动恢复后仍未重新出现新的 active dispatch，才需要手工执行下面的恢复步骤。
+Fork 继承完整上下文，可自由问答，不影响编排进程。
 
-推荐恢复顺序：
+### 发控制命令
 
-1. 先确认是不是“单个派发回合被打断”，而不是 campaign 级 `hold`：
-   `"$CODE_ARMY_SH" get camp_xxx`
-   `"$CODE_ARMY_SH" repo-scan camp_xxx`
-2. 再看当前会话自动化任务，确认同一个 `state_key` 的 dispatch task 是否已经 `paused`：
-   `"$HOME/.agents/skills/alice-scheduler/scripts/alice-scheduler.sh" list`
-3. 如果 campaign 仍是 `running`，而 task 只是停在 `executing` / `reviewing`，优先直接执行：
-   `"$CODE_ARMY_SH" repo-reconcile camp_xxx`
-4. 不要先手工 patch task frontmatter，也不要急着用 `/alice resume`。`/alice resume` 主要用于 campaign 处于 `hold` 的场景；如果 campaign 本来就在 `running`，更常见的问题只是 dispatch task 被打断，此时 `repo-reconcile` 更稳。
-5. `repo-reconcile` 应该会按同一个 `campaign_dispatch:...` `state_key` 重建 dispatch task，把旧的 `paused` 任务替换成新的 `active` 任务；随后再用 `alice-scheduler` 的 `list` / `get` 复查，预期看到新的 task `status=active`，常伴随 `running=true`。
-6. 只有当 `repo-reconcile` 后依旧没有新的 active dispatch，或者 automation task 的 `last_result` 持续是 `error:` 且超过短暂 cooldown，才继续深挖 runtime 故障，必要时发 `/alice needs-human ...`。
+写入收件箱文件（见"检查收件箱"节）。
 
-这类恢复场景下，助手的职责是先把 runtime 调度恢复起来，再汇报：
+### 普通消息
 
-- `campaign repo`
-- `campaign status`
-- 哪个 task / round 被打断
-- 新旧 automation task id 和 `state_key`
-- 恢复后是否已经重新进入 `active` / `running`
-- 下游还有哪些 task 继续被它阻塞
+用户发普通消息（非 `#work`），Alice 起新的交互 Claude 处理，不打断编排 session。
 
-## 自动化与回复模式
+## 灾难恢复
 
-- reconcile / heartbeat 默认应该推进任务，而不是只汇报。
-- 对做不到或继续做不安全的动作，仍应发 `/alice needs-human ...`。
-- 回复中优先说明：
-  `campaign repo`
-  `dispatch tasks`
-  `当前阶段`
-  `活跃 tasks`
-  `阻塞项`
-  `下一步`
-- 当用户要求看报告时，优先更新 `reports/live-report.md` 或相应阶段报告，而不是只口头描述。
+Alice 重启或编排进程中断时：
+
+1. `claude --resume <session_id>`：恢复完整对话历史
+2. 读 campaign repo，确认各 task 状态：
+   - `executing` → 视为中断，重新执行
+   - `review_pending` → 重新审阅
+   - `done` → 跳过
+3. 读最新 `checkpoints/` 文件，确认断点，从那里续跑
+
+### Checkpoint 格式
+
+```markdown
+# Checkpoint {timestamp}
+
+## 当前状态
+- phase: P01
+- completed_tasks: [T001, T002]
+- interrupted_tasks: [T003]
+- next_tasks: [T004, T005]
+
+## 最后完成动作
+- task: T002, commit: abc123
+
+## 恢复指令
+确认 T003 状态；如未完成则重跑，然后继续 T004/T005。
+```
+
+## 定时唤醒（跨天 Campaign）
+
+短任务（< 10 天）无需定时，单 session 完成。
+
+跨天长任务，每个 Phase 结束时用 alice-scheduler 创建下一 Phase 的唤醒任务：
+
+```
+alice-scheduler create: {
+  "title": "codearmy-wakeup-P02",
+  "schedule": {"type": "one_shot", "run_at": "<时间>"},
+  "action": {
+    "type": "run_llm",
+    "profile": "work",
+    "prompt": "继续 campaign <id> 的 Phase P02，先读 campaign repo 状态，再开始执行。"
+  }
+}
+```
+
+## 维护约束
+
+当前会话里 `.agents/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
