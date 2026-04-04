@@ -181,6 +181,11 @@ func (r Runner) RunWithThreadAndProgress(
 			toolCalls = append(toolCalls, toolCall)
 			logging.Debugf("claude tool_call=%q", toolCall)
 		}
+		for _, toolName := range event.ToolNames {
+			if onThinking != nil {
+				onThinking("🔧 " + toolName)
+			}
+		}
 		if event.HasResultEvent {
 			if strings.TrimSpace(event.ResultText) != "" {
 				resultMessage = strings.TrimSpace(event.ResultText)
