@@ -103,11 +103,25 @@ func (e *Engine) recordUserTaskOutcome(task Task, dispatch taskDispatch, err err
 	if recordErr != nil {
 		logging.Errorf("record automation result failed id=%s err=%v", task.ID, recordErr)
 	}
+	if err != nil {
+		return
+	}
 	// Persist the new Claude thread ID for the next run (sticky thread).
-	if err == nil && strings.TrimSpace(dispatch.nextThreadID) != "" &&
+	if strings.TrimSpace(dispatch.nextThreadID) != "" &&
 		strings.TrimSpace(dispatch.nextThreadID) != strings.TrimSpace(task.Action.ResumeThreadID) {
 		if patchErr := e.store.RecordTaskResumeThreadID(task.ID, dispatch.nextThreadID); patchErr != nil {
 			logging.Warnf("persist resume_thread_id failed id=%s err=%v", task.ID, patchErr)
+		}
+	}
+	// Bootstrap source_message_id: on the first normal (non-signal, non-forced-
+	// card) successful send, record the returned message ID so future runs can
+	// reply in-thread.  Signal/forceCard sends are exceptional messages and
+	// should not become the permanent thread anchor.
+	if strings.TrimSpace(dispatch.firstMessageID) != "" &&
+		strings.TrimSpace(task.Action.SourceMessageID) == "" &&
+		dispatch.signal == nil && !dispatch.forceCard {
+		if patchErr := e.store.RecordTaskSourceMessageID(task.ID, dispatch.firstMessageID); patchErr != nil {
+			logging.Warnf("persist source_message_id failed id=%s err=%v", task.ID, patchErr)
 		}
 	}
 }
@@ -138,12 +152,26 @@ func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Contex
 	return context.WithTimeout(ctx, e.userTaskTimeoutDuration())
 }
 
+// effectiveRoute returns the delivery route for a task run.
+// If action.SourceMessageID is set (bootstrapped from a prior run), it takes
+// precedence over task.Route so the message is posted as a reply in the same
+// Feishu thread via the Reply API (receive_id_type="source_message_id").
+func effectiveRoute(task Task) Route {
+	task = NormalizeTask(task)
+	if id := task.Action.SourceMessageID; id != "" {
+		return Route{ReceiveIDType: "source_message_id", ReceiveID: id}
+	}
+	return task.Route
+}
+
 func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, error) {
 	if e.sender == nil {
 		return taskDispatch{}, errors.New("automation sender is nil")
 	}
 	task = NormalizeTask(task)
-	if strings.TrimSpace(task.Route.ReceiveIDType) == "" || strings.TrimSpace(task.Route.ReceiveID) == "" {
+	// Validate the effective route (source_message_id takes precedence when set).
+	route := effectiveRoute(task)
+	if strings.TrimSpace(route.ReceiveIDType) == "" || strings.TrimSpace(route.ReceiveID) == "" {
 		return taskDispatch{}, errors.New("task route is incomplete")
 	}
 	dispatch, err := e.buildTaskDispatch(ctx, task)
@@ -151,18 +179,20 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 		return taskDispatch{}, err
 	}
 	if dispatch.forceCard {
-		messageID, err := e.sendCardDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.cardContent)
+		messageID, err := e.sendCardWithFallback(ctx, task, route, dispatch.cardContent)
 		if err == nil {
+			dispatch.firstMessageID = messageID
 			e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 			return dispatch, nil
 		}
 		if strings.TrimSpace(dispatch.text) == "" {
 			return dispatch, errors.New("warning card send failed and no text fallback is available")
 		}
-		messageID, err = e.sendTextDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
+		messageID, err = e.sendTextWithFallback(ctx, task, route, dispatch.text)
 		if err != nil {
 			return dispatch, err
 		}
+		dispatch.firstMessageID = messageID
 		e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 		return dispatch, nil
 	}
@@ -171,19 +201,43 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 		if err != nil {
 			return dispatch, err
 		}
-		messageID, err := e.sendCardDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, cardContent)
+		messageID, err := e.sendCardWithFallback(ctx, task, route, cardContent)
 		if err != nil {
 			return dispatch, err
 		}
+		dispatch.firstMessageID = messageID
 		e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 		return dispatch, nil
 	}
-	messageID, err := e.sendTextDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, dispatch.text)
+	messageID, err := e.sendTextWithFallback(ctx, task, route, dispatch.text)
 	if err != nil {
 		return dispatch, err
 	}
+	dispatch.firstMessageID = messageID
 	e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 	return dispatch, nil
+}
+
+// sendTextWithFallback sends text via route.  If route is a source_message_id
+// override (thread reply) and delivery fails, it falls back to task.Route so a
+// stale source_message_id cannot permanently silence a task.
+func (e *Engine) sendTextWithFallback(ctx context.Context, task Task, route Route, text string) (string, error) {
+	messageID, err := e.sendTextDispatch(ctx, route.ReceiveIDType, route.ReceiveID, text)
+	if err != nil && route.ReceiveIDType == "source_message_id" {
+		logging.Warnf("thread reply failed, falling back to task route id=%s err=%v", task.ID, err)
+		return e.sendTextDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, text)
+	}
+	return messageID, err
+}
+
+// sendCardWithFallback is the card equivalent of sendTextWithFallback.
+func (e *Engine) sendCardWithFallback(ctx context.Context, task Task, route Route, cardContent string) (string, error) {
+	messageID, err := e.sendCardDispatch(ctx, route.ReceiveIDType, route.ReceiveID, cardContent)
+	if err != nil && route.ReceiveIDType == "source_message_id" {
+		logging.Warnf("thread card reply failed, falling back to task route id=%s err=%v", task.ID, err)
+		return e.sendCardDispatch(ctx, task.Route.ReceiveIDType, task.Route.ReceiveID, cardContent)
+	}
+	return messageID, err
 }
 
 func (e *Engine) sendTextDispatch(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
@@ -281,6 +335,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			return taskDispatch{}, errors.New("action prompt is empty for run_llm")
 		}
 		result, err := runner.Run(ctx, llm.RunRequest{
+			ThreadID:        task.Action.ResumeThreadID,
 			AgentName:       "scheduler",
 			UserText:        prompt,
 			Scene:           taskScene(task),
@@ -315,7 +370,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if err != nil {
 			return taskDispatch{}, err
 		}
-		return taskDispatch{text: text}, nil
+		return taskDispatch{text: text, nextThreadID: strings.TrimSpace(result.NextThreadID)}, nil
 	case ActionTypeRunWorkflow:
 		runner := e.workflowRunnerValue()
 		if runner == nil {

@@ -262,12 +262,21 @@ func canManageTask(task automation.Task, actorID string) bool {
 }
 
 // routeAndScopeFromSessionKey derives the Feishu Route and automation Scope from
-// a session key such as "chat_id:oc_xxx|scene:work|thread:omt_yyy".
+// a session key such as "chat_id:oc_xxx|scene:work|seed:om_yyy".
 //
-// If a thread token is present the Route targets the thread directly
-// (receive_id_type=thread_id), so automation messages land in the correct
-// Feishu thread rather than the top-level chat.  The Scope is always anchored
-// to the base channel (chat_id or user/open_id) for access-control purposes.
+// Thread delivery is achieved via the Feishu Reply API (reply_in_thread=true)
+// rather than the Create Message API, because Feishu does not support
+// receive_id_type=thread_id for message creation.  When the session key
+// contains a "|seed:om_xxx" token (the canonical work-thread form), the Route
+// uses receive_id_type="source_message_id" so the automation engine can reply
+// to that seed message and keep the response inside the same Feishu thread.
+//
+// The "|thread:omt_xxx" alias form (Feishu thread ID, not a message ID) cannot
+// be used directly with the Reply API; in that case the route falls back to the
+// base chat channel.  Use the canonical "|seed:om_xxx" form for thread delivery.
+//
+// The Scope is always anchored to the base channel (chat_id or user/open_id)
+// for access-control purposes.
 func routeAndScopeFromSessionKey(sk string) (automation.Route, automation.Scope, error) {
 	sk = strings.TrimSpace(sk)
 	if sk == "" {
@@ -293,11 +302,15 @@ func routeAndScopeFromSessionKey(sk string) (automation.Route, automation.Scope,
 		scope = automation.Scope{Kind: automation.ScopeKindUser, ID: receiveID}
 	}
 
-	// If the session key encodes a Feishu thread, send directly to that thread.
-	if threadID := sessionkey.ExtractThreadID(sk); threadID != "" {
-		route := automation.Route{ReceiveIDType: "thread_id", ReceiveID: threadID}
+	// Canonical work-thread session key: "|seed:om_xxx". Use the seed message
+	// ID to reply in-thread via the Feishu Reply API (reply_in_thread=true).
+	if seedID := sessionkey.ExtractSeedMessageID(sk); seedID != "" {
+		route := automation.Route{ReceiveIDType: "source_message_id", ReceiveID: seedID}
 		return route, scope, nil
 	}
+	// Thread-alias form (|thread:omt_xxx) is a Feishu thread ID, not a message
+	// ID. The Feishu Create Message API does not accept thread_id as a
+	// receive_id_type, so fall through to base-channel routing.
 	route := automation.Route{ReceiveIDType: receiveIDType, ReceiveID: receiveID}
 	return route, scope, nil
 }

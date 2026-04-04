@@ -411,6 +411,37 @@ func (s *Store) RecordTaskResumeThreadID(taskID, nextThreadID string) error {
 	return err
 }
 
+// RecordTaskSourceMessageID persists the first sent message ID as the thread
+// anchor for subsequent runs.  It only writes if source_message_id is not yet
+// set, making it safe to call on every successful run.
+func (s *Store) RecordTaskSourceMessageID(taskID, messageID string) error {
+	if s == nil {
+		return errors.New("store is nil")
+	}
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return nil
+	}
+	_, err := s.PatchTask(taskID, func(task *Task) error {
+		if task.Status == TaskStatusDeleted {
+			return errSkipDeletedTaskMutation
+		}
+		if strings.TrimSpace(task.Action.SourceMessageID) != "" {
+			// Already set; do not overwrite — first message wins.
+			return errSkipDeletedTaskMutation
+		}
+		task.Action.SourceMessageID = messageID
+		return nil
+	})
+	if errors.Is(err, ErrTaskNotFound) {
+		return nil
+	}
+	if errors.Is(err, errSkipDeletedTaskMutation) {
+		return nil
+	}
+	return err
+}
+
 func (s *Store) RecordTaskSignal(taskID string, at time.Time, kind, message string, pause bool) error {
 	if s == nil {
 		return errors.New("store is nil")
