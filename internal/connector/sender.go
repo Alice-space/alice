@@ -255,6 +255,12 @@ func (s *LarkSender) createMessage(
 	ctx context.Context,
 	receiveIDType, receiveID, msgType, content, emptyMessageIDErr string,
 ) (string, error) {
+	// "source_message_id" is an internal routing type used by the automation
+	// engine for thread delivery: receiveID is an om_xxx Feishu message ID and
+	// the message should be posted as a reply in the same thread.
+	if receiveIDType == "source_message_id" {
+		return s.replyMessagePreferThread(ctx, receiveID, msgType, content, emptyMessageIDErr)
+	}
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(receiveIDType).
 		Body(larkim.NewCreateMessageReqBodyBuilder().
