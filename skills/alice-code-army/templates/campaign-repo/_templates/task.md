@@ -2,7 +2,7 @@
 task_id: T000
 title: ""
 phase: P01
-status: draft
+status: pending   # pending | executing | review_pending | done | failed | blocked
 depends_on: []
 target_repos: []
 working_branches: []
