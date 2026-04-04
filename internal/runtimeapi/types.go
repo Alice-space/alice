@@ -37,14 +37,14 @@ type FileRequest struct {
 }
 
 type CreateTaskRequest struct {
-	Title           string                `json:"title,omitempty"`
-	Schedule        automation.Schedule   `json:"schedule"`
-	Action          automation.Action     `json:"action"`
-	ManageMode      automation.ManageMode `json:"manage_mode,omitempty"`
-	MaxRuns         int                   `json:"max_runs,omitempty"`
-	NextRunAt       time.Time             `json:"next_run_at,omitempty"`
-	Enabled         *bool                 `json:"enabled,omitempty"`
-	ResumeSessionKey string               `json:"resume_session_key,omitempty"`
+	Title            string                `json:"title,omitempty"`
+	Schedule         automation.Schedule   `json:"schedule"`
+	Action           automation.Action     `json:"action"`
+	ManageMode       automation.ManageMode `json:"manage_mode,omitempty"`
+	MaxRuns          int                   `json:"max_runs,omitempty"`
+	NextRunAt        time.Time             `json:"next_run_at,omitempty"`
+	Enabled          *bool                 `json:"enabled,omitempty"`
+	ResumeSessionKey string                `json:"resume_session_key,omitempty"`
 }
 
 type CreateCampaignRequest struct {

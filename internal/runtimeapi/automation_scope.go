@@ -223,7 +223,18 @@ func applyTaskPatch(current automation.Task, patchBytes []byte, contentType stri
 	next.ConsecutiveFailures = current.ConsecutiveFailures
 	next.Running = current.Running
 	next.Revision = current.Revision
-	next.Action.SessionKey = scopeSessionKey(scopeCtx.session)
+	// If the task's route matches the caller's current scope route, this is a
+	// normal (non-resume) task and we refresh the session key from the caller's
+	// current session as before.
+	// If the routes differ the task was created with resume_session_key (e.g.
+	// the route is thread_id:omt_xxx while the caller's scope is chat_id:oc_xxx).
+	// In that case the stored session key must be preserved so that env/scene
+	// stay consistent with the delivery route.
+	if next.Route == scopeCtx.route {
+		next.Action.SessionKey = scopeSessionKey(scopeCtx.session)
+	} else {
+		next.Action.SessionKey = current.Action.SessionKey
+	}
 	if err := validateMentionPermission(scopeCtx, next.Action.MentionUserIDs); err != nil {
 		return automation.Task{}, err
 	}
@@ -307,11 +318,18 @@ func validateResumeScope(resumeScope automation.Scope, scopeCtx automationScopeC
 		}
 		return nil
 	}
-	// Creator is in a P2P chat; resume key must be for the same actor's channel.
+	// Creator is in a P2P chat; resume key must identify the same actor.
+	// We compare against scopeCtx.actorID (the normalized identity preferred
+	// by resolveRuntimeSessionContext: ActorUserID first, then ActorOpenID)
+	// rather than the raw route.ReceiveID, because the session key and the
+	// current runtime context may use different Feishu ID types (user_id vs
+	// open_id) for the same person.
 	if resumeScope.Kind != automation.ScopeKindUser {
 		return errors.New("user scope can only resume a user (P2P) session key")
 	}
-	if resumeScope.ID != scopeCtx.route.ReceiveID {
+	if resumeScope.ID != scopeCtx.actorID &&
+		resumeScope.ID != strings.TrimSpace(scopeCtx.session.ActorUserID) &&
+		resumeScope.ID != strings.TrimSpace(scopeCtx.session.ActorOpenID) {
 		return errors.New("resume session key does not belong to the current user")
 	}
 	return nil
