@@ -281,6 +281,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			return taskDispatch{}, errors.New("action prompt is empty for run_llm")
 		}
 		result, err := runner.Run(ctx, llm.RunRequest{
+			ThreadID:        task.Action.ResumeThreadID,
 			AgentName:       "scheduler",
 			UserText:        prompt,
 			Scene:           taskScene(task),
@@ -315,7 +316,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if err != nil {
 			return taskDispatch{}, err
 		}
-		return taskDispatch{text: text}, nil
+		return taskDispatch{text: text, nextThreadID: strings.TrimSpace(result.NextThreadID)}, nil
 	case ActionTypeRunWorkflow:
 		runner := e.workflowRunnerValue()
 		if runner == nil {
