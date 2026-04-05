@@ -33,9 +33,7 @@ const (
 type ActionType string
 
 const (
-	ActionTypeSendText    ActionType = "send_text"
-	ActionTypeRunLLM      ActionType = "run_llm"
-	ActionTypeRunWorkflow ActionType = "run_workflow"
+	ActionTypeRunLLM ActionType = "run_llm"
 )
 
 type TaskStatus string
@@ -82,7 +80,6 @@ type Action struct {
 	Provider        string     `json:"provider,omitempty"`
 	Model           string     `json:"model,omitempty"`
 	Profile         string     `json:"profile,omitempty"`
-	Workflow        string     `json:"workflow,omitempty"`
 	StateKey        string     `json:"state_key,omitempty"`
 	SessionKey      string     `json:"session_key,omitempty"`
 	ResumeThreadID  string     `json:"resume_thread_id,omitempty"`
@@ -142,7 +139,6 @@ func NormalizeTask(task Task) Task {
 	task.Action.Provider = strings.ToLower(strings.TrimSpace(task.Action.Provider))
 	task.Action.Model = strings.TrimSpace(task.Action.Model)
 	task.Action.Profile = strings.TrimSpace(task.Action.Profile)
-	task.Action.Workflow = normalizeWorkflowName(task.Action.Workflow)
 	task.Action.StateKey = strings.TrimSpace(task.Action.StateKey)
 	task.Action.SessionKey = strings.TrimSpace(task.Action.SessionKey)
 	task.Action.ResumeThreadID = strings.TrimSpace(task.Action.ResumeThreadID)
@@ -160,9 +156,6 @@ func NormalizeTask(task Task) Task {
 	}
 	if task.Schedule.Type == "" {
 		task.Schedule.Type = ScheduleTypeInterval
-	}
-	if task.Action.Type == "" {
-		task.Action.Type = ActionTypeSendText
 	}
 	if task.Status == "" {
 		task.Status = TaskStatusActive
@@ -209,23 +202,9 @@ func ValidateTask(task Task) error {
 		return fmt.Errorf("invalid schedule type %q", task.Schedule.Type)
 	}
 	switch task.Action.Type {
-	case ActionTypeSendText:
-		if _, err := BuildDispatchText(task.Action); err != nil {
-			return err
-		}
 	case ActionTypeRunLLM:
 		if strings.TrimSpace(task.Action.Prompt) == "" {
 			return errors.New("action prompt is empty for run_llm")
-		}
-		if _, err := buildMentionParts(task.Action.MentionUserIDs); err != nil {
-			return err
-		}
-	case ActionTypeRunWorkflow:
-		if task.Action.Workflow == "" {
-			return errors.New("action workflow is empty for run_workflow")
-		}
-		if strings.TrimSpace(task.Action.Prompt) == "" {
-			return errors.New("action prompt is empty for run_workflow")
 		}
 		if _, err := buildMentionParts(task.Action.MentionUserIDs); err != nil {
 			return err

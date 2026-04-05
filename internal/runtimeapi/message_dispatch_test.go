@@ -75,7 +75,7 @@ func (s *runtimeMessageSenderStub) ReplyFileDirect(context.Context, string, stri
 
 func TestDispatchImage_ChatSceneRepliesDirectly(t *testing.T) {
 	sender := &runtimeMessageSenderStub{}
-	server := NewServer("", "", sender, nil, nil, config.Config{
+	server := NewServer("", "", sender, nil, config.Config{
 		GroupScenes: config.GroupScenesConfig{
 			Chat: config.GroupSceneConfig{CreateFeishuThread: false},
 			Work: config.GroupSceneConfig{CreateFeishuThread: true},
@@ -105,7 +105,7 @@ func TestDispatchImage_ChatSceneRepliesDirectly(t *testing.T) {
 
 func TestDispatchText_ChatSceneRepliesDirectly(t *testing.T) {
 	sender := &runtimeMessageSenderStub{}
-	server := NewServer("", "", sender, nil, nil, config.Config{
+	server := NewServer("", "", sender, nil, config.Config{
 		GroupScenes: config.GroupScenesConfig{
 			Chat: config.GroupSceneConfig{CreateFeishuThread: false},
 		},
@@ -131,7 +131,7 @@ func TestDispatchText_ChatSceneRepliesDirectly(t *testing.T) {
 
 func TestDispatchFile_ChatSceneRepliesDirectly(t *testing.T) {
 	sender := &runtimeMessageSenderStub{}
-	server := NewServer("", "", sender, nil, nil, config.Config{
+	server := NewServer("", "", sender, nil, config.Config{
 		GroupScenes: config.GroupScenesConfig{
 			Chat: config.GroupSceneConfig{CreateFeishuThread: false},
 		},
@@ -157,7 +157,7 @@ func TestDispatchFile_ChatSceneRepliesDirectly(t *testing.T) {
 
 func TestDispatchImage_WorkSceneKeepsThreadReply(t *testing.T) {
 	sender := &runtimeMessageSenderStub{}
-	server := NewServer("", "", sender, nil, nil, config.Config{
+	server := NewServer("", "", sender, nil, config.Config{
 		GroupScenes: config.GroupScenesConfig{
 			Chat: config.GroupSceneConfig{CreateFeishuThread: false},
 			Work: config.GroupSceneConfig{CreateFeishuThread: true},

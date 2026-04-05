@@ -403,7 +403,8 @@ func TestProcessor_PassesJobLLMRunOptionsToBackend(t *testing.T) {
 	if fakeCodex.lastReq.Personality != "friendly" {
 		t.Fatalf("unexpected personality passed to llm: %q", fakeCodex.lastReq.Personality)
 	}
-	if fakeCodex.lastReq.NoReplyToken != "[[NO_REPLY]]" {
-		t.Fatalf("unexpected no-reply token passed to llm: %q", fakeCodex.lastReq.NoReplyToken)
+	// NoReplyToken is now assembled into UserText rather than passed as a separate field.
+	if !strings.Contains(fakeCodex.lastReq.UserText, "[[NO_REPLY]]") {
+		t.Fatalf("expected no-reply token in UserText, got: %q", fakeCodex.lastReq.UserText)
 	}
 }

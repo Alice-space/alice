@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/statusview"
 )
 
@@ -193,7 +193,7 @@ func (p *Processor) touchSessionMessage(sessionKey string, at time.Time) {
 	p.markStateChangedLocked()
 }
 
-func (p *Processor) recordSessionUsage(sessionKey string, usage llm.Usage) {
+func (p *Processor) recordSessionUsage(sessionKey string, usage agentbridge.Usage) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" || !usage.HasUsage() {
 		return

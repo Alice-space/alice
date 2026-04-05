@@ -46,7 +46,6 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"runtime_http_token",
 		"failure_message",
 		"thinking_message",
-		"image_generation",
 		"alice_home",
 		"workspace_dir",
 		"prompt_dir",
@@ -58,7 +57,6 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"worker_concurrency",
 		"automation_task_timeout_secs",
 		"auth_status_timeout_secs",
-		"campaign_notification_timeout_secs",
 		"runtime_api_shutdown_timeout_secs",
 		"local_runtime_store_open_timeout_secs",
 		"codex_idle_timeout_secs",
@@ -79,21 +77,6 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"root bot keys are no longer supported: %s; move them under bots.<id>",
 		strings.Join(setKeys, ", "),
 	)
-}
-
-func rejectRemovedImageProxyConfig(v *viper.Viper) error {
-	if v == nil {
-		return nil
-	}
-	if v.IsSet("image_generation.proxy") {
-		return errors.New("image_generation.proxy has been removed; use env.OPENAI_*_PROXY instead")
-	}
-	for botID := range v.GetStringMap("bots") {
-		if v.IsSet(fmt.Sprintf("bots.%s.image_generation.proxy", botID)) {
-			return fmt.Errorf("bots.%s.image_generation.proxy has been removed; use bots.%s.env.OPENAI_*_PROXY instead", botID, botID)
-		}
-	}
-	return nil
 }
 
 func isSupportedLLMProvider(provider string) bool {
@@ -194,7 +177,6 @@ type baseConfigValidation struct {
 	WorkerConcurrency                int `validate:"gt=0"`
 	AutomationTaskTimeoutSecs        int `validate:"gt=0"`
 	AuthStatusTimeoutSecs            int `validate:"gt=0"`
-	CampaignNotificationTimeoutSecs  int `validate:"gt=0"`
 	RuntimeAPIShutdownTimeoutSecs    int `validate:"gt=0"`
 	LocalRuntimeStoreOpenTimeoutSecs int `validate:"gt=0"`
 	CodexIdleTimeoutSecs             int `validate:"gt=0"`
@@ -208,7 +190,6 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 		WorkerConcurrency:                cfg.WorkerConcurrency,
 		AutomationTaskTimeoutSecs:        cfg.AutomationTaskTimeoutSecs,
 		AuthStatusTimeoutSecs:            cfg.AuthStatusTimeoutSecs,
-		CampaignNotificationTimeoutSecs:  cfg.CampaignNotificationTimeoutSecs,
 		RuntimeAPIShutdownTimeoutSecs:    cfg.RuntimeAPIShutdownTimeoutSecs,
 		LocalRuntimeStoreOpenTimeoutSecs: cfg.LocalRuntimeStoreOpenTimeoutSecs,
 		CodexIdleTimeoutSecs:             cfg.CodexIdleTimeoutSecs,
@@ -238,8 +219,6 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 				return errors.New("automation_task_timeout_secs must be > 0")
 			case "AuthStatusTimeoutSecs":
 				return errors.New("auth_status_timeout_secs must be > 0")
-			case "CampaignNotificationTimeoutSecs":
-				return errors.New("campaign_notification_timeout_secs must be > 0")
 			case "RuntimeAPIShutdownTimeoutSecs":
 				return errors.New("runtime_api_shutdown_timeout_secs must be > 0")
 			case "LocalRuntimeStoreOpenTimeoutSecs":
@@ -265,23 +244,6 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 				return err
 			}
 		}
-	}
-	switch cfg.ImageGeneration.Provider {
-	case "", "openai":
-	default:
-		return fmt.Errorf("image_generation.provider %q is unsupported", cfg.ImageGeneration.Provider)
-	}
-	if cfg.ImageGeneration.TimeoutSecs <= 0 {
-		return errors.New("image_generation.timeout_secs must be > 0")
-	}
-	if cfg.ImageGeneration.N < 0 {
-		return errors.New("image_generation.n must be >= 0")
-	}
-	if cfg.ImageGeneration.OutputCompression < -1 || cfg.ImageGeneration.OutputCompression > 100 {
-		return errors.New("image_generation.output_compression must be between 0 and 100, or -1 to leave unset")
-	}
-	if cfg.ImageGeneration.PartialImages < -1 || cfg.ImageGeneration.PartialImages > 3 {
-		return errors.New("image_generation.partial_images must be between 0 and 3, or -1 to leave unset")
 	}
 	if cfg.GroupScenes.Chat.Enabled {
 		if cfg.GroupScenes.Chat.LLMProfile == "" {

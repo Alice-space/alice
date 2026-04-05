@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/sessionkey"
 )
 
@@ -13,10 +12,6 @@ const defaultLimit = 20
 
 type AutomationTaskStore interface {
 	ListTasks(scope automation.Scope, statusFilter string, limit int) ([]automation.Task, error)
-}
-
-type CampaignStore interface {
-	ListCampaigns(visibilityKey, statusFilter string, limit int) ([]campaign.Campaign, error)
 }
 
 type UsageProvider interface {
@@ -34,18 +29,16 @@ type Request struct {
 }
 
 type Result struct {
-	ScopeLabel    string
-	TotalUsage    UsageStats
-	BotUsages     []BotUsage
-	Tasks         []automation.Task
-	Campaigns     []campaign.Campaign
-	TaskError     error
-	CampaignError error
-	UsageError    error
+	ScopeLabel string
+	TotalUsage UsageStats
+	BotUsages  []BotUsage
+	Tasks      []automation.Task
+	TaskError  error
+	UsageError error
 }
 
 func (r Result) HasErrors() bool {
-	return r.TaskError != nil || r.CampaignError != nil || r.UsageError != nil
+	return r.TaskError != nil || r.UsageError != nil
 }
 
 func (r Result) IsSuccess() bool {
@@ -61,12 +54,11 @@ func (r Result) IsFailure() bool {
 }
 
 func (r Result) hasAnyData() bool {
-	return r.TotalUsage.HasUsage() || len(r.BotUsages) > 0 || len(r.Tasks) > 0 || len(r.Campaigns) > 0
+	return r.TotalUsage.HasUsage() || len(r.BotUsages) > 0 || len(r.Tasks) > 0
 }
 
 type Service struct {
 	Automation AutomationTaskStore
-	Campaigns  CampaignStore
 	Usage      UsageProvider
 }
 
@@ -92,19 +84,6 @@ func (s Service) Query(req Request) Result {
 			result.TaskError = err
 		} else {
 			result.Tasks, result.TaskError = s.Automation.ListTasks(scope, string(automation.TaskStatusActive), limit)
-		}
-	}
-	if s.Campaigns != nil {
-		visibilityKey := VisibilityKey(req)
-		if visibilityKey == "" {
-			result.CampaignError = fmt.Errorf("missing scope session key")
-		} else {
-			items, err := s.Campaigns.ListCampaigns(visibilityKey, "", limit)
-			if err != nil {
-				result.CampaignError = err
-			} else {
-				result.Campaigns = filterActiveCampaigns(items)
-			}
 		}
 	}
 	return result
@@ -134,15 +113,4 @@ func AutomationScope(req Request) (automation.Scope, error) {
 		return automation.Scope{}, fmt.Errorf("missing actor id")
 	}
 	return automation.Scope{Kind: automation.ScopeKindUser, ID: actorID}, nil
-}
-
-func filterActiveCampaigns(items []campaign.Campaign) []campaign.Campaign {
-	filtered := make([]campaign.Campaign, 0, len(items))
-	for _, item := range items {
-		switch item.Status {
-		case campaign.StatusPlanned, campaign.StatusPlanning, campaign.StatusPlanReviewPending, campaign.StatusPlanApproved, campaign.StatusRunning, campaign.StatusHold:
-			filtered = append(filtered, item)
-		}
-	}
-	return filtered
 }

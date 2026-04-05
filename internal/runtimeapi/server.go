@@ -12,7 +12,6 @@ import (
 	"github.com/gin-gonic/gin"
 
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/messaging"
 )
@@ -35,7 +34,6 @@ type Server struct {
 	shutdownTimeout time.Duration
 	sender          Sender
 	automation      *automation.Store
-	campaigns       *campaign.Store
 	runtimeMu       sync.RWMutex
 	runtime         automationRuntimeConfig
 	engine          *gin.Engine
@@ -54,7 +52,6 @@ func NewServer(
 	addr, token string,
 	sender Sender,
 	automationStore *automation.Store,
-	campaignStore *campaign.Store,
 	cfg config.Config,
 ) *Server {
 	gin.SetMode(gin.ReleaseMode)
@@ -67,7 +64,6 @@ func NewServer(
 		shutdownTimeout: runtimeAPIShutdownTimeout(cfg),
 		sender:          sender,
 		automation:      automationStore,
-		campaigns:       campaignStore,
 		runtime:         newAutomationRuntimeConfig(cfg),
 		engine:          engine,
 		authLimiter:     newAuthRateLimiter(runtimeAPIAuthRateLimit, time.Minute),
@@ -86,11 +82,6 @@ func NewServer(
 	api.GET("/automation/tasks/:taskID", srv.handleAutomationTaskGet)
 	api.PATCH("/automation/tasks/:taskID", srv.handleAutomationTaskPatch)
 	api.DELETE("/automation/tasks/:taskID", srv.handleAutomationTaskDelete)
-	api.GET("/campaigns", srv.handleCampaignList)
-	api.POST("/campaigns", srv.handleCampaignCreate)
-	api.GET("/campaigns/:campaignID", srv.handleCampaignGet)
-	api.PATCH("/campaigns/:campaignID", srv.handleCampaignPatch)
-	api.DELETE("/campaigns/:campaignID", srv.handleCampaignDelete)
 	return srv
 }
 

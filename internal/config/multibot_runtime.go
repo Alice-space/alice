@@ -108,7 +108,6 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.RuntimeHTTPToken = bot.RuntimeHTTPToken
 	runtime.FailureMessage = bot.FailureMessage
 	runtime.ThinkingMessage = bot.ThinkingMessage
-	runtime.ImageGeneration = bot.ImageGeneration
 	runtime.AliceHome = deriveBotAliceHome(bot, runtime.BotID)
 	runtime.WorkspaceDir = deriveBotWorkspaceDir(bot, runtime.AliceHome)
 	runtime.PromptDir = deriveBotPromptDir(bot, runtime.AliceHome)
@@ -119,14 +118,12 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.WorkerConcurrency = bot.WorkerConcurrency
 	runtime.AutomationTaskTimeoutSecs = bot.AutomationTaskTimeoutSecs
 	runtime.AuthStatusTimeoutSecs = bot.AuthStatusTimeoutSecs
-	runtime.CampaignNotificationTimeoutSecs = bot.CampaignNotificationTimeoutSecs
 	runtime.RuntimeAPIShutdownTimeoutSecs = bot.RuntimeAPIShutdownTimeoutSecs
 	runtime.LocalRuntimeStoreOpenTimeoutSecs = bot.LocalRuntimeStoreOpenTimeoutSecs
 	runtime.CodexIdleTimeoutSecs = bot.CodexIdleTimeoutSecs
 	runtime.CodexHighIdleTimeoutSecs = bot.CodexHighIdleTimeoutSecs
 	runtime.CodexXHighIdleTimeoutSecs = bot.CodexXHighIdleTimeoutSecs
 	runtime.Permissions = mergeBotPermissions(BotPermissionsConfig{}, bot.Permissions)
-	runtime.CampaignRoleDefaults = bot.CampaignRoleDefaults
 
 	runtime, err = finalizeConfig(runtime, true)
 	if err != nil {

@@ -5,7 +5,6 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
 )
 
 const (
@@ -45,19 +44,6 @@ type CreateTaskRequest struct {
 	NextRunAt        time.Time             `json:"next_run_at,omitempty"`
 	Enabled          *bool                 `json:"enabled,omitempty"`
 	ResumeSessionKey string                `json:"resume_session_key,omitempty"`
-}
-
-type CreateCampaignRequest struct {
-	Title             string              `json:"title,omitempty"`
-	Objective         string              `json:"objective"`
-	Repo              string              `json:"repo,omitempty"`
-	CampaignRepoPath  string              `json:"campaign_repo_path,omitempty"`
-	ManageMode        campaign.ManageMode `json:"manage_mode,omitempty"`
-	MaxParallelTrials int                 `json:"max_parallel_trials,omitempty"`
-	Summary           string              `json:"summary,omitempty"`
-	Baseline          []campaign.Metric   `json:"baseline,omitempty"`
-	Gates             []campaign.Gate     `json:"gates,omitempty"`
-	Tags              []string            `json:"tags,omitempty"`
 }
 
 func BaseURL(addr string) string {

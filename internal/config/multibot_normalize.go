@@ -31,7 +31,6 @@ func normalizeBots(in map[string]BotConfig) map[string]BotConfig {
 		bot.RuntimeHTTPToken = strings.TrimSpace(bot.RuntimeHTTPToken)
 		bot.FailureMessage = strings.TrimSpace(bot.FailureMessage)
 		bot.ThinkingMessage = strings.TrimSpace(bot.ThinkingMessage)
-		bot.ImageGeneration = normalizeImageGenerationConfig(bot.ImageGeneration)
 		bot.AliceHome = strings.TrimSpace(bot.AliceHome)
 		bot.WorkspaceDir = strings.TrimSpace(bot.WorkspaceDir)
 		bot.PromptDir = strings.TrimSpace(bot.PromptDir)

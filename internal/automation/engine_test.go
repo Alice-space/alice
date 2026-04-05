@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 type senderStub struct {
@@ -138,37 +138,15 @@ func TestTaskUrgentRecipient_PrefersOpenID(t *testing.T) {
 type llmRunnerStub struct {
 	mu      sync.Mutex
 	calls   int
-	lastReq llm.RunRequest
-	result  llm.RunResult
+	lastReq agentbridge.RunRequest
+	result  agentbridge.RunResult
 	err     error
 }
 
-func (s *llmRunnerStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+func (s *llmRunnerStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.calls++
 	s.lastReq = req
-	return s.result, s.err
-}
-
-type workflowRunnerStub struct {
-	mu          sync.Mutex
-	calls       int
-	lastReq     WorkflowRunRequest
-	result      WorkflowRunResult
-	err         error
-	deadlineSet bool
-	deadline    time.Time
-}
-
-func (s *workflowRunnerStub) Run(ctx context.Context, req WorkflowRunRequest) (WorkflowRunResult, error) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.calls++
-	s.lastReq = req
-	if deadline, ok := ctx.Deadline(); ok {
-		s.deadlineSet = true
-		s.deadline = deadline
-	}
 	return s.result, s.err
 }

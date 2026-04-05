@@ -41,7 +41,7 @@ func TestApp_OnCardActionTrigger_DelegatesToHandler(t *testing.T) {
 			},
 			Action: &larkcallback.CallBackAction{
 				Value: map[string]any{
-					"alice_action": "campaign_plan_approval",
+					"alice_action": "plan_approval",
 					"campaign_id":  "camp_demo",
 					"plan_round":   2,
 					"decision":     "approve",
@@ -58,7 +58,7 @@ func TestApp_OnCardActionTrigger_DelegatesToHandler(t *testing.T) {
 	if handler.calls != 1 {
 		t.Fatalf("expected handler call, got %d", handler.calls)
 	}
-	if handler.lastReq.Kind != CardActionKindCampaignPlanApproval {
+	if handler.lastReq.Kind != "plan_approval" {
 		t.Fatalf("unexpected kind: %q", handler.lastReq.Kind)
 	}
 	if handler.lastReq.CampaignID != "camp_demo" {

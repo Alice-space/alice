@@ -10,18 +10,17 @@ import (
 
 func TestDiffRestartRequiredFields(t *testing.T) {
 	current := config.Config{
-		FeishuAppID:                     "cli_a",
-		FeishuAppSecret:                 "sec_a",
-		FeishuBaseURL:                   "https://open.feishu.cn",
-		RuntimeHTTPAddr:                 "127.0.0.1:7331",
-		RuntimeHTTPToken:                "token_a",
-		WorkspaceDir:                    "/workspace/a",
-		PromptDir:                       "prompts",
-		QueueCapacity:                   256,
-		WorkerConcurrency:               1,
-		AuthStatusTimeoutSecs:           15,
-		CampaignNotificationTimeoutSecs: 30,
-		RuntimeAPIShutdownTimeoutSecs:   5,
+		FeishuAppID:                   "cli_a",
+		FeishuAppSecret:               "sec_a",
+		FeishuBaseURL:                 "https://open.feishu.cn",
+		RuntimeHTTPAddr:               "127.0.0.1:7331",
+		RuntimeHTTPToken:              "token_a",
+		WorkspaceDir:                  "/workspace/a",
+		PromptDir:                     "prompts",
+		QueueCapacity:                 256,
+		WorkerConcurrency:             1,
+		AuthStatusTimeoutSecs:         15,
+		RuntimeAPIShutdownTimeoutSecs: 5,
 	}
 	next := current
 	next.TriggerMode = "prefix"
@@ -30,13 +29,11 @@ func TestDiffRestartRequiredFields(t *testing.T) {
 	next.QueueCapacity = 512
 	next.WorkerConcurrency = 3
 	next.AuthStatusTimeoutSecs = 20
-	next.CampaignNotificationTimeoutSecs = 45
 	next.RuntimeAPIShutdownTimeoutSecs = 8
 
 	got := diffRestartRequiredFields(current, next)
 	want := []string{
 		"auth_status_timeout_secs",
-		"campaign_notification_timeout_secs",
 		"queue_capacity",
 		"runtime_api_shutdown_timeout_secs",
 		"runtime_http_addr",

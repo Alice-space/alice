@@ -10,10 +10,10 @@ import (
 
 	"github.com/oklog/run"
 
+	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
-	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/Alice-space/alice/internal/runtimeapi"
 )
@@ -26,7 +26,6 @@ type ConnectorRuntime struct {
 	RuntimeAPIBaseURL   string
 	RuntimeAPIToken     string
 	AutomationStatePath string
-	CampaignStatePath   string
 	SessionStatePath    string
 	PromptLoader        *prompting.Loader
 	Config              config.Config
@@ -39,7 +38,7 @@ type ConnectorRuntime struct {
 // All profiles are also stored as per-profile runner overrides so that selecting a specific
 // profile by its outer map name applies that profile's command, timeout, prompt_prefix,
 // and provider-specific profile selector.
-func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.FactoryConfig {
+func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 	defaultEnv := applyLLMProcessEnvDefaults(cfg.CodexEnv, cfg.CodexHome)
 
 	type providerDefaults struct {
@@ -47,13 +46,12 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 		timeout         time.Duration
 		model           string
 		reasoningEffort string
-		promptPrefix    string
-		execPolicy      llm.ExecPolicyConfig
+		execPolicy      agentbridge.ExecPolicyConfig
 	}
 	defaults := map[string]*providerDefaults{}
 
 	// Per-provider per-profile overrides: profileOverrides[provider][outerProfileName] = override.
-	profileOverrides := map[string]map[string]llm.ProfileRunnerConfig{}
+	profileOverrides := map[string]map[string]agentbridge.ProfileRunnerConfig{}
 
 	// Collect sorted profile names for deterministic first-profile selection.
 	profileNames := make([]string, 0, len(cfg.LLMProfiles))
@@ -74,18 +72,16 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 				timeout:         profile.Timeout,
 				model:           profile.Model,
 				reasoningEffort: profile.ReasoningEffort,
-				promptPrefix:    profile.PromptPrefix,
 				execPolicy:      buildCodexExecPolicy(derefCodexExecPolicy(profile.Permissions)),
 			}
 		}
 		// Register per-profile runner override keyed by outer profile name.
 		if _, ok := profileOverrides[provider]; !ok {
-			profileOverrides[provider] = map[string]llm.ProfileRunnerConfig{}
+			profileOverrides[provider] = map[string]agentbridge.ProfileRunnerConfig{}
 		}
-		profileOverrides[provider][name] = llm.ProfileRunnerConfig{
+		profileOverrides[provider][name] = agentbridge.ProfileRunnerConfig{
 			Command:         profile.Command,
 			Timeout:         profile.Timeout,
-			PromptPrefix:    profile.PromptPrefix,
 			ProviderProfile: profile.Profile,
 			ExecPolicy:      buildCodexExecPolicy(derefCodexExecPolicy(profile.Permissions)),
 		}
@@ -101,7 +97,7 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 		}
 	}
 
-	getOverrides := func(provider string) map[string]llm.ProfileRunnerConfig {
+	getOverrides := func(provider string) map[string]agentbridge.ProfileRunnerConfig {
 		if m, ok := profileOverrides[provider]; ok {
 			return m
 		}
@@ -113,10 +109,9 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 	gemini := get(config.LLMProviderGemini, "gemini")
 	kimi := get(config.LLMProviderKimi, "kimi")
 
-	return llm.FactoryConfig{
+	return agentbridge.FactoryConfig{
 		Provider: cfg.LLMProvider,
-		Prompts:  prompts,
-		Codex: llm.CodexConfig{
+		Codex: agentbridge.CodexConfig{
 			Command:            codex.command,
 			Timeout:            codex.timeout,
 			DefaultIdleTimeout: cfg.CodexIdleTimeout,
@@ -125,56 +120,52 @@ func buildFactoryConfig(cfg config.Config, prompts *prompting.Loader) llm.Factor
 			Model:              codex.model,
 			ReasoningEffort:    codex.reasoningEffort,
 			Env:                defaultEnv,
-			PromptPrefix:       codex.promptPrefix,
 			WorkspaceDir:       cfg.WorkspaceDir,
 			DefaultExecPolicy:  codex.execPolicy,
 			ProfileOverrides:   getOverrides(config.DefaultLLMProvider),
 		},
-		Claude: llm.ClaudeConfig{
+		Claude: agentbridge.ClaudeConfig{
 			Command:          claude.command,
 			Timeout:          claude.timeout,
 			Env:              defaultEnv,
-			PromptPrefix:     claude.promptPrefix,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderClaude),
 		},
-		Gemini: llm.GeminiConfig{
+		Gemini: agentbridge.GeminiConfig{
 			Command:          gemini.command,
 			Timeout:          gemini.timeout,
 			Env:              defaultEnv,
-			PromptPrefix:     gemini.promptPrefix,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderGemini),
 		},
-		Kimi: llm.KimiConfig{
+		Kimi: agentbridge.KimiConfig{
 			Command:          kimi.command,
 			Timeout:          kimi.timeout,
 			Env:              defaultEnv,
-			PromptPrefix:     kimi.promptPrefix,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderKimi),
 		},
 	}
 }
 
-func buildLLMBackend(cfg config.Config, prompts *prompting.Loader) (llm.Backend, error) {
-	factoryCfg := buildFactoryConfig(cfg, prompts)
+func buildLLMBackend(cfg config.Config) (agentbridge.Backend, error) {
+	factoryCfg := buildFactoryConfig(cfg)
 	providers := cfg.ResolvedLLMProviders()
-	backends := make(map[string]llm.Backend, len(providers))
+	backends := make(map[string]agentbridge.Backend, len(providers))
 	for _, provider := range providers {
 		providerCfg := factoryCfg
 		providerCfg.Provider = provider
-		backend, err := llm.NewBackend(providerCfg)
+		backend, err := agentbridge.NewBackend(providerCfg)
 		if err != nil {
 			return nil, err
 		}
 		backends[provider] = backend
 	}
-	return llm.NewMultiBackend(cfg.LLMProvider, backends)
+	return agentbridge.NewMultiBackend(cfg.LLMProvider, backends)
 }
 
-func buildCodexExecPolicy(policy config.CodexExecPolicyConfig) llm.ExecPolicyConfig {
-	return llm.ExecPolicyConfig{
+func buildCodexExecPolicy(policy config.CodexExecPolicyConfig) agentbridge.ExecPolicyConfig {
+	return agentbridge.ExecPolicyConfig{
 		Sandbox:        strings.TrimSpace(policy.Sandbox),
 		AskForApproval: strings.TrimSpace(policy.AskForApproval),
 		AddDirs:        append([]string(nil), policy.AddDirs...),
@@ -208,12 +199,11 @@ func applyLLMProcessEnvDefaults(raw map[string]string, codexHome string) map[str
 	return out
 }
 
-func NewLLMBackend(cfg config.Config) (llm.Backend, error) {
-	promptDir := ResolvePromptDir(cfg.WorkspaceDir, cfg.PromptDir)
-	return buildLLMBackend(cfg, prompting.NewLoader(promptDir))
+func NewLLMBackend(cfg config.Config) (agentbridge.Backend, error) {
+	return buildLLMBackend(cfg)
 }
 
-func BuildConnectorRuntime(cfg config.Config, backend llm.Backend) (*ConnectorRuntime, error) {
+func BuildConnectorRuntime(cfg config.Config, backend agentbridge.Backend) (*ConnectorRuntime, error) {
 	builder, err := newConnectorRuntimeBuilder(cfg, backend)
 	if err != nil {
 		return nil, err

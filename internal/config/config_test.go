@@ -81,12 +81,6 @@ feishu_app_secret: sss
 	if runtime.AuthStatusTimeout != time.Duration(DefaultAuthStatusTimeoutSecs)*time.Second {
 		t.Fatalf("unexpected auth_status_timeout: %s", runtime.AuthStatusTimeout)
 	}
-	if runtime.CampaignNotificationTimeoutSecs != DefaultCampaignNotificationTimeoutSecs {
-		t.Fatalf("unexpected campaign_notification_timeout_secs: %d", runtime.CampaignNotificationTimeoutSecs)
-	}
-	if runtime.CampaignNotificationTimeout != time.Duration(DefaultCampaignNotificationTimeoutSecs)*time.Second {
-		t.Fatalf("unexpected campaign_notification_timeout: %s", runtime.CampaignNotificationTimeout)
-	}
 	if runtime.RuntimeAPIShutdownTimeoutSecs != DefaultRuntimeAPIShutdownTimeoutSecs {
 		t.Fatalf("unexpected runtime_api_shutdown_timeout_secs: %d", runtime.RuntimeAPIShutdownTimeoutSecs)
 	}

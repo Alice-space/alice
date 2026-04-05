@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 type UsageStats struct {
@@ -23,7 +23,7 @@ func (s UsageStats) HasUsage() bool {
 	return s.InputTokens != 0 || s.CachedInputTokens != 0 || s.OutputTokens != 0 || s.Turns != 0
 }
 
-func (s *UsageStats) AddUsage(usage llm.Usage, at time.Time) {
+func (s *UsageStats) AddUsage(usage agentbridge.Usage, at time.Time) {
 	if s == nil || !usage.HasUsage() {
 		return
 	}

@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/messaging"
 	"github.com/Alice-space/alice/internal/prompting"
@@ -15,38 +15,19 @@ import (
 type Sender = messaging.AutomationSender
 
 type LLMRunner interface {
-	Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error)
+	Run(ctx context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error)
 }
-
-type WorkflowPreflightDecision struct {
-	Block         bool
-	Message       string
-	SignalKind    string
-	SignalMessage string
-	ForceCard     bool
-}
-
-type WorkflowPreflightHook func(ctx context.Context, task Task) (WorkflowPreflightDecision, error)
 
 type SystemTaskFunc func(ctx context.Context)
 type UserTaskCompletionHook func(task Task, err error)
 
 const defaultUserTaskTimeout = 10 * time.Minute
-const defaultWorkflowTaskTimeout = 24 * time.Hour
-
-const taskSignalNeedsHuman = "needs_human"
-const taskSignalCompleted = "completed"
-const taskSignalReplan = "replan"
-const taskSignalBlocked = "blocked"
-const taskSignalDiscovery = "discovery"
 
 type Engine struct {
 	store           *Store
 	sender          Sender
 	runtimeMu       sync.RWMutex
 	llmRunner       LLMRunner
-	workflowRunner  WorkflowRunner
-	workflowGuard   WorkflowPreflightHook
 	userTaskHook    UserTaskCompletionHook
 	runEnv          map[string]string
 	userTaskTimeout time.Duration
@@ -70,22 +51,8 @@ type taskDispatch struct {
 	cardContent    string
 	forceCard      bool
 	signal         *taskSignal
-	signals        []taskSignal
-	completed      bool
 	nextThreadID   string
 	firstMessageID string // Feishu message ID of the first sent message; used to bootstrap source_message_id
-}
-
-func primaryWorkflowSignal(signals []taskSignal) *taskSignal {
-	for i := range signals {
-		if signals[i].pause {
-			return &signals[i]
-		}
-	}
-	if len(signals) > 0 {
-		return &signals[0]
-	}
-	return nil
 }
 
 type systemTaskRuntime struct {

@@ -173,8 +173,7 @@ bots:
     permissions:
       runtime_message: true
       runtime_automation: false
-      runtime_campaigns: false
-      allowed_skills: ["alice-message"]
+allowed_skills: ["alice-message"]
 
     queue_capacity: 256
     worker_concurrency: 3
@@ -182,7 +181,6 @@ bots:
     automation_task_timeout_secs: 6000
     # Hidden runtime deadlines are also configurable.
     auth_status_timeout_secs: 15
-    campaign_notification_timeout_secs: 30
     runtime_api_shutdown_timeout_secs: 5
     local_runtime_store_open_timeout_secs: 10
     codex_idle_timeout_secs: 900
@@ -248,28 +246,12 @@ bots:
     permissions:
       runtime_message: true
       runtime_automation: true
-      runtime_campaigns: true
       allowed_skills: ["alice-message", "alice-scheduler", "alice-code-army"]
-
-    # Optional campaign role defaults for code-army.
-    # Role model selection lives here: Go defaults → config.yaml.
-    # campaign.md should not duplicate provider/model/profile defaults.
-    # Each role references an llm_profile by name.
-    campaign_role_defaults:
-      executor:
-        llm_profile: "work"
-      reviewer:
-        llm_profile: "work"
-      planner:
-        llm_profile: "work"
-      planner_reviewer:
-        llm_profile: "work"
 
     queue_capacity: 256
     worker_concurrency: 3
     automation_task_timeout_secs: 6000
     auth_status_timeout_secs: 15
-    campaign_notification_timeout_secs: 30
     runtime_api_shutdown_timeout_secs: 5
     local_runtime_store_open_timeout_secs: 10
     codex_idle_timeout_secs: 900

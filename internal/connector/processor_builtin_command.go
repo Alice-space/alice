@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/statusview"
@@ -15,19 +14,10 @@ import (
 
 const helpCommandName = "/help"
 const statusCommandName = "/status"
-const codeArmyCommandName = "/codearmy"
-const codeArmyStatusSubcommand = "status"
-const codeArmyTasksSubcommand = "tasks"
 const clearCommandName = "/clear"
 const stopCommandName = "/stop"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
-const builtinCodeArmyTasksCardTitle = "CodeArmy Tasks"
-
-type codeArmyBuiltinCommand struct {
-	kind  string
-	query string
-}
 
 func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, JobProcessState) {
 	if isHelpCommand(job.Text) {
@@ -35,14 +25,6 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 	}
 	if isStatusCommand(job.Text) {
 		return true, p.processStatusCommand(ctx, job)
-	}
-	if command, ok := parseCodeArmyBuiltinCommand(job.Text); ok {
-		switch command.kind {
-		case codeArmyStatusSubcommand:
-			return true, p.processStatusCommand(ctx, job)
-		case codeArmyTasksSubcommand:
-			return true, p.processCodeArmyTasksCommand(ctx, job, command.query)
-		}
 	}
 	if isClearCommand(job.Text) {
 		return true, p.processClearCommand(ctx, job)
@@ -54,8 +36,7 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 }
 
 func isBuiltinCommandText(text string) bool {
-	_, codeArmy := parseCodeArmyBuiltinCommand(text)
-	return isHelpCommand(text) || isStatusCommand(text) || codeArmy || isClearCommand(text) || isStopCommand(text)
+	return isHelpCommand(text) || isStatusCommand(text) || isClearCommand(text) || isStopCommand(text)
 }
 
 func isHelpCommand(text string) bool {
@@ -90,44 +71,6 @@ func isStopCommand(text string) bool {
 	return strings.EqualFold(strings.TrimSpace(fields[0]), stopCommandName)
 }
 
-func isCodeArmyStatusCommand(text string) bool {
-	command, ok := parseCodeArmyBuiltinCommand(text)
-	return ok && command.kind == codeArmyStatusSubcommand
-}
-
-func isCodeArmyTasksCommand(text string) bool {
-	command, ok := parseCodeArmyBuiltinCommand(text)
-	return ok && command.kind == codeArmyTasksSubcommand
-}
-
-func parseCodeArmyBuiltinCommand(text string) (codeArmyBuiltinCommand, bool) {
-	fields := strings.Fields(strings.TrimSpace(text))
-	if len(fields) < 2 {
-		return codeArmyBuiltinCommand{}, false
-	}
-	if !strings.EqualFold(strings.TrimSpace(fields[0]), codeArmyCommandName) {
-		return codeArmyBuiltinCommand{}, false
-	}
-
-	switch strings.ToLower(strings.TrimSpace(fields[1])) {
-	case codeArmyStatusSubcommand:
-		if len(fields) >= 3 && strings.EqualFold(strings.TrimSpace(fields[2]), codeArmyTasksSubcommand) {
-			return codeArmyBuiltinCommand{
-				kind:  codeArmyTasksSubcommand,
-				query: strings.TrimSpace(strings.Join(fields[3:], " ")),
-			}, true
-		}
-		return codeArmyBuiltinCommand{kind: codeArmyStatusSubcommand}, true
-	case codeArmyTasksSubcommand:
-		return codeArmyBuiltinCommand{
-			kind:  codeArmyTasksSubcommand,
-			query: strings.TrimSpace(strings.Join(fields[2:], " ")),
-		}, true
-	default:
-		return codeArmyBuiltinCommand{}, false
-	}
-}
-
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
 	reply := buildBuiltinHelpMarkdown(p.runtimeSnapshot().helpConfig)
 	replyJob := job
@@ -146,17 +89,6 @@ func (p *Processor) processStatusCommand(ctx context.Context, job Job) JobProces
 	replyJob.CreateFeishuThread = false
 	if err := p.replies.respondCardWithTitle(ctx, replyJob, builtinStatusCardTitle, reply); err != nil {
 		logging.Errorf("send builtin status reply failed event_id=%s: %v", job.EventID, err)
-	}
-	return JobProcessCompleted
-}
-
-func (p *Processor) processCodeArmyTasksCommand(ctx context.Context, job Job, query string) JobProcessState {
-	reply := p.buildCodeArmyTasksMarkdown(job, query)
-	replyJob := job
-	replyJob.Scene = jobSceneChat
-	replyJob.CreateFeishuThread = false
-	if err := p.replies.respondCardWithTitle(ctx, replyJob, builtinCodeArmyTasksCardTitle, reply); err != nil {
-		logging.Errorf("send codearmy tasks reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted
 }
@@ -202,11 +134,7 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		"- `/help`",
 		"  显示内建命令，以及普通模式 / 工作模式的当前说明。",
 		"- `/status`",
-		"  显示当前会话 scope 下的 token 统计、活跃自动化任务，以及非终态的 code-army campaigns。",
-		"- `/codearmy status`",
-		"  显示当前 scope 下的 Code Army 摘要，和 `/status` 的 Code Army 部分一致。",
-		"- `/codearmy tasks [campaign 查询词]`",
-		"  显示某个 campaign 里每个 task 的当前状态；支持 campaign id / 标题 / repo 的模糊匹配。",
+		"  显示当前会话 scope 下的 token 统计，以及活跃自动化任务。",
 		"- `/clear`",
 		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
 		"- `/stop`",
@@ -262,7 +190,7 @@ func formatWorkModeTrigger(helpCfg builtinHelpConfig) string {
 func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
 	snapshot := p.runtimeSnapshot()
 	if snapshot.statusService == nil || !snapshot.statusService.IsAvailable() {
-		return "当前还没有挂载 automation / code-army 状态存储，暂时无法执行 `/status`。"
+		return "当前还没有挂载 automation 状态存储，暂时无法执行 `/status`。"
 	}
 
 	result := snapshot.statusService.Query(job)
@@ -280,18 +208,14 @@ func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
 			formatBuiltinStatusTokenCount(result.TotalUsage.Turns),
 		),
 		fmt.Sprintf("- 活跃自动化任务：`%d`", len(result.Tasks)),
-		fmt.Sprintf("- 活跃 Code Army：`%d`", len(result.Campaigns)),
 	}
 	if updatedAt := formatBuiltinStatusTime(statusview.NewestUsageUpdate(result.BotUsages)); updatedAt != "" {
 		lines = append(lines, fmt.Sprintf("- token 统计更新：`%s`", updatedAt))
 	}
-	if result.TaskError != nil || result.CampaignError != nil || result.UsageError != nil {
+	if result.TaskError != nil || result.UsageError != nil {
 		lines = append(lines, "")
 		if result.TaskError != nil {
 			lines = append(lines, fmt.Sprintf("- 自动化任务查询失败：`%s`", sanitizeInlineCode(result.TaskError.Error())))
-		}
-		if result.CampaignError != nil {
-			lines = append(lines, fmt.Sprintf("- Code Army 查询失败：`%s`", sanitizeInlineCode(result.CampaignError.Error())))
 		}
 		if result.UsageError != nil {
 			lines = append(lines, fmt.Sprintf("- token 统计查询失败：`%s`", sanitizeInlineCode(result.UsageError.Error())))
@@ -314,15 +238,6 @@ func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
 	} else {
 		for _, task := range result.Tasks {
 			lines = append(lines, formatBuiltinStatusTaskLine(task))
-		}
-	}
-
-	lines = append(lines, "", "### 活跃 Code Army", "")
-	if len(result.Campaigns) == 0 {
-		lines = append(lines, "- none")
-	} else {
-		for _, item := range result.Campaigns {
-			lines = append(lines, formatBuiltinStatusCampaignLine(item))
 		}
 	}
 	return strings.Join(lines, "\n")
@@ -356,28 +271,7 @@ func formatBuiltinStatusTaskAction(action automation.Action) string {
 	if label == "" {
 		label = "unknown"
 	}
-	if action.Type == automation.ActionTypeRunWorkflow && strings.TrimSpace(action.Workflow) != "" {
-		return label + "/" + strings.TrimSpace(action.Workflow)
-	}
 	return label
-}
-
-func formatBuiltinStatusCampaignLine(item campaign.Campaign) string {
-	parts := []string{fmt.Sprintf("- `%s`", sanitizeInlineCode(item.ID))}
-	if title := strings.TrimSpace(item.Title); title != "" {
-		parts = append(parts, title)
-	}
-	parts = append(parts, fmt.Sprintf("status `%s`", sanitizeInlineCode(string(item.Status))))
-	if repo := strings.TrimSpace(item.Repo); repo != "" {
-		parts = append(parts, fmt.Sprintf("repo `%s`", sanitizeInlineCode(repo)))
-	}
-	if campaignRepoPath := strings.TrimSpace(item.CampaignRepoPath); campaignRepoPath != "" {
-		parts = append(parts, fmt.Sprintf("campaign_repo `%s`", sanitizeInlineCode(campaignRepoPath)))
-	}
-	if updatedAt := formatBuiltinStatusTime(item.UpdatedAt); updatedAt != "" {
-		parts = append(parts, fmt.Sprintf("updated `%s`", updatedAt))
-	}
-	return strings.Join(parts, " | ")
 }
 
 func formatBuiltinStatusTime(ts time.Time) string {
