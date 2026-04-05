@@ -263,7 +263,6 @@ Alice 会暴露本地 runtime API。bundled skill 通过它来：
 - `alice-message`
 - `alice-scheduler`
 - `alice-code-army`
-- `feishu-task`
 - `file-printing`
 
 当前 runtime 权限控制：

@@ -260,7 +260,6 @@ Current bundled skills in this repository:
 - `alice-message`
 - `alice-scheduler`
 - `alice-code-army`
-- `feishu-task`
 - `file-printing`
 
 Current runtime permissions:

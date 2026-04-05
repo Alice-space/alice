@@ -291,7 +291,6 @@ runtime 脚本入口：
 - `skills/alice-message`
 - `skills/alice-scheduler`
 - `skills/alice-code-army`
-- `skills/feishu-task`
 - `skills/file-printing`
 
 运行时上下文通过这些变量注入：

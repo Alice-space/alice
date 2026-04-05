@@ -290,7 +290,6 @@ Bundled skills shipped in the current tree:
 - `skills/alice-message`
 - `skills/alice-scheduler`
 - `skills/alice-code-army`
-- `skills/feishu-task`
 - `skills/file-printing`
 
 Runtime context is injected through:

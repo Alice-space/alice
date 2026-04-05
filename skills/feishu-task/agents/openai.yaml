@@ -1,4 +1,0 @@
-interface:
-  display_name: "飞书任务"
-  short_description: "用飞书Task v2管理任务与清单CRUD分派及截止时间"
-  default_prompt: "使用 $feishu-task 通过飞书 Task v2 管理官方任务与任务清单，不要与 Alice 自动化任务混用。"
