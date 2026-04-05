@@ -45,9 +45,6 @@ func (s *Server) allowRuntimeAutomation() bool {
 	return runtimePermissionEnabled(s.runtimeConfig().permissions.RuntimeAutomation)
 }
 
-func (s *Server) allowRuntimeCampaigns() bool {
-	return runtimePermissionEnabled(s.runtimeConfig().permissions.RuntimeCampaigns)
-}
 
 func runtimePermissionEnabled(flag *bool) bool {
 	return flag == nil || *flag

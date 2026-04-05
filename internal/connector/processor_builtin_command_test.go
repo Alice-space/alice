@@ -10,17 +10,16 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 type llmCallCountingStub struct {
 	calls int
 }
 
-func (s *llmCallCountingStub) Run(_ context.Context, _ llm.RunRequest) (llm.RunResult, error) {
+func (s *llmCallCountingStub) Run(_ context.Context, _ agentbridge.RunRequest) (agentbridge.RunResult, error) {
 	s.calls++
-	return llm.RunResult{Reply: "unexpected"}, nil
+	return agentbridge.RunResult{Reply: "unexpected"}, nil
 }
 
 func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
@@ -58,8 +57,6 @@ func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
 		"## Alice 内建命令",
 		"`/help`",
 		"`/status`",
-		"`/codearmy status`",
-		"`/codearmy tasks [campaign 查询词]`",
 		"`/clear`",
 		"`/stop`",
 		"`普通模式`",
@@ -144,15 +141,14 @@ func TestProcessor_StopCommand_BypassesLLMAndReplies(t *testing.T) {
 	}
 }
 
-func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testing.T) {
+func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 	llmStub := &llmCallCountingStub{}
 	sender := &senderStub{}
 	processor := NewProcessor(llmStub, sender, "failed", "thinking")
 	processor.SetStatusIdentity("alice", "Alice")
 
 	automationStore := automation.NewStore(filepath.Join(t.TempDir(), "automation.db"))
-	campaignStore := campaign.NewStore(filepath.Join(t.TempDir(), "campaigns.db"))
-	processor.SetStatusStores(automationStore, campaignStore)
+	processor.SetStatusStores(automationStore)
 
 	if _, err := automationStore.CreateTask(automation.Task{
 		ID:       "task_active",
@@ -162,9 +158,8 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testi
 		Creator:  automation.Actor{OpenID: "ou_actor"},
 		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 600},
 		Action: automation.Action{
-			Type:     automation.ActionTypeRunWorkflow,
-			Workflow: "code_army",
-			Prompt:   "/alice reconcile campaign camp_active",
+			Type:     automation.ActionTypeRunLLM,
+			Prompt:   "/alice reconcile camp_active",
 			StateKey: "camp_active",
 		},
 		Status: automation.TaskStatusActive,
@@ -187,31 +182,7 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testi
 		t.Fatalf("create paused task failed: %v", err)
 	}
 
-	if _, err := campaignStore.CreateCampaign(campaign.Campaign{
-		ID:                "camp_active",
-		Title:             "Optimize Model-X",
-		Objective:         "improve latency",
-		Repo:              "lizhihao/fastecalsim",
-		Session:           campaign.SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_1", ReceiveIDType: "chat_id", ReceiveID: "oc_chat", ChatType: "group"},
-		Creator:           campaign.Actor{OpenID: "ou_actor"},
-		Status:            campaign.StatusRunning,
-		MaxParallelTrials: 3,
-	}); err != nil {
-		t.Fatalf("create active campaign failed: %v", err)
-	}
-	if _, err := campaignStore.CreateCampaign(campaign.Campaign{
-		ID:                "camp_done",
-		Title:             "Closed Experiment",
-		Objective:         "done",
-		Session:           campaign.SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_1", ReceiveIDType: "chat_id", ReceiveID: "oc_chat", ChatType: "group"},
-		Creator:           campaign.Actor{OpenID: "ou_actor"},
-		Status:            campaign.StatusMerged,
-		MaxParallelTrials: 1,
-	}); err != nil {
-		t.Fatalf("create merged campaign failed: %v", err)
-	}
-
-	processor.recordSessionUsage(buildChatSceneSessionKey("chat_id", "oc_chat"), llm.Usage{
+	processor.recordSessionUsage(buildChatSceneSessionKey("chat_id", "oc_chat"), agentbridge.Usage{
 		InputTokens:       120,
 		CachedInputTokens: 60,
 		OutputTokens:      15,
@@ -279,12 +250,9 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testi
 		"`Alice` | total `135` | input `120` | cached `60` | output `15` | turns `1`",
 		"`Mea` | total `90` | input `80` | cached `20` | output `10` | turns `2`",
 		"活跃自动化任务：`1`",
-		"活跃 Code Army：`1`",
 		"`task_active`",
-		"`run_workflow/code_army`",
+		"`run_llm`",
 		"state_key `camp_active`",
-		"`camp_active`",
-		"status `running`",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected status reply to contain %q, got %q", want, reply)
@@ -292,131 +260,10 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasksAndCampaigns(t *testi
 	}
 	for _, unwanted := range []string{
 		"task_paused",
-		"camp_done",
 	} {
 		if strings.Contains(reply, unwanted) {
 			t.Fatalf("expected status reply not to contain %q, got %q", unwanted, reply)
 		}
-	}
-}
-
-func TestProcessor_CodeArmyTasksCommand_ListsEveryTaskStateWithFuzzyCampaignMatch(t *testing.T) {
-	llmStub := &llmCallCountingStub{}
-	sender := &senderStub{}
-	processor := NewProcessor(llmStub, sender, "failed", "thinking")
-
-	campaignStore := campaign.NewStore(filepath.Join(t.TempDir(), "campaigns.db"))
-	processor.SetStatusStores(nil, campaignStore)
-
-	root := t.TempDir()
-	writeConnectorTestFile(t, filepath.Join(root, "campaign.md"), `---
-campaign_id: camp_front
-title: "Product Front Door"
-current_phase: P01
-plan_status: human_approved
-plan_round: 2
----
-`)
-	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "phase.md"), `---
-phase: P01
-status: active
-goal: "Ship landing pages"
----
-`)
-	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T100", "task.md"), `---
-task_id: T100
-title: "Baseline snapshot"
-phase: P01
-status: done
----
-`)
-	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T101", "task.md"), `---
-task_id: T101
-title: "Build front page"
-phase: P01
-status: executing
-owner_agent: executor
-lease_until: "2026-04-02T18:00:00+08:00"
-dispatch_state: executor_dispatched
-execution_round: 1
----
-`)
-	writeConnectorTestFile(t, filepath.Join(root, "phases", "P01", "tasks", "T102", "task.md"), `---
-task_id: T102
-title: "Publish candidate"
-phase: P01
-status: ready
-depends_on: [T101]
----
-`)
-
-	if _, err := campaignStore.CreateCampaign(campaign.Campaign{
-		ID:                "camp_front",
-		Title:             "Product Front Door",
-		Objective:         "ship site",
-		Repo:              "lizhihao/codearmy-site",
-		CampaignRepoPath:  root,
-		Session:           campaign.SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_1", ReceiveIDType: "chat_id", ReceiveID: "oc_chat", ChatType: "group"},
-		Creator:           campaign.Actor{OpenID: "ou_actor"},
-		Status:            campaign.StatusRunning,
-		MaxParallelTrials: 2,
-	}); err != nil {
-		t.Fatalf("create selected campaign failed: %v", err)
-	}
-	if _, err := campaignStore.CreateCampaign(campaign.Campaign{
-		ID:                "camp_detector",
-		Title:             "Detector Scan",
-		Objective:         "scan detector",
-		Repo:              "lizhihao/detector-scan",
-		CampaignRepoPath:  filepath.Join(t.TempDir(), "campaigns", "detector"),
-		Session:           campaign.SessionRoute{ScopeKey: "chat_id:oc_chat|thread:omt_1", ReceiveIDType: "chat_id", ReceiveID: "oc_chat", ChatType: "group"},
-		Creator:           campaign.Actor{OpenID: "ou_actor"},
-		Status:            campaign.StatusPlanning,
-		MaxParallelTrials: 1,
-	}); err != nil {
-		t.Fatalf("create secondary campaign failed: %v", err)
-	}
-
-	state := processor.ProcessJobState(context.Background(), Job{
-		ReceiveID:       "oc_chat",
-		ReceiveIDType:   "chat_id",
-		ChatType:        "group",
-		SenderOpenID:    "ou_actor",
-		SourceMessageID: "om_src",
-		SessionKey:      "chat_id:oc_chat|thread:omt_2|message:om_src",
-		Text:            "/codearmy tasks front door",
-	})
-	if state != JobProcessCompleted {
-		t.Fatalf("expected completed state, got %s", state)
-	}
-	if llmStub.calls != 0 {
-		t.Fatalf("expected codearmy tasks command to bypass llm, got %d llm calls", llmStub.calls)
-	}
-	if sender.replyCardCalls != 1 || sender.replyCardDirectCalls != 1 {
-		t.Fatalf("expected one direct card reply, got card=%d direct=%d", sender.replyCardCalls, sender.replyCardDirectCalls)
-	}
-	if sender.replyRichMarkdownCalls != 0 || sender.replyRichMarkdownDirectCalls != 0 {
-		t.Fatalf("expected codearmy tasks command not to use rich markdown, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
-	}
-	card := parseReplyCard(t, sender.replyCards[0])
-	if got := card.Header.Title.Content; got != builtinCodeArmyTasksCardTitle {
-		t.Fatalf("unexpected card title: %q", got)
-	}
-	reply := card.Body.Elements[0].Content
-	for _, want := range []string{
-		"## CodeArmy Tasks",
-		"- campaign: `camp_front`",
-		"### P01",
-		"`T100` | status `done` | Baseline snapshot",
-		"`T101` | status `executing` | Build front page | dispatch `executor_dispatched` | owner `executor`",
-		"`T102` | status `blocked` | Publish candidate | dependency `T101` not done yet",
-	} {
-		if !strings.Contains(reply, want) {
-			t.Fatalf("expected codearmy tasks reply to contain %q, got %q", want, reply)
-		}
-	}
-	if strings.Contains(reply, "Detector Scan") {
-		t.Fatalf("expected fuzzy match to resolve uniquely to front campaign, got %q", reply)
 	}
 }
 
@@ -488,48 +335,6 @@ func TestIsStatusCommand(t *testing.T) {
 	}
 }
 
-func TestIsCodeArmyStatusCommand(t *testing.T) {
-	for _, text := range []string{
-		"/codearmy status",
-		"  /codearmy   status  ",
-		"/codearmy status camp_x",
-	} {
-		if !isCodeArmyStatusCommand(text) {
-			t.Fatalf("expected %q to be recognized as codearmy status command", text)
-		}
-	}
-	for _, text := range []string{
-		"/codearmy",
-		"/codearmystat us",
-		"/codearmy stats",
-	} {
-		if isCodeArmyStatusCommand(text) {
-			t.Fatalf("expected %q to be rejected as codearmy status command", text)
-		}
-	}
-}
-
-func TestIsCodeArmyTasksCommand(t *testing.T) {
-	for _, text := range []string{
-		"/codearmy tasks",
-		"  /codearmy   tasks  front door ",
-		"/codearmy status tasks camp_x",
-	} {
-		if !isCodeArmyTasksCommand(text) {
-			t.Fatalf("expected %q to be recognized as codearmy tasks command", text)
-		}
-	}
-	for _, text := range []string{
-		"/codearmy",
-		"/codearmy task",
-		"/codearmy status detail",
-	} {
-		if isCodeArmyTasksCommand(text) {
-			t.Fatalf("expected %q to be rejected as codearmy tasks command", text)
-		}
-	}
-}
-
 func TestIsClearCommand(t *testing.T) {
 	for _, text := range []string{
 		"/clear",
@@ -569,15 +374,5 @@ func TestIsStopCommand(t *testing.T) {
 		if isStopCommand(text) {
 			t.Fatalf("expected %q to be rejected as stop command", text)
 		}
-	}
-}
-
-func writeConnectorTestFile(t *testing.T, path, content string) {
-	t.Helper()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir %s failed: %v", filepath.Dir(path), err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write %s failed: %v", path, err)
 	}
 }

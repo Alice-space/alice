@@ -21,7 +21,7 @@ func TestStore_CreateListPatchClaim(t *testing.T) {
 			Name:   "Alice",
 		},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "ping", MentionUserIDs: []string{"ou_actor"}},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "ping", MentionUserIDs: []string{"ou_actor"}},
 	})
 	if err != nil {
 		t.Fatalf("create task failed: %v", err)
@@ -84,7 +84,7 @@ func TestStore_ClaimCronTask(t *testing.T) {
 			Name:   "Alice",
 		},
 		Schedule: Schedule{Type: ScheduleTypeCron, CronExpr: "0 9 * * *"},
-		Action:   Action{Type: ActionTypeSendText, Text: "daily brief"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "daily brief"},
 	})
 	if err != nil {
 		t.Fatalf("create cron task failed: %v", err)
@@ -130,7 +130,7 @@ func TestStore_RecordTaskSignal_PausesTask(t *testing.T) {
 			UserID: "ou_actor",
 		},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "hello"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "hello"},
 	})
 	if err != nil {
 		t.Fatalf("create task failed: %v", err)
@@ -174,7 +174,7 @@ func TestStore_ClaimDueTasks_MaxRunsPausesTask(t *testing.T) {
 			UserID: "ou_actor",
 		},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "run once"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "run once"},
 		MaxRuns:  1,
 	})
 	if err != nil {
@@ -243,9 +243,8 @@ func TestStore_RecordTaskResult_RetriesFailedCampaignDispatchTaskBeforePausing(t
 		},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
 		Action: Action{
-			Type:     ActionTypeRunWorkflow,
+			Type:     ActionTypeRunLLM,
 			Prompt:   "review task",
-			Workflow: "code_army",
 			StateKey: "campaign_dispatch:camp_demo:reviewer:T001:r1",
 		},
 		MaxRuns: 1,
@@ -309,8 +308,7 @@ func TestShouldEscalateInternalWorkflowFailure(t *testing.T) {
 		MaxRuns:             1,
 		ConsecutiveFailures: maxConsecutiveTaskFailures,
 		Action: Action{
-			Type:     ActionTypeRunWorkflow,
-			Workflow: "code_army",
+			Type:     ActionTypeRunLLM,
 			StateKey: "campaign_dispatch:camp_demo:reviewer:T001:r1",
 		},
 	}
@@ -349,7 +347,7 @@ func TestStore_RecordTaskResult_DeletedTaskIsIgnored(t *testing.T) {
 			UserID: "ou_actor",
 		},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "run once"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "run once"},
 		MaxRuns:  1,
 	})
 	if err != nil {
@@ -394,7 +392,7 @@ func TestStore_ClaimDueTasks_SkipsRunningTaskUntilResultRecorded(t *testing.T) {
 			UserID: "ou_actor",
 		},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "hello"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "hello"},
 	})
 	if err != nil {
 		t.Fatalf("create task failed: %v", err)
@@ -460,7 +458,7 @@ func TestStore_ResetRunningTasks(t *testing.T) {
 			UserID: "ou_actor",
 		},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "hello"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "hello"},
 	})
 	if err != nil {
 		t.Fatalf("create task failed: %v", err)
@@ -494,7 +492,7 @@ func TestStore_DeletedTaskRetention(t *testing.T) {
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "old"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "old"},
 	})
 	if err != nil {
 		t.Fatalf("create expired task failed: %v", err)
@@ -505,7 +503,7 @@ func TestStore_DeletedTaskRetention(t *testing.T) {
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
 		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeSendText, Text: "recent"},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "recent"},
 	})
 	if err != nil {
 		t.Fatalf("create recent task failed: %v", err)

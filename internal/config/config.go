@@ -22,7 +22,6 @@ const DefaultHTTPSProxy = "http://127.0.0.1:8080"
 const DefaultALLProxy = "http://127.0.0.1:8080"
 const DefaultLLMTimeoutSecs = 172800
 const DefaultAuthStatusTimeoutSecs = 15
-const DefaultCampaignNotificationTimeoutSecs = 30
 const DefaultRuntimeAPIShutdownTimeoutSecs = 5
 const DefaultLocalRuntimeStoreOpenTimeoutSecs = 10
 const DefaultCodexIdleTimeoutSecs = 900
@@ -65,52 +64,15 @@ type GroupScenesConfig struct {
 	Work GroupSceneConfig `mapstructure:"work"`
 }
 
-type ImageGenerationConfig struct {
-	Enabled               bool   `mapstructure:"enabled"`
-	Provider              string `mapstructure:"provider"`
-	Model                 string `mapstructure:"model"`
-	BaseURL               string `mapstructure:"base_url"`
-	TimeoutSecs           int    `mapstructure:"timeout_secs"`
-	Moderation            string `mapstructure:"moderation"`
-	N                     int    `mapstructure:"n"`
-	OutputCompression     int    `mapstructure:"output_compression"`
-	ResponseFormat        string `mapstructure:"response_format"`
-	Size                  string `mapstructure:"size"`
-	Quality               string `mapstructure:"quality"`
-	Background            string `mapstructure:"background"`
-	OutputFormat          string `mapstructure:"output_format"`
-	PartialImages         int    `mapstructure:"partial_images"`
-	Stream                bool   `mapstructure:"stream"`
-	Style                 string `mapstructure:"style"`
-	InputFidelity         string `mapstructure:"input_fidelity"`
-	MaskPath              string `mapstructure:"mask_path"`
-	UseCurrentAttachments bool   `mapstructure:"use_current_attachments"`
-}
-
 type CodexExecPolicyConfig struct {
 	Sandbox        string   `mapstructure:"sandbox"`
 	AskForApproval string   `mapstructure:"ask_for_approval"`
 	AddDirs        []string `mapstructure:"add_dirs"`
 }
 
-// CampaignRoleDefaultConfig references an llm_profile by name.
-type CampaignRoleDefaultConfig struct {
-	Role       string `mapstructure:"role"`
-	LLMProfile string `mapstructure:"llm_profile"`
-	Workflow   string `mapstructure:"workflow"`
-}
-
-type CampaignRoleDefaultsConfig struct {
-	Executor        CampaignRoleDefaultConfig `mapstructure:"executor"`
-	Reviewer        CampaignRoleDefaultConfig `mapstructure:"reviewer"`
-	Planner         CampaignRoleDefaultConfig `mapstructure:"planner"`
-	PlannerReviewer CampaignRoleDefaultConfig `mapstructure:"planner_reviewer"`
-}
-
 type BotPermissionsConfig struct {
 	RuntimeMessage    *bool    `mapstructure:"runtime_message"`
 	RuntimeAutomation *bool    `mapstructure:"runtime_automation"`
-	RuntimeCampaigns  *bool    `mapstructure:"runtime_campaigns"`
 	AllowedSkills     []string `mapstructure:"allowed_skills"`
 }
 
@@ -131,7 +93,6 @@ type BotConfig struct {
 	RuntimeHTTPToken                 string                      `mapstructure:"runtime_http_token"`
 	FailureMessage                   string                      `mapstructure:"failure_message"`
 	ThinkingMessage                  string                      `mapstructure:"thinking_message"`
-	ImageGeneration                  ImageGenerationConfig       `mapstructure:"image_generation"`
 	AliceHome                        string                      `mapstructure:"alice_home"`
 	WorkspaceDir                     string                      `mapstructure:"workspace_dir"`
 	PromptDir                        string                      `mapstructure:"prompt_dir"`
@@ -142,14 +103,12 @@ type BotConfig struct {
 	WorkerConcurrency                int                         `mapstructure:"worker_concurrency"`
 	AutomationTaskTimeoutSecs        int                         `mapstructure:"automation_task_timeout_secs"`
 	AuthStatusTimeoutSecs            int                         `mapstructure:"auth_status_timeout_secs"`
-	CampaignNotificationTimeoutSecs  int                         `mapstructure:"campaign_notification_timeout_secs"`
 	RuntimeAPIShutdownTimeoutSecs    int                         `mapstructure:"runtime_api_shutdown_timeout_secs"`
 	LocalRuntimeStoreOpenTimeoutSecs int                         `mapstructure:"local_runtime_store_open_timeout_secs"`
 	CodexIdleTimeoutSecs             int                         `mapstructure:"codex_idle_timeout_secs"`
 	CodexHighIdleTimeoutSecs         int                         `mapstructure:"codex_high_idle_timeout_secs"`
 	CodexXHighIdleTimeoutSecs        int                         `mapstructure:"codex_xhigh_idle_timeout_secs"`
 	Permissions                      *BotPermissionsConfig       `mapstructure:"permissions"`
-	CampaignRoleDefaults             CampaignRoleDefaultsConfig  `mapstructure:"campaign_role_defaults"`
 }
 
 type Config struct {
@@ -178,14 +137,12 @@ type Config struct {
 	FailureMessage   string `mapstructure:"failure_message"`
 	ThinkingMessage  string `mapstructure:"thinking_message"`
 
-	ImageGeneration      ImageGenerationConfig      `mapstructure:"image_generation"`
-	AliceHome            string                     `mapstructure:"alice_home"`
-	WorkspaceDir         string                     `mapstructure:"workspace_dir"`
-	PromptDir            string                     `mapstructure:"prompt_dir"`
-	SoulPath             string                     `mapstructure:"soul_path"`
-	Permissions          BotPermissionsConfig       `mapstructure:"permissions"`
-	CampaignRoleDefaults CampaignRoleDefaultsConfig `mapstructure:"campaign_role_defaults"`
-	Bots                 map[string]BotConfig       `mapstructure:"bots"`
+	AliceHome    string               `mapstructure:"alice_home"`
+	WorkspaceDir string               `mapstructure:"workspace_dir"`
+	PromptDir    string               `mapstructure:"prompt_dir"`
+	SoulPath     string               `mapstructure:"soul_path"`
+	Permissions  BotPermissionsConfig `mapstructure:"permissions"`
+	Bots         map[string]BotConfig `mapstructure:"bots"`
 
 	QueueCapacity                    int           `mapstructure:"queue_capacity"`
 	WorkerConcurrency                int           `mapstructure:"worker_concurrency"`
@@ -193,8 +150,6 @@ type Config struct {
 	AutomationTaskTimeout            time.Duration `mapstructure:"-"`
 	AuthStatusTimeoutSecs            int           `mapstructure:"auth_status_timeout_secs"`
 	AuthStatusTimeout                time.Duration `mapstructure:"-"`
-	CampaignNotificationTimeoutSecs  int           `mapstructure:"campaign_notification_timeout_secs"`
-	CampaignNotificationTimeout      time.Duration `mapstructure:"-"`
 	RuntimeAPIShutdownTimeoutSecs    int           `mapstructure:"runtime_api_shutdown_timeout_secs"`
 	RuntimeAPIShutdownTimeout        time.Duration `mapstructure:"-"`
 	LocalRuntimeStoreOpenTimeoutSecs int           `mapstructure:"local_runtime_store_open_timeout_secs"`

@@ -18,9 +18,6 @@ func LoadFromFile(path string) (Config, error) {
 	if err := validatePureMultiBotRootConfig(v); err != nil {
 		return Config{}, err
 	}
-	if err := rejectRemovedImageProxyConfig(v); err != nil {
-		return Config{}, err
-	}
 	setBotDefaults(v)
 
 	var cfg Config
@@ -76,35 +73,14 @@ func setCommonConfigDefaults(v *viper.Viper, prefix string, includeRuntimeHTTPAd
 	v.SetDefault(configKey(prefix, "runtime_http_token"), "")
 	v.SetDefault(configKey(prefix, "failure_message"), "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault(configKey(prefix, "thinking_message"), "正在思考中...")
-	v.SetDefault(configKey(prefix, "image_generation.enabled"), false)
-	v.SetDefault(configKey(prefix, "image_generation.provider"), "openai")
-	v.SetDefault(configKey(prefix, "image_generation.model"), "gpt-image-1.5")
-	v.SetDefault(configKey(prefix, "image_generation.base_url"), "")
-	v.SetDefault(configKey(prefix, "image_generation.timeout_secs"), 120)
-	v.SetDefault(configKey(prefix, "image_generation.moderation"), "")
-	v.SetDefault(configKey(prefix, "image_generation.n"), 0)
-	v.SetDefault(configKey(prefix, "image_generation.output_compression"), -1)
-	v.SetDefault(configKey(prefix, "image_generation.response_format"), "")
-	v.SetDefault(configKey(prefix, "image_generation.size"), "1024x1536")
-	v.SetDefault(configKey(prefix, "image_generation.quality"), "high")
-	v.SetDefault(configKey(prefix, "image_generation.background"), "auto")
-	v.SetDefault(configKey(prefix, "image_generation.output_format"), "png")
-	v.SetDefault(configKey(prefix, "image_generation.partial_images"), -1)
-	v.SetDefault(configKey(prefix, "image_generation.stream"), false)
-	v.SetDefault(configKey(prefix, "image_generation.style"), "")
-	v.SetDefault(configKey(prefix, "image_generation.input_fidelity"), "high")
-	v.SetDefault(configKey(prefix, "image_generation.mask_path"), "")
-	v.SetDefault(configKey(prefix, "image_generation.use_current_attachments"), true)
 	v.SetDefault(configKey(prefix, "env.HTTPS_PROXY"), DefaultHTTPSProxy)
 	v.SetDefault(configKey(prefix, "env.ALL_PROXY"), DefaultALLProxy)
 	v.SetDefault(configKey(prefix, "permissions.runtime_message"), true)
 	v.SetDefault(configKey(prefix, "permissions.runtime_automation"), true)
-	v.SetDefault(configKey(prefix, "permissions.runtime_campaigns"), true)
 	v.SetDefault(configKey(prefix, "queue_capacity"), 256)
 	v.SetDefault(configKey(prefix, "worker_concurrency"), DefaultWorkerConcurrency)
 	v.SetDefault(configKey(prefix, "automation_task_timeout_secs"), 6000)
 	v.SetDefault(configKey(prefix, "auth_status_timeout_secs"), DefaultAuthStatusTimeoutSecs)
-	v.SetDefault(configKey(prefix, "campaign_notification_timeout_secs"), DefaultCampaignNotificationTimeoutSecs)
 	v.SetDefault(configKey(prefix, "runtime_api_shutdown_timeout_secs"), DefaultRuntimeAPIShutdownTimeoutSecs)
 	v.SetDefault(configKey(prefix, "local_runtime_store_open_timeout_secs"), DefaultLocalRuntimeStoreOpenTimeoutSecs)
 	v.SetDefault(configKey(prefix, "codex_idle_timeout_secs"), DefaultCodexIdleTimeoutSecs)

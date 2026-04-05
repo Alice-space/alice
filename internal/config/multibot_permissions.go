@@ -9,9 +9,6 @@ func normalizeBotPermissions(in BotPermissionsConfig) BotPermissionsConfig {
 	if in.RuntimeAutomation == nil {
 		in.RuntimeAutomation = boolPtr(true)
 	}
-	if in.RuntimeCampaigns == nil {
-		in.RuntimeCampaigns = boolPtr(true)
-	}
 	in.AllowedSkills = normalizeStringSlice(in.AllowedSkills)
 	return in
 }
@@ -51,9 +48,6 @@ func mergeBotPermissions(base BotPermissionsConfig, override *BotPermissionsConf
 	}
 	if override.RuntimeAutomation != nil {
 		merged.RuntimeAutomation = boolPtr(*override.RuntimeAutomation)
-	}
-	if override.RuntimeCampaigns != nil {
-		merged.RuntimeCampaigns = boolPtr(*override.RuntimeCampaigns)
 	}
 	if len(override.AllowedSkills) > 0 {
 		merged.AllowedSkills = normalizeStringSlice(override.AllowedSkills)

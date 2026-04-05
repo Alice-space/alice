@@ -7,38 +7,33 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/config"
-	"github.com/Alice-space/alice/internal/imagegen"
-	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/prompting"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 type Processor struct {
-	llm              llm.Backend
-	sender           Sender
-	replies          *replyDispatcher
-	failureMessage   string
-	thinkingMessage  string
-	feedbackMode     string
-	feedbackEmoji    string
-	imageGeneration  config.ImageGenerationConfig
-	imageProvider    imagegen.Provider
-	runtimeMu        sync.RWMutex
-	mu               sync.Mutex
-	sessions         map[string]sessionState
-	stateFilePath    string
-	stateVersion     uint64
-	flushedVersion   uint64
-	now              func() time.Time
-	newImageProvider func(config.ImageGenerationConfig, map[string]string) (imagegen.Provider, error)
-	runtimeAPIBase   string
-	runtimeAPIToken  string
-	runtimeAPIBin    string
-	helpConfig       builtinHelpConfig
-	statusService    *builtinStatusService
-	prompts          *prompting.Loader
+	llm             agentbridge.Backend
+	sender          Sender
+	replies         *replyDispatcher
+	failureMessage  string
+	thinkingMessage string
+	feedbackMode    string
+	feedbackEmoji   string
+	runtimeMu       sync.RWMutex
+	mu              sync.Mutex
+	sessions        map[string]sessionState
+	stateFilePath   string
+	stateVersion    uint64
+	flushedVersion  uint64
+	now             func() time.Time
+	runtimeAPIBase  string
+	runtimeAPIToken string
+	runtimeAPIBin   string
+	helpConfig      builtinHelpConfig
+	statusService   *builtinStatusService
+	prompts         *prompting.Loader
 }
 
 type StatusUsageSource struct {
@@ -63,24 +58,23 @@ const immediateFeedbackModeReaction = "reaction"
 const defaultImmediateFeedbackEmoji = "SMILE"
 
 func NewProcessor(
-	backend llm.Backend,
+	backend agentbridge.Backend,
 	sender Sender,
 	failureMessage string,
 	thinkingMessage string,
 ) *Processor {
 	processor := &Processor{
-		llm:              backend,
-		sender:           sender,
-		replies:          newReplyDispatcher(sender),
-		failureMessage:   failureMessage,
-		thinkingMessage:  thinkingMessage,
-		feedbackMode:     immediateFeedbackModeReply,
-		feedbackEmoji:    defaultImmediateFeedbackEmoji,
-		sessions:         make(map[string]sessionState),
-		now:              time.Now,
-		newImageProvider: imagegen.NewProvider,
-		helpConfig:       defaultBuiltinHelpConfig(),
-		prompts:          prompting.DefaultLoader(),
+		llm:             backend,
+		sender:          sender,
+		replies:         newReplyDispatcher(sender),
+		failureMessage:  failureMessage,
+		thinkingMessage: thinkingMessage,
+		feedbackMode:    immediateFeedbackModeReply,
+		feedbackEmoji:   defaultImmediateFeedbackEmoji,
+		sessions:        make(map[string]sessionState),
+		now:             time.Now,
+		helpConfig:      defaultBuiltinHelpConfig(),
+		prompts:         prompting.DefaultLoader(),
 	}
 	processor.statusService = newBuiltinStatusService(processor)
 	return processor
@@ -123,7 +117,7 @@ func (p *Processor) SetRuntimeAPI(baseURL, token, runtimeBin string) {
 	p.runtimeAPIBin = strings.TrimSpace(runtimeBin)
 }
 
-func (p *Processor) SetStatusStores(automationStore *automation.Store, campaignStore *campaign.Store) {
+func (p *Processor) SetStatusStores(automationStore *automation.Store) {
 	if p == nil {
 		return
 	}
@@ -131,7 +125,7 @@ func (p *Processor) SetStatusStores(automationStore *automation.Store, campaignS
 	status := p.statusService
 	p.runtimeMu.RUnlock()
 	if status != nil {
-		status.SetStores(automationStore, campaignStore)
+		status.SetStores(automationStore)
 	}
 }
 
@@ -159,51 +153,7 @@ func (p *Processor) SetStatusUsageSources(sources []StatusUsageSource) {
 	}
 }
 
-func (p *Processor) SetImageGeneration(cfg config.ImageGenerationConfig, env map[string]string) error {
-	if p == nil {
-		return nil
-	}
-	cfg = config.ImageGenerationConfig{
-		Enabled:               cfg.Enabled,
-		Provider:              strings.TrimSpace(cfg.Provider),
-		Model:                 strings.TrimSpace(cfg.Model),
-		BaseURL:               strings.TrimSpace(cfg.BaseURL),
-		TimeoutSecs:           cfg.TimeoutSecs,
-		Moderation:            strings.TrimSpace(cfg.Moderation),
-		N:                     cfg.N,
-		OutputCompression:     cfg.OutputCompression,
-		ResponseFormat:        strings.TrimSpace(cfg.ResponseFormat),
-		Size:                  strings.TrimSpace(cfg.Size),
-		Quality:               strings.TrimSpace(cfg.Quality),
-		Background:            strings.TrimSpace(cfg.Background),
-		OutputFormat:          strings.TrimSpace(cfg.OutputFormat),
-		PartialImages:         cfg.PartialImages,
-		Stream:                cfg.Stream,
-		Style:                 strings.TrimSpace(cfg.Style),
-		InputFidelity:         strings.TrimSpace(cfg.InputFidelity),
-		MaskPath:              strings.TrimSpace(cfg.MaskPath),
-		UseCurrentAttachments: cfg.UseCurrentAttachments,
-	}
-	var provider imagegen.Provider
-	if cfg.Enabled {
-		factory := p.newImageProvider
-		if factory == nil {
-			factory = imagegen.NewProvider
-		}
-		var err error
-		provider, err = factory(cfg, env)
-		if err != nil {
-			return err
-		}
-	}
-	p.runtimeMu.Lock()
-	defer p.runtimeMu.Unlock()
-	p.imageGeneration = cfg
-	p.imageProvider = provider
-	return nil
-}
-
-func (p *Processor) SetLLMBackend(backend llm.Backend) {
+func (p *Processor) SetLLMBackend(backend agentbridge.Backend) {
 	if p == nil || backend == nil {
 		return
 	}
@@ -234,8 +184,6 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 		thinkingMessage: p.thinkingMessage,
 		feedbackMode:    p.feedbackMode,
 		feedbackEmoji:   p.feedbackEmoji,
-		imageGeneration: p.imageGeneration,
-		imageProvider:   p.imageProvider,
 		runtimeAPIBase:  p.runtimeAPIBase,
 		runtimeAPIToken: p.runtimeAPIToken,
 		runtimeAPIBin:   p.runtimeAPIBin,
@@ -245,13 +193,11 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 }
 
 type processorRuntimeSnapshot struct {
-	llm             llm.Backend
+	llm             agentbridge.Backend
 	failureMessage  string
 	thinkingMessage string
 	feedbackMode    string
 	feedbackEmoji   string
-	imageGeneration config.ImageGenerationConfig
-	imageProvider   imagegen.Provider
 	runtimeAPIBase  string
 	runtimeAPIToken string
 	runtimeAPIBin   string

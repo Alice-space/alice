@@ -11,9 +11,8 @@ import (
 )
 
 const (
-	CardActionKindCampaignPlanApproval = "campaign_plan_approval"
-	CardActionDecisionApprove          = "approve"
-	CardActionDecisionReject           = "reject"
+	CardActionDecisionApprove = "approve"
+	CardActionDecisionReject  = "reject"
 )
 
 type CardActionRequest struct {
@@ -65,7 +64,7 @@ func (a *App) onCardActionTrigger(ctx context.Context, event *larkcallback.CardA
 	}
 	result, err := handler.HandleCardAction(ctx, req)
 	if err != nil {
-		logging.Warnf("handle card action failed kind=%s campaign=%s decision=%s err=%v", req.Kind, req.CampaignID, req.Decision, err)
+		logging.Warnf("handle card action failed kind=%s decision=%s err=%v", req.Kind, req.Decision, err)
 		return cardActionToastResponse("error", err.Error()), nil
 	}
 	return cardActionToastResponse(result.ToastType, result.Toast), nil

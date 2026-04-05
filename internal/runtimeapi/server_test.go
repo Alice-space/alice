@@ -15,7 +15,6 @@ func TestBuildTaskFromRequest_UsesWorkSceneLLMProfile(t *testing.T) {
 		"",
 		nil,
 		nil,
-		nil,
 		config.Config{
 			LLMProvider: "codex",
 			LLMProfiles: map[string]config.LLMProfileConfig{
@@ -84,7 +83,6 @@ func TestBuildTaskFromRequest_PreservesExplicitRunLLMSelectors(t *testing.T) {
 		"",
 		nil,
 		nil,
-		nil,
 		config.Config{
 			LLMProvider: "codex",
 			LLMProfiles: map[string]config.LLMProfileConfig{
@@ -137,11 +135,10 @@ func TestBuildTaskFromRequest_PreservesExplicitRunLLMSelectors(t *testing.T) {
 	}
 }
 
-func TestBuildTaskFromRequest_InferRunWorkflowAndSetSessionKey(t *testing.T) {
+func TestBuildTaskFromRequest_InferRunLLMAndSetSessionKey(t *testing.T) {
 	srv := NewServer(
 		"",
 		"",
-		nil,
 		nil,
 		nil,
 		config.Config{
@@ -169,8 +166,7 @@ func TestBuildTaskFromRequest_InferRunWorkflowAndSetSessionKey(t *testing.T) {
 				EverySeconds: 900,
 			},
 			Action: automation.Action{
-				Workflow: "code_army",
-				Prompt:   "/alice reconcile campaign camp_x",
+				Prompt: "/alice reconcile campaign camp_x",
 			},
 		},
 		automationScopeContext{
@@ -183,31 +179,30 @@ func TestBuildTaskFromRequest_InferRunWorkflowAndSetSessionKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if task.Action.Type != automation.ActionTypeRunWorkflow {
-		t.Fatalf("unexpected workflow action type: %q", task.Action.Type)
+	if task.Action.Type != automation.ActionTypeRunLLM {
+		t.Fatalf("unexpected action type: %q", task.Action.Type)
 	}
 	if task.Action.Model != "gpt-5.4" {
-		t.Fatalf("unexpected workflow model: %q", task.Action.Model)
+		t.Fatalf("unexpected model: %q", task.Action.Model)
 	}
 	if task.Action.Profile != "work" {
-		t.Fatalf("unexpected workflow profile: %q", task.Action.Profile)
+		t.Fatalf("unexpected profile: %q", task.Action.Profile)
 	}
 	if task.Action.ReasoningEffort != "xhigh" {
-		t.Fatalf("unexpected workflow reasoning effort: %q", task.Action.ReasoningEffort)
+		t.Fatalf("unexpected reasoning effort: %q", task.Action.ReasoningEffort)
 	}
 	if task.Action.Personality != "pragmatic" {
-		t.Fatalf("unexpected workflow personality: %q", task.Action.Personality)
+		t.Fatalf("unexpected personality: %q", task.Action.Personality)
 	}
 	if task.Action.SessionKey != "chat_id:oc_chat|scene:work|thread:omt_1" {
-		t.Fatalf("unexpected workflow session key: %q", task.Action.SessionKey)
+		t.Fatalf("unexpected session key: %q", task.Action.SessionKey)
 	}
 }
 
-func TestBuildTaskFromRequest_RunWorkflowExplicitProfileOverridesSceneDefaults(t *testing.T) {
+func TestBuildTaskFromRequest_RunLLMExplicitProfileOverridesSceneDefaults(t *testing.T) {
 	srv := NewServer(
 		"",
 		"",
-		nil,
 		nil,
 		nil,
 		config.Config{
@@ -241,9 +236,8 @@ func TestBuildTaskFromRequest_RunWorkflowExplicitProfileOverridesSceneDefaults(t
 				EverySeconds: 900,
 			},
 			Action: automation.Action{
-				Workflow: "code_army",
-				Prompt:   "/alice reconcile campaign camp_x",
-				Profile:  "executor",
+				Prompt:  "/alice reconcile campaign camp_x",
+				Profile: "executor",
 			},
 		},
 		automationScopeContext{
@@ -271,7 +265,7 @@ func TestBuildTaskFromRequest_RunWorkflowExplicitProfileOverridesSceneDefaults(t
 }
 
 func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
-	srv := NewServer("", "", nil, nil, nil, config.Config{})
+	srv := NewServer("", "", nil, nil, config.Config{})
 	nextRunAt := time.Date(2026, 3, 26, 15, 30, 0, 0, time.UTC)
 
 	task, err := srv.buildTaskFromRequest(
@@ -281,8 +275,8 @@ func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
 				EverySeconds: 900,
 			},
 			Action: automation.Action{
-				Type: automation.ActionTypeSendText,
-				Text: "ping",
+				Type:   automation.ActionTypeRunLLM,
+				Prompt: "ping",
 			},
 			NextRunAt: nextRunAt,
 		},
@@ -301,11 +295,10 @@ func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
 	}
 }
 
-func TestBuildTaskFromRequest_RunWorkflowExplicitProviderDoesNotInheritSceneModel(t *testing.T) {
+func TestBuildTaskFromRequest_RunLLMExplicitProviderDoesNotInheritSceneModel(t *testing.T) {
 	srv := NewServer(
 		"",
 		"",
-		nil,
 		nil,
 		nil,
 		config.Config{
@@ -333,7 +326,6 @@ func TestBuildTaskFromRequest_RunWorkflowExplicitProviderDoesNotInheritSceneMode
 				EverySeconds: 900,
 			},
 			Action: automation.Action{
-				Workflow: "code_army",
 				Prompt:   "/alice reconcile campaign camp_x",
 				Provider: "kimi",
 			},

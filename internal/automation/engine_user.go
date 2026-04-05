@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 type taskMessageSender interface {
@@ -54,30 +54,8 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 
 	dispatch, err = e.executeUserTask(runCtx, task)
 	if err != nil {
-		if shouldIgnoreInternalWorkflowDeliveryError(task, dispatch, err) {
-			logging.Warnf(
-				"ignore automation delivery error after successful internal workflow id=%s state_key=%s err=%v",
-				task.ID,
-				task.Action.StateKey,
-				err,
-			)
-			err = nil
-			return
-		}
 		logging.Errorf("run automation task failed id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, err)
 	}
-}
-
-func shouldIgnoreInternalWorkflowDeliveryError(task Task, dispatch taskDispatch, err error) bool {
-	if err == nil {
-		return false
-	}
-	task = NormalizeTask(task)
-	if task.Action.Type != ActionTypeRunWorkflow || !dispatch.completed {
-		return false
-	}
-	stateKey := strings.TrimSpace(task.Action.StateKey)
-	return strings.HasPrefix(stateKey, "campaign_dispatch:") || strings.HasPrefix(stateKey, "campaign_wake:")
 }
 
 func (e *Engine) recordUserTaskOutcome(task Task, dispatch taskDispatch, err error) {
@@ -141,14 +119,6 @@ func (e *Engine) notifyUserTaskCompletion(task Task, err error) {
 }
 
 func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Context, context.CancelFunc) {
-	task = NormalizeTask(task)
-	if task.Action.Type == ActionTypeRunWorkflow {
-		timeout := e.userTaskTimeoutDuration()
-		if timeout <= 0 {
-			timeout = defaultWorkflowTaskTimeout
-		}
-		return context.WithTimeout(ctx, timeout)
-	}
 	return context.WithTimeout(ctx, e.userTaskTimeoutDuration())
 }
 
@@ -291,7 +261,7 @@ func shouldUrgentTaskSignal(task Task, dispatch taskDispatch, messageID string) 
 	if task.Route.ReceiveIDType != "chat_id" {
 		return false
 	}
-	return dispatch.signal != nil && dispatch.signal.kind == taskSignalNeedsHuman
+	return dispatch.signal != nil && dispatch.signal.kind == "needs_human"
 }
 
 func taskUrgentRecipient(actor Actor) (string, string, bool) {
@@ -308,20 +278,6 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 	task = NormalizeTask(task)
 	runAt := e.nowTime()
 	switch task.Action.Type {
-	case ActionTypeSendText:
-		rendered, err := renderActionTemplate(task.Action.Text, runAt)
-		if err != nil {
-			return taskDispatch{}, err
-		}
-		text, err := BuildDispatchText(Action{
-			Type:           ActionTypeSendText,
-			Text:           rendered,
-			MentionUserIDs: task.Action.MentionUserIDs,
-		})
-		if err != nil {
-			return taskDispatch{}, err
-		}
-		return taskDispatch{text: text}, nil
 	case ActionTypeRunLLM:
 		runner := e.llmRunnerValue()
 		if runner == nil {
@@ -334,17 +290,21 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if prompt == "" {
 			return taskDispatch{}, errors.New("action prompt is empty for run_llm")
 		}
-		result, err := runner.Run(ctx, llm.RunRequest{
-			ThreadID:        task.Action.ResumeThreadID,
+		threadID := task.Action.ResumeThreadID
+		provider := strings.ToLower(strings.TrimSpace(task.Action.Provider))
+		if (provider == "codex" || provider == "kimi") && task.Action.StateKey != "" {
+			threadID = task.Action.StateKey
+		}
+		result, err := runner.Run(ctx, agentbridge.RunRequest{
+			ThreadID:        threadID,
 			AgentName:       "scheduler",
-			UserText:        prompt,
+			UserText:        composePromptWithPrefix(task.Action.PromptPrefix, task.Action.Personality, "", prompt, threadID != ""),
 			Scene:           taskScene(task),
 			Provider:        task.Action.Provider,
 			Model:           task.Action.Model,
 			Profile:         task.Action.Profile,
 			ReasoningEffort: task.Action.ReasoningEffort,
 			Personality:     task.Action.Personality,
-			PromptPrefix:    task.Action.PromptPrefix,
 			Env:             e.buildTaskRunEnv(task),
 		})
 		if err != nil {
@@ -363,7 +323,6 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			message = prefix + "\n" + reply
 		}
 		text, err := BuildDispatchText(Action{
-			Type:           ActionTypeSendText,
 			Text:           message,
 			MentionUserIDs: task.Action.MentionUserIDs,
 		})
@@ -371,132 +330,30 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			return taskDispatch{}, err
 		}
 		return taskDispatch{text: text, nextThreadID: strings.TrimSpace(result.NextThreadID)}, nil
-	case ActionTypeRunWorkflow:
-		runner := e.workflowRunnerValue()
-		if runner == nil {
-			return taskDispatch{}, errors.New("automation workflow runner is nil")
-		}
-		prompt, err := renderActionTemplate(task.Action.Prompt, runAt)
-		if err != nil {
-			return taskDispatch{}, err
-		}
-		if prompt == "" {
-			return taskDispatch{}, errors.New("action prompt is empty for run_workflow")
-		}
-		if guard := e.workflowPreflightHookValue(); guard != nil {
-			decision, err := guard(ctx, task)
-			if err != nil {
-				return taskDispatch{}, err
-			}
-			if decision.Block {
-				reason := strings.TrimSpace(decision.SignalMessage)
-				if reason == "" {
-					reason = strings.TrimSpace(decision.Message)
-				}
-				if reason == "" {
-					reason = "workflow requested human intervention"
-				}
-				signalKind := strings.TrimSpace(decision.SignalKind)
-				if signalKind == "" {
-					signalKind = taskSignalNeedsHuman
-				}
-				signal := &taskSignal{
-					kind:    signalKind,
-					message: reason,
-					pause:   true,
-				}
-				reply := strings.TrimSpace(decision.Message)
-				if reply == "" {
-					reply = fallbackWorkflowReply(signal)
-				}
-				text, err := BuildDispatchText(Action{
-					Type:           ActionTypeSendText,
-					Text:           reply,
-					MentionUserIDs: task.Action.MentionUserIDs,
-				})
-				if err != nil {
-					return taskDispatch{}, err
-				}
-				dispatch := taskDispatch{
-					text:   text,
-					signal: signal,
-				}
-				if decision.ForceCard || signal.kind == taskSignalNeedsHuman {
-					cardContent, err := buildSignalCardContent(task, reply, signal)
-					if err != nil {
-						return taskDispatch{}, err
-					}
-					if cardContent != "" {
-						dispatch.cardContent = cardContent
-						dispatch.forceCard = true
-					}
-				}
-				return dispatch, nil
-			}
-		}
-		result, err := runner.Run(ctx, WorkflowRunRequest{
-			Workflow:        task.Action.Workflow,
-			TaskID:          task.ID,
-			StateKey:        task.Action.StateKey,
-			SessionKey:      task.Action.SessionKey,
-			ResumeThreadID:  task.Action.ResumeThreadID,
-			Scene:           taskScene(task),
-			Prompt:          prompt,
-			Provider:        task.Action.Provider,
-			Model:           task.Action.Model,
-			Profile:         task.Action.Profile,
-			ReasoningEffort: task.Action.ReasoningEffort,
-			Personality:     task.Action.Personality,
-			PromptPrefix:    task.Action.PromptPrefix,
-			Env:             e.buildTaskRunEnv(task),
-		})
-		if err != nil {
-			return taskDispatch{}, err
-		}
-		signals := detectWorkflowSignals(result.Commands)
-		signal := primaryWorkflowSignal(signals)
-		reply := strings.TrimSpace(result.Message)
-		if reply == "" {
-			reply = fallbackWorkflowReply(signal)
-		}
-		if reply == "" {
-			return taskDispatch{}, errors.New("workflow reply is empty")
-		}
-		prefix, err := renderActionTemplate(task.Action.Text, runAt)
-		if err != nil {
-			return taskDispatch{}, err
-		}
-		message := reply
-		if prefix != "" {
-			message = prefix + "\n" + reply
-		}
-		text, err := BuildDispatchText(Action{
-			Type:           ActionTypeSendText,
-			Text:           message,
-			MentionUserIDs: task.Action.MentionUserIDs,
-		})
-		if err != nil {
-			return taskDispatch{}, err
-		}
-		dispatch := taskDispatch{
-			text:         text,
-			signal:       signal,
-			signals:      signals,
-			completed:    true,
-			nextThreadID: result.NextThreadID,
-		}
-		if signal != nil {
-			cardContent, cardErr := buildSignalCardContent(task, text, signal)
-			if cardErr != nil {
-				return taskDispatch{}, cardErr
-			}
-			if cardContent != "" {
-				dispatch.forceCard = true
-				dispatch.cardContent = cardContent
-			}
-		}
-		return dispatch, nil
 	default:
 		return taskDispatch{}, fmt.Errorf("unsupported action type %q", task.Action.Type)
 	}
+}
+
+// composePromptWithPrefix prepends a system prefix to userText for new threads.
+// On resume (isResume=true), userText is returned as-is.
+func composePromptWithPrefix(promptPrefix, personality, noReplyToken, userText string, isResume bool) string {
+	if isResume {
+		return userText
+	}
+	parts := make([]string, 0, 3)
+	if p := strings.TrimSpace(promptPrefix); p != "" {
+		parts = append(parts, p)
+	}
+	if p := strings.TrimSpace(personality); p != "" {
+		parts = append(parts, "Preferred response style/personality: "+p+".")
+	}
+	if t := strings.TrimSpace(noReplyToken); t != "" {
+		parts = append(parts, "If no reply is appropriate, return exactly this token and nothing else: "+t)
+	}
+	prefix := strings.TrimSpace(strings.Join(parts, "\n\n"))
+	if prefix == "" {
+		return userText
+	}
+	return prefix + "\n\n" + strings.TrimSpace(userText)
 }

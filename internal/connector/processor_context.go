@@ -6,10 +6,10 @@ import (
 	"os"
 	"strings"
 
-	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 	"github.com/Alice-space/alice/internal/runtimeapi"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 func defaultIfEmpty(value string, fallback string) string {
@@ -50,23 +50,22 @@ func (p *Processor) runLLM(
 	options llmRunOptions,
 	env map[string]string,
 	onAgentMessage func(message string),
-) (string, string, llm.Usage, error) {
+) (string, string, agentbridge.Usage, error) {
 	snapshot := p.runtimeSnapshot()
 	if snapshot.llm == nil {
-		return "", strings.TrimSpace(threadID), llm.Usage{}, fmt.Errorf("llm backend is nil")
+		return "", strings.TrimSpace(threadID), agentbridge.Usage{}, fmt.Errorf("llm backend is nil")
 	}
-	result, err := snapshot.llm.Run(ctx, llm.RunRequest{
+	assembledText := assemblePrompt(options.PromptPrefix, options.Personality, options.NoReplyToken, userText, strings.TrimSpace(threadID) != "")
+	result, err := snapshot.llm.Run(ctx, agentbridge.RunRequest{
 		ThreadID:        strings.TrimSpace(threadID),
 		AgentName:       "assistant",
-		UserText:        userText,
+		UserText:        assembledText,
 		Scene:           strings.TrimSpace(options.Scene),
 		Provider:        strings.TrimSpace(options.Provider),
 		Model:           strings.TrimSpace(options.Model),
 		Profile:         strings.TrimSpace(options.Profile),
 		ReasoningEffort: strings.TrimSpace(options.ReasoningEffort),
 		Personality:     strings.TrimSpace(options.Personality),
-		NoReplyToken:    strings.TrimSpace(options.NoReplyToken),
-		PromptPrefix:    strings.TrimSpace(options.PromptPrefix),
 		Env:             env,
 		OnProgress:      onAgentMessage,
 	})
@@ -450,4 +449,27 @@ func preferredID(openID, userID, unionID string) string {
 		return userID
 	}
 	return strings.TrimSpace(unionID)
+}
+
+// assemblePrompt prepends a system prefix to userText for new threads.
+// On resume (isResume=true), userText is returned as-is (the CLI handles continuation).
+func assemblePrompt(promptPrefix, personality, noReplyToken, userText string, isResume bool) string {
+	if isResume {
+		return userText
+	}
+	parts := make([]string, 0, 3)
+	if p := strings.TrimSpace(promptPrefix); p != "" {
+		parts = append(parts, p)
+	}
+	if p := strings.TrimSpace(personality); p != "" {
+		parts = append(parts, "Preferred response style/personality: "+p+".")
+	}
+	if t := strings.TrimSpace(noReplyToken); t != "" {
+		parts = append(parts, "If no reply is appropriate, return exactly this token and nothing else: "+t)
+	}
+	prefix := strings.TrimSpace(strings.Join(parts, "\n\n"))
+	if prefix == "" {
+		return userText
+	}
+	return prefix + "\n\n" + strings.TrimSpace(userText)
 }

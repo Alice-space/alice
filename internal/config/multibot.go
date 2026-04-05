@@ -24,7 +24,6 @@ type bundledSkillSpec struct {
 }
 
 var defaultBundledSkills = []bundledSkillSpec{
-	{Name: "alice-code-army", Allowed: allowRuntimeCampaignSkill},
 	{Name: "alice-message", Allowed: allowRuntimeMessageSkill},
 	{Name: "alice-scheduler", Allowed: allowRuntimeAutomationSkill},
 	{Name: "file-printing"},
@@ -36,10 +35,6 @@ func allowRuntimeMessageSkill(cfg Config) bool {
 
 func allowRuntimeAutomationSkill(cfg Config) bool {
 	return cfg.Permissions.RuntimeAutomation == nil || *cfg.Permissions.RuntimeAutomation
-}
-
-func allowRuntimeCampaignSkill(cfg Config) bool {
-	return cfg.Permissions.RuntimeCampaigns == nil || *cfg.Permissions.RuntimeCampaigns
 }
 
 func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
@@ -102,31 +97,6 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	if cfg.ThinkingMessage == "" {
 		cfg.ThinkingMessage = "正在思考中..."
 	}
-	cfg.ImageGeneration = normalizeImageGenerationConfig(cfg.ImageGeneration)
-	if cfg.ImageGeneration.Provider == "" {
-		cfg.ImageGeneration.Provider = "openai"
-	}
-	if cfg.ImageGeneration.Model == "" {
-		cfg.ImageGeneration.Model = "gpt-image-1.5"
-	}
-	if cfg.ImageGeneration.TimeoutSecs <= 0 {
-		cfg.ImageGeneration.TimeoutSecs = 120
-	}
-	if cfg.ImageGeneration.Size == "" {
-		cfg.ImageGeneration.Size = "1024x1536"
-	}
-	if cfg.ImageGeneration.Quality == "" {
-		cfg.ImageGeneration.Quality = "high"
-	}
-	if cfg.ImageGeneration.Background == "" {
-		cfg.ImageGeneration.Background = "auto"
-	}
-	if cfg.ImageGeneration.OutputFormat == "" {
-		cfg.ImageGeneration.OutputFormat = "png"
-	}
-	if cfg.ImageGeneration.InputFidelity == "" {
-		cfg.ImageGeneration.InputFidelity = "high"
-	}
 	if cfg.BotName == "" {
 		switch {
 		case strings.TrimSpace(cfg.BotID) != "":
@@ -174,7 +144,6 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	cfg.LLMProfiles = finalizeLLMProfiles(cfg.LLMProfiles)
 	cfg.AutomationTaskTimeout = time.Duration(cfg.AutomationTaskTimeoutSecs) * time.Second
 	cfg.AuthStatusTimeout = time.Duration(cfg.AuthStatusTimeoutSecs) * time.Second
-	cfg.CampaignNotificationTimeout = time.Duration(cfg.CampaignNotificationTimeoutSecs) * time.Second
 	cfg.RuntimeAPIShutdownTimeout = time.Duration(cfg.RuntimeAPIShutdownTimeoutSecs) * time.Second
 	cfg.LocalRuntimeStoreOpenTimeout = time.Duration(cfg.LocalRuntimeStoreOpenTimeoutSecs) * time.Second
 	cfg.CodexIdleTimeout = time.Duration(cfg.CodexIdleTimeoutSecs) * time.Second

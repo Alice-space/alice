@@ -91,15 +91,8 @@ func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automation
 	if task.Schedule.Type == automation.ScheduleTypeCron && strings.TrimSpace(task.Schedule.CronExpr) == "" {
 		return automation.Task{}, errors.New("cron_expr is required for cron schedule")
 	}
-	if task.Action.Type == "" {
-		switch {
-		case strings.TrimSpace(task.Action.Workflow) != "":
-			task.Action.Type = automation.ActionTypeRunWorkflow
-		case strings.TrimSpace(task.Action.Prompt) != "":
-			task.Action.Type = automation.ActionTypeRunLLM
-		default:
-			task.Action.Type = automation.ActionTypeSendText
-		}
+	if task.Action.Type == "" && strings.TrimSpace(task.Action.Prompt) != "" {
+		task.Action.Type = automation.ActionTypeRunLLM
 	}
 	applySceneLLMProfileDefaults(&task, scopeCtx, s.runtimeConfig())
 	task.Action.SessionKey = scopeSessionKey(scopeCtx.session)
@@ -127,7 +120,7 @@ func applySceneLLMProfileDefaults(task *automation.Task, scopeCtx automationScop
 	if task == nil {
 		return
 	}
-	if task.Action.Type != automation.ActionTypeRunLLM && task.Action.Type != automation.ActionTypeRunWorkflow {
+	if task.Action.Type != automation.ActionTypeRunLLM {
 		return
 	}
 	if profileName := strings.ToLower(strings.TrimSpace(task.Action.Profile)); profileName != "" {

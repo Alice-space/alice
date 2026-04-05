@@ -9,7 +9,7 @@ import (
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 func TestApp_OnMessageReceive_WorkSceneRestoresSeedRouteAfterRestartWithMention(t *testing.T) {
@@ -187,7 +187,7 @@ func TestProcessor_LoadSessionState_PreservesUsageStats(t *testing.T) {
 	}
 
 	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_root")
-	processor.recordSessionUsage(sessionKey, llm.Usage{
+	processor.recordSessionUsage(sessionKey, agentbridge.Usage{
 		InputTokens:       120,
 		CachedInputTokens: 40,
 		OutputTokens:      12,

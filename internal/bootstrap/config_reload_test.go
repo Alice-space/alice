@@ -20,7 +20,6 @@ func TestDiffRestartRequiredFields(t *testing.T) {
 		QueueCapacity:                   256,
 		WorkerConcurrency:               1,
 		AuthStatusTimeoutSecs:           15,
-		CampaignNotificationTimeoutSecs: 30,
 		RuntimeAPIShutdownTimeoutSecs:   5,
 	}
 	next := current
@@ -30,13 +29,11 @@ func TestDiffRestartRequiredFields(t *testing.T) {
 	next.QueueCapacity = 512
 	next.WorkerConcurrency = 3
 	next.AuthStatusTimeoutSecs = 20
-	next.CampaignNotificationTimeoutSecs = 45
 	next.RuntimeAPIShutdownTimeoutSecs = 8
 
 	got := diffRestartRequiredFields(current, next)
 	want := []string{
 		"auth_status_timeout_secs",
-		"campaign_notification_timeout_secs",
 		"queue_capacity",
 		"runtime_api_shutdown_timeout_secs",
 		"runtime_http_addr",

@@ -5,13 +5,12 @@ import (
 	"sort"
 	"time"
 
-	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
-	"github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/Alice-space/alice/internal/runtimecfg"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 type ConfigReloadReport struct {
@@ -40,12 +39,11 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 	}
 
 	llmChanged := llmRuntimeConfigChanged(current, merged)
-	promptLoader := r.promptLoaderForReload(merged)
 
-	var backend llm.Backend
+	var backend agentbridge.Backend
 	var err error
 	if llmChanged {
-		backend, err = buildLLMBackend(merged, promptLoader)
+		backend, err = buildLLMBackend(merged)
 		if err != nil {
 			return report, fmt.Errorf("rebuild llm backend failed: %w", err)
 		}
@@ -77,16 +75,13 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 			ThinkingMessage:        merged.ThinkingMessage,
 			ImmediateFeedbackMode:  merged.ImmediateFeedbackMode,
 			ImmediateFeedbackEmoji: merged.ImmediateFeedbackReaction,
-			ImageGeneration:        merged.ImageGeneration,
-			ImageEnv:               merged.CodexEnv,
 		}); err != nil {
-			return report, fmt.Errorf("reconfigure image generation failed: %w", err)
+			return report, fmt.Errorf("reconfigure processor failed: %w", err)
 		}
 	}
 	if r.AutomationEngine != nil {
 		if llmChanged && backend != nil {
 			r.AutomationEngine.SetLLMRunner(backend)
-			r.AutomationEngine.SetWorkflowRunner(automation.NewPromptWorkflowRunner(backend))
 		}
 		r.AutomationEngine.SetUserTaskTimeout(merged.AutomationTaskTimeout)
 	}
@@ -136,9 +131,6 @@ func diffRestartRequiredFields(current, next config.Config) []string {
 	if current.AuthStatusTimeoutSecs != next.AuthStatusTimeoutSecs {
 		changed = append(changed, "auth_status_timeout_secs")
 	}
-	if current.CampaignNotificationTimeoutSecs != next.CampaignNotificationTimeoutSecs {
-		changed = append(changed, "campaign_notification_timeout_secs")
-	}
 	if current.RuntimeAPIShutdownTimeoutSecs != next.RuntimeAPIShutdownTimeoutSecs {
 		changed = append(changed, "runtime_api_shutdown_timeout_secs")
 	}
@@ -158,10 +150,6 @@ func applyReloadableFields(dst *config.Config, src config.Config, changed map[st
 	applyStringField(&dst.ThinkingMessage, src.ThinkingMessage, "thinking_message", changed)
 	applyStringField(&dst.ImmediateFeedbackMode, src.ImmediateFeedbackMode, "immediate_feedback_mode", changed)
 	applyStringField(&dst.ImmediateFeedbackReaction, src.ImmediateFeedbackReaction, "immediate_feedback_reaction", changed)
-	if dst.ImageGeneration != src.ImageGeneration {
-		dst.ImageGeneration = src.ImageGeneration
-		changed["image_generation"] = struct{}{}
-	}
 
 	applyStringField(&dst.LLMProvider, src.LLMProvider, "llm_provider", changed)
 	if !llmProfileMapEqual(dst.LLMProfiles, src.LLMProfiles) {

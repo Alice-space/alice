@@ -2,7 +2,6 @@ package connector
 
 import (
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
 	"github.com/Alice-space/alice/internal/statusview"
 )
 
@@ -21,12 +20,11 @@ func newBuiltinStatusService(processor *Processor) *builtinStatusService {
 	}
 }
 
-func (s *builtinStatusService) SetStores(automationStore *automation.Store, campaignStore *campaign.Store) {
+func (s *builtinStatusService) SetStores(automationStore *automation.Store) {
 	if s == nil {
 		return
 	}
 	s.query.Automation = automationStore
-	s.query.Campaigns = campaignStore
 }
 
 func (s *builtinStatusService) SetIdentity(botID, botName string) {
@@ -59,7 +57,7 @@ func (s *builtinStatusService) Query(job Job) statusview.Result {
 }
 
 func (s *builtinStatusService) IsAvailable() bool {
-	return s != nil && (s.query.Automation != nil || s.query.Campaigns != nil)
+	return s != nil && s.query.Automation != nil
 }
 
 func (s *builtinStatusService) Identity() (string, string) {

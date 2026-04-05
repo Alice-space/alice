@@ -37,8 +37,7 @@ func TestBuildFactoryConfig_KeepsOuterProfileNameAndInnerProviderProfile(t *test
 				Command:      "codex-work",
 				Timeout:      45 * time.Second,
 				Model:        "gpt-5.4",
-				Profile:      "work-cli",
-				PromptPrefix: "work prefix",
+				Profile: "work-cli",
 				Permissions: &config.CodexExecPolicyConfig{
 					Sandbox:        "danger-full-access",
 					AskForApproval: "never",
@@ -48,7 +47,7 @@ func TestBuildFactoryConfig_KeepsOuterProfileNameAndInnerProviderProfile(t *test
 		},
 	}
 
-	factory := buildFactoryConfig(cfg, nil)
+	factory := buildFactoryConfig(cfg)
 	override, ok := factory.Codex.ProfileOverrides["work"]
 	if !ok {
 		t.Fatal("expected codex profile override for outer profile name")
@@ -58,9 +57,6 @@ func TestBuildFactoryConfig_KeepsOuterProfileNameAndInnerProviderProfile(t *test
 	}
 	if override.Timeout != 45*time.Second {
 		t.Fatalf("unexpected override timeout: %s", override.Timeout)
-	}
-	if override.PromptPrefix != "work prefix" {
-		t.Fatalf("unexpected override prompt prefix: %q", override.PromptPrefix)
 	}
 	if override.ProviderProfile != "work-cli" {
 		t.Fatalf("unexpected provider profile: %q", override.ProviderProfile)

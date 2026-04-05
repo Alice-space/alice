@@ -127,16 +127,12 @@ func TestAllowedBundledSkills_RespectsRuntimePermissions(t *testing.T) {
 	cfg := Config{
 		Permissions: normalizeBotPermissions(BotPermissionsConfig{
 			RuntimeAutomation: boolPtr(false),
-			RuntimeCampaigns:  boolPtr(false),
 		}),
 	}
 
 	got := cfg.AllowedBundledSkills()
 	if containsString(got, "alice-scheduler") {
 		t.Fatalf("chat-only skills should exclude alice-scheduler, got %#v", got)
-	}
-	if containsString(got, "alice-code-army") {
-		t.Fatalf("chat-only skills should exclude alice-code-army, got %#v", got)
 	}
 	if !containsString(got, "alice-message") {
 		t.Fatalf("chat-only skills should keep alice-message, got %#v", got)

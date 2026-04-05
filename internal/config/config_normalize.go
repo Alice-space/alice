@@ -20,7 +20,6 @@ func normalizeLoadedConfig(cfg Config, rootEnv map[string]string) Config {
 	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
 	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)
-	cfg.ImageGeneration = normalizeImageGenerationConfig(cfg.ImageGeneration)
 	cfg.AliceHome = strings.TrimSpace(cfg.AliceHome)
 	cfg.WorkspaceDir = strings.TrimSpace(cfg.WorkspaceDir)
 	cfg.PromptDir = strings.TrimSpace(cfg.PromptDir)
@@ -45,22 +44,6 @@ func normalizeEnvMap(in map[string]string) map[string]string {
 		out[normalizedKey] = strings.TrimSpace(value)
 	}
 	return out
-}
-
-func normalizeImageGenerationConfig(in ImageGenerationConfig) ImageGenerationConfig {
-	in.Provider = strings.ToLower(strings.TrimSpace(in.Provider))
-	in.Model = strings.TrimSpace(in.Model)
-	in.BaseURL = strings.TrimSpace(in.BaseURL)
-	in.Moderation = strings.ToLower(strings.TrimSpace(in.Moderation))
-	in.ResponseFormat = strings.ToLower(strings.TrimSpace(in.ResponseFormat))
-	in.Size = strings.ToLower(strings.TrimSpace(in.Size))
-	in.Quality = strings.ToLower(strings.TrimSpace(in.Quality))
-	in.Background = strings.ToLower(strings.TrimSpace(in.Background))
-	in.OutputFormat = strings.ToLower(strings.TrimSpace(in.OutputFormat))
-	in.Style = strings.ToLower(strings.TrimSpace(in.Style))
-	in.InputFidelity = strings.ToLower(strings.TrimSpace(in.InputFidelity))
-	in.MaskPath = strings.TrimSpace(in.MaskPath)
-	return in
 }
 
 func applyDefaultCodexEnv(in map[string]string) map[string]string {

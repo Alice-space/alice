@@ -6,14 +6,13 @@ import (
 	"testing"
 
 	"github.com/Alice-space/alice/internal/automation"
-	"github.com/Alice-space/alice/internal/campaign"
-	"github.com/Alice-space/alice/internal/config"
+"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/mcpbridge"
 )
 
 func TestRuntimeAPI_MessagePermissionDenied(t *testing.T) {
 	enabled := false
-	server := NewServer("", "", nil, nil, nil, config.Config{
+	server := NewServer("", "", nil, nil, config.Config{
 		Permissions: config.BotPermissionsConfig{
 			RuntimeMessage: &enabled,
 		},
@@ -34,7 +33,7 @@ func TestRuntimeAPI_MessagePermissionDenied(t *testing.T) {
 
 func TestRuntimeAPI_AutomationPermissionDenied(t *testing.T) {
 	enabled := false
-	server := NewServer("", "", nil, automation.NewStore(t.TempDir()+"/automation.db"), nil, config.Config{
+	server := NewServer("", "", nil, automation.NewStore(t.TempDir()+"/automation.db"), config.Config{
 		Permissions: config.BotPermissionsConfig{
 			RuntimeAutomation: &enabled,
 		},
@@ -58,28 +57,3 @@ func TestRuntimeAPI_AutomationPermissionDenied(t *testing.T) {
 	}
 }
 
-func TestRuntimeAPI_CampaignPermissionDenied(t *testing.T) {
-	enabled := false
-	server := NewServer("", "", nil, nil, campaign.NewStore(t.TempDir()+"/campaigns.db"), config.Config{
-		Permissions: config.BotPermissionsConfig{
-			RuntimeCampaigns: &enabled,
-		},
-	})
-	httpServer := httptest.NewServer(server.engine)
-	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "")
-
-	_, err := client.CreateCampaign(t.Context(), mcpbridge.SessionContext{
-		ReceiveIDType: "chat_id",
-		ReceiveID:     "oc_chat",
-		ActorUserID:   "ou_user",
-		ChatType:      "group",
-		SessionKey:    "chat_id:oc_chat|scene:work|thread:omt_1",
-	}, CreateCampaignRequest{
-		Title:     "Optimize",
-		Objective: "improve",
-	})
-	if err == nil || !strings.Contains(err.Error(), "runtime campaigns are disabled for this bot") {
-		t.Fatalf("expected runtime campaigns forbidden error, got %v", err)
-	}
-}

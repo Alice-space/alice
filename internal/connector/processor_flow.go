@@ -46,7 +46,6 @@ func (p *Processor) processSendMessage(ctx context.Context, job Job) JobProcessS
 	if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
 		logging.Errorf("send message failed event_id=%s: %v", job.EventID, sendErr)
 	}
-	p.startImageGeneration(ctx, job, reply, "")
 	return JobProcessCompleted
 }
 
@@ -170,10 +169,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 			logging.Errorf("send final reply failed event_id=%s: %v", job.EventID, replyErr)
 		} else {
 			p.rememberReplySessionMessage(job, messageID)
-			p.startImageGeneration(ctx, job, finalReply, messageID)
 		}
-	} else {
-		p.startImageGeneration(ctx, job, finalReply, "")
 	}
 	return JobProcessCompleted
 }

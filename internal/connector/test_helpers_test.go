@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 type codexStub struct {
@@ -15,8 +15,8 @@ type codexStub struct {
 	err  error
 }
 
-func (c codexStub) Run(_ context.Context, _ llm.RunRequest) (llm.RunResult, error) {
-	return llm.RunResult{Reply: c.resp}, c.err
+func (c codexStub) Run(_ context.Context, _ agentbridge.RunRequest) (agentbridge.RunResult, error) {
+	return agentbridge.RunResult{Reply: c.resp}, c.err
 }
 
 type codexStreamingStub struct {
@@ -25,13 +25,13 @@ type codexStreamingStub struct {
 	agentMessages []string
 }
 
-func (c codexStreamingStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+func (c codexStreamingStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
 	if req.OnProgress != nil {
 		for _, step := range c.agentMessages {
 			req.OnProgress(step)
 		}
 	}
-	return llm.RunResult{Reply: c.resp}, c.err
+	return agentbridge.RunResult{Reply: c.resp}, c.err
 }
 
 type codexCaptureStub struct {
@@ -39,10 +39,10 @@ type codexCaptureStub struct {
 	err       error
 	lastInput string
 	lastEnv   map[string]string
-	lastReq   llm.RunRequest
+	lastReq   agentbridge.RunRequest
 }
 
-func (c *codexCaptureStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+func (c *codexCaptureStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
 	c.lastReq = req
 	c.lastInput = req.UserText
 	if len(req.Env) == 0 {
@@ -56,7 +56,7 @@ func (c *codexCaptureStub) Run(_ context.Context, req llm.RunRequest) (llm.RunRe
 			c.lastEnv[key] = value
 		}
 	}
-	return llm.RunResult{Reply: c.resp}, c.err
+	return agentbridge.RunResult{Reply: c.resp}, c.err
 }
 
 type codexResumableCaptureStub struct {
@@ -67,11 +67,11 @@ type codexResumableCaptureStub struct {
 	receivedInputs    []string
 }
 
-func (c *codexResumableCaptureStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+func (c *codexResumableCaptureStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
 	c.receivedThreadIDs = append(c.receivedThreadIDs, req.ThreadID)
 	c.receivedInputs = append(c.receivedInputs, req.UserText)
 	idx := len(c.receivedInputs) - 1
-	return llm.RunResult{
+	return agentbridge.RunResult{
 		Reply:        c.responseForCall(idx),
 		NextThreadID: c.threadForCall(idx),
 	}, nil
@@ -105,17 +105,17 @@ func newBlockingResumableCodexStub() *blockingResumableCodexStub {
 
 func (c *blockingResumableCodexStub) Run(
 	ctx context.Context,
-	req llm.RunRequest,
-) (llm.RunResult, error) {
+	req agentbridge.RunRequest,
+) (agentbridge.RunResult, error) {
 	c.mu.Lock()
 	c.calls++
 	c.mu.Unlock()
 
 	select {
 	case <-ctx.Done():
-		return llm.RunResult{}, ctx.Err()
+		return agentbridge.RunResult{}, ctx.Err()
 	case <-c.release:
-		return llm.RunResult{
+		return agentbridge.RunResult{
 			Reply:        "- summary",
 			NextThreadID: req.ThreadID,
 		}, nil
@@ -157,8 +157,8 @@ func newInterruptibleResumableCodexStub() *interruptibleResumableCodexStub {
 
 func (c *interruptibleResumableCodexStub) Run(
 	ctx context.Context,
-	req llm.RunRequest,
-) (llm.RunResult, error) {
+	req agentbridge.RunRequest,
+) (agentbridge.RunResult, error) {
 	c.mu.Lock()
 	callIndex := c.callCount
 	c.callCount++
@@ -175,13 +175,13 @@ func (c *interruptibleResumableCodexStub) Run(
 		select {
 		case <-ctx.Done():
 			close(c.firstCallDone)
-			return llm.RunResult{NextThreadID: "thread_after_interrupt"}, ctx.Err()
+			return agentbridge.RunResult{NextThreadID: "thread_after_interrupt"}, ctx.Err()
 		case <-c.firstCallDone:
-			return llm.RunResult{Reply: "unexpected release"}, nil
+			return agentbridge.RunResult{Reply: "unexpected release"}, nil
 		}
 	}
 
-	return llm.RunResult{
+	return agentbridge.RunResult{
 		Reply:        "latest answer",
 		NextThreadID: strings.TrimSpace(req.ThreadID),
 	}, nil

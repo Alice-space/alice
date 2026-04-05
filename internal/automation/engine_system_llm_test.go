@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/Alice-space/alice/internal/llm"
+	agentbridge "github.com/Alice-space/agentbridge"
 )
 
 func TestEngine_RunSystemTask(t *testing.T) {
@@ -33,47 +33,6 @@ func TestEngine_RunSystemTask(t *testing.T) {
 	defer mu.Unlock()
 	if called == 0 {
 		t.Fatal("expected system task to be called")
-	}
-}
-
-func TestEngine_RunUserTask(t *testing.T) {
-	base := time.Date(2026, 2, 23, 10, 0, 0, 0, time.UTC)
-	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
-	store.now = func() time.Time { return base }
-
-	created, err := store.CreateTask(Task{
-		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
-		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
-		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
-		Action:   Action{Type: ActionTypeSendText, Text: "hello", MentionUserIDs: []string{"ou_actor"}},
-	})
-	if err != nil {
-		t.Fatalf("create task failed: %v", err)
-	}
-
-	sender := &senderStub{}
-	engine := NewEngine(store, sender)
-	engine.tick = 10 * time.Millisecond
-	engine.now = func() time.Time { return base.Add(2 * time.Second) }
-
-	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
-	defer cancel()
-	engine.Run(ctx)
-
-	sender.mu.Lock()
-	if sender.sendTextCalls == 0 {
-		sender.mu.Unlock()
-		t.Fatal("expected user task to send text")
-	}
-	sender.mu.Unlock()
-
-	stored, err := store.GetTask(created.ID)
-	if err != nil {
-		t.Fatalf("get task failed: %v", err)
-	}
-	if stored.LastResult == "" {
-		t.Fatalf("expected last result to be recorded, task=%+v", stored)
 	}
 }
 
@@ -104,7 +63,7 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 
 	sender := &senderStub{}
 	runner := &llmRunnerStub{
-		result: llm.RunResult{Reply: "现在是 2026-02-23T10:01:02Z"},
+		result: agentbridge.RunResult{Reply: "现在是 2026-02-23T10:01:02Z"},
 	}
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
@@ -120,7 +79,8 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 		runner.mu.Unlock()
 		t.Fatal("expected run_llm task to invoke llm runner")
 	}
-	wantPrompt := "请回复当前时间 " + base.Add(2*time.Second).Local().Format(time.RFC3339)
+	rawPrompt := "请回复当前时间 " + base.Add(2*time.Second).Local().Format(time.RFC3339)
+	wantPrompt := "Preferred response style/personality: pragmatic.\n\n" + rawPrompt
 	if runner.lastReq.UserText != wantPrompt {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm prompt: %q", runner.lastReq.UserText)
@@ -194,7 +154,7 @@ func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 
 	sender := &senderStub{}
 	runner := &llmRunnerStub{
-		result: llm.RunResult{Reply: "work 已完成"},
+		result: agentbridge.RunResult{Reply: "work 已完成"},
 	}
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
@@ -244,17 +204,78 @@ func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 	}
 }
 
+func TestEngine_RunUserTask_RunLLM_PersistsStickyThreadID(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 1, 2, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action: Action{
+			Type:           ActionTypeRunLLM,
+			Prompt:         "hello",
+			Provider:       "  CoDeX ",
+			StateKey:       "campaign_dispatch:camp_demo:reviewer:T008:r1",
+			ResumeThreadID: "thread_old",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_llm task failed: %v", err)
+	}
+
+	sender := &senderStub{}
+	runner := &llmRunnerStub{
+		result: agentbridge.RunResult{
+			Reply:        "updated",
+			NextThreadID: "thread_new",
+		},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetLLMRunner(runner)
+	engine.tick = 10 * time.Millisecond
+	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
+	defer cancel()
+	engine.Run(ctx)
+
+	runner.mu.Lock()
+	if runner.calls == 0 {
+		runner.mu.Unlock()
+		t.Fatal("expected run_llm task to invoke llm runner")
+	}
+	if runner.lastReq.ThreadID != "campaign_dispatch:camp_demo:reviewer:T008:r1" {
+		runner.mu.Unlock()
+		t.Fatalf("unexpected llm thread id: %q", runner.lastReq.ThreadID)
+	}
+	runner.mu.Unlock()
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.Action.ResumeThreadID != "thread_new" {
+		t.Fatalf("expected sticky thread id to persist, got %q", stored.Action.ResumeThreadID)
+	}
+}
+
 func TestEngine_RunUserTask_UsesConfiguredTimeout(t *testing.T) {
 	sender := &deadlineSenderStub{}
 	engine := NewEngine(nil, sender)
 	engine.SetUserTaskTimeout(2 * time.Minute)
+	engine.SetLLMRunner(&llmRunnerStub{
+		result: agentbridge.RunResult{Reply: "hello"},
+	})
 
 	start := time.Now()
 	engine.runUserTask(context.Background(), Task{
 		Scope:   Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:   Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator: Actor{UserID: "ou_actor"},
-		Action:  Action{Type: ActionTypeSendText, Text: "hello"},
+		Action:  Action{Type: ActionTypeRunLLM, Prompt: "hello"},
 	})
 
 	sender.mu.Lock()

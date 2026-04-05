@@ -334,9 +334,6 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 
 func shouldRetrySingleRunInternalWorkflowTask(task Task) bool {
 	task = NormalizeTask(task)
-	if task.Action.Type != ActionTypeRunWorkflow {
-		return false
-	}
 	if task.MaxRuns != 1 {
 		return false
 	}
