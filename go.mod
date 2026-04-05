@@ -3,6 +3,7 @@ module github.com/Alice-space/alice
 go 1.25.0
 
 require (
+	github.com/Alice-space/agentbridge v0.1.1-0.20260405122123-0eba00705fc6
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cespare/xxhash/v2 v2.3.0
@@ -23,7 +24,6 @@ require (
 	go.etcd.io/bbolt v1.4.3
 	go.yaml.in/yaml/v3 v3.0.4
 	gopkg.in/natefinch/lumberjack.v2 v2.2.1
-	github.com/Alice-space/agentbridge v0.1.0
 )
 
 require (

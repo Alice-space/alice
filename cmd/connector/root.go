@@ -18,6 +18,8 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
+	agentbridgeclaude "github.com/Alice-space/agentbridge/claude"
+	agentbridgecodex "github.com/Alice-space/agentbridge/codex"
 	aliceassets "github.com/Alice-space/alice"
 	"github.com/Alice-space/alice/internal/bootstrap"
 	"github.com/Alice-space/alice/internal/buildinfo"
@@ -293,7 +295,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	sort.Strings(authKeys)
 	for _, key := range authKeys {
 		check := codexAuthChecks[key]
-		report, authErr := bootstrap.CheckCodexLoginForCodexHome(check.Command, check.CodexHome, check.Timeout)
+		report, authErr := agentbridgecodex.CheckLogin(check.Command, check.CodexHome, check.Timeout)
 		if authErr != nil {
 			return fmt.Errorf("check Codex login failed for bots %s: %w", check.botList(), authErr)
 		}
@@ -315,7 +317,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	sort.Strings(claudeKeys)
 	for _, key := range claudeKeys {
 		check := claudeAuthChecks[key]
-		report, authErr := bootstrap.CheckClaudeLogin(check.Command, check.Timeout)
+		report, authErr := agentbridgeclaude.CheckLogin(check.Command, check.Timeout)
 		if authErr != nil {
 			return fmt.Errorf("check Claude login failed for bots %s: %w", check.botList(), authErr)
 		}
