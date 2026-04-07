@@ -45,6 +45,14 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 
 ### Install From Release
 
+**Via npm (recommended):**
+
+```bash
+npm install -g @alice_space/alice
+```
+
+**Via installer script:**
+
 ```bash
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install
 ```
