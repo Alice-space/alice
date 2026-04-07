@@ -11,15 +11,16 @@ description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化
 
 ## 常用命令
 
-- **获取当前 session 信息**（创建带 thread 续接的 `run_llm` 任务前推荐先做）：
-  `scripts/alice-scheduler.sh current-session`
-  输出：`{"session_key":"...","resume_thread_id":"..."}`
 - 列出当前作用域任务：
   `scripts/alice-scheduler.sh list`
 - 用 JSON 创建任务：
   `scripts/alice-scheduler.sh create <<'JSON'`
   `{ "title": "daily sync", "schedule": { "type": "cron", "cron_expr": "0 1 * * *" }, "action": { "type": "run_llm", "prompt": "总结今天的进展" } }`
   `JSON`
+  **注意**：`create` 子命令会自动从环境变量注入 `resume_session_key`（来自 `ALICE_SESSION_KEY`）和 `action.resume_thread_id`（来自 `ALICE_RESUME_THREAD_ID`），如果 JSON 中这两个字段为空/未设置。JSON 中显式提供的值优先，不会被覆盖。
+- **获取当前 session 信息**（仅当需要手动查看或调试会话上下文时使用）：
+  `scripts/alice-scheduler.sh current-session`
+  输出：`{"session_key":"...","resume_thread_id":"..."}`
 - 查看单个任务：
   `scripts/alice-scheduler.sh get task_xxx`
 - 用 merge patch 更新任务：
@@ -96,7 +97,7 @@ action:
 - **Work thread（推荐）**：`chat_id:oc_xxx|scene:work|seed:om_xxx`
 - **不推荐别名**：`|thread:omt_xxx` 不能作为 thread 级投递目标，最终会回退到群主渠道
 
-推荐先执行 `scripts/alice-scheduler.sh current-session`，直接拿返回的 `session_key` 和 `resume_thread_id` 填入任务。
+`create` 命令会自动注入 `resume_session_key` 和 `action.resume_thread_id`，无需手动调用 `current-session` 再复制粘贴。
 
 下面是把旧的 Resume 模式直接写成 `run_llm` YAML 的方式：
 
