@@ -210,7 +210,8 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '20'
-          registry-url: 'https://registry.npmjs.org'
+          # No registry-url: setup-node would inject NODE_AUTH_TOKEN=$GITHUB_TOKEN
+          # which overrides npm OIDC Trusted Publishing. npm defaults to registry.npmjs.org.
 
       - name: Download Build Artifacts
         uses: actions/download-artifact@v8
@@ -261,7 +262,7 @@ jobs:
             # Set version and publish
             jq --arg v "$VERSION" '.version = $v' "${pkg_dir}/package.json" > /tmp/pkg.json
             mv /tmp/pkg.json "${pkg_dir}/package.json"
-            cd "$pkg_dir" && npm publish --provenance --access public && cd -
+            (cd "$pkg_dir" && npm publish --provenance --access public)
             echo "Published @alice_space/alice-${platform}@${VERSION}"
           done
 
@@ -282,5 +283,5 @@ jobs:
           mv /tmp/pkg.json npm/main/package.json
 
           chmod +x npm/main/alice.js
-          cd npm/main && npm publish --provenance --access public
+          (cd npm/main && npm publish --provenance --access public)
           echo "Published @alice_space/alice@${VERSION}"

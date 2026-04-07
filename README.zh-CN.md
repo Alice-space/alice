@@ -44,6 +44,14 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 
 ### 用 release 安装
 
+**通过 npm 安装（推荐）：**
+
+```bash
+npm install -g @alice_space/alice
+```
+
+**通过安装脚本：**
+
 ```bash
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install
 ```
