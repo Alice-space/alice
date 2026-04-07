@@ -4,6 +4,8 @@ github.com/Alice-space/agentbridge v0.1.0 h1:g8gWdgnkek5BwFuK4UPCW+3kS9jdAybAHAx
 github.com/Alice-space/agentbridge v0.1.0/go.mod h1:vbqRFtfvSdI3i+lyUxe4UUiC273b5NaSiqa/Tu+HL1A=
 github.com/Alice-space/agentbridge v0.1.1-0.20260405122123-0eba00705fc6 h1:S9bTrPWoroNsc6/aGcjWqfbM6Mx26np95YKdWxcWoZo=
 github.com/Alice-space/agentbridge v0.1.1-0.20260405122123-0eba00705fc6/go.mod h1:vbqRFtfvSdI3i+lyUxe4UUiC273b5NaSiqa/Tu+HL1A=
+github.com/Alice-space/agentbridge v0.1.1-0.20260407041159-6872b53554d2 h1:5gfVDWywyhX3R/s1qEih69kqfP0QUBTfuS/LZnaxdds=
+github.com/Alice-space/agentbridge v0.1.1-0.20260407041159-6872b53554d2/go.mod h1:vbqRFtfvSdI3i+lyUxe4UUiC273b5NaSiqa/Tu+HL1A=
 github.com/Masterminds/goutils v1.1.1 h1:5nUrii3FMTL5diU80unEVvNevw1nH4+ZV4DSLVJLSYI=
 github.com/Masterminds/goutils v1.1.1/go.mod h1:8cTjp+g8YejhMuvIA5y2vz3BpJxksy863GQaJW2MFNU=
 github.com/Masterminds/semver/v3 v3.3.0 h1:B8LGeaivUe71a5qox1ICM/JLl0NqZSW5CHyL+hmvYS0=
