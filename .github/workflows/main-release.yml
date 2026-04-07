@@ -190,12 +190,11 @@ jobs:
           sha256sum * > SHA256SUMS
 
       - name: Publish Release
-        run: |
-          gh release create "${{ needs.verify-and-tag.outputs.release_tag }}" \
-            --generate-notes \
-            release-assets/*
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.verify-and-tag.outputs.release_tag }}
+          generate_release_notes: true
+          files: release-assets/*
 
   npm-publish:
     name: Publish to npm
@@ -208,7 +207,7 @@ jobs:
         uses: actions/checkout@v6
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '20'
 
