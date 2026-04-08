@@ -99,6 +99,33 @@ func (p *Processor) runLLM(
 			onAgentMessage(message)
 		}
 	}
+	logRawEvent := func(event agentbridge.RawEvent) {
+		if !logging.IsDebugEnabled() {
+			return
+		}
+		switch event.Kind {
+		case "stdout_line":
+			logging.Debugf(
+				"%s stdout_line event_id=%s line=%q",
+				provider, options.EventID, clipText(event.Line, 500),
+			)
+		case "reasoning":
+			logging.Debugf(
+				"%s reasoning event_id=%s detail=%q",
+				provider, options.EventID, clipText(event.Detail, 500),
+			)
+		case "tool_call":
+			logging.Debugf(
+				"%s tool_call event_id=%s detail=%q",
+				provider, options.EventID, clipText(event.Detail, 500),
+			)
+		case "tool_use":
+			logging.Debugf(
+				"%s tool_use event_id=%s detail=%q",
+				provider, options.EventID, clipText(event.Detail, 500),
+			)
+		}
+	}
 	result, err := snapshot.llm.Run(ctx, agentbridge.RunRequest{
 		ThreadID:        strings.TrimSpace(threadID),
 		AgentName:       "assistant",
@@ -111,6 +138,7 @@ func (p *Processor) runLLM(
 		Personality:     strings.TrimSpace(options.Personality),
 		Env:             env,
 		OnProgress:      logProgress,
+		OnRawEvent:      logRawEvent,
 	})
 	nextThreadID := strings.TrimSpace(result.NextThreadID)
 	if nextThreadID == "" {

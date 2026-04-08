@@ -68,3 +68,23 @@ func ExtractSeedMessageID(sessionKey string) string {
 	}
 	return strings.TrimSpace(rest)
 }
+
+// ThreadScope returns an opaque string that identifies the specific
+// conversation thread within a session key, or empty string if the session
+// key does not contain thread-identifying information.
+//
+// Two session keys that share the same VisibilityKey but have different
+// (non-empty) ThreadScope values belong to independent threads; an active
+// session in one thread must not be treated as blocking a task targeting
+// another thread.
+//
+// Precedence: seed token > thread token > empty (plain group/DM session).
+func ThreadScope(sessionKey string) string {
+	if seed := ExtractSeedMessageID(sessionKey); seed != "" {
+		return seedToken + seed
+	}
+	if thread := ExtractThreadID(sessionKey); thread != "" {
+		return threadToken + thread
+	}
+	return ""
+}

@@ -41,9 +41,10 @@ func (a *App) startBackgroundAutomation(ctx context.Context) {
 // The automation engine calls this before executing a scheduled task to skip
 // execution when the user is actively conversing, avoiding interruption.
 //
-// Uses sessionkey.VisibilityKey to strip scene/seed suffixes, so a task
-// targeting "chat_id:oc_xxx|scene:work" correctly detects an active run on
-// "chat_id:oc_xxx" or "chat_id:oc_xxx|scene:chat".
+// Thread isolation: if either the query key or an active key carries a
+// thread-specific token (seed or thread), only sessions in the *same* thread
+// are considered a match. This prevents a conversation in one Feishu work-thread
+// from blocking automation tasks that target a different thread in the same group.
 func (a *App) IsSessionActive(sessionKey string) bool {
 	if a == nil {
 		return false
@@ -56,13 +57,24 @@ func (a *App) IsSessionActive(sessionKey string) bool {
 	if queryVis == "" {
 		return false
 	}
+	queryThread := sessionkey.ThreadScope(sessionKey)
 
 	a.state.mu.Lock()
 	defer a.state.mu.Unlock()
 	for activeKey := range a.state.active {
-		if sessionkey.VisibilityKey(activeKey) == queryVis {
-			return true
+		if sessionkey.VisibilityKey(activeKey) != queryVis {
+			continue
 		}
+		// Both keys share the same base chat. When either side carries a
+		// thread scope (seed/thread token), require an exact thread match so
+		// that activity in one thread does not block tasks in another thread.
+		activeThread := sessionkey.ThreadScope(activeKey)
+		if queryThread != "" || activeThread != "" {
+			if queryThread != activeThread {
+				continue
+			}
+		}
+		return true
 	}
 	return false
 }
