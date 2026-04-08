@@ -17,6 +17,25 @@ func TestVisibilityKey(t *testing.T) {
 	}
 }
 
+func TestThreadScope(t *testing.T) {
+	cases := []struct {
+		input string
+		want  string
+	}{
+		{"chat_id:oc_chat", ""},
+		{"chat_id:oc_chat|scene:work|seed:om_AAA", "|seed:om_AAA"},
+		{"chat_id:oc_chat|scene:work|thread:omt_1", "|thread:omt_1"},
+		// seed takes precedence over thread
+		{"chat_id:oc_chat|seed:om_AAA|thread:omt_1", "|seed:om_AAA"},
+		{"", ""},
+	}
+	for _, c := range cases {
+		if got := ThreadScope(c.input); got != c.want {
+			t.Fatalf("ThreadScope(%q) = %q, want %q", c.input, got, c.want)
+		}
+	}
+}
+
 func TestWithoutMessage(t *testing.T) {
 	if got := WithoutMessage("chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"); got != "chat_id:oc_chat|scene:work|thread:omt_1" {
 		t.Fatalf("unexpected scoped session key: %q", got)
