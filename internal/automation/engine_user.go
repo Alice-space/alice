@@ -41,7 +41,12 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 	if checker := e.sessionCheckerValue(); checker != nil {
 		sk := taskSessionKey(task)
 		if checker.IsSessionActive(sk) {
-			logging.Infof("automation task skipped (session busy) id=%s session=%s", task.ID, sk)
+			const skipLogInterval = time.Minute
+			now := e.nowTime()
+			if last, ok := e.lastSkipLog.Load(task.ID); !ok || now.Sub(last.(time.Time)) >= skipLogInterval {
+				logging.Infof("automation task skipped (session busy) id=%s session=%s", task.ID, sk)
+				e.lastSkipLog.Store(task.ID, now)
+			}
 			if err := e.store.UnclaimTask(task.ID); err != nil {
 				// Unclaim failed: fall back to recording a no-op result
 				// so Running=false is always cleared.
@@ -313,6 +318,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if (provider == "codex" || provider == "kimi") && task.Action.StateKey != "" {
 			threadID = task.Action.StateKey
 		}
+		logging.Infof("automation task llm call id=%s provider=%s model=%s thread=%s", task.ID, task.Action.Provider, task.Action.Model, threadID)
 		result, err := runner.Run(ctx, agentbridge.RunRequest{
 			ThreadID:        threadID,
 			AgentName:       "scheduler",
@@ -328,6 +334,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if err != nil {
 			return taskDispatch{}, err
 		}
+		logging.Infof("automation task llm done id=%s reply_len=%d next_thread=%s", task.ID, len(result.Reply), strings.TrimSpace(result.NextThreadID))
 		reply := strings.TrimSpace(result.Reply)
 		if reply == "" {
 			return taskDispatch{}, errors.New("llm reply is empty")

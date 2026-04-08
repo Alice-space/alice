@@ -46,6 +46,7 @@ type Engine struct {
 	systemTasks     map[string]*systemTaskRuntime
 	schedulerMu     sync.Mutex
 	scheduler       gocron.Scheduler
+	lastSkipLog     sync.Map // task.ID -> time.Time; used to rate-limit "session busy" log
 }
 
 type taskSignal struct {

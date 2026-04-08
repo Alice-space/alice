@@ -275,3 +275,71 @@ func TestRunUserTask_SkipsWhenSessionBusy_DecoratedKey(t *testing.T) {
 		t.Fatalf("expected RunCount=0 after unclaim, got %d", task.RunCount)
 	}
 }
+
+// TestRunUserTask_SkipLog_RateLimit verifies that the "session busy" log is
+// suppressed for subsequent skips within the rate-limit window, and re-emitted
+// once the window expires.
+func TestRunUserTask_SkipLog_RateLimit(t *testing.T) {
+	base := time.Date(2026, 4, 8, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	clock := base
+	engine.now = func() time.Time { return clock }
+	engine.SetLLMRunner(&llmRunnerStub{result: agentbridge.RunResult{Reply: "hello"}})
+
+	checker := &sessionCheckerStub{activeSessions: map[string]bool{"chat_id:oc_rl": true}}
+	engine.SetSessionActivityChecker(checker)
+
+	created, err := store.CreateTask(Task{
+		Title:    "rate-limit-test",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_rl"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_rl"},
+		Creator:  Actor{OpenID: "ou_test"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "ping"},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	// Helper: re-claim the task at a given time and run it.
+	claimAndRun := func(at time.Time) {
+		clock = at
+		store.now = func() time.Time { return at }
+		claimed, err := store.ClaimDueTasks(at, 10)
+		if err != nil || len(claimed) == 0 {
+			t.Fatalf("claim at %v: err=%v len=%d", at, err, len(claimed))
+		}
+		engine.runUserTask(context.Background(), claimed[0])
+	}
+
+	// First skip at t1: lastSkipLog must be set to t1.
+	t1 := base.Add(2 * time.Second)
+	claimAndRun(t1)
+	if last, ok := engine.lastSkipLog.Load(created.ID); !ok {
+		t.Fatal("expected lastSkipLog to be set after first skip")
+	} else if !last.(time.Time).Equal(t1) {
+		t.Fatalf("expected lastSkipLog=%v, got %v", t1, last.(time.Time))
+	}
+
+	// Second skip at t2 (within 1-minute window): lastSkipLog must NOT advance.
+	t2 := t1.Add(30 * time.Second)
+	claimAndRun(t2)
+	if last, ok := engine.lastSkipLog.Load(created.ID); !ok {
+		t.Fatal("lastSkipLog was deleted unexpectedly")
+	} else if !last.(time.Time).Equal(t1) {
+		t.Fatalf("lastSkipLog must not advance within rate-limit window: want %v, got %v", t1, last.(time.Time))
+	}
+
+	// Third skip at t3 (outside 1-minute window): lastSkipLog must be updated to t3.
+	t3 := t1.Add(61 * time.Second)
+	claimAndRun(t3)
+	if last, ok := engine.lastSkipLog.Load(created.ID); !ok {
+		t.Fatal("lastSkipLog was deleted unexpectedly")
+	} else if !last.(time.Time).Equal(t3) {
+		t.Fatalf("lastSkipLog must update after rate-limit window: want %v, got %v", t3, last.(time.Time))
+	}
+}
