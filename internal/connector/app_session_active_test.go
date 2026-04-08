@@ -56,6 +56,45 @@ func TestApp_IsSessionActive_EmptyKey(t *testing.T) {
 	}
 }
 
+func TestApp_IsSessionActive_DifferentThreadNotBusy(t *testing.T) {
+	app := testAppForSessionActive()
+	// Active session is in thread seed om_AAA
+	app.state.mu.Lock()
+	app.state.active["chat_id:oc_xxx|scene:work|seed:om_AAA"] = activeSessionRun{version: 1}
+	app.state.mu.Unlock()
+
+	// Task targets a different thread (seed om_BBB) — must not be blocked
+	if app.IsSessionActive("chat_id:oc_xxx|scene:work|seed:om_BBB") {
+		t.Fatal("expected false: different thread seed should not block")
+	}
+}
+
+func TestApp_IsSessionActive_SameThreadIsBusy(t *testing.T) {
+	app := testAppForSessionActive()
+	// Active session is in thread seed om_AAA
+	app.state.mu.Lock()
+	app.state.active["chat_id:oc_xxx|scene:work|seed:om_AAA"] = activeSessionRun{version: 1}
+	app.state.mu.Unlock()
+
+	// Task targets the same thread — must be blocked
+	if !app.IsSessionActive("chat_id:oc_xxx|scene:work|seed:om_AAA") {
+		t.Fatal("expected true: same thread seed must be busy")
+	}
+}
+
+func TestApp_IsSessionActive_PlainGroupNotBlockedByThread(t *testing.T) {
+	app := testAppForSessionActive()
+	// Active session is a thread in the group
+	app.state.mu.Lock()
+	app.state.active["chat_id:oc_xxx|scene:work|seed:om_AAA"] = activeSessionRun{version: 1}
+	app.state.mu.Unlock()
+
+	// A plain group-level task (no thread) should not be blocked by a thread session
+	if app.IsSessionActive("chat_id:oc_xxx") {
+		t.Fatal("expected false: plain group task should not be blocked by a thread session")
+	}
+}
+
 func testAppForSessionActive() *App {
 	return &App{state: newRuntimeStore()}
 }
