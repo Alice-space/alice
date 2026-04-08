@@ -190,6 +190,7 @@ func effectiveJobResponseMode(job Job) string {
 
 func jobLLMRunOptions(job Job) llmRunOptions {
 	return llmRunOptions{
+		EventID:         job.EventID,
 		Scene:           job.Scene,
 		Provider:        job.LLMProvider,
 		Model:           job.LLMModel,

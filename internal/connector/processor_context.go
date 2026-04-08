@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/logging"
@@ -33,6 +34,7 @@ func splitMessageLines(message string) []string {
 }
 
 type llmRunOptions struct {
+	EventID         string
 	Scene           string
 	Provider        string
 	Model           string
@@ -56,6 +58,47 @@ func (p *Processor) runLLM(
 		return "", strings.TrimSpace(threadID), agentbridge.Usage{}, fmt.Errorf("llm backend is nil")
 	}
 	assembledText := assemblePrompt(options.PromptPrefix, options.Personality, options.NoReplyToken, userText, strings.TrimSpace(threadID) != "")
+	provider := strings.TrimSpace(options.Provider)
+	if provider == "" {
+		provider = "default"
+	}
+	requestThreadID := strings.TrimSpace(threadID)
+	startedAt := time.Now()
+	logging.Debugf(
+		"%s run start event_id=%s scene=%s model=%q profile=%q thread_id=%s",
+		provider,
+		options.EventID,
+		strings.TrimSpace(options.Scene),
+		strings.TrimSpace(options.Model),
+		strings.TrimSpace(options.Profile),
+		requestThreadID,
+	)
+	logProgress := func(message string) {
+		normalized := strings.TrimSpace(message)
+		if normalized == "" {
+			return
+		}
+		if strings.HasPrefix(normalized, fileChangeEventPrefix) {
+			logging.Debugf(
+				"%s file_change event_id=%s thread_id=%s file_change=%q",
+				provider,
+				options.EventID,
+				requestThreadID,
+				clipText(strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix)), 500),
+			)
+		} else {
+			logging.Debugf(
+				"%s agent_message event_id=%s thread_id=%s agent_message=%q",
+				provider,
+				options.EventID,
+				requestThreadID,
+				clipText(normalized, 500),
+			)
+		}
+		if onAgentMessage != nil {
+			onAgentMessage(message)
+		}
+	}
 	result, err := snapshot.llm.Run(ctx, agentbridge.RunRequest{
 		ThreadID:        strings.TrimSpace(threadID),
 		AgentName:       "assistant",
@@ -67,13 +110,65 @@ func (p *Processor) runLLM(
 		ReasoningEffort: strings.TrimSpace(options.ReasoningEffort),
 		Personality:     strings.TrimSpace(options.Personality),
 		Env:             env,
-		OnProgress:      onAgentMessage,
+		OnProgress:      logProgress,
 	})
 	nextThreadID := strings.TrimSpace(result.NextThreadID)
 	if nextThreadID == "" {
 		nextThreadID = strings.TrimSpace(threadID)
 	}
+	if result.Usage.HasUsage() {
+		logging.Debugf(
+			"%s usage event_id=%s input_tokens=%d cached_input_tokens=%d output_tokens=%d total_tokens=%d",
+			provider,
+			options.EventID,
+			result.Usage.InputTokens,
+			result.Usage.CachedInputTokens,
+			result.Usage.OutputTokens,
+			result.Usage.TotalTokens(),
+		)
+	}
+	if nextThreadID != "" && nextThreadID != requestThreadID {
+		logging.Debugf("%s thread started event_id=%s thread_id=%s", provider, options.EventID, nextThreadID)
+	}
+	if err != nil {
+		logging.Debugf(
+			"%s run failed event_id=%s elapsed=%s thread_id=%s next_thread_id=%s err=%v",
+			provider,
+			options.EventID,
+			time.Since(startedAt),
+			requestThreadID,
+			nextThreadID,
+			err,
+		)
+	} else {
+		logging.Debugf(
+			"%s run completed event_id=%s elapsed=%s thread_id=%s next_thread_id=%s final_message=%q",
+			provider,
+			options.EventID,
+			time.Since(startedAt),
+			nextThreadID,
+			nextThreadID,
+			clipText(strings.TrimSpace(result.Reply), 500),
+		)
+	}
+	logging.DebugAgentTrace(logging.AgentTrace{
+		Provider: provider,
+		Agent:    "assistant",
+		ThreadID: nextThreadID,
+		Model:    strings.TrimSpace(options.Model),
+		Profile:  strings.TrimSpace(options.Profile),
+		Input:    assembledText,
+		Output:   strings.TrimSpace(result.Reply),
+		Error:    errorText(err),
+	})
 	return result.Reply, nextThreadID, result.Usage, err
+}
+
+func errorText(err error) string {
+	if err == nil {
+		return ""
+	}
+	return err.Error()
 }
 
 func (p *Processor) buildPrompt(ctx context.Context, job Job, threadID string) string {

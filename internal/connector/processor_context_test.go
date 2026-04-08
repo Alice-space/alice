@@ -1,11 +1,15 @@
 package connector
 
 import (
+	"bytes"
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Alice-space/alice/internal/logging"
 )
 
 func TestProcessorBuildPrompt_AppendsBotSoulForNewThread(t *testing.T) {
@@ -57,5 +61,79 @@ func TestProcessorBuildPrompt_SkipsBotSoulForWorkScene(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "执行任务") {
 		t.Fatalf("expected prompt to include user text, got %q", prompt)
+	}
+}
+
+func TestProcessorRunLLM_LogsBackendProgress(t *testing.T) {
+	origStderr := os.Stderr
+	reader, writer, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("create stderr pipe failed: %v", err)
+	}
+	os.Stderr = writer
+	defer func() {
+		os.Stderr = origStderr
+	}()
+
+	logging.Configure(logging.Options{Level: "debug"})
+	defer logging.Configure(logging.Options{Level: "info"})
+
+	processor := NewProcessor(codexStreamingStub{
+		resp: "final reply",
+		agentMessages: []string{
+			"step 1",
+			"[file_change] internal/connector/processor_context.go已更改，+10-2",
+		},
+	}, &senderStub{}, "", "")
+
+	var forwarded []string
+	reply, nextThreadID, _, runErr := processor.runLLM(
+		context.Background(),
+		"thread_1",
+		"user prompt",
+		llmRunOptions{
+			EventID:  "evt_1",
+			Scene:    "chat",
+			Provider: "codex",
+			Model:    "gpt-5",
+			Profile:  "executor",
+		},
+		nil,
+		func(message string) {
+			forwarded = append(forwarded, message)
+		},
+	)
+	if runErr != nil {
+		t.Fatalf("runLLM returned error: %v", runErr)
+	}
+	if reply != "final reply" {
+		t.Fatalf("expected final reply, got %q", reply)
+	}
+	if nextThreadID != "thread_1" {
+		t.Fatalf("expected thread id fallback, got %q", nextThreadID)
+	}
+	if len(forwarded) != 2 {
+		t.Fatalf("expected forwarded progress messages, got %v", forwarded)
+	}
+
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close stderr writer failed: %v", err)
+	}
+	var buf bytes.Buffer
+	if _, err := io.Copy(&buf, reader); err != nil {
+		t.Fatalf("read stderr failed: %v", err)
+	}
+	logs := buf.String()
+
+	for _, want := range []string{
+		"codex run start event_id=evt_1",
+		"codex agent_message event_id=evt_1 thread_id=thread_1",
+		"codex file_change event_id=evt_1 thread_id=thread_1",
+		"codex run completed event_id=evt_1",
+		"# Agent Trace",
+	} {
+		if !strings.Contains(logs, want) {
+			t.Fatalf("expected logs to contain %q, got %q", want, logs)
+		}
 	}
 }
