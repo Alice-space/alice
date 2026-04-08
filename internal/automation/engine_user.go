@@ -36,6 +36,24 @@ func (e *Engine) runUserTasks(ctx context.Context, now time.Time) {
 }
 
 func (e *Engine) runUserTask(ctx context.Context, task Task) {
+	// Skip execution if the target session is currently processing a user
+	// message. Unclaim the task so it becomes eligible on the next tick.
+	if checker := e.sessionCheckerValue(); checker != nil {
+		sk := taskSessionKey(task)
+		if checker.IsSessionActive(sk) {
+			logging.Infof("automation task skipped (session busy) id=%s session=%s", task.ID, sk)
+			if err := e.store.UnclaimTask(task.ID); err != nil {
+				// Unclaim failed: fall back to recording a no-op result
+				// so Running=false is always cleared.
+				logging.Errorf("unclaim automation task failed id=%s err=%v; recording no-op result", task.ID, err)
+				if recErr := e.store.RecordTaskResult(task.ID, e.nowTime(), nil); recErr != nil {
+					logging.Errorf("fallback record result failed id=%s err=%v", task.ID, recErr)
+				}
+			}
+			return
+		}
+	}
+
 	runCtx, cancel := e.userTaskContext(ctx, task)
 	defer cancel()
 

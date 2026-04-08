@@ -191,6 +191,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 	}
 
 	b.app.SetAutomationRunner(automationEngine)
+	automationEngine.SetSessionActivityChecker(b.app)
 	b.automationEngine = automationEngine
 	return nil
 }

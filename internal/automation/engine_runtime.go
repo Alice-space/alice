@@ -26,6 +26,24 @@ func (e *Engine) SetUserTaskCompletionHook(hook UserTaskCompletionHook) {
 	e.userTaskHook = hook
 }
 
+func (e *Engine) SetSessionActivityChecker(checker SessionActivityChecker) {
+	if e == nil {
+		return
+	}
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
+	e.sessionChecker = checker
+}
+
+func (e *Engine) sessionCheckerValue() SessionActivityChecker {
+	if e == nil {
+		return nil
+	}
+	e.runtimeMu.RLock()
+	defer e.runtimeMu.RUnlock()
+	return e.sessionChecker
+}
+
 func (e *Engine) SetRunEnv(env map[string]string) {
 	if e == nil {
 		return

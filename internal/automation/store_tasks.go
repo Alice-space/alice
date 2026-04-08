@@ -289,6 +289,44 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 	return claimed, nil
 }
 
+// UnclaimTask reverts a prior ClaimDueTasks claim for the given task.
+// It sets Running=false, decrements RunCount (if positive), and resets
+// NextRunAt to zero so the task becomes immediately eligible on the next
+// scheduling tick.
+// This is used when the engine skips execution because the target session
+// is busy, without recording a run result.
+// NOTE: Implemented via updateSnapshot (not PatchTask) to bypass the
+// auto-recompute of NextRunAt that PatchTask applies to active tasks.
+func (s *Store) UnclaimTask(taskID string) error {
+	if s == nil {
+		return errors.New("store is nil")
+	}
+	taskID = strings.TrimSpace(taskID)
+	if taskID == "" {
+		return errors.New("task id is empty")
+	}
+	return s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
+		idx := findTaskIndex(snapshot.Tasks, taskID)
+		if idx < 0 {
+			return false, nil
+		}
+		task := NormalizeTask(snapshot.Tasks[idx])
+		if task.Status == TaskStatusDeleted {
+			return false, nil
+		}
+		if !task.Running {
+			return false, nil
+		}
+		task.Running = false
+		if task.RunCount > 0 {
+			task.RunCount--
+		}
+		task.NextRunAt = time.Time{}
+		snapshot.Tasks[idx] = task
+		return true, nil
+	})
+}
+
 func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) error {
 	if s == nil {
 		return errors.New("store is nil")

@@ -302,6 +302,73 @@ func TestStore_RecordTaskResult_RetriesFailedCampaignDispatchTaskBeforePausing(t
 	}
 }
 
+func TestStore_UnclaimTask(t *testing.T) {
+	base := time.Date(2026, 4, 8, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title:    "test unclaim",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "ping"},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	claimAt := base.Add(2 * time.Minute)
+	store.now = func() time.Time { return claimAt }
+	claimed, err := store.ClaimDueTasks(claimAt, 10)
+	if err != nil {
+		t.Fatalf("claim: %v", err)
+	}
+	if len(claimed) != 1 || claimed[0].ID != created.ID {
+		t.Fatalf("expected 1 claimed task, got %d", len(claimed))
+	}
+
+	task, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get claimed task: %v", err)
+	}
+	if !task.Running {
+		t.Fatal("expected Running=true after claim")
+	}
+	if task.RunCount != 1 {
+		t.Fatalf("expected RunCount=1, got %d", task.RunCount)
+	}
+
+	if err := store.UnclaimTask(created.ID); err != nil {
+		t.Fatalf("unclaim: %v", err)
+	}
+
+	task, err = store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get unclaimed task: %v", err)
+	}
+	if task.Running {
+		t.Fatal("expected Running=false after unclaim")
+	}
+	if task.RunCount != 0 {
+		t.Fatalf("expected RunCount=0 after unclaim, got %d", task.RunCount)
+	}
+	if !task.NextRunAt.IsZero() {
+		t.Fatalf("expected zero NextRunAt after unclaim, got %v", task.NextRunAt)
+	}
+
+	reclaimAt := base.Add(3 * time.Minute)
+	store.now = func() time.Time { return reclaimAt }
+	claimed2, err := store.ClaimDueTasks(reclaimAt, 10)
+	if err != nil {
+		t.Fatalf("re-claim: %v", err)
+	}
+	if len(claimed2) != 1 || claimed2[0].ID != created.ID {
+		t.Fatalf("expected task to be re-claimable after unclaim, got %d claimed", len(claimed2))
+	}
+}
+
 func TestShouldEscalateInternalWorkflowFailure(t *testing.T) {
 	task := Task{
 		Status:              TaskStatusPaused,

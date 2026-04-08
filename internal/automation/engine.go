@@ -14,6 +14,13 @@ import (
 
 type Sender = messaging.AutomationSender
 
+// SessionActivityChecker checks whether a session is currently processing a
+// user message. The automation engine uses this to skip task execution when
+// the target session is busy, avoiding interruption of user conversations.
+type SessionActivityChecker interface {
+	IsSessionActive(sessionKey string) bool
+}
+
 type LLMRunner interface {
 	Run(ctx context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error)
 }
@@ -29,6 +36,7 @@ type Engine struct {
 	runtimeMu       sync.RWMutex
 	llmRunner       LLMRunner
 	userTaskHook    UserTaskCompletionHook
+	sessionChecker  SessionActivityChecker
 	runEnv          map[string]string
 	userTaskTimeout time.Duration
 	tick            time.Duration
