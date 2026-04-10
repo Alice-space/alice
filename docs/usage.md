@@ -74,9 +74,7 @@ The keys operators usually care about most:
 - `group_scenes.work`
   Explicit task/thread scene
 - `permissions`
-  Gates runtime message, automation, and campaign operations
-- `campaign_role_defaults`
-  Default code-army role to profile mapping
+  Gates runtime message and automation operations
 - `workspace_dir` / `prompt_dir` / `codex_home`
   Runtime directories
 
@@ -144,11 +142,7 @@ These commands bypass the normal LLM flow:
 - `/help`
   Show the built-in command help card
 - `/status`
-  Show usage totals, active automation tasks, and active code-army campaigns in the current scope
-- `/codearmy status`
-  Show the code-army summary
-- `/codearmy tasks [query]`
-  Show task-level status for a matching campaign
+  Show usage totals and active automation tasks in the current scope
 - `/clear`
   Rotate the current group `chat` session
 - `/stop`

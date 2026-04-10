@@ -23,7 +23,6 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 - Scene-aware routing for casual chat and explicit work threads
 - Runtime HTTP API for bundled skills and automation
 - Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
-- The `alice-code-army` skill has moved to https://github.com/Alice-space/codearmy
 - Embedded prompts, skills, config example, and `SOUL.md` example
 - Release installer for `systemd --user` deployments
 
@@ -105,8 +104,6 @@ Additional docs:
 - [Documentation Index](./docs/README.md)
 - [Architecture](./docs/architecture.md)
 - [架构文档](./docs/architecture.zh-CN.md)
-- [CodeArmy Guide (Chinese)](./docs/codearmy.zh-CN.md)
-- [CodeArmy Isolated Debug Runbook](./docs/codearmy-isolated-debug.md)
 
 Connector startup mode is now explicit: use `--feishu-websocket` for the real Feishu connector, or `--runtime-only` for local runtime/API-only execution. For isolated debug or temporary rerun runtimes, use `alice-headless --runtime-only`; headless binaries no longer allow Feishu websocket startup.
 
@@ -135,8 +132,6 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 # uninstall
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 ```
-
-After installer-driven self-update or service restart, Alice now performs an immediate CodeArmy recovery pass on startup: running campaign repos are reconciled right away, and interrupted internal `campaign_dispatch:*` / `campaign_wake:*` workflow tasks are reactivated automatically when they still match repo state. If a campaign cannot be resumed cleanly, the existing blocked / escalation path still applies.
 
 ## Development
 

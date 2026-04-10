@@ -74,9 +74,7 @@ ${ALICE_HOME}/bots/chat_bot/
 - `group_scenes.work`
   显式任务场景
 - `permissions`
-  控制 runtime message / automation / campaign 能力
-- `campaign_role_defaults`
-  code-army 角色到 profile 的默认映射
+  控制 runtime message / automation 能力
 - `workspace_dir` / `prompt_dir` / `codex_home`
   运行目录
 
@@ -147,11 +145,7 @@ group_scenes:
 - `/help`
   查看内建命令帮助卡片
 - `/status`
-  查看当前 scope 下的 usage、活跃 automation task、活跃 code-army campaign
-- `/codearmy status`
-  查看 code-army 摘要
-- `/codearmy tasks [query]`
-  查看匹配 campaign 的 task 级状态
+  查看当前 scope 下的 usage 和活跃 automation task
 - `/clear`
   轮换当前群聊 `chat` session
 - `/stop`
