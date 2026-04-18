@@ -8,9 +8,6 @@ This directory now keeps only the current operator and architecture docs in the 
 - [架构文档](./architecture.zh-CN.md)
 - [Usage Guide](./usage.md)
 - [使用说明](./usage.zh-CN.md)
-- [CodeArmy Guide](./codearmy.zh-CN.md)
-- [CodeArmy Isolated Debug Runbook](./codearmy-isolated-debug.md)
-- [CodeArmy 隔离调试手册](./codearmy-isolated-debug.zh-CN.md)
 
 ## Why Some Docs Were Archived
 
@@ -26,8 +23,6 @@ The archived documents described older internals that no longer match the codeba
 - [架构文档](./architecture.zh-CN.md)
 - [Usage Guide](./usage.md)
 - [使用说明](./usage.zh-CN.md)
-- [CodeArmy 使用指南](./codearmy.zh-CN.md)
-- [CodeArmy 隔离调试手册](./codearmy-isolated-debug.zh-CN.md)
 
 ## 为什么归档旧文档
 

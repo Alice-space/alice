@@ -148,7 +148,7 @@ scene 路由规则：
 - 群聊 / 话题群优先看 `group_scenes.chat` 和 `group_scenes.work`
 - work thread 通过显式 trigger 和稳定的 work-scene session key 识别
 - 如果两个 scene 都关掉，则回退到旧的 `trigger_mode` / `trigger_prefix`
-- `/help`、`/status`、`/clear`、`/stop`、`/codearmy ...` 这类内建命令会直接绕过 LLM 主链路
+- `/help`、`/status`、`/clear`、`/stop` 这类内建命令会直接绕过 LLM 主链路
 
 ## 6. Session Key、Alias 与串行控制
 
@@ -314,11 +314,10 @@ runtime 脚本入口：
 bootstrap 阶段注册的 system task：
 
 - 周期性 flush session/runtime state
-- 周期性 campaign-repo reconcile
+## 11. 已移除的 Campaign 层
 
-## 11. Campaign 索引与 Repo-First 编排
-
-> ⚠️ §11 已移除：campaign 系统已删除，code-army 编排由 alice-code-army skill（SKILL.md）和 Claude Code Orchestrator 原生承担。
+仓库内原有的 campaign / code-army 编排层已不再属于当前实现。
+当前 Alice 只聚焦于 scene 路由、后端执行、runtime API 与通用 automation 基元。
 
 ## 12. 配置模型
 
@@ -352,7 +351,7 @@ bootstrap 阶段注册的 system task：
 - `zerolog` 结构化日志
 - `lumberjack` 滚动日志文件
 - `session_state.json` 中的 usage 计数
-- `/status` 和 `/codearmy ...` 内建卡片，底层由 `statusview` 聚合
+- `/status`，底层由 `statusview` 聚合
 - `log_level=debug` 时的每轮 markdown trace
 
 debug trace 在 backend 能暴露时会包含：
@@ -373,10 +372,10 @@ debug trace 在 backend 能暴露时会包含：
 - `prompts/` 下的模板
 - `skills/` 下的 bundled skill
 - runtime API handler
-- `internal/campaignrepo` 的 repo-first 编排逻辑
 
 当前实现里明确不存在的东西：
 
 - 没有在用的 `internal/memory` 包
+- 仓库内置的 code-army / campaign 编排层
 - 没有 runtime memory API
 - 没有承载业务逻辑的 MCP server；只保留了向后兼容的 session env 命名

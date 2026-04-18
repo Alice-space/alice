@@ -117,12 +117,6 @@ feishu_app_secret: sss
 	if len(runtime.LLMProfiles) != 0 {
 		t.Fatalf("unexpected llm_profiles: %#v", runtime.LLMProfiles)
 	}
-	if runtime.CodexEnv["HTTPS_PROXY"] != DefaultHTTPSProxy {
-		t.Fatalf("unexpected default HTTPS_PROXY: %q", runtime.CodexEnv["HTTPS_PROXY"])
-	}
-	if runtime.CodexEnv["ALL_PROXY"] != DefaultALLProxy {
-		t.Fatalf("unexpected default ALL_PROXY: %q", runtime.CodexEnv["ALL_PROXY"])
-	}
 	if runtime.GroupScenes.Chat.Enabled {
 		t.Fatal("chat scene should default to disabled")
 	}

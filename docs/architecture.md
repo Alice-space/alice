@@ -111,12 +111,8 @@ Core packages:
   Local authenticated HTTP server and client used by bundled skills and runtime-facing shell scripts.
 - `internal/automation`
   Task model, persistence, claiming, execution, system-task scheduling, and workflow dispatch.
-- `internal/campaign`
-  Lightweight runtime campaign index scoped to a conversation.
-- `internal/campaignrepo`
-  Repo-first campaign loader, validator, reconciler, dispatch planner, post-run validation, and live-report generation.
 - `internal/statusview`
-  Aggregates usage, automation, and campaign data for `/status` and related cards.
+  Aggregates usage and automation data for `/status`.
 - `internal/platform/feishu`
   Feishu sender implementation, attachment I/O, bot self-info lookup, message lookup, and user-name resolution helpers.
 
@@ -155,7 +151,7 @@ Scene routing rules:
 - group/topic-group chats can use `group_scenes.chat` and `group_scenes.work`
 - work threads are identified by a trigger plus a stable work-scene session key
 - if both scenes are disabled, Alice falls back to legacy `trigger_mode` / `trigger_prefix`
-- built-in commands such as `/help`, `/status`, `/clear`, `/stop`, and `/codearmy ...` bypass the LLM path
+- built-in commands such as `/help`, `/status`, `/clear`, and `/stop` bypass the LLM path
 
 ## 6. Session Keys, Aliases, And Serialization
 
@@ -209,11 +205,6 @@ Current prompt assets:
 - `prompts/connector/reply_context.md.tmpl`
 - `prompts/connector/runtime_skill_hint.md.tmpl`
 - `prompts/connector/synthetic_mention.md.tmpl`
-- `prompts/campaignrepo/planner_dispatch.md.tmpl`
-- `prompts/campaignrepo/planner_reviewer_dispatch.md.tmpl`
-- `prompts/campaignrepo/executor_dispatch.md.tmpl`
-- `prompts/campaignrepo/reviewer_dispatch.md.tmpl`
-- `prompts/campaignrepo/wake_dispatch.md.tmpl`
 
 Important prompt behavior:
 
@@ -329,34 +320,10 @@ Built-in system tasks registered during bootstrap:
 - periodic session/runtime state flush
 - periodic campaign-repo reconcile
 
-## 11. Campaign Index And Repo-First Orchestration
+## 11. Removed Campaign Layer
 
-Alice’s code-army path is intentionally split into two layers.
-
-Runtime layer:
-
-- `internal/campaign`
-  Stores lightweight campaign records scoped to a conversation
-- `internal/runtimeapi/campaign_handlers.go`
-  Exposes CRUD and management entrypoints for those records
-
-Repo-first layer:
-
-- `internal/campaignrepo`
-  Loads the campaign repository, validates its contract, reconciles state, generates dispatch specs, writes live reports, applies review verdicts, repairs invalid task states, resumes wake tasks, and performs post-run checks
-
-Bridge layer:
-
-- `internal/bootstrap/campaign_repo_runtime.go`
-  Connects reconcile results to runtime automation tasks, notifications, startup recovery, wake scheduling, and runtime status updates
-- `internal/bootstrap/campaign_repo_workflow_guard.go`
-  Blocks or reshapes invalid workflow runs around plan gates and terminal campaigns
-
-Design rule:
-
-- the runtime DB is a lightweight index
-- the campaign repository is the primary source of truth
-- source repos remain the actual code-change surface
+The former in-repo campaign / code-army orchestration layer is no longer part of this repository.
+Current Alice focuses on scene routing, backend execution, runtime API, and generic automation primitives.
 
 ## 12. Configuration Model
 
@@ -369,7 +336,6 @@ Important keys:
 - `group_scenes.chat`
 - `group_scenes.work`
 - `permissions`
-- `campaign_role_defaults`
 - `runtime_http_addr`
 - `workspace_dir`
 - `prompt_dir`
@@ -391,7 +357,7 @@ Current observability surfaces:
 - structured logs via `zerolog`
 - rotating log files via `lumberjack`
 - session usage counters stored in `session_state.json`
-- `/status` and `/codearmy ...` built-in cards powered by `statusview`
+- `/status` powered by `statusview`
 - per-run markdown debug traces when `log_level=debug`
 
 Debug traces include, when the backend exposes them:
@@ -412,10 +378,10 @@ The supported extension surfaces in the current codebase are:
 - prompt templates under `prompts/`
 - bundled skills under `skills/`
 - runtime API handlers
-- repo-first campaign orchestration under `internal/campaignrepo`
 
 Notably absent from the current implementation:
 
 - no active `internal/memory` package
 - no runtime memory API
+- no in-repo code-army / campaign orchestration layer
 - no business-logic MCP server; only backward-compatible session env naming remains

@@ -22,7 +22,6 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 - 支持群聊里的 `chat` / `work` 两种场景路由
 - 提供 runtime HTTP API 给 skill 和自动化任务
 - 自带 skill 会释放到 `${ALICE_HOME:-~/.alice}/skills`，再链接到 `~/.agents/skills`，并通过 `~/.claude/skills` 暴露给 Claude
-- `alice-code-army` skill 已迁移至独立仓库 https://github.com/Alice-space/codearmy
 - 二进制内嵌 prompts、skills、配置示例和 `SOUL.md` 示例
 - 提供适合 `systemd --user` 的安装脚本
 
@@ -104,8 +103,6 @@ Alice 现在使用纯多 bot 配置模型。
 - [文档索引](./docs/README.md)
 - [架构文档](./docs/architecture.zh-CN.md)
 - [Architecture](./docs/architecture.md)
-- [CodeArmy 使用指南](./docs/codearmy.zh-CN.md)
-- [CodeArmy 隔离调试手册](./docs/codearmy-isolated-debug.zh-CN.md)
 
 Alice 现在要求显式选择启动模式：真实飞书连接使用 `--feishu-websocket`，只跑本地 runtime/API 使用 `--runtime-only`。如果是隔离调试或临时 rerun runtime，必须使用 `alice-headless --runtime-only`；headless binary 不再允许启动飞书长连接。
 
@@ -134,8 +131,6 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 # 卸载
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 ```
-
-现在通过 installer 自更新或服务重启后，Alice 会在启动阶段立即执行一轮 CodeArmy 恢复：马上 reconcile 仍在运行的 campaign repo，并自动重新激活那些仍然符合 repo 状态、但被更新打断的内部 `campaign_dispatch:*` / `campaign_wake:*` workflow 任务；如果无法安全恢复，仍沿用现有的 blocked / escalation 路径。
 
 ## 开发
 

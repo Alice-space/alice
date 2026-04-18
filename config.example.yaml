@@ -146,7 +146,7 @@ allowed_skills: ["alice-message"]
 
     queue_capacity: 256
     worker_concurrency: 3
-    # Outer automation/task wrapper timeout (codearmy dispatcher, planner, reviewer, workflows).
+    # Outer automation/task wrapper timeout for scheduled automation and workflow runs.
     automation_task_timeout_secs: 6000
     # Hidden runtime deadlines are also configurable.
     auth_status_timeout_secs: 15

@@ -45,14 +45,7 @@ func normalizeEnvMap(in map[string]string) map[string]string {
 }
 
 func applyDefaultCodexEnv(in map[string]string) map[string]string {
-	out := normalizeEnvMap(in)
-	if _, ok := out["HTTPS_PROXY"]; !ok {
-		out["HTTPS_PROXY"] = DefaultHTTPSProxy
-	}
-	if _, ok := out["ALL_PROXY"]; !ok {
-		out["ALL_PROXY"] = DefaultALLProxy
-	}
-	return out
+	return normalizeEnvMap(in)
 }
 
 func normalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileConfig {
