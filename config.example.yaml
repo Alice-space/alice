@@ -142,7 +142,7 @@ bots:
     permissions:
       runtime_message: true
       runtime_automation: false
-allowed_skills: ["alice-message"]
+      allowed_skills: ["alice-message"]
 
     queue_capacity: 256
     worker_concurrency: 3
