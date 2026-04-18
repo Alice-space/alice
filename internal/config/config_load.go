@@ -73,8 +73,6 @@ func setCommonConfigDefaults(v *viper.Viper, prefix string, includeRuntimeHTTPAd
 	v.SetDefault(configKey(prefix, "runtime_http_token"), "")
 	v.SetDefault(configKey(prefix, "failure_message"), "Codex 暂时不可用，请稍后重试。")
 	v.SetDefault(configKey(prefix, "thinking_message"), "正在思考中...")
-	v.SetDefault(configKey(prefix, "env.HTTPS_PROXY"), DefaultHTTPSProxy)
-	v.SetDefault(configKey(prefix, "env.ALL_PROXY"), DefaultALLProxy)
 	v.SetDefault(configKey(prefix, "permissions.runtime_message"), true)
 	v.SetDefault(configKey(prefix, "permissions.runtime_automation"), true)
 	v.SetDefault(configKey(prefix, "queue_capacity"), 256)
