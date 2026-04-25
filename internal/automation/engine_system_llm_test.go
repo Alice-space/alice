@@ -45,7 +45,7 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
 		Action: Action{
 			Type:            ActionTypeRunLLM,
 			Text:            "定时播报",
@@ -68,7 +68,7 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
 	engine.tick = 10 * time.Millisecond
-	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+	engine.now = func() time.Time { return base.Add(61 * time.Second) }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -79,7 +79,7 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 		runner.mu.Unlock()
 		t.Fatal("expected run_llm task to invoke llm runner")
 	}
-	rawPrompt := "请回复当前时间 " + base.Add(2*time.Second).Local().Format(time.RFC3339)
+	rawPrompt := "请回复当前时间 " + base.Add(61*time.Second).Local().Format(time.RFC3339)
 	wantPrompt := "Preferred response style/personality: pragmatic.\n\n" + rawPrompt
 	if runner.lastReq.UserText != wantPrompt {
 		runner.mu.Unlock()
@@ -141,7 +141,7 @@ func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
 		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
 		Action: Action{
 			Type:       ActionTypeRunLLM,
 			Prompt:     "请总结当前状态",
@@ -159,7 +159,7 @@ func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
 	engine.tick = 10 * time.Millisecond
-	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+	engine.now = func() time.Time { return base.Add(61 * time.Second) }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
@@ -213,7 +213,7 @@ func TestEngine_RunUserTask_RunLLM_PersistsStickyThreadID(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
 		Action: Action{
 			Type:           ActionTypeRunLLM,
 			Prompt:         "hello",
@@ -236,7 +236,7 @@ func TestEngine_RunUserTask_RunLLM_PersistsStickyThreadID(t *testing.T) {
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
 	engine.tick = 10 * time.Millisecond
-	engine.now = func() time.Time { return base.Add(2 * time.Second) }
+	engine.now = func() time.Time { return base.Add(61 * time.Second) }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()

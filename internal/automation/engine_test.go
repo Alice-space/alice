@@ -298,7 +298,7 @@ func TestRunUserTask_SkipLog_RateLimit(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_rl"},
 		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_rl"},
 		Creator:  Actor{OpenID: "ou_test"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 1},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
 		Action:   Action{Type: ActionTypeRunLLM, Prompt: "ping"},
 	})
 	if err != nil {
@@ -317,7 +317,7 @@ func TestRunUserTask_SkipLog_RateLimit(t *testing.T) {
 	}
 
 	// First skip at t1: lastSkipLog must be set to t1.
-	t1 := base.Add(2 * time.Second)
+	t1 := base.Add(61 * time.Second)
 	claimAndRun(t1)
 	if last, ok := engine.lastSkipLog.Load(created.ID); !ok {
 		t.Fatal("expected lastSkipLog to be set after first skip")
