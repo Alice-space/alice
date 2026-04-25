@@ -1,10 +1,10 @@
 package runtimeapi
 
 import (
-	"fmt"
 	"net/http"
 	"strings"
 
+	"github.com/Alice-space/alice/internal/logging"
 	"github.com/gin-gonic/gin"
 )
 
@@ -35,7 +35,8 @@ func (s *Server) handleSendImage(c *gin.Context) {
 		}
 		uploaded, err := s.sender.UploadImage(c.Request.Context(), strings.TrimSpace(req.Path))
 		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("upload image failed: %v", err)})
+			logging.Warnf("upload image failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "upload image failed"})
 			return
 		}
 		imageKey = strings.TrimSpace(uploaded)
@@ -84,7 +85,8 @@ func (s *Server) handleSendFile(c *gin.Context) {
 		}
 		uploaded, err := s.sender.UploadFile(c.Request.Context(), strings.TrimSpace(req.Path), strings.TrimSpace(req.FileName))
 		if err != nil {
-			c.JSON(http.StatusBadGateway, gin.H{"error": fmt.Sprintf("upload file failed: %v", err)})
+			logging.Warnf("upload file failed: %v", err)
+			c.JSON(http.StatusBadGateway, gin.H{"error": "upload file failed"})
 			return
 		}
 		fileKey = strings.TrimSpace(uploaded)

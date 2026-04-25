@@ -3,8 +3,6 @@ package runtimeapi
 import (
 	"context"
 	"errors"
-	"fmt"
-	"os"
 	"path/filepath"
 	"strings"
 
@@ -82,16 +80,6 @@ func validatePathUnderRoot(path string, root string) error {
 		return err
 	}
 	rootAbs = filepath.Clean(rootAbs)
-	rootInfo, err := os.Stat(rootAbs)
-	if err != nil {
-		if errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("resource root does not exist: %s", rootAbs)
-		}
-		return err
-	}
-	if !rootInfo.IsDir() {
-		return fmt.Errorf("resource root is not a directory: %s", rootAbs)
-	}
 	rel, err := filepath.Rel(rootAbs, pathAbs)
 	if err != nil {
 		return err
@@ -101,10 +89,10 @@ func validatePathUnderRoot(path string, root string) error {
 	}
 	resolvedPath, err := securejoin.SecureJoin(rootAbs, rel)
 	if err != nil {
-		return fmt.Errorf("path out of allowed root: %s", rootAbs)
+		return errors.New("path out of allowed root")
 	}
 	if filepath.Clean(resolvedPath) != pathAbs {
-		return fmt.Errorf("path out of allowed root: %s", rootAbs)
+		return errors.New("path out of allowed root")
 	}
 	return nil
 }

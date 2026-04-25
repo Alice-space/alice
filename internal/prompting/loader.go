@@ -161,6 +161,18 @@ func (l *Loader) readEmbedded(name string) ([]byte, error) {
 
 func templateFuncMap() template.FuncMap {
 	funcMap := sprig.TxtFuncMap()
+	// Security: remove functions that can access environment variables,
+	// filesystem paths, or perform network lookups. Automation tasks and
+	// prompt rendering should not be able to exfiltrate secrets or probe
+	// the host system.
+	delete(funcMap, "env")
+	delete(funcMap, "expandenv")
+	delete(funcMap, "getHostByName")
+	delete(funcMap, "osBase")
+	delete(funcMap, "osDir")
+	delete(funcMap, "osExt")
+	delete(funcMap, "osIsAbs")
+	delete(funcMap, "osClean")
 	funcMap["now"] = func() string {
 		return time.Now().Local().Format(time.RFC3339)
 	}

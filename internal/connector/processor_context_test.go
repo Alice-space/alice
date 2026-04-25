@@ -130,7 +130,7 @@ func TestProcessorRunLLM_LogsBackendProgress(t *testing.T) {
 		"codex agent_message event_id=evt_1 thread_id=thread_1",
 		"codex file_change event_id=evt_1 thread_id=thread_1",
 		"codex run completed event_id=evt_1",
-		"# Agent Trace",
+		"agent trace",
 	} {
 		if !strings.Contains(logs, want) {
 			t.Fatalf("expected logs to contain %q, got %q", want, logs)

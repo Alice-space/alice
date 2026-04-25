@@ -149,45 +149,22 @@ func DebugAgentTrace(trace AgentTrace) {
 		return
 	}
 
-	sections := []string{
-		"# Agent Trace",
-		"",
-		"- provider: `" + defaultString(trace.Provider, "unknown") + "`",
-		"- agent: `" + defaultString(trace.Agent, "assistant") + "`",
-		"- thread_id: `" + defaultString(trace.ThreadID, "-") + "`",
-		"- model: `" + defaultString(trace.Model, "-") + "`",
-		"- profile: `" + defaultString(trace.Profile, "-") + "`",
-	}
-	if strings.TrimSpace(trace.Error) != "" {
-		sections = append(sections,
-			"- error: `"+strings.TrimSpace(trace.Error)+"`",
-		)
-	}
-	sections = append(sections,
-		"",
-		"## Input",
-		codeBlock(trace.Input),
-		"",
-		"## Tool Calls",
-	)
-	if len(trace.ToolCalls) == 0 {
-		sections = append(sections, "- none")
-	} else {
-		for _, item := range trace.ToolCalls {
-			item = strings.TrimSpace(item)
-			if item == "" {
-				continue
-			}
-			sections = append(sections, "- "+item)
-		}
-	}
-	sections = append(sections,
-		"",
-		"## Output",
-		codeBlock(trace.Output),
-	)
 	current := getLogger()
-	current.Debug().Str("kind", "agent-trace").Msg(strings.Join(sections, "\n"))
+	evt := current.Debug().
+		Str("kind", "agent-trace").
+		Str("provider", defaultString(trace.Provider, "unknown")).
+		Str("agent", defaultString(trace.Agent, "assistant")).
+		Str("thread_id", defaultString(trace.ThreadID, "-")).
+		Str("model", defaultString(trace.Model, "-")).
+		Str("profile", defaultString(trace.Profile, "-"))
+	if errStr := strings.TrimSpace(trace.Error); errStr != "" {
+		evt = evt.Str("error", errStr)
+	}
+	evt = evt.Str("input", trace.Input)
+	if len(trace.ToolCalls) > 0 {
+		evt = evt.Strs("tool_calls", trace.ToolCalls)
+	}
+	evt.Str("output", trace.Output).Msg("agent trace")
 }
 
 func logf(level zerolog.Level, format string, args ...any) {

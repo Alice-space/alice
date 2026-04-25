@@ -44,7 +44,7 @@ func TestValidatePathUnderRoot(t *testing.T) {
 			name:    "missing root",
 			path:    inside,
 			root:    filepath.Join(root, "missing"),
-			wantErr: "resource root does not exist",
+			wantErr: "path out of allowed root",
 		},
 		{
 			name:    "inside root",

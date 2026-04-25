@@ -147,6 +147,8 @@ func (s *FeishuSender) downloadMessageResource(ctx context.Context, messageID, r
 	return fileName, fileReader, nil
 }
 
+const maxAttachmentDownloadSize = 50 * 1024 * 1024
+
 func (s *FeishuSender) writeAttachmentFile(
 	resourceRoot string,
 	sourceMessageID, kind, key, suggestedFileName string,
@@ -156,12 +158,15 @@ func (s *FeishuSender) writeAttachmentFile(
 	if reader == nil {
 		return errors.New("attachment file reader is nil")
 	}
-	raw, err := io.ReadAll(reader)
+	raw, err := io.ReadAll(io.LimitReader(reader, maxAttachmentDownloadSize))
 	if err != nil {
 		return err
 	}
 	if len(raw) == 0 {
 		return errors.New("attachment file is empty")
+	}
+	if int64(len(raw)) >= maxAttachmentDownloadSize {
+		return fmt.Errorf("attachment exceeds maximum download size of %d bytes", maxAttachmentDownloadSize)
 	}
 
 	subDir := filepath.Join(strings.TrimSpace(resourceRoot), time.Now().Format("2006-01-02"), sanitizePathToken(sourceMessageID))
