@@ -20,6 +20,7 @@ import (
 
 	agentbridgeclaude "github.com/Alice-space/agentbridge/claude"
 	agentbridgecodex "github.com/Alice-space/agentbridge/codex"
+	agentbridgeopencode "github.com/Alice-space/agentbridge/opencode"
 	aliceassets "github.com/Alice-space/alice"
 	"github.com/Alice-space/alice/internal/bootstrap"
 	"github.com/Alice-space/alice/internal/buildinfo"
@@ -230,6 +231,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	}
 	codexAuthChecks := map[string]*codexLoginCheck{}
 	claudeAuthChecks := map[string]*claudeLoginCheck{}
+	opencodeAuthChecks := map[string]*opencodeLoginCheck{}
 	skillPlan := &bundledSkillSyncPlan{
 		AliceHome: cfg.AliceHome,
 		allowed:   map[string]struct{}{},
@@ -271,6 +273,21 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 					Timeout: runtimeCfg.AuthStatusTimeout,
 				}
 				claudeAuthChecks[claudeCmd] = check
+			}
+			if runtimeCfg.AuthStatusTimeout > check.Timeout {
+				check.Timeout = runtimeCfg.AuthStatusTimeout
+			}
+			check.Bots = append(check.Bots, runtimeCfg.BotID)
+		}
+		if runtimeUsesOpenCode(runtimeCfg) {
+			ocCmd := resolveOpencodeCommand(runtimeCfg)
+			check, ok := opencodeAuthChecks[ocCmd]
+			if !ok {
+				check = &opencodeLoginCheck{
+					Command: ocCmd,
+					Timeout: runtimeCfg.AuthStatusTimeout,
+				}
+				opencodeAuthChecks[ocCmd] = check
 			}
 			if runtimeCfg.AuthStatusTimeout > check.Timeout {
 				check.Timeout = runtimeCfg.AuthStatusTimeout
@@ -336,6 +353,27 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 			report.AuthMethod,
 			report.APIProvider,
 		)
+	}
+	ocKeys := make([]string, 0, len(opencodeAuthChecks))
+	for key := range opencodeAuthChecks {
+		ocKeys = append(ocKeys, key)
+	}
+	sort.Strings(ocKeys)
+	for _, key := range ocKeys {
+		check := opencodeAuthChecks[key]
+		report, authErr := agentbridgeopencode.CheckLogin(check.Command, check.Timeout)
+		if authErr != nil {
+			return fmt.Errorf("check opencode failed for bots %s: %w", check.botList(), authErr)
+		}
+		if !report.Ready {
+			return fmt.Errorf(
+				"opencode not found for bots %s (command=%q): %s — install opencode via https://opencode.ai/install",
+				check.botList(),
+				report.Command,
+				report.Error,
+			)
+		}
+		logging.Infof("opencode verified bots=%s command=%s version=%s", check.botList(), report.Command, report.Version)
 	}
 
 	skillReport, skillErr := bootstrap.EnsureBundledSkillsLinkedForAliceHome(skillPlan.AliceHome, skillPlan.allowedSkills())
@@ -659,6 +697,18 @@ type claudeLoginCheck struct {
 	Bots    []string
 }
 
+type opencodeLoginCheck struct {
+	Command string
+	Timeout time.Duration
+	Bots    []string
+}
+
+func (c *opencodeLoginCheck) botList() string {
+	bots := append([]string(nil), c.Bots...)
+	sort.Strings(bots)
+	return strings.Join(bots, ",")
+}
+
 func (p *bundledSkillSyncPlan) allowedSkills() []string {
 	skills := make([]string, 0, len(p.allowed))
 	for skill := range p.allowed {
@@ -686,6 +736,15 @@ func runtimeUsesCodex(cfg config.Config) bool {
 func runtimeUsesClaude(cfg config.Config) bool {
 	for _, provider := range cfg.ResolvedLLMProviders() {
 		if provider == config.LLMProviderClaude {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeUsesOpenCode(cfg config.Config) bool {
+	for _, provider := range cfg.ResolvedLLMProviders() {
+		if provider == config.LLMProviderOpenCode {
 			return true
 		}
 	}
@@ -725,6 +784,24 @@ func resolveClaudeCommand(cfg config.Config) string {
 		}
 	}
 	return "claude"
+}
+
+// resolveOpencodeCommand returns the opencode command from the first opencode
+// profile (alphabetically), falling back to "opencode".
+func resolveOpencodeCommand(cfg config.Config) string {
+	names := make([]string, 0, len(cfg.LLMProfiles))
+	for name, profile := range cfg.LLMProfiles {
+		if strings.ToLower(strings.TrimSpace(profile.Provider)) == config.LLMProviderOpenCode {
+			names = append(names, name)
+		}
+	}
+	sort.Strings(names)
+	for _, name := range names {
+		if cmd := strings.TrimSpace(cfg.LLMProfiles[name].Command); cmd != "" {
+			return cmd
+		}
+	}
+	return "opencode"
 }
 
 func formatCodexLoginOutput(command, output string) string {

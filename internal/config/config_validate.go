@@ -81,7 +81,7 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 
 func isSupportedLLMProvider(provider string) bool {
 	switch normalizeLLMProvider(provider) {
-	case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
+	case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi, LLMProviderOpenCode:
 		return true
 	default:
 		return false
@@ -235,7 +235,7 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 	}
 	for name, profile := range cfg.LLMProfiles {
 		switch profile.Provider {
-		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
+		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi, LLMProviderOpenCode:
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
 		}
@@ -276,7 +276,7 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 func validateSceneConfig(cfg Config) error {
 	for name, profile := range cfg.LLMProfiles {
 		switch profile.Provider {
-		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi:
+		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi, LLMProviderOpenCode:
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
 		}

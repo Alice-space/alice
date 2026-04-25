@@ -108,6 +108,7 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 	claude := get(config.LLMProviderClaude, "claude")
 	gemini := get(config.LLMProviderGemini, "gemini")
 	kimi := get(config.LLMProviderKimi, "kimi")
+	opencodeCfg := get(config.LLMProviderOpenCode, "opencode")
 
 	return agentbridge.FactoryConfig{
 		Provider: cfg.LLMProvider,
@@ -144,6 +145,13 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 			Env:              defaultEnv,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderKimi),
+		},
+		OpenCode: agentbridge.OpenCodeConfig{
+			Command:          opencodeCfg.command,
+			Timeout:          opencodeCfg.timeout,
+			Env:              defaultEnv,
+			WorkspaceDir:     cfg.WorkspaceDir,
+			ProfileOverrides: getOverrides(config.LLMProviderOpenCode),
 		},
 	}
 }
