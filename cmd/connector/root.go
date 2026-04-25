@@ -543,8 +543,8 @@ func preparePIDFile(path string) (func(), error) {
 	}
 
 	selfPID := os.Getpid()
-	if err := os.WriteFile(absPath, []byte(strconv.Itoa(selfPID)+"\n"), 0o644); err != nil {
-		return nil, fmt.Errorf("write pid file failed: %w", err)
+	if err := atomicWritePIDFile(absPath, selfPID); err != nil {
+		return nil, err
 	}
 	return func() {
 		currentPID, err := readPIDFile(absPath)
@@ -555,6 +555,28 @@ func preparePIDFile(path string) (func(), error) {
 			_ = os.Remove(absPath)
 		}
 	}, nil
+}
+
+func atomicWritePIDFile(absPath string, pid int) error {
+	tmpFile, err := os.CreateTemp(filepath.Dir(absPath), ".pid.*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp pid file failed: %w", err)
+	}
+	tmpPath := tmpFile.Name()
+	if _, err := tmpFile.Write([]byte(strconv.Itoa(pid) + "\n")); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("write temp pid file failed: %w", err)
+	}
+	if err := tmpFile.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("close temp pid file failed: %w", err)
+	}
+	if err := os.Rename(tmpPath, absPath); err != nil {
+		_ = os.Remove(tmpPath)
+		return fmt.Errorf("replace pid file failed: %w", err)
+	}
+	return nil
 }
 
 func readPIDFile(path string) (int, error) {
