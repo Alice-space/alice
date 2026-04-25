@@ -451,7 +451,7 @@ func ensureConfigFileExists(configPath string) (bool, error) {
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return false, fmt.Errorf("check config path failed: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(configPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(configPath), 0o750); err != nil {
 		return false, fmt.Errorf("create config directory failed: %w", err)
 	}
 	if err := os.WriteFile(configPath, aliceassets.ConfigExampleYAML, 0o600); err != nil {
@@ -571,7 +571,7 @@ func preparePIDFile(path string) (func(), error) {
 	if err != nil {
 		return nil, fmt.Errorf("resolve pid file path failed: %w", err)
 	}
-	if err := os.MkdirAll(filepath.Dir(absPath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(absPath), 0o750); err != nil {
 		return nil, fmt.Errorf("create pid file directory failed: %w", err)
 	}
 
@@ -660,7 +660,7 @@ func ensureWorkspaceDir(path string) error {
 	if !os.IsNotExist(err) {
 		return fmt.Errorf("check workspace_dir failed: %w", err)
 	}
-	if err := os.MkdirAll(path, 0o755); err != nil {
+	if err := os.MkdirAll(path, 0o750); err != nil {
 		return fmt.Errorf("create workspace_dir failed: %w", err)
 	}
 	return nil

@@ -63,7 +63,7 @@ func Configure(opts Options) error {
 
 	filePath := strings.TrimSpace(opts.FilePath)
 	if filePath != "" {
-		if err := os.MkdirAll(filepath.Dir(filePath), 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(filePath), 0o750); err != nil {
 			return fmt.Errorf("create log dir failed: %w", err)
 		}
 		rotator := &lumberjack.Logger{

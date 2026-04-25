@@ -27,7 +27,7 @@ func TestLoaderRenderFileFallsBackToEmbeddedPrompts(t *testing.T) {
 func TestLoaderRenderFilePrefersFilesystemOverride(t *testing.T) {
 	root := t.TempDir()
 	templatePath := filepath.Join(root, "llm", "initial_prompt.md.tmpl")
-	if err := os.MkdirAll(filepath.Dir(templatePath), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(templatePath), 0o750); err != nil {
 		t.Fatalf("create prompt dir failed: %v", err)
 	}
 	if err := os.WriteFile(templatePath, []byte("override: {{ .UserText }}"), 0o644); err != nil {

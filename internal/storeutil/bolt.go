@@ -11,7 +11,7 @@ import (
 )
 
 func EnsureParentDir(path string) error {
-	return os.MkdirAll(filepath.Dir(path), 0o755)
+	return os.MkdirAll(filepath.Dir(path), 0o750)
 }
 
 func OpenDB(path string, timeout time.Duration) (*bolt.DB, error) {

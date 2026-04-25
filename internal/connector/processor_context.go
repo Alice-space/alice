@@ -353,7 +353,7 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 	if provider, ok := p.sender.(resourceRootProvider); ok {
 		sessionContext.ResourceRoot = strings.TrimSpace(provider.ResourceRootForScope(scopeKey))
 		if sessionContext.ResourceRoot != "" {
-			if err := os.MkdirAll(sessionContext.ResourceRoot, 0o755); err != nil {
+			if err := os.MkdirAll(sessionContext.ResourceRoot, 0o750); err != nil {
 				logging.Warnf("prepare scoped resource root failed event_id=%s scope=%s err=%v", job.EventID, scopeKey, err)
 			}
 		}

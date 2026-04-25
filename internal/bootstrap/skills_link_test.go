@@ -56,7 +56,7 @@ func TestEnsureBundledSkillsLinked_RejectsConflictingAgentSkillSymlink(t *testin
 	t.Setenv(config.EnvAliceHome, aliceHome)
 
 	agentSkillDir := filepath.Join(home, ".agents", "skills", "alice-message")
-	if err := os.MkdirAll(filepath.Dir(agentSkillDir), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(agentSkillDir), 0o750); err != nil {
 		t.Fatalf("create agents skills dir failed: %v", err)
 	}
 	legacy := t.TempDir()
@@ -81,7 +81,7 @@ func TestEnsureBundledSkillsLinked_KeepCustomSourceDirectory(t *testing.T) {
 	t.Setenv(config.EnvAliceHome, aliceHome)
 
 	sourceSkillDir := filepath.Join(aliceHome, "skills", "alice-message")
-	if err := os.MkdirAll(sourceSkillDir, 0o755); err != nil {
+	if err := os.MkdirAll(sourceSkillDir, 0o750); err != nil {
 		t.Fatalf("create custom skill dir failed: %v", err)
 	}
 	custom := []byte("custom-skill\n")
@@ -123,7 +123,7 @@ func TestEnsureBundledSkillsLinked_RejectsConflictingClaudeSkillsDir(t *testing.
 	t.Setenv(config.EnvAliceHome, aliceHome)
 
 	claudeSkillsDir := filepath.Join(home, ".claude", "skills")
-	if err := os.MkdirAll(claudeSkillsDir, 0o755); err != nil {
+	if err := os.MkdirAll(claudeSkillsDir, 0o750); err != nil {
 		t.Fatalf("create conflicting claude skills dir failed: %v", err)
 	}
 

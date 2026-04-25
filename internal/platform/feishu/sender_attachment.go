@@ -165,7 +165,7 @@ func (s *FeishuSender) writeAttachmentFile(
 	}
 
 	subDir := filepath.Join(strings.TrimSpace(resourceRoot), time.Now().Format("2006-01-02"), sanitizePathToken(sourceMessageID))
-	if err := os.MkdirAll(subDir, 0o755); err != nil {
+	if err := os.MkdirAll(subDir, 0o750); err != nil {
 		return err
 	}
 

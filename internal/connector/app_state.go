@@ -138,7 +138,7 @@ func (a *App) flushRuntimeStateFile(force bool) error {
 
 	sortPendingJobs(snapshot.Pending)
 
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
 		return fmt.Errorf("create runtime state dir failed: %w", err)
 	}
 

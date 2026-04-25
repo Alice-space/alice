@@ -150,7 +150,7 @@ func ensureEmbeddedSkillMaterialized(skillName, dst string) (changed string, fai
 }
 
 func materializeEmbeddedSkill(skillName, dst string) error {
-	if err := os.MkdirAll(dst, 0o755); err != nil {
+	if err := os.MkdirAll(dst, 0o750); err != nil {
 		return err
 	}
 
@@ -168,7 +168,7 @@ func materializeEmbeddedSkill(skillName, dst string) error {
 		}
 		target := filepath.Join(dst, filepath.FromSlash(rel))
 		if entry.IsDir() {
-			return os.MkdirAll(target, 0o755)
+			return os.MkdirAll(target, 0o750)
 		}
 
 		content, err := fs.ReadFile(aliceassets.SkillsFS, srcPath)
@@ -219,7 +219,7 @@ func ensureDirectoryRoot(dst string) error {
 	info, err := os.Lstat(dst)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return os.MkdirAll(dst, 0o755)
+			return os.MkdirAll(dst, 0o750)
 		}
 		return err
 	}
@@ -258,7 +258,7 @@ func ensureSkillSymlink(dst, target string) (changed string, failed bool) {
 }
 
 func ensureClaudeSkillsAlias(dst, target string) error {
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(dst), 0o750); err != nil {
 		return err
 	}
 	info, err := os.Lstat(dst)
