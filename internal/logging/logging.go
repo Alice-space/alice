@@ -116,6 +116,16 @@ func Fatalf(format string, args ...any) {
 	current.Fatal().Msgf(format, args...)
 }
 
+var warnOnceMessages sync.Map
+
+func WarnOnce(format string, args ...any) {
+	message := fmt.Sprintf(format, args...)
+	if _, loaded := warnOnceMessages.LoadOrStore(message, struct{}{}); loaded {
+		return
+	}
+	Warnf("%s", message)
+}
+
 type AgentTrace struct {
 	Provider  string
 	Agent     string

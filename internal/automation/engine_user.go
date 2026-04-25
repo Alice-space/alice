@@ -252,6 +252,7 @@ func (e *Engine) sendTextDispatch(ctx context.Context, receiveIDType, receiveID,
 	if err := e.sender.SendText(ctx, receiveIDType, receiveID, text); err != nil {
 		return "", err
 	}
+	logging.WarnOnce("automation sender does not return message_id; thread reply bootstrapping unavailable")
 	return "", nil
 }
 
@@ -262,6 +263,7 @@ func (e *Engine) sendCardDispatch(ctx context.Context, receiveIDType, receiveID,
 	if err := e.sender.SendCard(ctx, receiveIDType, receiveID, cardContent); err != nil {
 		return "", err
 	}
+	logging.WarnOnce("automation sender does not return message_id; thread reply bootstrapping unavailable")
 	return "", nil
 }
 
