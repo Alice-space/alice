@@ -188,8 +188,8 @@ func ValidateTask(task Task) error {
 	}
 	switch task.Schedule.Type {
 	case ScheduleTypeInterval:
-		if task.Schedule.EverySeconds <= 0 {
-			return errors.New("every_seconds must be > 0")
+		if task.Schedule.EverySeconds < 60 {
+			return errors.New("every_seconds must be >= 60 for interval schedule")
 		}
 	case ScheduleTypeCron:
 		if strings.TrimSpace(task.Schedule.CronExpr) == "" {
