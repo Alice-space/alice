@@ -2,19 +2,22 @@ package runtimeapi
 
 import (
 	"context"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 
+	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/sessionctx"
 )
 
 func (s *Server) authMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if strings.TrimSpace(s.token) == "" {
-			c.Next()
+			logging.Warnf("runtime api request rejected: token is not configured")
+			c.AbortWithStatusJSON(http.StatusServiceUnavailable, gin.H{"error": "runtime api token is not configured"})
 			return
 		}
 		if s.authLimiter != nil && !s.authLimiter.Allow(authRateKey(c), time.Now()) {

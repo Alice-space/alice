@@ -12,14 +12,14 @@ import (
 
 func TestRuntimeAPI_MessagePermissionDenied(t *testing.T) {
 	enabled := false
-	server := NewServer("", "", nil, nil, config.Config{
+	server := NewServer("", "test-token", nil, nil, config.Config{
 		Permissions: config.BotPermissionsConfig{
 			RuntimeMessage: &enabled,
 		},
 	})
 	httpServer := httptest.NewServer(server.engine)
 	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "")
+	client := NewClient(httpServer.URL, "test-token")
 
 	_, err := client.SendImage(t.Context(), sessionctx.SessionContext{
 		ReceiveIDType: "chat_id",
@@ -33,14 +33,14 @@ func TestRuntimeAPI_MessagePermissionDenied(t *testing.T) {
 
 func TestRuntimeAPI_AutomationPermissionDenied(t *testing.T) {
 	enabled := false
-	server := NewServer("", "", nil, automation.NewStore(t.TempDir()+"/automation.db"), config.Config{
+	server := NewServer("", "test-token", nil, automation.NewStore(t.TempDir()+"/automation.db"), config.Config{
 		Permissions: config.BotPermissionsConfig{
 			RuntimeAutomation: &enabled,
 		},
 	})
 	httpServer := httptest.NewServer(server.engine)
 	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "")
+	client := NewClient(httpServer.URL, "test-token")
 
 	_, err := client.CreateTask(t.Context(), sessionctx.SessionContext{
 		ReceiveIDType: "chat_id",
