@@ -179,6 +179,8 @@ func finalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileCo
 				profile.Command = "gemini"
 			case LLMProviderKimi:
 				profile.Command = "kimi"
+			case LLMProviderOpenCode:
+				profile.Command = "opencode"
 			default:
 				profile.Command = "codex"
 			}

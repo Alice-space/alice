@@ -259,7 +259,7 @@ func (p *Processor) processLsCommand(ctx context.Context, job Job) JobProcessSta
 			if entry.IsDir() {
 				prefix = "[DIR]  "
 			}
-			lines = append(lines, fmt.Sprintf("- %s%s", prefix, sanitizeInlineCode(entry.Name())))
+			lines = append(lines, fmt.Sprintf("- %s`%s`", prefix, sanitizeInlineCode(entry.Name())))
 		}
 	}
 	reply := strings.Join(lines, "\n")
