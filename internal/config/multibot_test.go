@@ -104,7 +104,7 @@ bots:
 	if runtime.CodexHome != filepath.Join(base, "custom-codex") {
 		t.Fatalf("unexpected codex_home: %q", runtime.CodexHome)
 	}
-	if runtime.SoulPath != filepath.Join(runtime.WorkspaceDir, "souls/chat.md") {
+	if runtime.SoulPath != filepath.Join(runtime.AliceHome, "souls/chat.md") {
 		t.Fatalf("unexpected soul_path: %q", runtime.SoulPath)
 	}
 	if runtime.RuntimeHTTPAddr != "127.0.0.1:7441" {

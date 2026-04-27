@@ -79,9 +79,9 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	}
 	cfg.CodexHome = ResolveCodexHomeDir(cfg.CodexHome)
 	if cfg.SoulPath == "" {
-		cfg.SoulPath = filepath.Join(cfg.WorkspaceDir, "SOUL.md")
+		cfg.SoulPath = filepath.Join(cfg.AliceHome, "SOUL.md")
 	} else if !filepath.IsAbs(cfg.SoulPath) {
-		cfg.SoulPath = filepath.Join(cfg.WorkspaceDir, cfg.SoulPath)
+		cfg.SoulPath = filepath.Join(cfg.AliceHome, cfg.SoulPath)
 	}
 	cfg.SoulPath = filepath.Clean(cfg.SoulPath)
 	if cfg.LogFile == "" {

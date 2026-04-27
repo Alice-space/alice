@@ -7,7 +7,7 @@
 Alice 是一个纯多 bot runtime。
 
 - 一个 `alice` 进程可以从同一个 `config.yaml` 托管多个 bot
-- 每个 bot 都有自己的 `alice_home`、workspace、prompt 覆盖目录、runtime state 和 `SOUL.md`
+- 每个 bot 都有自己的 `alice_home`、workspace、prompt 覆盖目录、runtime state 和 `SOUL.md`（位于 `alice_home` 下）
 - 默认共享 `CODEX_HOME`，除非 bot 显式覆盖 `codex_home`
 - 每条被接受的消息都会先路由到 scene，再路由到选中的 LLM profile
 - Alice 还会暴露本地 runtime API，给 bundled skills 和 automation task 使用
@@ -39,7 +39,7 @@ Alice 是一个纯多 bot runtime。
 - `alice_home`
   bot runtime 根目录
 - `workspace_dir`
-  bot 工作区，包含 `SOUL.md`
+  bot 工作区
 - `prompt_dir`
   bot 级 prompt 覆盖目录
 - `codex_home`
@@ -208,7 +208,7 @@ group_scenes:
 ## 7. `SOUL.md`
 
 每个 bot 的人格和机器可读回复元数据都可以写在自己配置的 `soul_path`。
-示例配置把它放在 `workspace/SOUL.md`；如果完全省略 `soul_path`，Alice 默认会使用 `<alice_home>/run/SOUL.md`。
+默认路径为 `<alice_home>/SOUL.md`；相对 `soul_path` 会相对于 `<alice_home>` 解析。
 
 当前 frontmatter 键：
 

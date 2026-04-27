@@ -68,7 +68,7 @@ ${ALICE_HOME}/bots/<bot_id>/
 Important per-bot paths:
 
 - `workspace/`
-  Bot workspace and `SOUL.md`
+  Bot workspace
 - `prompts/`
   Optional prompt overrides for that bot
 - `run/connector/automation.db`

@@ -19,7 +19,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 ## Features
 
 - Multi-bot runtime from a single `config.yaml`
-- Per-bot isolated `workspace`, `SOUL.md`, and prompts, with shared `CODEX_HOME` by default
+- Per-bot isolated `workspace`, `SOUL.md` (in `alice_home`), and prompts, with shared `CODEX_HOME` by default
 - Scene-aware routing for casual chat and explicit work threads
 - Runtime HTTP API for bundled skills and automation
 - Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
@@ -110,7 +110,7 @@ Connector startup mode is now explicit: use `--feishu-websocket` for the real Fe
 ## `SOUL.md`
 
 Each bot can define persona and machine-readable metadata in its configured `soul_path`.
-The example config keeps this at `workspace/SOUL.md`; if `soul_path` is omitted entirely, Alice defaults to `<alice_home>/run/SOUL.md`.
+The default is `<alice_home>/SOUL.md`; a relative `soul_path` is resolved relative to `<alice_home>`.
 
 Current frontmatter keys accepted by Alice:
 

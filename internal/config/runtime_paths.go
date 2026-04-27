@@ -148,7 +148,7 @@ func RunDirForAliceHome(aliceHome string) string {
 }
 
 func SoulPathForAliceHome(aliceHome string) string {
-	return filepath.Join(RunDirForAliceHome(aliceHome), "SOUL.md")
+	return filepath.Join(ResolveAliceHomeDir(aliceHome), "SOUL.md")
 }
 
 func LogDirForAliceHome(aliceHome string) string {

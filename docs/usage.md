@@ -7,7 +7,7 @@ This guide is operator-facing. It explains how to run Alice, how `chat` and `wor
 Alice is a Feishu connector with a pure multi-bot runtime model.
 
 - One `alice` process can host multiple bots from one `config.yaml`.
-- Each bot gets its own `alice_home`, workspace, prompt overrides, runtime state, and `SOUL.md`.
+- Each bot gets its own `alice_home`, workspace, prompt overrides, runtime state, and `SOUL.md` (in `alice_home`).
 - Bots share `CODEX_HOME` by default unless a bot overrides `codex_home`.
 - Each accepted message is routed into a scene and then into a selected LLM profile.
 - Alice can also expose a local runtime API used by bundled skills and automation tasks.
@@ -39,7 +39,7 @@ For each bot, Alice resolves these important paths:
 - `alice_home`
   Bot runtime root
 - `workspace_dir`
-  Bot workspace, including `SOUL.md`
+  Bot workspace.
 - `prompt_dir`
   Bot-specific prompt override root
 - `codex_home`
@@ -205,7 +205,7 @@ Different scenes may use different providers and different CLI commands.
 ## 7. `SOUL.md`
 
 Each bot can define persona and machine-readable reply metadata in its configured `soul_path`.
-The example config keeps this at `workspace/SOUL.md`; if `soul_path` is omitted entirely, Alice defaults to `<alice_home>/run/SOUL.md`.
+The default is `<alice_home>/SOUL.md`; a relative `soul_path` is resolved relative to `<alice_home>`.
 
 Current frontmatter keys:
 

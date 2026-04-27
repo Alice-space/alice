@@ -17,7 +17,7 @@ func (p *Processor) processSendMessage(ctx context.Context, job Job) JobProcessS
 		ctx,
 		currentThreadID,
 		promptText,
-		jobLLMRunOptions(job),
+		p.jobLLMRunOptions(job),
 		p.buildLLMRunEnv(job),
 		nil,
 	)
@@ -104,7 +104,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		ctx,
 		currentThreadID,
 		promptText,
-		jobLLMRunOptions(job),
+		p.jobLLMRunOptions(job),
 		p.buildLLMRunEnv(job),
 		sendAgentMessage,
 	)
@@ -188,7 +188,7 @@ func effectiveJobResponseMode(job Job) string {
 	}
 }
 
-func jobLLMRunOptions(job Job) llmRunOptions {
+func (p *Processor) jobLLMRunOptions(job Job) llmRunOptions {
 	return llmRunOptions{
 		EventID:         job.EventID,
 		Scene:           job.Scene,
@@ -199,6 +199,7 @@ func jobLLMRunOptions(job Job) llmRunOptions {
 		Personality:     job.LLMPersonality,
 		NoReplyToken:    job.NoReplyToken,
 		PromptPrefix:    job.LLMPromptPrefix,
+		WorkDir:         p.getSessionWorkDir(sessionKeyForJob(job)),
 	}
 }
 

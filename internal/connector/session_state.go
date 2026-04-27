@@ -15,6 +15,7 @@ type sessionState struct {
 	ThreadID      string            `json:"thread_id"`
 	Aliases       []string          `json:"aliases,omitempty"`
 	WorkThreadID  string            `json:"work_thread_id,omitempty"`
+	WorkDir       string            `json:"work_dir,omitempty"`
 	ScopeKey      string            `json:"scope_key,omitempty"`
 	Usage         sessionUsageStats `json:"usage,omitempty"`
 	LastMessageAt time.Time         `json:"last_message_at"`
@@ -257,4 +258,45 @@ func (p *Processor) resetChatSceneSession(receiveIDType, receiveID string) (stri
 	p.sessionAliases[baseKey] = newKey
 	p.markStateChangedLocked()
 	return currentKey, newKey
+}
+
+func (p *Processor) getSessionWorkDir(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
+	if canonicalKey == "" {
+		canonicalKey = sessionKey
+	}
+	state, ok := p.sessions[canonicalKey]
+	if !ok {
+		return ""
+	}
+	return strings.TrimSpace(state.WorkDir)
+}
+
+func (p *Processor) setSessionWorkDir(sessionKey string, workDir string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	workDir = strings.TrimSpace(workDir)
+	if sessionKey == "" || workDir == "" {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
+	if canonicalKey == "" {
+		canonicalKey = sessionKey
+	}
+	state, ok := p.sessions[canonicalKey]
+	if !ok {
+		state = sessionState{}
+	}
+	state.WorkDir = workDir
+	p.sessions[canonicalKey] = state
+	p.markStateChangedLocked()
 }

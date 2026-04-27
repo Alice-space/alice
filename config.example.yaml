@@ -8,7 +8,7 @@
 # - workspace:    <alice_home>/workspace
 # - prompts:      <alice_home>/prompts
 # - codex_home:   $CODEX_HOME or ~/.codex
-# - soul_path:    <run>/SOUL.md
+# - soul_path:    <alice_home>/SOUL.md
 # Missing SOUL.md files are created from the embedded SOUL.md.example on startup.
 #
 # Process-level base home is controlled by:
@@ -21,21 +21,29 @@
 
 bots:
   # ──────────────────────────────────────────────────────────────────────────
-  # Example 1: single-provider chat bot (Codex)
+  # Example: unified bot with chat + work modes powered by OpenCode/DeepSeek
+  # A single bot handles both casual chat (deepseek-v4-flash) and
+  # deep engineering work (deepseek-v4-pro).
   # ──────────────────────────────────────────────────────────────────────────
-  chat_bot:
-    name: "Alice Chat"
-    feishu_app_id: "cli_chat_xxxxx"
-    feishu_app_secret: "chat_secret"
+  my_bot:
+    name: "Alice"
+    feishu_app_id: "cli_xxxxxxxx"
+    feishu_app_secret: "your_app_secret"
 
     # Optional runtime directories.
-    # Empty values use defaults under <ALICE_HOME>/bots/chat_bot.
+    # Empty values use defaults under <ALICE_HOME>/bots/my_bot.
     # Empty codex_home inherits shared CODEX_HOME or ~/.codex.
     alice_home: ""
     workspace_dir: ""
     prompt_dir: ""
     codex_home: ""
-    # If the file does not exist yet, Alice writes the embedded SOUL.md.example here on startup.
+    # SOUL.md is stored in <alice_home>/SOUL.md by default (not workspace).
+    # If the file does not exist, Alice writes the embedded template on startup.
+    #
+    # 读取时机：
+    #   chat 场景 — SOUL.md 正文注入到 prompt，YAML frontmatter 由 Alice 解析（不发给模型）
+    #               suppressed_token 控制静默行为，hidden_tags 控制回复后处理
+    #   work 场景 — 跳过 SOUL.md 注入（work 场景不需要人格伪装）
     soul_path: "SOUL.md"
 
     # Trigger mode for group chats:
@@ -45,94 +53,64 @@ bots:
     trigger_prefix: ""
 
     # ── LLM Profiles ──────────────────────────────────────────────────────
-    # All model-related config lives here. Each profile is self-contained.
-    # Supported providers: codex | claude | gemini | kimi
+    # Supported providers: opencode | codex | claude | gemini | kimi
     #
     # Profile fields:
     #   provider:          LLM backend (required)
-    #   command:           CLI binary name (default: provider name, e.g. "codex")
+    #   command:           CLI binary name (default: provider name)
     #   timeout_secs:      per-run timeout in seconds (default: 172800 = 48h)
     #   model:             model name passed to the CLI
-    #   reasoning_effort:  thinking intensity — Codex-only; ignored for other providers
-    #                      values: low | medium | high | xhigh
-    #   personality:       Codex personality preset (e.g. "friendly", "pragmatic")
-    #   prompt_prefix:     prepended to every prompt sent to this backend
     #   permissions:       sandbox + approval policy for this profile
-    #                      provider handling today:
-    #                      - codex: permissions are passed through to codex CLI
-    #                      - claude: Alice always launches Claude with
-    #                                `--permission-mode bypassPermissions`;
-    #                                keep `danger-full-access` + `never` here
-    #                                to reflect real behavior
-    #                      - kimi: Alice runs `kimi --print`; current Kimi CLI
-    #                              says print mode implicitly enables `--yolo`,
-    #                              so approval is effectively `never`. Keep
-    #                              `danger-full-access` + `never` here to
-    #                              reflect the current default behavior
     #     sandbox:         read-only | workspace-write | danger-full-access
     #     ask_for_approval: untrusted | on-request | never
-    #     add_dirs:        extra directories to expose to the sandbox
     #
-    # Codex models (passed as -m to codex CLI):
-    #   o3               — most capable reasoning model
-    #   o4-mini          — fast, lightweight
-    #   gpt-5.4          — latest GPT-5 series
-    #   gpt-5.4-mini     — fast GPT-5 series
-    #   gpt-4.1          — GPT-4.1 (stable)
-    #   gpt-4.1-mini     — lightweight GPT-4.1
-    #   (empty)          — inherits Codex CLI default from active CODEX_HOME config
-    #
-    # Claude models (passed as --model to claude CLI):
-    #   claude-opus-4-6          — most capable; best for review / planning
-    #   claude-sonnet-4-6        — recommended balance of speed and quality
-    #   claude-sonnet-4-20250514 — Sonnet 4 (older date-based alias)
-    #   claude-haiku-4-5-20251001 — fast and lightweight
-    #   note: Claude currently ignores the YAML permission values and is always
-    #         launched with bypassPermissions by Alice
-    #
-    # Gemini models (passed as --model to gemini CLI):
-    #   gemini-2.5-pro   — most capable
-    #   gemini-2.5-flash — fast, cost-efficient
-    #   gemini-2.0-flash — previous generation
-    #
-    # Kimi models (passed as --model to kimi CLI):
-    #   (refer to Kimi CLI documentation for available model names)
-    #   note: Alice uses `kimi --print`; current Kimi CLI says print mode
-    #         implicitly adds `--yolo`, so Kimi runs without approval prompts
-    #
-    # OpenCode provider/model strings (passed as --model to opencode CLI):
-    #   deepseek/deepseek-v4-pro     — DeepSeek V4 Pro via opencode
-    #   deepseek/deepseek-r1         — DeepSeek R1 reasoning model
-    #   anthropic/claude-sonnet-4-6  — Claude Sonnet 4 via opencode
-    #   openai/gpt-5.2               — GPT-5.2 via opencode
+    # OpenCode model strings (passed as --model to opencode CLI):
+    #   deepseek/deepseek-v4-pro      — DeepSeek V4 Pro (best for engineering work)
+    #   deepseek/deepseek-v4-flash    — DeepSeek V4 Flash (fast, cost-efficient)
+    #   deepseek/deepseek-r1          — DeepSeek R1 reasoning model
+    #   anthropic/claude-sonnet-4-6   — Claude Sonnet 4 via opencode
+    #   openai/gpt-5.2                — GPT-5.2 via opencode
     #   note: authenticate each provider via `opencode auth login`
     llm_profiles:
+      # Lightweight profile for casual group chat.
       chat:
-        provider: "codex"
-        model: "gpt-5.4-mini"
-        reasoning_effort: "low"
-        personality: "friendly"
+        provider: "opencode"
+        model: "deepseek/deepseek-v4-flash"
+
+      # Capable profile for deep engineering work.
+      work:
+        provider: "opencode"
+        model: "deepseek/deepseek-v4-pro"
         permissions:
-          sandbox: "workspace-write"
+          sandbox: "danger-full-access"
           ask_for_approval: "never"
 
-      # OpenCode provider example — uses opencode CLI to invoke LLM models.
-      # The command field defaults to "opencode"; set a full path if needed.
-      # opencode_deepseek:
-      #   provider: "opencode"
-      #   command: "opencode"
-      #   model: "deepseek/deepseek-v4-pro"
+      # Example: Codex profile (uncomment to use Codex instead).
+      # chat_codex:
+      #   provider: "codex"
+      #   model: "gpt-5.4-mini"
+      #   reasoning_effort: "low"
+      #   personality: "friendly"
+      #   permissions:
+      #     sandbox: "workspace-write"
+      #     ask_for_approval: "never"
+
+      # Example: Claude profile.
+      # work_claude:
+      #   provider: "claude"
+      #   model: "claude-sonnet-4-6"
+      #   permissions:
+      #     sandbox: "danger-full-access"
+      #     ask_for_approval: "never"
 
     # Optional: environment variables passed to all LLM subprocesses.
     env:
-      # If Alice is launched outside an nvm-initialized shell, ensure PATH points
-      # to a Node >= 20 installation so CLIs like `gemini` resolve correctly.
+      # If Alice needs to find the opencode CLI, ensure PATH is set.
       PATH: "/home/you/.nvm/versions/node/v24.14.0/bin:/usr/local/bin:/usr/bin:/bin"
       HTTPS_PROXY: "http://127.0.0.1:8080"
       ALL_PROXY: "http://127.0.0.1:8080"
-      OPENAI_API_KEY: ""
 
-    failure_message: "Codex 暂时不可用，请稍后重试。"
+    failure_message: "暂时不可用，请稍后重试。"
     thinking_message: "正在思考中..."
 
     # Immediate feedback after receiving a message:
@@ -142,98 +120,35 @@ bots:
     immediate_feedback_reaction: "OK"
 
     # Scene router for group/topic-group chats.
+    # Both chat and work modes are enabled on the same bot.
     group_scenes:
+      # Default chat mode: every group message enters chat scene.
       chat:
         enabled: true
         session_scope: "per_chat"
         llm_profile: "chat"
         no_reply_token: "[[NO_REPLY]]"
         create_feishu_thread: false
-      work:
-        enabled: false
-
-    # Runtime permissions.
-    permissions:
-      runtime_message: true
-      runtime_automation: false
-      allowed_skills: ["alice-message"]
-
-    queue_capacity: 256
-    worker_concurrency: 3
-    # Outer automation/task wrapper timeout for scheduled automation and workflow runs.
-    automation_task_timeout_secs: 6000
-    # Hidden runtime deadlines are also configurable.
-    auth_status_timeout_secs: 15
-    runtime_api_shutdown_timeout_secs: 5
-    local_runtime_store_open_timeout_secs: 10
-    codex_idle_timeout_secs: 900
-    codex_high_idle_timeout_secs: 1800
-    codex_xhigh_idle_timeout_secs: 3600
-
-  # ──────────────────────────────────────────────────────────────────────────
-  # Example 2: multi-provider work bot (Codex for chat, Claude for work)
-  # ──────────────────────────────────────────────────────────────────────────
-  work_bot:
-    name: "Alice Work"
-    feishu_app_id: "cli_work_xxxxx"
-    feishu_app_secret: "work_secret"
-    soul_path: "SOUL.md"
-
-    llm_profiles:
-      # Light Codex profile for casual group chat.
-      chat:
-        provider: "codex"
-        model: "gpt-5.4-mini"
-        reasoning_effort: "low"
-        personality: "friendly"
-        permissions:
-          sandbox: "workspace-write"
-          ask_for_approval: "never"
-
-      # Powerful Claude profile for deep engineering work sessions.
-      work:
-        provider: "claude"
-        model: "claude-sonnet-4-6"
-        # reasoning_effort is Codex-only and is ignored for Claude.
-        prompt_prefix: ""
-        permissions:
-          sandbox: "danger-full-access"
-          ask_for_approval: "never"
-
-      # Example: high-reasoning Codex profile for complex tasks.
-      # heavy:
-      #   provider: "codex"
-      #   model: "o3"
-      #   reasoning_effort: "high"
-      #   permissions:
-      #     sandbox: "danger-full-access"
-      #     ask_for_approval: "never"
-
-    env:
-      HTTPS_PROXY: "http://127.0.0.1:8080"
-      ALL_PROXY: "http://127.0.0.1:8080"
-      OPENAI_API_KEY: ""
-      ANTHROPIC_API_KEY: ""
-
-    group_scenes:
-      chat:
-        enabled: true
-        session_scope: "per_chat"
-        llm_profile: "chat"
+      # Work mode: triggered by @bot + #work tag.
+      # Messages in the same thread continue in work context.
       work:
         enabled: true
         trigger_tag: "#work"
         session_scope: "per_thread"
         llm_profile: "work"
+        create_feishu_thread: true
 
+    # Runtime permissions.
     permissions:
       runtime_message: true
       runtime_automation: true
-      allowed_skills: ["alice-message", "alice-scheduler", "alice-code-army"]
+      allowed_skills: ["alice-message", "alice-scheduler"]
 
     queue_capacity: 256
     worker_concurrency: 3
+    # Outer automation/task wrapper timeout for scheduled automation.
     automation_task_timeout_secs: 6000
+    # Hidden runtime deadlines are also configurable.
     auth_status_timeout_secs: 15
     runtime_api_shutdown_timeout_secs: 5
     local_runtime_store_open_timeout_secs: 10

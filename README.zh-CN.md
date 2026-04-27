@@ -18,7 +18,7 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 ## 功能特性
 
 - 单个 `config.yaml` 托管多个 bot
-- 每个 bot 拥有隔离的 `workspace`、`SOUL.md` 和 prompt，默认共享 `CODEX_HOME`
+- 每个 bot 拥有隔离的 `workspace`、`SOUL.md`（位于 `alice_home` 下）和 prompt，默认共享 `CODEX_HOME`
 - 支持群聊里的 `chat` / `work` 两种场景路由
 - 提供 runtime HTTP API 给 skill 和自动化任务
 - 自带 skill 会释放到 `${ALICE_HOME:-~/.alice}/skills`，再链接到 `~/.agents/skills`，并通过 `~/.claude/skills` 暴露给 Claude
@@ -109,7 +109,7 @@ Alice 现在要求显式选择启动模式：真实飞书连接使用 `--feishu-
 ## `SOUL.md`
 
 每个 bot 都可以在自己配置的 `soul_path` 中定义人格和机器可读元数据。
-示例配置把它放在 `workspace/SOUL.md`；如果完全省略 `soul_path`，Alice 默认会使用 `<alice_home>/run/SOUL.md`。
+默认路径为 `<alice_home>/SOUL.md`；相对 `soul_path` 会相对于 `<alice_home>` 解析。
 
 当前 Alice 接受的 frontmatter 键：
 

@@ -3,6 +3,8 @@ package connector
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -16,6 +18,9 @@ const helpCommandName = "/help"
 const statusCommandName = "/status"
 const clearCommandName = "/clear"
 const stopCommandName = "/stop"
+const cdCommandName = "/cd"
+const lsCommandName = "/ls"
+const pwdCommandName = "/pwd"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
 
@@ -32,11 +37,21 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 	if isStopCommand(job.Text) {
 		return true, p.processStopCommand(ctx, job)
 	}
+	if isCdCommand(job.Text) {
+		return true, p.processCdCommand(ctx, job)
+	}
+	if isLsCommand(job.Text) {
+		return true, p.processLsCommand(ctx, job)
+	}
+	if isPwdCommand(job.Text) {
+		return true, p.processPwdCommand(ctx, job)
+	}
 	return false, JobProcessCompleted
 }
 
 func isBuiltinCommandText(text string) bool {
-	return isHelpCommand(text) || isStatusCommand(text) || isClearCommand(text) || isStopCommand(text)
+	return isHelpCommand(text) || isStatusCommand(text) || isClearCommand(text) ||
+		isStopCommand(text) || isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
 }
 
 func isHelpCommand(text string) bool {
@@ -69,6 +84,30 @@ func isStopCommand(text string) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(fields[0]), stopCommandName)
+}
+
+func isCdCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), cdCommandName)
+}
+
+func isLsCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), lsCommandName)
+}
+
+func isPwdCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), pwdCommandName)
 }
 
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
@@ -127,6 +166,141 @@ func (p *Processor) processStopCommand(ctx context.Context, job Job) JobProcessS
 	return JobProcessCompleted
 }
 
+func (p *Processor) processCdCommand(ctx context.Context, job Job) JobProcessState {
+	fields := strings.Fields(job.Text)
+	if len(fields) < 2 {
+		reply := "用法：`/cd <path>` 切换工作目录。当前工作目录：\n" + p.getWorkDirText(job)
+		replyJob := job
+		replyJob.Scene = jobSceneChat
+		replyJob.CreateFeishuThread = false
+		if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+			logging.Errorf("send builtin cd reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
+
+	targetPath := strings.TrimSpace(strings.Join(fields[1:], " "))
+	workDir := p.resolveWorkDir(job)
+
+	resolvedPath := targetPath
+	if !filepath.IsAbs(targetPath) {
+		resolvedPath = filepath.Join(workDir, targetPath)
+	}
+	resolvedPath = filepath.Clean(resolvedPath)
+
+	info, err := os.Stat(resolvedPath)
+	if err != nil {
+		reply := fmt.Sprintf("路径不存在或无法访问：`%s`", sanitizeInlineCode(resolvedPath))
+		replyJob := job
+		replyJob.Scene = jobSceneChat
+		replyJob.CreateFeishuThread = false
+		if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+			logging.Errorf("send builtin cd reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
+	if !info.IsDir() {
+		reply := fmt.Sprintf("路径不是目录：`%s`", sanitizeInlineCode(resolvedPath))
+		replyJob := job
+		replyJob.Scene = jobSceneChat
+		replyJob.CreateFeishuThread = false
+		if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+			logging.Errorf("send builtin cd reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
+
+	sessionKey := sessionKeyForJob(job)
+	p.setSessionWorkDir(sessionKey, resolvedPath)
+
+	reply := fmt.Sprintf("已切换到：`%s`", sanitizeInlineCode(resolvedPath))
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send builtin cd reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
+func (p *Processor) processLsCommand(ctx context.Context, job Job) JobProcessState {
+	fields := strings.Fields(job.Text)
+	workDir := p.resolveWorkDir(job)
+
+	targetDir := workDir
+	if len(fields) >= 2 {
+		targetPath := strings.TrimSpace(strings.Join(fields[1:], " "))
+		if filepath.IsAbs(targetPath) {
+			targetDir = filepath.Clean(targetPath)
+		} else {
+			targetDir = filepath.Join(workDir, targetPath)
+		}
+	}
+	targetDir = filepath.Clean(targetDir)
+
+	entries, err := os.ReadDir(targetDir)
+	if err != nil {
+		reply := fmt.Sprintf("读取目录失败：`%s`\n%v", sanitizeInlineCode(targetDir), err)
+		replyJob := job
+		replyJob.Scene = jobSceneChat
+		replyJob.CreateFeishuThread = false
+		if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+			logging.Errorf("send builtin ls reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
+
+	lines := []string{fmt.Sprintf("### `%s`", sanitizeInlineCode(targetDir)), ""}
+	if len(entries) == 0 {
+		lines = append(lines, "- (empty)")
+	} else {
+		for _, entry := range entries {
+			prefix := ""
+			if entry.IsDir() {
+				prefix = "[DIR]  "
+			}
+			lines = append(lines, fmt.Sprintf("- %s%s", prefix, sanitizeInlineCode(entry.Name())))
+		}
+	}
+	reply := strings.Join(lines, "\n")
+
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send builtin ls reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
+func (p *Processor) processPwdCommand(ctx context.Context, job Job) JobProcessState {
+	reply := p.getWorkDirText(job)
+	replyJob := job
+	replyJob.Scene = jobSceneChat
+	replyJob.CreateFeishuThread = false
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send builtin pwd reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
+func (p *Processor) getWorkDirText(job Job) string {
+	workDir := p.resolveWorkDir(job)
+	return fmt.Sprintf("当前工作目录：`%s`", sanitizeInlineCode(workDir))
+}
+
+func (p *Processor) resolveWorkDir(job Job) string {
+	sessionKey := sessionKeyForJob(job)
+	if dir := strings.TrimSpace(p.getSessionWorkDir(sessionKey)); dir != "" {
+		return dir
+	}
+	snapshot := p.runtimeSnapshot()
+	if snapshot.workspaceDir != "" {
+		return snapshot.workspaceDir
+	}
+	return "."
+}
+
 func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 	lines := []string{
 		"## Alice 内建命令",
@@ -138,7 +312,13 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		"- `/clear`",
 		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
 		"- `/stop`",
-		"  停止当前 session 正在运行的回复，但保留现有 Codex session；后续新指令会在当前 session 上继续。",
+		"  停止当前 session 正在运行的回复，但保留现有 session；后续新指令会在当前 session 上继续。",
+		"- `/cd <path>`",
+		"  切换 agent 工作目录，仅在 work 模式下有效；后续 agent 运行将使用该目录。",
+		"- `/ls [path]`",
+		"  列出工作目录内容。不指定路径时显示当前工作目录，可指定绝对或相对路径。",
+		"- `/pwd`",
+		"  显示当前 agent 工作目录。",
 	}
 
 	if !helpCfg.chatEnabled && !helpCfg.workEnabled {

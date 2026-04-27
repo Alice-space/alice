@@ -235,3 +235,24 @@ func parseLogLevel(level string) larkcore.LogLevel {
 		return larkcore.LogLevelInfo
 	}
 }
+
+func (a *App) findActiveWorkSessionKey(receiveIDType, receiveID string) string {
+	receiveIDType = strings.TrimSpace(receiveIDType)
+	receiveID = strings.TrimSpace(receiveID)
+	if receiveIDType == "" || receiveID == "" {
+		return ""
+	}
+	baseKey := buildSessionKey(receiveIDType, receiveID)
+	if baseKey == "" {
+		return ""
+	}
+
+	a.state.mu.Lock()
+	defer a.state.mu.Unlock()
+	for sessionKey := range a.state.active {
+		if strings.HasPrefix(strings.TrimSpace(sessionKey), baseKey) && isWorkSceneSessionKey(sessionKey) {
+			return sessionKey
+		}
+	}
+	return ""
+}

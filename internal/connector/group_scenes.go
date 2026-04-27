@@ -32,6 +32,10 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 				}
 				return true
 			}
+			if activeKey := a.findActiveWorkSessionKey(job.ReceiveIDType, job.ReceiveID); activeKey != "" {
+				applyWorkSceneToJob(job, cfg, activeKey)
+				return true
+			}
 		}
 		if message != nil {
 			a.resolveJobSessionKey(job, message)

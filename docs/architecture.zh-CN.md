@@ -67,7 +67,7 @@ ${ALICE_HOME}/bots/<bot_id>/
 重要路径：
 
 - `workspace/`
-  bot 工作区和 `SOUL.md`
+  bot 工作区
 - `prompts/`
   bot 级 prompt 覆盖目录
 - `run/connector/automation.db`

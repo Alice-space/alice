@@ -34,6 +34,7 @@ type Processor struct {
 	runtimeAPIBin   string
 	helpConfig      builtinHelpConfig
 	statusService   *builtinStatusService
+	workspaceDir    string
 	prompts         *prompting.Loader
 }
 
@@ -174,6 +175,15 @@ func (p *Processor) SetReplyMessages(failureMessage, thinkingMessage string) {
 	p.thinkingMessage = strings.TrimSpace(thinkingMessage)
 }
 
+func (p *Processor) SetWorkspaceDir(workspaceDir string) {
+	if p == nil {
+		return
+	}
+	p.runtimeMu.Lock()
+	defer p.runtimeMu.Unlock()
+	p.workspaceDir = strings.TrimSpace(workspaceDir)
+}
+
 func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 	if p == nil {
 		return processorRuntimeSnapshot{}
@@ -191,6 +201,7 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 		runtimeAPIBin:   p.runtimeAPIBin,
 		helpConfig:      p.helpConfig,
 		statusService:   p.statusService,
+		workspaceDir:    p.workspaceDir,
 	}
 }
 
@@ -205,6 +216,7 @@ type processorRuntimeSnapshot struct {
 	runtimeAPIBin   string
 	helpConfig      builtinHelpConfig
 	statusService   *builtinStatusService
+	workspaceDir    string
 }
 
 func defaultBuiltinHelpConfig() builtinHelpConfig {
