@@ -98,6 +98,11 @@ bots:
     #     Thinking intensity. Codex-only; ignored by other providers.
     #     Values: low | medium | high | xhigh
     #
+    #   variant:
+    #     Model variant / reasoning level (e.g. "max", "high", "minimal").
+    #     OpenCode: passed as --variant when using a DeepSeek model.
+    #     Other providers: typically unused.
+    #
     #   personality:
     #     Personality preset for the agent (provider-specific).
     #     Codex: preset name from codex CLI config.
@@ -137,6 +142,7 @@ bots:
       work:
         provider: "opencode"
         model: "deepseek/deepseek-v4-pro"
+        variant: "max"
         permissions:
           sandbox: "danger-full-access"
           ask_for_approval: "never"

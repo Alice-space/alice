@@ -329,7 +329,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		}
 		threadID := task.Action.ResumeThreadID
 		provider := strings.ToLower(strings.TrimSpace(task.Action.Provider))
-		if (provider == "codex" || provider == "kimi") && task.Action.StateKey != "" {
+		if (provider == "codex" || provider == "kimi" || provider == "opencode") && task.Action.StateKey != "" {
 			threadID = task.Action.StateKey
 		}
 		logging.Infof("automation task llm call id=%s provider=%s model=%s thread=%s", task.ID, task.Action.Provider, task.Action.Model, threadID)
@@ -342,7 +342,9 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			Model:           task.Action.Model,
 			Profile:         task.Action.Profile,
 			ReasoningEffort: task.Action.ReasoningEffort,
+			Variant:         task.Action.Variant,
 			Personality:     task.Action.Personality,
+			WorkspaceDir:    task.Action.WorkspaceDir,
 			Env:             e.buildTaskRunEnv(task),
 		})
 		if err != nil {

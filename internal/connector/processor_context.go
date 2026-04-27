@@ -40,6 +40,7 @@ type llmRunOptions struct {
 	Model           string
 	Profile         string
 	ReasoningEffort string
+	Variant         string
 	Personality     string
 	NoReplyToken    string
 	PromptPrefix    string
@@ -136,6 +137,7 @@ func (p *Processor) runLLM(
 		Model:           strings.TrimSpace(options.Model),
 		Profile:         strings.TrimSpace(options.Profile),
 		ReasoningEffort: strings.TrimSpace(options.ReasoningEffort),
+		Variant:         strings.TrimSpace(options.Variant),
 		Personality:     strings.TrimSpace(options.Personality),
 		WorkspaceDir:    strings.TrimSpace(options.WorkDir),
 		Env:             env,

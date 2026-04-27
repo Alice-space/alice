@@ -63,6 +63,7 @@ func normalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileC
 		profile.Model = strings.TrimSpace(profile.Model)
 		profile.Profile = strings.TrimSpace(profile.Profile)
 		profile.ReasoningEffort = strings.ToLower(strings.TrimSpace(profile.ReasoningEffort))
+		profile.Variant = strings.ToLower(strings.TrimSpace(profile.Variant))
 		profile.Personality = strings.ToLower(strings.TrimSpace(profile.Personality))
 		profile.PromptPrefix = strings.TrimSpace(profile.PromptPrefix)
 		if profile.Permissions != nil {

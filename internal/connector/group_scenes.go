@@ -196,6 +196,7 @@ func applyLLMProfileToJob(job *Job, defaultProvider, profileName string, profile
 	job.LLMModel = strings.TrimSpace(profile.Model)
 	job.LLMProfile = strings.TrimSpace(profileName)
 	job.LLMReasoningEffort = strings.TrimSpace(profile.ReasoningEffort)
+	job.LLMVariant = strings.TrimSpace(profile.Variant)
 	job.LLMPersonality = strings.TrimSpace(profile.Personality)
 	job.LLMPromptPrefix = strings.TrimSpace(profile.PromptPrefix)
 }

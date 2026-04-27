@@ -120,6 +120,9 @@ func (a *App) enqueueJob(job *Job) (queued bool, cancelActive context.CancelFunc
 	job.SessionVersion = nextVersion
 	active, interruptActive := a.state.active[job.SessionKey]
 	interruptActive = interruptActive && active.cancel != nil && active.version < nextVersion
+	if interruptActive && isBuiltinCommandText(job.Text) && !isStopCommand(job.Text) {
+		interruptActive = false
+	}
 	supersedeQueued := false
 	for _, pendingJob := range a.state.pending {
 		if strings.TrimSpace(pendingJob.SessionKey) != job.SessionKey {

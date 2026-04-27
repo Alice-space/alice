@@ -196,6 +196,7 @@ func (p *Processor) jobLLMRunOptions(job Job) llmRunOptions {
 		Model:           job.LLMModel,
 		Profile:         job.LLMProfile,
 		ReasoningEffort: job.LLMReasoningEffort,
+		Variant:         job.LLMVariant,
 		Personality:     job.LLMPersonality,
 		NoReplyToken:    job.NoReplyToken,
 		PromptPrefix:    job.LLMPromptPrefix,

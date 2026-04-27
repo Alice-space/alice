@@ -318,6 +318,7 @@ func normalizeRuntimeJob(job Job) (Job, bool) {
 	job.LLMModel = strings.TrimSpace(job.LLMModel)
 	job.LLMProfile = strings.TrimSpace(job.LLMProfile)
 	job.LLMReasoningEffort = strings.ToLower(strings.TrimSpace(job.LLMReasoningEffort))
+	job.LLMVariant = strings.ToLower(strings.TrimSpace(job.LLMVariant))
 	job.LLMPersonality = strings.ToLower(strings.TrimSpace(job.LLMPersonality))
 	job.NoReplyToken = strings.TrimSpace(job.NoReplyToken)
 	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)

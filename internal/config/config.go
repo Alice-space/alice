@@ -41,6 +41,7 @@ type LLMProfileConfig struct {
 	Model           string                 `mapstructure:"model"`
 	Profile         string                 `mapstructure:"profile"`
 	ReasoningEffort string                 `mapstructure:"reasoning_effort"`
+	Variant         string                 `mapstructure:"variant"`
 	Personality     string                 `mapstructure:"personality"`
 	PromptPrefix    string                 `mapstructure:"prompt_prefix"`
 	Permissions     *CodexExecPolicyConfig `mapstructure:"permissions"`

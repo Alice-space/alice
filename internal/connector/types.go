@@ -101,6 +101,7 @@ type Job struct {
 	LLMModel             string
 	LLMProfile           string
 	LLMReasoningEffort   string
+	LLMVariant           string
 	LLMPersonality       string
 	LLMPromptPrefix      string
 	NoReplyToken         string

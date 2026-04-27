@@ -46,6 +46,7 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 		timeout         time.Duration
 		model           string
 		reasoningEffort string
+		variant         string
 		execPolicy      agentbridge.ExecPolicyConfig
 	}
 	defaults := map[string]*providerDefaults{}
@@ -72,6 +73,7 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 				timeout:         profile.Timeout,
 				model:           profile.Model,
 				reasoningEffort: profile.ReasoningEffort,
+				variant:         profile.Variant,
 				execPolicy:      buildCodexExecPolicy(derefCodexExecPolicy(profile.Permissions)),
 			}
 		}
@@ -149,6 +151,8 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 		OpenCode: agentbridge.OpenCodeConfig{
 			Command:          opencodeCfg.command,
 			Timeout:          opencodeCfg.timeout,
+			Model:            opencodeCfg.model,
+			Variant:          opencodeCfg.variant,
 			Env:              defaultEnv,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderOpenCode),
