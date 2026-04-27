@@ -51,6 +51,18 @@ func (p *Processor) getThreadID(sessionKey string) string {
 	return strings.TrimSpace(state.ThreadID)
 }
 
+func (p *Processor) hasActiveSession(sessionKey string) bool {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return false
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	state, ok := p.sessions[sessionKey]
+	return ok && (state.ThreadID != "" || !state.LastMessageAt.IsZero())
+}
+
 func (p *Processor) resolveCanonicalSessionKey(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {

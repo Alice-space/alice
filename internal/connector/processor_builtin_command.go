@@ -54,6 +54,11 @@ func isBuiltinCommandText(text string) bool {
 		isStopCommand(text) || isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
 }
 
+func isContextualBuiltinCommand(text string) bool {
+	return isClearCommand(text) || isStopCommand(text) ||
+		isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
+}
+
 func isHelpCommand(text string) bool {
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) == 0 {

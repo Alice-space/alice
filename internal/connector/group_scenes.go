@@ -24,8 +24,12 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 		return true
 	}
 	if isBuiltinCommandText(job.Text) {
-		if !isGroupMessageTriggered(event, cfg.triggerMode, cfg.triggerPrefix, a.getBotOpenID(), "") {
-			return false
+		contextual := isContextualBuiltinCommand(job.Text)
+		if !contextual {
+			if message != nil {
+				a.resolveJobSessionKey(job, message)
+			}
+			return true
 		}
 		if cfg.groupScenes.Work.Enabled {
 			if sessionKey := a.resolveExistingWorkSession(job, event, message); sessionKey != "" {
@@ -35,6 +39,22 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 				}
 				return true
 			}
+			if activeKey := a.findActiveWorkSessionKey(job.ReceiveIDType, job.ReceiveID); activeKey != "" {
+				applyWorkSceneToJob(job, cfg, activeKey)
+				return true
+			}
+		}
+		if cfg.groupScenes.Chat.Enabled {
+			sessionKey := a.resolveCurrentChatSceneSessionKey(job.ReceiveIDType, job.ReceiveID)
+			if a.processor != nil && a.processor.hasActiveSession(sessionKey) {
+				applyChatSceneToJob(job, cfg, sessionKey)
+				return true
+			}
+		}
+		if !isGroupMessageTriggered(event, cfg.triggerMode, cfg.triggerPrefix, a.getBotOpenID(), "") {
+			return false
+		}
+		if cfg.groupScenes.Work.Enabled {
 			if activeKey := a.findActiveWorkSessionKey(job.ReceiveIDType, job.ReceiveID); activeKey != "" {
 				applyWorkSceneToJob(job, cfg, activeKey)
 				return true
