@@ -22,7 +22,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 - Per-bot isolated `workspace`, `SOUL.md` (in `alice_home`), and prompts, with shared `CODEX_HOME` by default
 - Scene-aware routing for casual chat and explicit work threads
 - Runtime HTTP API for bundled skills and automation
-- Long-running LLM status cards with backend-activity and file-change signals
+- Long-running LLM status cards with backend-activity and aggregated file-change signals
 - Automation watchdog alerts for overdue or stuck scheduled tasks
 - Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
 - Embedded prompts, skills, config example, and `SOUL.md` example

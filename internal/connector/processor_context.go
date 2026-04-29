@@ -81,14 +81,20 @@ func (p *Processor) runLLM(
 		if normalized == "" {
 			return
 		}
-		if strings.HasPrefix(normalized, fileChangeEventPrefix) {
+		isFileChange := strings.HasPrefix(normalized, fileChangeEventPrefix)
+		if isFileChange {
+			fileChange := strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix))
 			logging.Debugf(
 				"%s file_change event_id=%s thread_id=%s file_change=%q",
 				provider,
 				options.EventID,
 				requestThreadID,
-				clipText(strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix)), 500),
+				clipText(fileChange, 500),
 			)
+			if observer != nil {
+				observer.RecordFileChange(fileChange)
+			}
+			return
 		} else {
 			logging.Debugf(
 				"%s agent_message event_id=%s thread_id=%s agent_message=%q",

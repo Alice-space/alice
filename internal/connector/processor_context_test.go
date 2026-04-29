@@ -113,7 +113,7 @@ func TestProcessorRunLLM_LogsBackendProgress(t *testing.T) {
 	if nextThreadID != "thread_1" {
 		t.Fatalf("expected thread id fallback, got %q", nextThreadID)
 	}
-	if len(forwarded) != 2 {
+	if len(forwarded) != 1 || forwarded[0] != "step 1" {
 		t.Fatalf("expected forwarded progress messages, got %v", forwarded)
 	}
 

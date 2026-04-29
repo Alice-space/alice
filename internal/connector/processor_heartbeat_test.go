@@ -110,3 +110,42 @@ func TestProcessor_HeartbeatCardStopsBeforeDoneReaction(t *testing.T) {
 		t.Fatalf("heartbeat patched after final DONE: before=%d after=%d", patchCount, sender.patchCardCalls)
 	}
 }
+
+func TestLLMHeartbeatFileChangesMergeByPath(t *testing.T) {
+	processor := NewProcessor(codexStub{}, &senderStub{}, "", "")
+	now := time.Date(2026, 4, 29, 10, 0, 0, 0, time.UTC)
+	processor.now = func() time.Time { return now }
+	heartbeat := &llmHeartbeat{
+		processor:     processor,
+		started:       now,
+		lastVisibleAt: now,
+		lastBackendAt: now,
+	}
+
+	heartbeat.RecordFileChange("- `internal/connector/processor.go` 已更改 (+1/-0)\n- `go.mod` 已更改 (+1/-1)")
+	now = now.Add(time.Second)
+	heartbeat.RecordFileChange("- `internal/connector/processor.go` 已更改 (+23/-34)")
+
+	snapshot := heartbeat.snapshot()
+	if snapshot.fileChangeTotal != 2 {
+		t.Fatalf("expected two merged file changes, got %d (%#v)", snapshot.fileChangeTotal, snapshot.fileChangeLines)
+	}
+	content := buildLLMHeartbeatCardContent(llmHeartbeatCardState{
+		Status:          "运行中",
+		Elapsed:         snapshot.elapsed,
+		SinceVisible:    snapshot.sinceVisible,
+		SinceBackend:    snapshot.sinceBackend,
+		LastBackendKind: snapshot.lastBackendKind,
+		FileChanges:     snapshot.fileChangeLines,
+		FileChangeTotal: snapshot.fileChangeTotal,
+	})
+	if !strings.Contains(content, "最近代码编辑**：2 项") {
+		t.Fatalf("expected merged file-change count in card, got %q", content)
+	}
+	if !strings.Contains(content, "`internal/connector/processor.go` 已更改 (+23/-34)") {
+		t.Fatalf("expected latest processor.go stats in card, got %q", content)
+	}
+	if strings.Contains(content, "`internal/connector/processor.go` 已更改 (+1/-0)") {
+		t.Fatalf("expected old processor.go stats to be replaced, got %q", content)
+	}
+}

@@ -65,11 +65,10 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	lastSentAgentReplyMessageID := ""
 	sendAgentMessage := func(agentMessage string) {
 		normalized := strings.TrimSpace(agentMessage)
-		isFileChange := strings.HasPrefix(normalized, fileChangeEventPrefix)
-		if isFileChange {
-			normalized = strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix))
-		}
 		if normalized == "" {
+			return
+		}
+		if strings.HasPrefix(normalized, fileChangeEventPrefix) {
 			return
 		}
 		if shouldSuppressReply(job, normalized) {
@@ -78,29 +77,13 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		if normalized == lastSentAgentMessage {
 			return
 		}
-		if isFileChange {
-			delivered := false
-			for _, replyTarget := range fileChangeReplyTargets(job) {
-				if _, sendErr := p.replies.reply(ctx, job, replyTarget, normalized); sendErr == nil {
-					delivered = true
-					break
-				}
-			}
-			if !delivered {
-				if _, sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
-					logging.Errorf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
-					return
-				}
-			}
-		} else {
-			messageID, sendErr := p.replies.reply(ctx, job, job.SourceMessageID, normalized)
-			if sendErr != nil {
-				logging.Errorf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
-				return
-			}
-			p.rememberReplySessionMessage(job, messageID)
-			lastSentAgentReplyMessageID = messageID
+		messageID, sendErr := p.replies.reply(ctx, job, job.SourceMessageID, normalized)
+		if sendErr != nil {
+			logging.Errorf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
+			return
 		}
+		p.rememberReplySessionMessage(job, messageID)
+		lastSentAgentReplyMessageID = messageID
 		lastSentAgentMessage = normalized
 	}
 
@@ -268,29 +251,6 @@ func (p *Processor) sendImmediateFeedback(ctx context.Context, job Job) bool {
 	}
 	p.rememberReplySessionMessage(job, messageID)
 	return true
-}
-
-func fileChangeReplyTargets(job Job) []string {
-	candidates := []string{
-		job.SourceMessageID,
-		job.ReplyParentMessageID,
-		job.ThreadID,
-		job.RootID,
-	}
-	targets := make([]string, 0, len(candidates))
-	seen := make(map[string]struct{}, len(candidates))
-	for _, candidate := range candidates {
-		normalized := strings.TrimSpace(candidate)
-		if normalized == "" {
-			continue
-		}
-		if _, exists := seen[normalized]; exists {
-			continue
-		}
-		seen[normalized] = struct{}{}
-		targets = append(targets, normalized)
-	}
-	return targets
 }
 
 func (p *Processor) rememberReplySessionMessage(job Job, messageID string) {

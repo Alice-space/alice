@@ -82,6 +82,7 @@ type llmHeartbeatCardState struct {
 	SinceBackend    time.Duration
 	LastBackendKind string
 	FileChanges     []string
+	FileChangeTotal int
 }
 
 func buildLLMHeartbeatCardContent(state llmHeartbeatCardState) string {
@@ -103,13 +104,20 @@ func buildLLMHeartbeatCardContent(state llmHeartbeatCardState) string {
 	if len(state.FileChanges) == 0 {
 		lines = append(lines, "**最近代码编辑**：暂无")
 	} else {
-		lines = append(lines, "**最近代码编辑**：")
+		total := state.FileChangeTotal
+		if total < len(state.FileChanges) {
+			total = len(state.FileChanges)
+		}
+		lines = append(lines, fmt.Sprintf("**最近代码编辑**：%d 项", total))
 		for _, raw := range state.FileChanges {
 			line := strings.TrimSpace(raw)
 			if line == "" {
 				continue
 			}
 			lines = append(lines, "- "+clipText(line, 300))
+		}
+		if hidden := total - len(state.FileChanges); hidden > 0 {
+			lines = append(lines, fmt.Sprintf("另有 %d 项未展示", hidden))
 		}
 	}
 	return buildMarkdownCardContent("运行状态", strings.Join(lines, "\n"))
