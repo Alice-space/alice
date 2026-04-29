@@ -2,6 +2,8 @@ package runtimeapi
 
 import (
 	"context"
+	"net/http/httptest"
+	"path/filepath"
 	"testing"
 
 	"github.com/Alice-space/alice/internal/config"
@@ -18,6 +20,9 @@ type runtimeMessageSenderStub struct {
 	sendTextCalls         int
 	sendImageCalls        int
 	sendFileCalls         int
+	uploadImagePaths      []string
+	uploadFilePaths       []string
+	uploadFileNames       []string
 }
 
 func (s *runtimeMessageSenderStub) SendText(context.Context, string, string, string) error {
@@ -35,11 +40,14 @@ func (s *runtimeMessageSenderStub) SendFile(context.Context, string, string, str
 	return nil
 }
 
-func (s *runtimeMessageSenderStub) UploadImage(context.Context, string) (string, error) {
+func (s *runtimeMessageSenderStub) UploadImage(_ context.Context, path string) (string, error) {
+	s.uploadImagePaths = append(s.uploadImagePaths, path)
 	return "img_uploaded", nil
 }
 
-func (s *runtimeMessageSenderStub) UploadFile(context.Context, string, string) (string, error) {
+func (s *runtimeMessageSenderStub) UploadFile(_ context.Context, path string, fileName string) (string, error) {
+	s.uploadFilePaths = append(s.uploadFilePaths, path)
+	s.uploadFileNames = append(s.uploadFileNames, fileName)
 	return "file_uploaded", nil
 }
 
@@ -71,6 +79,63 @@ func (s *runtimeMessageSenderStub) ReplyFile(context.Context, string, string) (s
 func (s *runtimeMessageSenderStub) ReplyFileDirect(context.Context, string, string) (string, error) {
 	s.replyFileDirectCalls++
 	return "om_reply_file_direct", nil
+}
+
+func TestRuntimeAPI_SendImagePathDoesNotRequireResourceRoot(t *testing.T) {
+	sender := &runtimeMessageSenderStub{}
+	server := NewServer("", "test-token", sender, nil, config.Config{})
+	httpServer := httptest.NewServer(server.engine)
+	defer httpServer.Close()
+	client := NewClient(httpServer.URL, "test-token")
+	path := filepath.Join(t.TempDir(), "image.png")
+
+	result, err := client.SendImage(t.Context(), sessionctx.SessionContext{
+		ReceiveIDType: "chat_id",
+		ReceiveID:     "oc_chat",
+		ChatType:      "group",
+	}, ImageRequest{Path: path})
+	if err != nil {
+		t.Fatalf("send image failed: %v", err)
+	}
+	if result["image_key"] != "img_uploaded" {
+		t.Fatalf("unexpected response: %#v", result)
+	}
+	if len(sender.uploadImagePaths) != 1 || sender.uploadImagePaths[0] != path {
+		t.Fatalf("unexpected upload image paths: %#v", sender.uploadImagePaths)
+	}
+	if sender.sendImageCalls != 1 {
+		t.Fatalf("expected image send, got %d", sender.sendImageCalls)
+	}
+}
+
+func TestRuntimeAPI_SendFilePathDoesNotRequireResourceRoot(t *testing.T) {
+	sender := &runtimeMessageSenderStub{}
+	server := NewServer("", "test-token", sender, nil, config.Config{})
+	httpServer := httptest.NewServer(server.engine)
+	defer httpServer.Close()
+	client := NewClient(httpServer.URL, "test-token")
+	path := filepath.Join(t.TempDir(), "report.pdf")
+
+	result, err := client.SendFile(t.Context(), sessionctx.SessionContext{
+		ReceiveIDType: "chat_id",
+		ReceiveID:     "oc_chat",
+		ChatType:      "group",
+	}, FileRequest{Path: path, FileName: "report.pdf"})
+	if err != nil {
+		t.Fatalf("send file failed: %v", err)
+	}
+	if result["file_key"] != "file_uploaded" {
+		t.Fatalf("unexpected response: %#v", result)
+	}
+	if len(sender.uploadFilePaths) != 1 || sender.uploadFilePaths[0] != path {
+		t.Fatalf("unexpected upload file paths: %#v", sender.uploadFilePaths)
+	}
+	if len(sender.uploadFileNames) != 1 || sender.uploadFileNames[0] != "report.pdf" {
+		t.Fatalf("unexpected upload file names: %#v", sender.uploadFileNames)
+	}
+	if sender.sendFileCalls != 1 {
+		t.Fatalf("expected file send, got %d", sender.sendFileCalls)
+	}
 }
 
 func TestDispatchImage_ChatSceneRepliesDirectly(t *testing.T) {

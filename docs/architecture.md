@@ -267,7 +267,7 @@ Current safeguards:
 - bearer token auth
 - request-body size limit
 - in-process auth rate limiting
-- local-path validation against the session resource root before upload
+- local uploads still require readable, non-empty regular files and remain subject to Feishu size limits
 
 Runtime-facing shell entrypoints:
 

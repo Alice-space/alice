@@ -164,7 +164,6 @@ func (c *Client) request(ctx context.Context, session sessionctx.SessionContext)
 	headers := map[string]string{
 		HeaderReceiveIDType:   strings.TrimSpace(session.ReceiveIDType),
 		HeaderReceiveID:       strings.TrimSpace(session.ReceiveID),
-		HeaderResourceRoot:    strings.TrimSpace(session.ResourceRoot),
 		HeaderSourceMessageID: strings.TrimSpace(session.SourceMessageID),
 		HeaderActorUserID:     strings.TrimSpace(session.ActorUserID),
 		HeaderActorOpenID:     strings.TrimSpace(session.ActorOpenID),

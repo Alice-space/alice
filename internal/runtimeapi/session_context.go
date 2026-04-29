@@ -139,7 +139,6 @@ func sessionContextFromHeadersNoError(c *gin.Context) sessionctx.SessionContext 
 	return sessionctx.SessionContext{
 		ReceiveIDType:   strings.TrimSpace(c.GetHeader(HeaderReceiveIDType)),
 		ReceiveID:       strings.TrimSpace(c.GetHeader(HeaderReceiveID)),
-		ResourceRoot:    strings.TrimSpace(c.GetHeader(HeaderResourceRoot)),
 		SourceMessageID: strings.TrimSpace(c.GetHeader(HeaderSourceMessageID)),
 		ActorUserID:     strings.TrimSpace(c.GetHeader(HeaderActorUserID)),
 		ActorOpenID:     strings.TrimSpace(c.GetHeader(HeaderActorOpenID)),

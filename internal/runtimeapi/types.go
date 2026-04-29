@@ -14,7 +14,6 @@ const (
 
 	HeaderReceiveIDType   = "X-Alice-Receive-Id-Type"
 	HeaderReceiveID       = "X-Alice-Receive-Id"
-	HeaderResourceRoot    = "X-Alice-Resource-Root"
 	HeaderSourceMessageID = "X-Alice-Source-Message-Id"
 	HeaderActorUserID     = "X-Alice-Actor-User-Id"
 	HeaderActorOpenID     = "X-Alice-Actor-Open-Id"

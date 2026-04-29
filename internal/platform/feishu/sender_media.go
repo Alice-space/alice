@@ -8,7 +8,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	securejoin "github.com/cyphar/filepath-securejoin"
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
@@ -144,7 +143,7 @@ func (s *FeishuSender) UploadImage(ctx context.Context, localPath string) (strin
 		return "", fmt.Errorf("image file exceeds 10MB limit: %s", resolvedPath)
 	}
 
-	// #nosec G304 -- resolvedPath is validated by validateUploadPath() using securejoin.SecureJoin
+	// #nosec G304 -- localPath is explicitly provided by an authenticated runtime caller.
 	file, err := os.Open(resolvedPath)
 	if err != nil {
 		return "", err
@@ -195,7 +194,7 @@ func (s *FeishuSender) UploadFile(ctx context.Context, localPath, fileName strin
 		return "", fmt.Errorf("file exceeds 10MB limit: %s", resolvedPath)
 	}
 
-	// #nosec G304 -- resolvedPath is validated by validateUploadPath() using securejoin.SecureJoin
+	// #nosec G304 -- localPath is explicitly provided by an authenticated runtime caller.
 	file, err := os.Open(resolvedPath)
 	if err != nil {
 		return "", err
@@ -256,9 +255,6 @@ func (s *FeishuSender) resolveUploadPath(localPath string) (string, os.FileInfo,
 	if err != nil {
 		return "", nil, err
 	}
-	if err := s.validateUploadPath(resolvedPath); err != nil {
-		return "", nil, err
-	}
 
 	fileInfo, err := os.Stat(resolvedPath)
 	if err != nil {
@@ -271,33 +267,4 @@ func (s *FeishuSender) resolveUploadPath(localPath string) (string, os.FileInfo,
 		return "", nil, fmt.Errorf("file is empty: %s", resolvedPath)
 	}
 	return resolvedPath, fileInfo, nil
-}
-
-func (s *FeishuSender) validateUploadPath(resolvedPath string) error {
-	resourceRoot := strings.TrimSpace(s.resourceDir)
-	if resourceRoot == "" {
-		return nil
-	}
-	rootAbs, err := filepath.Abs(resourceRoot)
-	if err != nil {
-		return err
-	}
-	rootAbs = filepath.Clean(rootAbs)
-
-	resolvedPath = filepath.Clean(resolvedPath)
-	rel, err := filepath.Rel(rootAbs, resolvedPath)
-	if err != nil {
-		return err
-	}
-	if rel == "." {
-		return nil
-	}
-	safePath, err := securejoin.SecureJoin(rootAbs, rel)
-	if err != nil {
-		return fmt.Errorf("upload path out of allowed root: %s", rootAbs)
-	}
-	if filepath.Clean(safePath) != resolvedPath {
-		return fmt.Errorf("upload path out of allowed root: %s", rootAbs)
-	}
-	return nil
 }

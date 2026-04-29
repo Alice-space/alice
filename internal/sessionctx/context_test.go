@@ -6,7 +6,6 @@ func TestSessionContext_ToEnv(t *testing.T) {
 	ctx := SessionContext{
 		ReceiveIDType:   "chat_id",
 		ReceiveID:       "oc_chat",
-		ResourceRoot:    "/tmp/root",
 		SourceMessageID: "om_source",
 		ActorUserID:     "ou_actor",
 		ActorOpenID:     "ou_open",
@@ -19,9 +18,6 @@ func TestSessionContext_ToEnv(t *testing.T) {
 	}
 	if env[EnvReceiveID] != "oc_chat" {
 		t.Fatalf("unexpected receive id env: %#v", env)
-	}
-	if env[EnvResourceRoot] != "/tmp/root" {
-		t.Fatalf("unexpected resource root env: %#v", env)
 	}
 	if env[EnvSourceMessageID] != "om_source" {
 		t.Fatalf("unexpected source message env: %#v", env)
@@ -47,8 +43,6 @@ func TestSessionContextFromEnv(t *testing.T) {
 			return "chat_id"
 		case EnvReceiveID:
 			return "oc_chat"
-		case EnvResourceRoot:
-			return "/tmp/root"
 		case EnvSourceMessageID:
 			return "om_source"
 		case EnvActorUserID:
@@ -65,7 +59,6 @@ func TestSessionContextFromEnv(t *testing.T) {
 	})
 	if ctx.ReceiveIDType != "chat_id" ||
 		ctx.ReceiveID != "oc_chat" ||
-		ctx.ResourceRoot != "/tmp/root" ||
 		ctx.SourceMessageID != "om_source" ||
 		ctx.ActorUserID != "ou_actor" ||
 		ctx.ActorOpenID != "ou_open" ||

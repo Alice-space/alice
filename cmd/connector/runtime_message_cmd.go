@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -40,12 +41,16 @@ func newRuntimeMessageImageCmd() *cobra.Command {
 			_ *cobra.Command,
 			_ []string,
 		) error {
-			if strings.TrimSpace(imageKey) == "" && strings.TrimSpace(path) == "" {
+			normalizedPath, err := normalizeRuntimeMessagePath(path)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(imageKey) == "" && normalizedPath == "" {
 				return fmt.Errorf("image_key or path is required")
 			}
 			result, err := client.SendImage(ctx, session, runtimeapi.ImageRequest{
 				ImageKey: strings.TrimSpace(imageKey),
-				Path:     strings.TrimSpace(path),
+				Path:     normalizedPath,
 				Caption:  strings.TrimSpace(caption),
 			})
 			if err != nil {
@@ -55,7 +60,7 @@ func newRuntimeMessageImageCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&imageKey, "image-key", "", "existing Feishu image_key")
-	cmd.Flags().StringVar(&path, "path", "", "local absolute file path to upload")
+	cmd.Flags().StringVar(&path, "path", "", "local file path to upload")
 	cmd.Flags().StringVar(&caption, "caption", "", "optional text sent after the image")
 	return cmd
 }
@@ -77,12 +82,16 @@ func newRuntimeMessageFileCmd() *cobra.Command {
 			_ *cobra.Command,
 			_ []string,
 		) error {
-			if strings.TrimSpace(fileKey) == "" && strings.TrimSpace(path) == "" {
+			normalizedPath, err := normalizeRuntimeMessagePath(path)
+			if err != nil {
+				return err
+			}
+			if strings.TrimSpace(fileKey) == "" && normalizedPath == "" {
 				return fmt.Errorf("file_key or path is required")
 			}
 			result, err := client.SendFile(ctx, session, runtimeapi.FileRequest{
 				FileKey:  strings.TrimSpace(fileKey),
-				Path:     strings.TrimSpace(path),
+				Path:     normalizedPath,
 				FileName: strings.TrimSpace(fileName),
 				Caption:  strings.TrimSpace(caption),
 			})
@@ -93,8 +102,20 @@ func newRuntimeMessageFileCmd() *cobra.Command {
 		}),
 	}
 	cmd.Flags().StringVar(&fileKey, "file-key", "", "existing Feishu file_key")
-	cmd.Flags().StringVar(&path, "path", "", "local absolute file path to upload")
+	cmd.Flags().StringVar(&path, "path", "", "local file path to upload")
 	cmd.Flags().StringVar(&fileName, "file-name", "", "optional file name used when uploading")
 	cmd.Flags().StringVar(&caption, "caption", "", "optional text sent after the file")
 	return cmd
+}
+
+func normalizeRuntimeMessagePath(rawPath string) (string, error) {
+	path := strings.TrimSpace(rawPath)
+	if path == "" {
+		return "", nil
+	}
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	return filepath.Clean(abs), nil
 }

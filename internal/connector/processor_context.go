@@ -353,7 +353,6 @@ func sessionKeyForJob(job Job) string {
 }
 
 func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
-	scopeKey := resourceScopeKeyForJob(job)
 	sk := sessionKeyForJob(job)
 	sessionContext := sessionctx.SessionContext{
 		ReceiveIDType:   strings.TrimSpace(job.ReceiveIDType),
@@ -364,17 +363,6 @@ func (p *Processor) buildLLMRunEnv(job Job) map[string]string {
 		ChatType:        strings.TrimSpace(job.ChatType),
 		SessionKey:      sk,
 		ResumeThreadID:  p.getThreadID(sk),
-	}
-	type resourceRootProvider interface {
-		ResourceRootForScope(resourceScopeKey string) string
-	}
-	if provider, ok := p.sender.(resourceRootProvider); ok {
-		sessionContext.ResourceRoot = strings.TrimSpace(provider.ResourceRootForScope(scopeKey))
-		if sessionContext.ResourceRoot != "" {
-			if err := os.MkdirAll(sessionContext.ResourceRoot, 0o750); err != nil {
-				logging.Warnf("prepare scoped resource root failed event_id=%s scope=%s err=%v", job.EventID, scopeKey, err)
-			}
-		}
 	}
 	if err := sessionContext.Validate(); err != nil {
 		return nil

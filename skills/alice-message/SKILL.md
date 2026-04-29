@@ -12,18 +12,18 @@ description: 通过 Alice 本地 runtime HTTP API 向当前会话发送图片或
 ## 常用命令
 
 - 发送本地图片（先上传后发送）：
-  `scripts/alice-message.sh image --path /abs/path/image.png --caption '最新截图'`
+  `scripts/alice-message.sh image --path /path/to/image.png --caption '最新截图'`
 - 发送已有飞书图片：
   `scripts/alice-message.sh image --image-key img_v3_xxx`
 - 发送本地文件（先上传后发送）：
-  `scripts/alice-message.sh file --path /abs/path/report.pdf --file-name report.pdf --caption '请查收'`
+  `scripts/alice-message.sh file --path /path/to/report.pdf --file-name report.pdf --caption '请查收'`
 - 发送已有飞书文件：
   `scripts/alice-message.sh file --file-key file_v3_xxx`
 
 ## 工作流
 
 1. 只有发送图片、文件等附件时才用这个 skill；纯文本回复直接正常输出即可。
-2. 已有本地绝对路径时用 `image --path` 或 `file --path`。
+2. 已有本地路径时用 `image --path` 或 `file --path`；可以发送本机任意可读文件，不要求位于 Alice 资源目录下。
 3. 资源已上传过时优先复用 `--image-key` / `--file-key`。
 4. 不要要求用户提供 `receive_id_type`、`receive_id`、`source_message_id`；由 Alice 根据当前会话自动解析。
 
@@ -31,4 +31,4 @@ description: 通过 Alice 本地 runtime HTTP API 向当前会话发送图片或
 
 - 说明发送了哪种类型（图片 / 文件）。
 - 需要时给出使用的本地路径或飞书 key。
-- 如果因路径不在当前会话资源根目录导致上传失败，要明确说明并停止继续重试。
+- 如果文件不存在、不可读、为空、是目录或超过飞书上传限制，要明确说明并停止继续重试。

@@ -8,7 +8,6 @@ import (
 const (
 	EnvReceiveIDType   = "ALICE_RECEIVE_ID_TYPE"
 	EnvReceiveID       = "ALICE_RECEIVE_ID"
-	EnvResourceRoot    = "ALICE_RESOURCE_ROOT"
 	EnvSourceMessageID = "ALICE_SOURCE_MESSAGE_ID"
 	EnvActorUserID     = "ALICE_ACTOR_USER_ID"
 	EnvActorOpenID     = "ALICE_ACTOR_OPEN_ID"
@@ -20,7 +19,6 @@ const (
 type SessionContext struct {
 	ReceiveIDType   string
 	ReceiveID       string
-	ResourceRoot    string
 	SourceMessageID string
 	ActorUserID     string
 	ActorOpenID     string
@@ -46,9 +44,6 @@ func (c SessionContext) ToEnv() map[string]string {
 	env := make(map[string]string, 8)
 	env[EnvReceiveIDType] = strings.TrimSpace(c.ReceiveIDType)
 	env[EnvReceiveID] = strings.TrimSpace(c.ReceiveID)
-	if root := strings.TrimSpace(c.ResourceRoot); root != "" {
-		env[EnvResourceRoot] = root
-	}
 	if sourceMessageID := strings.TrimSpace(c.SourceMessageID); sourceMessageID != "" {
 		env[EnvSourceMessageID] = sourceMessageID
 	}
@@ -77,7 +72,6 @@ func SessionContextFromEnv(getenv func(key string) string) SessionContext {
 	return SessionContext{
 		ReceiveIDType:   strings.TrimSpace(getenv(EnvReceiveIDType)),
 		ReceiveID:       strings.TrimSpace(getenv(EnvReceiveID)),
-		ResourceRoot:    strings.TrimSpace(getenv(EnvResourceRoot)),
 		SourceMessageID: strings.TrimSpace(getenv(EnvSourceMessageID)),
 		ActorUserID:     strings.TrimSpace(getenv(EnvActorUserID)),
 		ActorOpenID:     strings.TrimSpace(getenv(EnvActorOpenID)),

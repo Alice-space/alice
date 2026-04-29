@@ -29,11 +29,12 @@ func (s *Server) handleSendImage(c *gin.Context) {
 	}
 	imageKey := strings.TrimSpace(req.ImageKey)
 	if imageKey == "" {
-		if err := validatePathUnderRoot(req.Path, session.ResourceRoot); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		path := strings.TrimSpace(req.Path)
+		if path == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "image_key or path is required"})
 			return
 		}
-		uploaded, err := s.sender.UploadImage(c.Request.Context(), strings.TrimSpace(req.Path))
+		uploaded, err := s.sender.UploadImage(c.Request.Context(), path)
 		if err != nil {
 			logging.Warnf("upload image failed: %v", err)
 			c.JSON(http.StatusBadGateway, gin.H{"error": "upload image failed"})
@@ -79,11 +80,12 @@ func (s *Server) handleSendFile(c *gin.Context) {
 	}
 	fileKey := strings.TrimSpace(req.FileKey)
 	if fileKey == "" {
-		if err := validatePathUnderRoot(req.Path, session.ResourceRoot); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		path := strings.TrimSpace(req.Path)
+		if path == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "file_key or path is required"})
 			return
 		}
-		uploaded, err := s.sender.UploadFile(c.Request.Context(), strings.TrimSpace(req.Path), strings.TrimSpace(req.FileName))
+		uploaded, err := s.sender.UploadFile(c.Request.Context(), path, strings.TrimSpace(req.FileName))
 		if err != nil {
 			logging.Warnf("upload file failed: %v", err)
 			c.JSON(http.StatusBadGateway, gin.H{"error": "upload file failed"})
