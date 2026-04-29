@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"time"
 
 	"github.com/Alice-space/alice/internal/logging"
 )
@@ -19,6 +20,7 @@ func (p *Processor) processSendMessage(ctx context.Context, job Job) JobProcessS
 		promptText,
 		p.jobLLMRunOptions(job),
 		p.buildLLMRunEnv(job),
+		nil,
 		nil,
 	)
 	p.setThreadID(sessionKey, nextThreadID)
@@ -105,6 +107,15 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	p.prepareJobForLLM(ctx, &job)
 	currentThreadID := p.getThreadID(sessionKey)
 	promptText := p.buildPrompt(ctx, job, currentThreadID)
+	heartbeat := p.startLLMHeartbeat(ctx, job)
+	stopHeartbeat := func(state string) {
+		if heartbeat == nil {
+			return
+		}
+		notifyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 10*time.Second)
+		defer cancel()
+		heartbeat.Stop(notifyCtx, state)
+	}
 	finalReply, nextThreadID, usage, runErr := p.runLLM(
 		ctx,
 		currentThreadID,
@@ -112,15 +123,18 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		p.jobLLMRunOptions(job),
 		p.buildLLMRunEnv(job),
 		sendAgentMessage,
+		heartbeat,
 	)
 	p.setThreadID(sessionKey, nextThreadID)
 	p.recordSessionUsage(sessionKey, usage)
 	if errors.Is(runErr, context.Canceled) {
 		if wasStoppedByCommand(ctx) {
 			logging.Infof("llm stopped by slash command event_id=%s", job.EventID)
+			stopHeartbeat("已中断")
 			return JobProcessRetryAfterRestart
 		}
 		if wasInterruptedByNewMessage(ctx) {
+			stopHeartbeat("已中断")
 			notifyCtx := context.WithoutCancel(ctx)
 			if ackDelivered {
 				messageID, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage)
@@ -143,8 +157,10 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 				job.EventID,
 				JobProcessRetryAfterRestart,
 			)
+			stopHeartbeat("已中断")
 			return JobProcessRetryAfterRestart
 		}
+		stopHeartbeat("已中断")
 		notifyCtx := context.WithoutCancel(ctx)
 		if ackDelivered {
 			messageID, replyErr := p.replies.reply(notifyCtx, job, job.SourceMessageID, interruptedReplyMessage)
@@ -163,6 +179,9 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	if runErr != nil {
 		logging.Errorf("llm failed event_id=%s: %v", job.EventID, runErr)
 		finalReply = p.runtimeSnapshot().failureMessage
+		stopHeartbeat("失败")
+	} else {
+		stopHeartbeat("已完成")
 	}
 	if shouldSuppressReply(job, finalReply) {
 		finalReply = ""

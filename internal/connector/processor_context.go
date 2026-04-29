@@ -54,6 +54,7 @@ func (p *Processor) runLLM(
 	options llmRunOptions,
 	env map[string]string,
 	onAgentMessage func(message string),
+	observer llmRunObserver,
 ) (string, string, agentbridge.Usage, error) {
 	snapshot := p.runtimeSnapshot()
 	if snapshot.llm == nil {
@@ -100,8 +101,14 @@ func (p *Processor) runLLM(
 		if onAgentMessage != nil {
 			onAgentMessage(message)
 		}
+		if observer != nil {
+			observer.RecordVisibleOutput(normalized)
+		}
 	}
 	logRawEvent := func(event agentbridge.RawEvent) {
+		if observer != nil {
+			observer.RecordBackendEvent(event)
+		}
 		if !logging.IsDebugEnabled() {
 			return
 		}

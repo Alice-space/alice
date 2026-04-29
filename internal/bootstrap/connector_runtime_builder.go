@@ -191,6 +191,12 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 		return err
 	}
 
+	if err := automationEngine.RegisterSystemTask("system.scheduler_watchdog", time.Minute, func(ctx context.Context) {
+		automationEngine.RunWatchdogOnce(ctx)
+	}); err != nil {
+		return err
+	}
+
 	b.app.SetAutomationRunner(automationEngine)
 	automationEngine.SetSessionActivityChecker(b.app)
 	b.automationEngine = automationEngine

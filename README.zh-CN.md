@@ -21,6 +21,8 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 - 每个 bot 拥有隔离的 `workspace`、`SOUL.md`（位于 `alice_home` 下）和 prompt，默认共享 `CODEX_HOME`
 - 支持群聊里的 `chat` / `work` 两种场景路由
 - 提供 runtime HTTP API 给 skill 和自动化任务
+- 长时间运行的 LLM 会显示运行状态卡片，包含后端活动和代码编辑信号
+- 自动化任务 watchdog 会提醒过期未触发或疑似卡住的定时任务
 - 自带 skill 会释放到 `${ALICE_HOME:-~/.alice}/skills`，再链接到 `~/.agents/skills`，并通过 `~/.claude/skills` 暴露给 Claude
 - 二进制内嵌 prompts、skills、配置示例和 `SOUL.md` 示例
 - 提供适合 `systemd --user` 的安装脚本

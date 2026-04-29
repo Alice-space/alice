@@ -50,6 +50,8 @@ type Engine struct {
 	lastSkipLog        sync.Map // task.ID -> time.Time; used to rate-limit "session busy" log
 	taskSem            chan struct{}
 	maxConcurrentTasks int
+	watchdogMu         sync.Mutex
+	watchdogLastAlert  map[string]time.Time
 }
 
 type taskSignal struct {

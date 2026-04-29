@@ -58,6 +58,10 @@ type senderStub struct {
 	lastReplyCard        string
 	replyCards           []string
 	replyCardErr         error
+	patchCardCalls       int
+	patchCardTargets     []string
+	patchCards           []string
+	patchCardErr         error
 
 	getMessageTextCalls int
 	getMessageTextErr   error
@@ -318,6 +322,15 @@ func (s *senderStub) ReplyCardDirect(_ context.Context, sourceMessageID string, 
 		return "", s.replyCardErr
 	}
 	return "om_reply_card_direct", nil
+}
+
+func (s *senderStub) PatchCard(_ context.Context, messageID, cardContent string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.patchCardCalls++
+	s.patchCardTargets = append(s.patchCardTargets, strings.TrimSpace(messageID))
+	s.patchCards = append(s.patchCards, cardContent)
+	return s.patchCardErr
 }
 
 func (s *senderStub) GetMessageText(_ context.Context, messageID string) (string, error) {

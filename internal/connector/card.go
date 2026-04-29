@@ -75,6 +75,46 @@ func buildTitledReplyCardContent(title, markdown string) string {
 	return buildMarkdownCardContent(title, reply)
 }
 
+type llmHeartbeatCardState struct {
+	Status          string
+	Elapsed         time.Duration
+	SinceVisible    time.Duration
+	SinceBackend    time.Duration
+	LastBackendKind string
+	FileChanges     []string
+}
+
+func buildLLMHeartbeatCardContent(state llmHeartbeatCardState) string {
+	status := strings.TrimSpace(state.Status)
+	if status == "" {
+		status = "运行中"
+	}
+	backendKind := strings.TrimSpace(state.LastBackendKind)
+	if backendKind == "" {
+		backendKind = "无"
+	}
+	lines := []string{
+		"**状态**：" + status,
+		"**已运行**：" + formatElapsed(state.Elapsed),
+		"**最近可见输出**：" + formatElapsed(state.SinceVisible) + " 前",
+		"**最近后端活动**：" + formatElapsed(state.SinceBackend) + " 前",
+		"**后端事件**：" + backendKind,
+	}
+	if len(state.FileChanges) == 0 {
+		lines = append(lines, "**最近代码编辑**：暂无")
+	} else {
+		lines = append(lines, "**最近代码编辑**：")
+		for _, raw := range state.FileChanges {
+			line := strings.TrimSpace(raw)
+			if line == "" {
+				continue
+			}
+			lines = append(lines, "- "+clipText(line, 300))
+		}
+	}
+	return buildMarkdownCardContent("运行状态", strings.Join(lines, "\n"))
+}
+
 func buildMarkdownCardContent(title, markdown string) string {
 	card := map[string]any{
 		"schema": "2.0",

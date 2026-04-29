@@ -102,6 +102,7 @@ func TestProcessorRunLLM_LogsBackendProgress(t *testing.T) {
 		func(message string) {
 			forwarded = append(forwarded, message)
 		},
+		nil,
 	)
 	if runErr != nil {
 		t.Fatalf("runLLM returned error: %v", runErr)

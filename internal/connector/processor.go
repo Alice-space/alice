@@ -21,6 +21,7 @@ type Processor struct {
 	thinkingMessage string
 	feedbackMode    string
 	feedbackEmoji   string
+	heartbeatConfig llmHeartbeatConfig
 	runtimeMu       sync.RWMutex
 	mu              sync.Mutex
 	sessions        map[string]sessionState
@@ -74,6 +75,7 @@ func NewProcessor(
 		thinkingMessage: thinkingMessage,
 		feedbackMode:    immediateFeedbackModeReply,
 		feedbackEmoji:   defaultImmediateFeedbackEmoji,
+		heartbeatConfig: defaultLLMHeartbeatConfig(),
 		sessions:        make(map[string]sessionState),
 		sessionAliases:  make(map[string]string),
 		now:             time.Now,
@@ -197,6 +199,7 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 		thinkingMessage: p.thinkingMessage,
 		feedbackMode:    p.feedbackMode,
 		feedbackEmoji:   p.feedbackEmoji,
+		heartbeatConfig: p.heartbeatConfig,
 		runtimeAPIBase:  p.runtimeAPIBase,
 		runtimeAPIToken: p.runtimeAPIToken,
 		runtimeAPIBin:   p.runtimeAPIBin,
@@ -212,6 +215,7 @@ type processorRuntimeSnapshot struct {
 	thinkingMessage string
 	feedbackMode    string
 	feedbackEmoji   string
+	heartbeatConfig llmHeartbeatConfig
 	runtimeAPIBase  string
 	runtimeAPIToken string
 	runtimeAPIBin   string
