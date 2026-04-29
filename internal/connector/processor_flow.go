@@ -43,8 +43,11 @@ func (p *Processor) processSendMessage(ctx context.Context, job Job) JobProcessS
 		reply = ""
 	}
 
-	if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, reply); sendErr != nil {
+	messageID, sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, reply)
+	if sendErr != nil {
 		logging.Errorf("send message failed event_id=%s: %v", job.EventID, sendErr)
+	} else {
+		p.markFinalReplyDone(ctx, job, messageID)
 	}
 	return JobProcessCompleted
 }
@@ -57,6 +60,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	}
 
 	lastSentAgentMessage := ""
+	lastSentAgentReplyMessageID := ""
 	sendAgentMessage := func(agentMessage string) {
 		normalized := strings.TrimSpace(agentMessage)
 		isFileChange := strings.HasPrefix(normalized, fileChangeEventPrefix)
@@ -81,7 +85,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 				}
 			}
 			if !delivered {
-				if sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
+				if _, sendErr := p.replies.send(ctx, job, job.ReceiveIDType, job.ReceiveID, normalized); sendErr != nil {
 					logging.Errorf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
 					return
 				}
@@ -93,6 +97,7 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 				return
 			}
 			p.rememberReplySessionMessage(job, messageID)
+			lastSentAgentReplyMessageID = messageID
 		}
 		lastSentAgentMessage = normalized
 	}
@@ -162,14 +167,20 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 	if shouldSuppressReply(job, finalReply) {
 		finalReply = ""
 	}
-	if strings.TrimSpace(finalReply) != "" &&
-		strings.TrimSpace(finalReply) != lastSentAgentMessage {
-		messageID, replyErr := p.replies.reply(ctx, job, job.SourceMessageID, finalReply)
-		if replyErr != nil {
-			logging.Errorf("send final reply failed event_id=%s: %v", job.EventID, replyErr)
+	finalMessageID := ""
+	if strings.TrimSpace(finalReply) != "" {
+		if strings.TrimSpace(finalReply) == lastSentAgentMessage {
+			finalMessageID = lastSentAgentReplyMessageID
 		} else {
-			p.rememberReplySessionMessage(job, messageID)
+			messageID, replyErr := p.replies.reply(ctx, job, job.SourceMessageID, finalReply)
+			if replyErr != nil {
+				logging.Errorf("send final reply failed event_id=%s: %v", job.EventID, replyErr)
+			} else {
+				p.rememberReplySessionMessage(job, messageID)
+				finalMessageID = messageID
+			}
 		}
+		p.markFinalReplyDone(ctx, job, finalMessageID)
 	}
 	return JobProcessCompleted
 }
@@ -277,4 +288,23 @@ func (p *Processor) rememberReplySessionMessage(job Job, messageID string) {
 		return
 	}
 	p.rememberSessionAliases(sessionKey, baseKey+messageAliasToken+messageID)
+}
+
+func (p *Processor) markFinalReplyDone(ctx context.Context, job Job, messageID string) {
+	if p == nil || p.sender == nil {
+		return
+	}
+	messageID = strings.TrimSpace(messageID)
+	if messageID == "" {
+		return
+	}
+	if err := p.sender.AddReaction(ctx, messageID, finalReplyDoneEmoji); err != nil {
+		logging.Warnf(
+			"send final reply reaction failed event_id=%s message_id=%s emoji=%s: %v",
+			job.EventID,
+			messageID,
+			finalReplyDoneEmoji,
+			err,
+		)
+	}
 }

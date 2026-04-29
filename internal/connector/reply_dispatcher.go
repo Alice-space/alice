@@ -21,7 +21,8 @@ func (d *replyDispatcher) respond(ctx context.Context, job Job, markdown string)
 		_, err := d.reply(ctx, job, job.SourceMessageID, markdown)
 		return err
 	}
-	return d.send(ctx, job, job.ReceiveIDType, job.ReceiveID, markdown)
+	_, err := d.send(ctx, job, job.ReceiveIDType, job.ReceiveID, markdown)
+	return err
 }
 
 func (d *replyDispatcher) respondCardWithTitle(ctx context.Context, job Job, title, markdown string) error {
@@ -71,31 +72,31 @@ func (d *replyDispatcher) send(
 	receiveIDType,
 	receiveID,
 	markdown string,
-) error {
+) (string, error) {
 	if d == nil || d.sender == nil {
-		return errors.New("reply dispatcher sender is nil")
+		return "", errors.New("reply dispatcher sender is nil")
 	}
 
 	normalized, forceText := normalizeOutgoingReplyWithMentions(markdown, job)
 	if normalized == "" {
-		return nil
+		return "", nil
 	}
 	if forceText {
 		plainText := sanitizeMarkdownForPlainText(normalized)
-		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, plainText); textErr == nil {
-			return nil
+		if messageID, textErr := d.sendText(ctx, receiveIDType, receiveID, plainText); textErr == nil {
+			return messageID, nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
 		if normalized == "" {
-			return nil
+			return "", nil
 		}
 	}
 	if jobAllowsCards(job) {
-		if cardErr := d.sender.SendCard(ctx, receiveIDType, receiveID, buildReplyCardContent(normalized)); cardErr == nil {
-			return nil
+		if messageID, cardErr := d.sendCard(ctx, receiveIDType, receiveID, buildReplyCardContent(normalized)); cardErr == nil {
+			return messageID, nil
 		}
 	}
-	return d.sender.SendText(ctx, receiveIDType, receiveID, normalized)
+	return d.sendText(ctx, receiveIDType, receiveID, normalized)
 }
 
 func (d *replyDispatcher) replyCardWithTitle(
@@ -148,7 +149,7 @@ func (d *replyDispatcher) sendCardWithTitle(
 	}
 	if forceText {
 		plainText := sanitizeMarkdownForPlainText(normalized)
-		if textErr := d.sender.SendText(ctx, receiveIDType, receiveID, plainText); textErr == nil {
+		if _, textErr := d.sendText(ctx, receiveIDType, receiveID, plainText); textErr == nil {
 			return nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
@@ -156,10 +157,11 @@ func (d *replyDispatcher) sendCardWithTitle(
 			return nil
 		}
 	}
-	if cardErr := d.sender.SendCard(ctx, receiveIDType, receiveID, buildTitledReplyCardContent(title, normalized)); cardErr == nil {
+	if _, cardErr := d.sendCard(ctx, receiveIDType, receiveID, buildTitledReplyCardContent(title, normalized)); cardErr == nil {
 		return nil
 	}
-	return d.sender.SendText(ctx, receiveIDType, receiveID, normalized)
+	_, err := d.sendText(ctx, receiveIDType, receiveID, normalized)
+	return err
 }
 
 func (d *replyDispatcher) replyMarkdownPost(
@@ -225,6 +227,44 @@ func (d *replyDispatcher) replyCard(
 		return d.sender.ReplyCard(ctx, sourceMessageID, cardContent)
 	}
 	return d.sender.ReplyCardDirect(ctx, sourceMessageID, cardContent)
+}
+
+type sendTextMessageSender interface {
+	SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error)
+}
+
+type sendCardMessageSender interface {
+	SendCardMessage(ctx context.Context, receiveIDType, receiveID, cardContent string) (string, error)
+}
+
+func (d *replyDispatcher) sendText(
+	ctx context.Context,
+	receiveIDType,
+	receiveID,
+	text string,
+) (string, error) {
+	if sender, ok := d.sender.(sendTextMessageSender); ok {
+		return sender.SendTextMessage(ctx, receiveIDType, receiveID, text)
+	}
+	if err := d.sender.SendText(ctx, receiveIDType, receiveID, text); err != nil {
+		return "", err
+	}
+	return "", nil
+}
+
+func (d *replyDispatcher) sendCard(
+	ctx context.Context,
+	receiveIDType,
+	receiveID,
+	cardContent string,
+) (string, error) {
+	if sender, ok := d.sender.(sendCardMessageSender); ok {
+		return sender.SendCardMessage(ctx, receiveIDType, receiveID, cardContent)
+	}
+	if err := d.sender.SendCard(ctx, receiveIDType, receiveID, cardContent); err != nil {
+		return "", err
+	}
+	return "", nil
 }
 
 func jobAllowsCards(job Job) bool {

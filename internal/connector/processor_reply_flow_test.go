@@ -49,13 +49,17 @@ func TestProcessor_ReplyMessageFlow_ReactionImmediateFeedbackSkipsAckReply(t *te
 		Text:            "hello",
 	})
 
-	if sender.reactionCalls != 1 {
-		t.Fatalf("expected one reaction feedback, got %d", sender.reactionCalls)
+	if sender.reactionCalls != 2 {
+		t.Fatalf("expected ack and final reactions, got %d", sender.reactionCalls)
 	}
-	if len(sender.reactionTargets) != 1 || sender.reactionTargets[0] != "om_src" {
+	if len(sender.reactionTargets) != 2 ||
+		sender.reactionTargets[0] != "om_src" ||
+		sender.reactionTargets[1] != "om_reply_card" {
 		t.Fatalf("unexpected reaction targets: %#v", sender.reactionTargets)
 	}
-	if len(sender.reactionTypes) != 1 || sender.reactionTypes[0] != "SMILE" {
+	if len(sender.reactionTypes) != 2 ||
+		sender.reactionTypes[0] != "SMILE" ||
+		sender.reactionTypes[1] != finalReplyDoneEmoji {
 		t.Fatalf("unexpected reaction types: %#v", sender.reactionTypes)
 	}
 	if sender.replyCardCalls != 1 {
@@ -79,8 +83,8 @@ func TestProcessor_ReplyMessageFlow_ReactionFallbacksToAckReply(t *testing.T) {
 		Text:            "hello",
 	})
 
-	if sender.reactionCalls != 1 {
-		t.Fatalf("expected one reaction attempt, got %d", sender.reactionCalls)
+	if sender.reactionCalls != 2 {
+		t.Fatalf("expected ack and final reaction attempts, got %d", sender.reactionCalls)
 	}
 	if sender.replyCardCalls != 2 {
 		t.Fatalf("expected ack reply fallback plus final reply, got %d", sender.replyCardCalls)
@@ -122,6 +126,12 @@ func TestProcessor_SendsAgentMessagesAsRichTextMarkdown(t *testing.T) {
 	}
 	if !strings.Contains(sender.replyCards[2], "最终答复") {
 		t.Fatalf("expected final progress card content, got %q", sender.replyCards[2])
+	}
+	if len(sender.reactionTypes) != 1 || sender.reactionTypes[0] != finalReplyDoneEmoji {
+		t.Fatalf("expected DONE reaction on final progress message, got %#v", sender.reactionTypes)
+	}
+	if len(sender.reactionTargets) != 1 || sender.reactionTargets[0] != "om_reply_card" {
+		t.Fatalf("unexpected final reaction target: %#v", sender.reactionTargets)
 	}
 }
 

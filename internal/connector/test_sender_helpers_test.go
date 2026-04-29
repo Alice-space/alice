@@ -88,6 +88,13 @@ func (s *senderStub) SendText(_ context.Context, _, _ string, text string) error
 	return nil
 }
 
+func (s *senderStub) SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
+	if err := s.SendText(ctx, receiveIDType, receiveID, text); err != nil {
+		return "", err
+	}
+	return "om_send_text", nil
+}
+
 func (s *senderStub) SendImage(_ context.Context, _, _ string, imageKey string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -153,6 +160,13 @@ func (s *senderStub) SendCard(_ context.Context, _, _ string, cardContent string
 	s.lastSendCard = cardContent
 	s.sendCards = append(s.sendCards, cardContent)
 	return s.sendCardErr
+}
+
+func (s *senderStub) SendCardMessage(ctx context.Context, receiveIDType, receiveID, cardContent string) (string, error) {
+	if err := s.SendCard(ctx, receiveIDType, receiveID, cardContent); err != nil {
+		return "", err
+	}
+	return "om_send_card", nil
 }
 
 func (s *senderStub) AddReaction(_ context.Context, messageID, emojiType string) error {

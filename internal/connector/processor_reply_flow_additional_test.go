@@ -55,6 +55,12 @@ func TestProcessor_NoSourceMessageUsesSendCard(t *testing.T) {
 	if sender.sendCalls != 0 {
 		t.Fatalf("expected 0 send text call, got %d", sender.sendCalls)
 	}
+	if len(sender.reactionTypes) != 1 || sender.reactionTypes[0] != finalReplyDoneEmoji {
+		t.Fatalf("expected DONE reaction on sent final message, got %#v", sender.reactionTypes)
+	}
+	if len(sender.reactionTargets) != 1 || sender.reactionTargets[0] != "om_send_card" {
+		t.Fatalf("unexpected final reaction target: %#v", sender.reactionTargets)
+	}
 }
 
 func TestProcessor_ResolvesAttachmentsAndPassesLocalPathToCodex(t *testing.T) {
@@ -179,8 +185,18 @@ func TestProcessor_ReplyMentionUsesTextReply(t *testing.T) {
 	if sender.replyCardCalls != 0 {
 		t.Fatalf("expected no ack card reply in reaction mode, got %d", sender.replyCardCalls)
 	}
-	if sender.reactionCalls != 1 {
-		t.Fatalf("expected one reaction ack, got %d", sender.reactionCalls)
+	if sender.reactionCalls != 2 {
+		t.Fatalf("expected ack and final reactions, got %d", sender.reactionCalls)
+	}
+	if len(sender.reactionTypes) != 2 ||
+		sender.reactionTypes[0] != "SMILE" ||
+		sender.reactionTypes[1] != finalReplyDoneEmoji {
+		t.Fatalf("unexpected reaction types: %#v", sender.reactionTypes)
+	}
+	if len(sender.reactionTargets) != 2 ||
+		sender.reactionTargets[0] != "om_src" ||
+		sender.reactionTargets[1] != "om_reply_text" {
+		t.Fatalf("unexpected reaction targets: %#v", sender.reactionTargets)
 	}
 	if sender.replyTextCalls != 1 {
 		t.Fatalf("expected one final text reply for mention, got %d", sender.replyTextCalls)

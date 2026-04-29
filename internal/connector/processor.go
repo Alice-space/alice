@@ -58,6 +58,7 @@ const immediateFeedbackReplyText = "收到！"
 const immediateFeedbackModeReply = "reply"
 const immediateFeedbackModeReaction = "reaction"
 const defaultImmediateFeedbackEmoji = "SMILE"
+const finalReplyDoneEmoji = "DONE"
 
 func NewProcessor(
 	backend agentbridge.Backend,
