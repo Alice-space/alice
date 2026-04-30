@@ -21,6 +21,19 @@ type SessionActivityChecker interface {
 	IsSessionActive(sessionKey string) bool
 }
 
+// SessionActivityGate extends SessionActivityChecker with the ability to
+// register an automation task run as an active session entry, so that:
+//   - subsequent IsSessionActive checks (including from other ticks) see the
+//     session as busy
+//   - incoming user messages can interrupt the task via the provided cancel
+//     function (using the same version-based interruption mechanism used for
+//     user-initiated LLM runs)
+type SessionActivityGate interface {
+	SessionActivityChecker
+	TryAcquireSession(sessionKey string, cancel context.CancelCauseFunc) bool
+	ReleaseSession(sessionKey string)
+}
+
 type LLMRunner interface {
 	Run(ctx context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error)
 }

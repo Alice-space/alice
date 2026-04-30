@@ -48,31 +48,30 @@ func (e *Engine) runUserTasks(ctx context.Context, now time.Time) {
 }
 
 func (e *Engine) runUserTask(ctx context.Context, task Task) {
-	// Skip execution if the target session is currently processing a user
-	// message. Unclaim the task so it becomes eligible on the next tick.
+	sk := taskSessionKey(task)
+
+	runCtx, cancel := e.userTaskContext(ctx, task)
+	defer cancel(nil)
+
+	// Acquire the session to prevent concurrent user messages and
+	// subsequent ticks from running on the same session simultaneously.
+	// If the session is already busy, unclaim the task so it retries later.
 	if checker := e.sessionCheckerValue(); checker != nil {
-		sk := taskSessionKey(task)
-		if checker.IsSessionActive(sk) {
-			const skipLogInterval = time.Minute
-			now := e.nowTime()
-			if last, ok := e.lastSkipLog.Load(task.ID); !ok || now.Sub(last.(time.Time)) >= skipLogInterval {
-				logging.Infof("automation task skipped (session busy) id=%s session=%s", task.ID, sk)
-				e.lastSkipLog.Store(task.ID, now)
+		if gate, ok := checker.(SessionActivityGate); ok {
+			if !gate.TryAcquireSession(sk, cancel) {
+				e.logSessionBusy(task, sk)
+				unclaimOrFallback(e, task)
+				return
 			}
-			if err := e.store.UnclaimTask(task.ID); err != nil {
-				// Unclaim failed: fall back to recording a no-op result
-				// so Running=false is always cleared.
-				logging.Errorf("unclaim automation task failed id=%s err=%v; recording no-op result", task.ID, err)
-				if recErr := e.store.RecordTaskResult(task.ID, e.nowTime(), nil); recErr != nil {
-					logging.Errorf("fallback record result failed id=%s err=%v", task.ID, recErr)
-				}
-			}
+			defer gate.ReleaseSession(sk)
+		} else if checker.IsSessionActive(sk) {
+			e.logSessionBusy(task, sk)
+			unclaimOrFallback(e, task)
 			return
 		}
 	}
 
-	runCtx, cancel := e.userTaskContext(ctx, task)
-	defer cancel()
+	e.sendTaskStartNotification(runCtx, task)
 
 	var (
 		dispatch taskDispatch
@@ -82,6 +81,14 @@ func (e *Engine) runUserTask(ctx context.Context, task Task) {
 		if recovered := recover(); recovered != nil {
 			err = fmt.Errorf("automation user task panic: %v", recovered)
 			logging.Errorf("automation user task panic id=%s scope=%s:%s err=%v", task.ID, task.Scope.Kind, task.Scope.ID, recovered)
+		}
+		// When the task is interrupted by an incoming user message
+		// (runCtx cancelled via TryAcquireSession -> enqueueJob -> cancel),
+		// unclaim rather than record a failure so it retries on next tick.
+		if err != nil && runCtx.Err() != nil {
+			logging.Infof("automation task interrupted id=%s session=%s", task.ID, sk)
+			unclaimOrFallback(e, task)
+			return
 		}
 		e.recordUserTaskOutcome(task, dispatch, err)
 		e.notifyUserTaskCompletion(task, err)
@@ -153,9 +160,17 @@ func (e *Engine) notifyUserTaskCompletion(task Task, err error) {
 	hook(task, err)
 }
 
-func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Context, context.CancelFunc) {
-	return context.WithTimeout(ctx, e.userTaskTimeoutDuration())
+func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Context, context.CancelCauseFunc) {
+	timeout := e.userTaskTimeoutDuration()
+	timeoutCtx, timeoutCancel := context.WithTimeoutCause(ctx, timeout, errSessionInterrupted)
+	runCtx, cancel := context.WithCancelCause(timeoutCtx)
+	return runCtx, func(cause error) {
+		timeoutCancel()
+		cancel(cause)
+	}
 }
+
+var errSessionInterrupted = errors.New("automation: session interrupted by user message")
 
 // effectiveRoute returns the delivery route for a task run.
 // If action.SourceMessageID is set (bootstrapped from a prior run), it takes
@@ -397,4 +412,36 @@ func composePromptWithPrefix(promptPrefix, personality, noReplyToken, userText s
 		return userText
 	}
 	return prefix + "\n\n" + strings.TrimSpace(userText)
+}
+
+func (e *Engine) logSessionBusy(task Task, sk string) {
+	const skipLogInterval = time.Minute
+	now := e.nowTime()
+	if last, ok := e.lastSkipLog.Load(task.ID); !ok || now.Sub(last.(time.Time)) >= skipLogInterval {
+		logging.Infof("automation task skipped (session busy) id=%s session=%s", task.ID, sk)
+		e.lastSkipLog.Store(task.ID, now)
+	}
+}
+
+func unclaimOrFallback(e *Engine, task Task) {
+	if err := e.store.UnclaimTask(task.ID); err != nil {
+		logging.Errorf("unclaim automation task failed id=%s err=%v; recording no-op result", task.ID, err)
+		if recErr := e.store.RecordTaskResult(task.ID, e.nowTime(), nil); recErr != nil {
+			logging.Errorf("fallback record result failed id=%s err=%v", task.ID, recErr)
+		}
+	}
+}
+
+func (e *Engine) sendTaskStartNotification(ctx context.Context, task Task) {
+	if e.sender == nil {
+		return
+	}
+	task = NormalizeTask(task)
+	title := task.Title
+	if title == "" {
+		title = "未命名任务"
+	}
+	text := "定时任务「" + title + "」开始运行..."
+	route := effectiveRoute(task)
+	e.sendTextDispatch(ctx, route.ReceiveIDType, route.ReceiveID, text)
 }

@@ -343,3 +343,229 @@ func TestRunUserTask_SkipLog_RateLimit(t *testing.T) {
 		t.Fatalf("lastSkipLog must update after rate-limit window: want %v, got %v", t3, last.(time.Time))
 	}
 }
+
+type sessionGateStub struct {
+	mu       sync.Mutex
+	busy     bool
+	cancel   context.CancelCauseFunc
+	acquired int
+	released int
+}
+
+func (s *sessionGateStub) IsSessionActive(_ string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.busy
+}
+
+func (s *sessionGateStub) TryAcquireSession(_ string, cancel context.CancelCauseFunc) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.busy {
+		return false
+	}
+	s.busy = true
+	s.cancel = cancel
+	s.acquired++
+	return true
+}
+
+func (s *sessionGateStub) ReleaseSession(_ string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.busy {
+		s.busy = false
+		s.cancel = nil
+		s.released++
+	}
+}
+
+func TestRunUserTask_SessionGateAcquiresAndReleases(t *testing.T) {
+	base := time.Date(2026, 4, 30, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	runner := &llmRunnerStub{result: agentbridge.RunResult{Reply: "ok"}}
+	gate := &sessionGateStub{}
+
+	engine := NewEngine(store, sender)
+	engine.SetLLMRunner(runner)
+	engine.SetSessionActivityChecker(gate)
+	engine.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title:    "gate test",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_gate"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_gate"},
+		Creator:  Actor{OpenID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "test"},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	claimed, err := store.ClaimDueTasks(base.Add(61*time.Second), 1)
+	if err != nil || len(claimed) == 0 {
+		t.Fatalf("claim: err=%v len=%d", err, len(claimed))
+	}
+
+	engine.runUserTask(context.Background(), claimed[0])
+
+	gate.mu.Lock()
+	acquired := gate.acquired
+	released := gate.released
+	gate.mu.Unlock()
+
+	if acquired != 1 {
+		t.Fatalf("expected 1 acquire, got %d", acquired)
+	}
+	if released != 1 {
+		t.Fatalf("expected 1 release, got %d", released)
+	}
+
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected 1 llm call, got %d", calls)
+	}
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if stored.LastResult == "" {
+		t.Fatal("expected last result recorded")
+	}
+}
+
+func TestRunUserTask_SessionGateBusySkipsAndUnclaims(t *testing.T) {
+	base := time.Date(2026, 4, 30, 11, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	runner := &llmRunnerStub{result: agentbridge.RunResult{Reply: "ok"}}
+	gate := &sessionGateStub{busy: true}
+
+	engine := NewEngine(store, sender)
+	engine.SetLLMRunner(runner)
+	engine.SetSessionActivityChecker(gate)
+	engine.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Title:    "busy gate test",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_busy"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_busy"},
+		Creator:  Actor{OpenID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "test"},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	claimed, err := store.ClaimDueTasks(base.Add(61*time.Second), 1)
+	if err != nil || len(claimed) == 0 {
+		t.Fatalf("claim: err=%v len=%d", err, len(claimed))
+	}
+	if !claimed[0].Running {
+		t.Fatal("expected Running=true after claim")
+	}
+
+	engine.runUserTask(context.Background(), claimed[0])
+
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("expected 0 llm calls (busy gate), got %d", calls)
+	}
+
+	task, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if task.Running {
+		t.Fatal("expected Running=false after busy skip")
+	}
+}
+
+func TestRunUserTask_SessionGateInterruptedUnclaims(t *testing.T) {
+	base := time.Date(2026, 4, 30, 12, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	gate := &sessionGateStub{}
+
+	engine := NewEngine(store, sender)
+	engine.SetSessionActivityChecker(gate)
+	engine.now = func() time.Time { return base }
+
+	runner := &interruptibleRunnerStub{}
+	engine.SetLLMRunner(runner)
+
+	created, err := store.CreateTask(Task{
+		Title:    "interrupt test",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_int"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_int"},
+		Creator:  Actor{OpenID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action:   Action{Type: ActionTypeRunLLM, Prompt: "test"},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+
+	claimed, err := store.ClaimDueTasks(base.Add(61*time.Second), 1)
+	if err != nil || len(claimed) == 0 {
+		t.Fatalf("claim: err=%v len=%d", err, len(claimed))
+	}
+
+	// Run the task in a goroutine, then simulate user interruption by calling
+	// the stored cancel function.
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		engine.runUserTask(context.Background(), claimed[0])
+	}()
+
+	// Wait for gate to be acquired, then interrupt.
+	time.Sleep(100 * time.Millisecond)
+	gate.mu.Lock()
+	if gate.cancel != nil {
+		gate.cancel(context.Canceled)
+	}
+	gate.mu.Unlock()
+
+	<-done
+
+	task, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task: %v", err)
+	}
+	if task.Running {
+		t.Fatal("expected Running=false after interrupt")
+	}
+	if task.RunCount > 0 {
+		t.Fatalf("expected RunCount=0 after unclaim on interrupt, got %d", task.RunCount)
+	}
+	if task.ConsecutiveFailures > 0 {
+		t.Fatalf("expected no failures after interrupt, got %d", task.ConsecutiveFailures)
+	}
+}
+
+// interruptibleRunnerStub blocks until its context is cancelled, then returns an error.
+// This simulates an LLM runner that gets interrupted by a user message.
+type interruptibleRunnerStub struct {
+	called bool
+}
+
+func (r *interruptibleRunnerStub) Run(ctx context.Context, _ agentbridge.RunRequest) (agentbridge.RunResult, error) {
+	r.called = true
+	<-ctx.Done()
+	return agentbridge.RunResult{}, ctx.Err()
+}

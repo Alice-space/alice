@@ -379,3 +379,180 @@ func TestApplyTaskPatch_PreservesScopedSessionKeyForRunLLM(t *testing.T) {
 		t.Fatalf("unexpected patched session key: %q", next.Action.SessionKey)
 	}
 }
+
+func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_P2P(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 600,
+			},
+			Action: automation.Action{
+				Prompt: "summarize",
+			},
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: sessionctx.SessionContext{
+				SessionKey:      "open_id:ou_actor",
+				SourceMessageID: "om_thread_abc",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if want := "open_id:ou_actor|message:om_thread_abc"; task.Action.SessionKey != want {
+		t.Fatalf("unexpected session key: got=%q want=%q", task.Action.SessionKey, want)
+	}
+	if task.Route.ReceiveIDType != "source_message_id" {
+		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
+	}
+	if task.Route.ReceiveID != "om_thread_abc" {
+		t.Fatalf("unexpected route id: got=%q want=om_thread_abc", task.Route.ReceiveID)
+	}
+}
+
+func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_GroupChat(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 600,
+			},
+			Action: automation.Action{
+				Prompt: "summarize",
+			},
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_group"},
+			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_group"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: sessionctx.SessionContext{
+				SessionKey:      "chat_id:oc_group|scene:chat",
+				SourceMessageID: "om_thread_xyz",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if want := "chat_id:oc_group|scene:chat|message:om_thread_xyz"; task.Action.SessionKey != want {
+		t.Fatalf("unexpected session key: got=%q want=%q", task.Action.SessionKey, want)
+	}
+	if task.Route.ReceiveIDType != "source_message_id" {
+		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
+	}
+	if task.Route.ReceiveID != "om_thread_xyz" {
+		t.Fatalf("unexpected route id: got=%q want=om_thread_xyz", task.Route.ReceiveID)
+	}
+}
+
+func TestBuildTaskFromRequest_SourceMessageIDDoesNotAffectNoSource(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 600,
+			},
+			Action: automation.Action{
+				Prompt: "summarize",
+			},
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: sessionctx.SessionContext{
+				SessionKey: "open_id:ou_actor",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if want := "open_id:ou_actor"; task.Action.SessionKey != want {
+		t.Fatalf("unexpected session key: got=%q want=%q", task.Action.SessionKey, want)
+	}
+	if task.Route.ReceiveIDType != "open_id" {
+		t.Fatalf("unexpected route type: got=%q want=open_id", task.Route.ReceiveIDType)
+	}
+}
+
+func TestBuildTaskFromRequest_ResumeSessionKeyOverridesSourceMessageID(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Schedule: automation.Schedule{
+				Type:         automation.ScheduleTypeInterval,
+				EverySeconds: 600,
+			},
+			Action: automation.Action{
+				Prompt: "summarize",
+			},
+			ResumeSessionKey: "chat_id:oc_chat|scene:work|seed:om_seed",
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			isGroup: true,
+			session: sessionctx.SessionContext{
+				SessionKey:      "chat_id:oc_chat|scene:chat",
+				SourceMessageID: "om_should_be_overridden",
+			},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if want := "chat_id:oc_chat|scene:work|seed:om_seed"; task.Action.SessionKey != want {
+		t.Fatalf("resume key should override source msg: got=%q want=%q", task.Action.SessionKey, want)
+	}
+	if task.Route.ReceiveIDType != "source_message_id" {
+		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
+	}
+	if task.Route.ReceiveID != "om_seed" {
+		t.Fatalf("unexpected route id from resume: got=%q want=om_seed", task.Route.ReceiveID)
+	}
+}
+
+func TestApplyTaskPatch_PreservesSourceMessageThreadedSessionKey(t *testing.T) {
+	current := automation.Task{
+		ID:       "task_threaded",
+		Scope:    automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+		Route:    automation.Route{ReceiveIDType: "source_message_id", ReceiveID: "om_thread_a"},
+		Creator:  automation.Actor{OpenID: "ou_actor"},
+		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 3600},
+		Action: automation.Action{
+			Type:       automation.ActionTypeRunLLM,
+			Prompt:     "ping",
+			SessionKey: "open_id:ou_actor|message:om_thread_a",
+		},
+		Status: automation.TaskStatusActive,
+	}
+
+	next, err := applyTaskPatch(current, []byte(`{"action":{"text":"updated"}}`), "application/merge-patch+json", automationScopeContext{
+		scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+		route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+		creator: automation.Actor{OpenID: "ou_actor"},
+		session: sessionctx.SessionContext{
+			SessionKey:      "open_id:ou_actor",
+			SourceMessageID: "om_thread_b",
+		},
+	})
+	if err != nil {
+		t.Fatalf("apply task patch failed: %v", err)
+	}
+	if next.Action.SessionKey != "open_id:ou_actor|message:om_thread_a" {
+		t.Fatalf("patch should preserve original thread-specific session key, got %q", next.Action.SessionKey)
+	}
+	if next.Route.ReceiveIDType != "source_message_id" {
+		t.Fatalf("patch should preserve thread route type, got %q", next.Route.ReceiveIDType)
+	}
+}
