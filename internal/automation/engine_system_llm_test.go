@@ -185,8 +185,11 @@ func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 	if sender.sendCardCalls != 1 {
 		t.Fatalf("expected run_llm work task to send one card, got %d", sender.sendCardCalls)
 	}
-	if sender.sendTextCalls != 0 {
-		t.Fatalf("expected run_llm work task to avoid text send, got %d", sender.sendTextCalls)
+	if sender.sendTextCalls != 1 {
+		t.Fatalf("expected run_llm work task to send one text (start notification), got %d", sender.sendTextCalls)
+	}
+	if !strings.Contains(sender.lastText, "开始运行") {
+		t.Fatalf("expected start notification text, got %q", sender.lastText)
 	}
 	if !strings.Contains(sender.lastCard, "work 已完成") {
 		t.Fatalf("unexpected card content: %q", sender.lastCard)

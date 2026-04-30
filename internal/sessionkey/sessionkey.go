@@ -3,6 +3,7 @@ package sessionkey
 import "strings"
 
 const messageToken = "|message:"
+const MessageToken = messageToken
 const threadToken = "|thread:"
 const seedToken = "|seed:"
 

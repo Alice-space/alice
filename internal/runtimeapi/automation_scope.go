@@ -96,6 +96,18 @@ func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automation
 	}
 	applySceneLLMProfileDefaults(&task, scopeCtx, s.runtimeConfig())
 	task.Action.SessionKey = scopeSessionKey(scopeCtx.session)
+
+	// When the task is created from a Feishu thread, anchor the session key
+	// and route to the triggering message so that:
+	//   - tasks created in different threads get distinct session identities
+	//     (preventing cross-thread mutual blocking and thread-ID conflicts)
+	//   - the first message is delivered as a thread reply to the triggering
+	//     message, which Feishu automatically places in the correct thread.
+	if sourceMsgID := strings.TrimSpace(scopeCtx.session.SourceMessageID); sourceMsgID != "" {
+		task.Action.SessionKey = task.Action.SessionKey + sessionkey.MessageToken + sourceMsgID
+		task.Route = automation.Route{ReceiveIDType: "source_message_id", ReceiveID: sourceMsgID}
+	}
+
 	if resumeKey := strings.TrimSpace(req.ResumeSessionKey); resumeKey != "" {
 		resumeRoute, resumeScope, err := routeAndScopeFromSessionKey(resumeKey)
 		if err != nil {
