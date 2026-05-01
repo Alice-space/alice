@@ -9,7 +9,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0
 	github.com/cyphar/filepath-securejoin v0.6.1
 	github.com/evanphx/json-patch/v5 v5.9.11
-	github.com/fsnotify/fsnotify v1.9.0
+	github.com/fsnotify/fsnotify v1.10.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-co-op/gocron/v2 v2.21.1
 	github.com/go-playground/validator/v10 v10.30.2
