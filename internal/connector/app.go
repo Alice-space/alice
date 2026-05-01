@@ -47,6 +47,7 @@ type appRuntimeConfig struct {
 	llmProvider   string
 	llmProfiles   map[string]config.LLMProfileConfig
 	groupScenes   config.GroupScenesConfig
+	privateScenes config.GroupScenesConfig
 }
 
 const (
@@ -79,6 +80,7 @@ func newAppRuntimeConfig(cfg config.Config) appRuntimeConfig {
 		llmProvider:   cfg.LLMProvider,
 		llmProfiles:   runtimecfg.CloneLLMProfiles(cfg.LLMProfiles),
 		groupScenes:   cfg.GroupScenes,
+		privateScenes: cfg.PrivateScenes,
 	}
 }
 

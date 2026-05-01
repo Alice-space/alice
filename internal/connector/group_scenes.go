@@ -18,6 +18,9 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 		message = event.Event.Message
 	}
 	if !isGroupChatType(job.ChatType) {
+		if cfg.privateScenes.Chat.Enabled || cfg.privateScenes.Work.Enabled {
+			return a.routePrivateSceneJob(job, event, message)
+		}
 		if message != nil {
 			a.resolveJobSessionKey(job, message)
 		}
@@ -134,6 +137,91 @@ func (a *App) routeGroupSceneJob(job *Job, event *larkim.P2MessageReceiveV1, mes
 	return false
 }
 
+func (a *App) routePrivateSceneJob(job *Job, event *larkim.P2MessageReceiveV1, message *larkim.EventMessage) bool {
+	cfg := a.runtimeConfig()
+	if !cfg.privateScenes.Chat.Enabled && !cfg.privateScenes.Work.Enabled {
+		if message != nil {
+			a.resolveJobSessionKey(job, message)
+		}
+		return true
+	}
+
+	if cfg.privateScenes.Work.Enabled {
+		if sessionKey := a.resolveExistingPrivateWorkSession(job, message); sessionKey != "" {
+			applyPrivateWorkSceneToJob(job, cfg, sessionKey)
+			return true
+		}
+
+		if activeKey := a.findActiveWorkSessionKey(job.ReceiveIDType, job.ReceiveID); activeKey != "" {
+			applyPrivateWorkSceneToJob(job, cfg, activeKey)
+			return true
+		}
+
+		if hasSceneTriggerTag(job.Text, cfg.privateScenes.Work.TriggerTag) {
+			sessionKey := buildWorkSceneSessionKey(job.ReceiveIDType, job.ReceiveID, job.SourceMessageID)
+			applyPrivateWorkSceneToJob(job, cfg, sessionKey)
+			job.Text = trimSceneTriggerTag(job.Text, cfg.privateScenes.Work.TriggerTag)
+			return true
+		}
+	}
+
+	if cfg.privateScenes.Chat.Enabled {
+		sessionKey := a.resolvePrivateChatSceneSessionKey(job.ReceiveIDType, job.ReceiveID)
+		applyPrivateChatSceneToJob(job, cfg, sessionKey)
+		return true
+	}
+
+	if message != nil {
+		a.resolveJobSessionKey(job, message)
+	}
+	return true
+}
+
+func (a *App) resolvePrivateChatSceneSessionKey(receiveIDType, receiveID string) string {
+	sessionKey := buildChatSceneSessionKey(receiveIDType, receiveID)
+	if sessionKey == "" {
+		return ""
+	}
+	if resolved := strings.TrimSpace(a.findExistingSessionKey([]string{sessionKey})); resolved != "" {
+		return resolved
+	}
+	return sessionKey
+}
+
+func (a *App) resolveExistingPrivateWorkSession(job *Job, message *larkim.EventMessage) string {
+	if job == nil || message == nil {
+		return ""
+	}
+	candidates := buildPrivateWorkSceneLookupCandidates(job.ReceiveIDType, job.ReceiveID, message)
+	sessionKey := strings.TrimSpace(a.findExistingSessionKey(candidates))
+	if !isWorkSceneSessionKey(sessionKey) {
+		return ""
+	}
+	return sessionKey
+}
+
+func buildPrivateWorkSceneLookupCandidates(receiveIDType, receiveID string, message *larkim.EventMessage) []string {
+	base := buildSessionKey(receiveIDType, receiveID)
+	if base == "" || message == nil {
+		return nil
+	}
+
+	candidates := make([]string, 0, 4)
+	if threadID := strings.TrimSpace(deref(message.ThreadId)); threadID != "" {
+		appendSessionKeyCandidate(&candidates, base+threadAliasToken+threadID)
+	}
+	if rootID := strings.TrimSpace(deref(message.RootId)); rootID != "" {
+		appendSessionKeyCandidate(&candidates, buildWorkSceneSessionKey(receiveIDType, receiveID, rootID))
+	}
+	if parentID := strings.TrimSpace(deref(message.ParentId)); parentID != "" {
+		appendSessionKeyCandidate(&candidates, buildWorkSceneSessionKey(receiveIDType, receiveID, parentID))
+	}
+	if sourceMessageID := strings.TrimSpace(deref(message.MessageId)); sourceMessageID != "" {
+		appendSessionKeyCandidate(&candidates, buildWorkSceneSessionKey(receiveIDType, receiveID, sourceMessageID))
+	}
+	return candidates
+}
+
 func (a *App) resolveCurrentChatSceneSessionKey(receiveIDType, receiveID string) string {
 	sessionKey := buildChatSceneSessionKey(receiveIDType, receiveID)
 	if sessionKey == "" {
@@ -176,6 +264,22 @@ func buildWorkSceneLookupCandidates(receiveIDType, receiveID string, message *la
 }
 
 func applyChatSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
+	applyChatSceneConfigToJob(job, cfg, cfg.groupScenes.Chat, sessionKey)
+}
+
+func applyWorkSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
+	applyWorkSceneConfigToJob(job, cfg, cfg.groupScenes.Work, sessionKey)
+}
+
+func applyPrivateChatSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
+	applyChatSceneConfigToJob(job, cfg, cfg.privateScenes.Chat, sessionKey)
+}
+
+func applyPrivateWorkSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
+	applyWorkSceneConfigToJob(job, cfg, cfg.privateScenes.Work, sessionKey)
+}
+
+func applyChatSceneConfigToJob(job *Job, cfg appRuntimeConfig, sceneCfg config.GroupSceneConfig, sessionKey string) {
 	if job == nil {
 		return
 	}
@@ -188,12 +292,12 @@ func applyChatSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
 	job.DisableAck = true
 	job.SessionKey = sessionKey
 	job.ResourceScopeKey = sessionKey
-	job.CreateFeishuThread = cfg.groupScenes.Chat.CreateFeishuThread
-	job.NoReplyToken = strings.TrimSpace(cfg.groupScenes.Chat.NoReplyToken)
-	applyLLMProfileToJob(job, cfg.llmProvider, cfg.groupScenes.Chat.LLMProfile, cfg.llmProfiles[cfg.groupScenes.Chat.LLMProfile])
+	job.CreateFeishuThread = sceneCfg.CreateFeishuThread
+	job.NoReplyToken = strings.TrimSpace(sceneCfg.NoReplyToken)
+	applyLLMProfileToJob(job, cfg.llmProvider, sceneCfg.LLMProfile, cfg.llmProfiles[sceneCfg.LLMProfile])
 }
 
-func applyWorkSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
+func applyWorkSceneConfigToJob(job *Job, cfg appRuntimeConfig, sceneCfg config.GroupSceneConfig, sessionKey string) {
 	if job == nil {
 		return
 	}
@@ -202,9 +306,9 @@ func applyWorkSceneToJob(job *Job, cfg appRuntimeConfig, sessionKey string) {
 	job.DisableAck = false
 	job.SessionKey = strings.TrimSpace(sessionKey)
 	job.ResourceScopeKey = buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey)
-	job.CreateFeishuThread = cfg.groupScenes.Work.CreateFeishuThread
-	job.NoReplyToken = strings.TrimSpace(cfg.groupScenes.Work.NoReplyToken)
-	applyLLMProfileToJob(job, cfg.llmProvider, cfg.groupScenes.Work.LLMProfile, cfg.llmProfiles[cfg.groupScenes.Work.LLMProfile])
+	job.CreateFeishuThread = sceneCfg.CreateFeishuThread
+	job.NoReplyToken = strings.TrimSpace(sceneCfg.NoReplyToken)
+	applyLLMProfileToJob(job, cfg.llmProvider, sceneCfg.LLMProfile, cfg.llmProfiles[sceneCfg.LLMProfile])
 }
 
 func applyLLMProfileToJob(job *Job, defaultProvider, profileName string, profile config.LLMProfileConfig) {

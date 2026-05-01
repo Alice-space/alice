@@ -95,6 +95,17 @@ func setCommonConfigDefaults(v *viper.Viper, prefix string, includeRuntimeHTTPAd
 	v.SetDefault(configKey(prefix, "group_scenes.work.llm_profile"), "")
 	v.SetDefault(configKey(prefix, "group_scenes.work.no_reply_token"), "")
 	v.SetDefault(configKey(prefix, "group_scenes.work.create_feishu_thread"), true)
+	v.SetDefault(configKey(prefix, "private_scenes.chat.enabled"), false)
+	v.SetDefault(configKey(prefix, "private_scenes.chat.session_scope"), GroupSceneSessionPerUser)
+	v.SetDefault(configKey(prefix, "private_scenes.chat.llm_profile"), "")
+	v.SetDefault(configKey(prefix, "private_scenes.chat.no_reply_token"), "[[NO_REPLY]]")
+	v.SetDefault(configKey(prefix, "private_scenes.chat.create_feishu_thread"), false)
+	v.SetDefault(configKey(prefix, "private_scenes.work.enabled"), false)
+	v.SetDefault(configKey(prefix, "private_scenes.work.trigger_tag"), "#work")
+	v.SetDefault(configKey(prefix, "private_scenes.work.session_scope"), GroupSceneSessionPerMessage)
+	v.SetDefault(configKey(prefix, "private_scenes.work.llm_profile"), "")
+	v.SetDefault(configKey(prefix, "private_scenes.work.no_reply_token"), "")
+	v.SetDefault(configKey(prefix, "private_scenes.work.create_feishu_thread"), false)
 }
 
 func configKey(prefix, key string) string {

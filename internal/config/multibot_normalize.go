@@ -25,6 +25,10 @@ func normalizeBots(in map[string]BotConfig) map[string]BotConfig {
 			normalized := normalizeGroupScenes(*bot.GroupScenes)
 			bot.GroupScenes = &normalized
 		}
+		if bot.PrivateScenes != nil {
+			normalized := normalizePrivateScenes(*bot.PrivateScenes)
+			bot.PrivateScenes = &normalized
+		}
 		bot.RuntimeHTTPAddr = strings.TrimSpace(bot.RuntimeHTTPAddr)
 		bot.RuntimeHTTPToken = strings.TrimSpace(bot.RuntimeHTTPToken)
 		bot.FailureMessage = strings.TrimSpace(bot.FailureMessage)
