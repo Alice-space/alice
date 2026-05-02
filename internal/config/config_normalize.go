@@ -13,6 +13,7 @@ func normalizeLoadedConfig(cfg Config, rootEnv map[string]string) Config {
 	cfg.LLMProvider = strings.ToLower(strings.TrimSpace(cfg.LLMProvider))
 	cfg.LLMProfiles = normalizeLLMProfiles(cfg.LLMProfiles)
 	cfg.GroupScenes = normalizeGroupScenes(cfg.GroupScenes)
+	cfg.PrivateScenes = normalizePrivateScenes(cfg.PrivateScenes)
 	cfg.CodexEnv = normalizeEnvMap(rootEnv)
 	cfg.RuntimeHTTPAddr = strings.TrimSpace(cfg.RuntimeHTTPAddr)
 	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
@@ -94,6 +95,25 @@ func normalizeGroupScenes(in GroupScenesConfig) GroupScenesConfig {
 	in.Work.NoReplyToken = strings.TrimSpace(in.Work.NoReplyToken)
 	if in.Work.SessionScope == "" {
 		in.Work.SessionScope = GroupSceneSessionPerThread
+	}
+	return in
+}
+
+func normalizePrivateScenes(in GroupScenesConfig) GroupScenesConfig {
+	in.Chat.TriggerTag = strings.TrimSpace(in.Chat.TriggerTag)
+	in.Chat.SessionScope = strings.ToLower(strings.TrimSpace(in.Chat.SessionScope))
+	in.Chat.LLMProfile = strings.ToLower(strings.TrimSpace(in.Chat.LLMProfile))
+	in.Chat.NoReplyToken = strings.TrimSpace(in.Chat.NoReplyToken)
+	if in.Chat.SessionScope == "" {
+		in.Chat.SessionScope = GroupSceneSessionPerUser
+	}
+
+	in.Work.TriggerTag = strings.TrimSpace(in.Work.TriggerTag)
+	in.Work.SessionScope = strings.ToLower(strings.TrimSpace(in.Work.SessionScope))
+	in.Work.LLMProfile = strings.ToLower(strings.TrimSpace(in.Work.LLMProfile))
+	in.Work.NoReplyToken = strings.TrimSpace(in.Work.NoReplyToken)
+	if in.Work.SessionScope == "" {
+		in.Work.SessionScope = GroupSceneSessionPerMessage
 	}
 	return in
 }

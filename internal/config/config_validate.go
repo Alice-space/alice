@@ -28,6 +28,7 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"llm_provider",
 		"llm_profiles",
 		"group_scenes",
+		"private_scenes",
 		"codex_command",
 		"codex_timeout_secs",
 		"codex_model",
@@ -89,12 +90,18 @@ func isSupportedLLMProvider(provider string) bool {
 }
 
 func collectResolvedSceneProfileProviders(cfg Config) []string {
-	names := make([]string, 0, 2)
+	names := make([]string, 0, 4)
 	if cfg.GroupScenes.Chat.Enabled {
 		names = append(names, strings.TrimSpace(cfg.GroupScenes.Chat.LLMProfile))
 	}
 	if cfg.GroupScenes.Work.Enabled {
 		names = append(names, strings.TrimSpace(cfg.GroupScenes.Work.LLMProfile))
+	}
+	if cfg.PrivateScenes.Chat.Enabled {
+		names = append(names, strings.TrimSpace(cfg.PrivateScenes.Chat.LLMProfile))
+	}
+	if cfg.PrivateScenes.Work.Enabled {
+		names = append(names, strings.TrimSpace(cfg.PrivateScenes.Work.LLMProfile))
 	}
 	if len(names) == 0 {
 		for name := range cfg.LLMProfiles {
@@ -270,6 +277,31 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 			return fmt.Errorf("group_scenes.work.session_scope must be %q", GroupSceneSessionPerThread)
 		}
 	}
+	if cfg.PrivateScenes.Chat.Enabled {
+		if cfg.PrivateScenes.Chat.LLMProfile == "" {
+			return errors.New("private_scenes.chat.llm_profile is required when chat scene is enabled")
+		}
+		if _, ok := cfg.LLMProfiles[cfg.PrivateScenes.Chat.LLMProfile]; !ok {
+			return fmt.Errorf("private_scenes.chat.llm_profile %q is undefined", cfg.PrivateScenes.Chat.LLMProfile)
+		}
+		if cfg.PrivateScenes.Chat.SessionScope != GroupSceneSessionPerUser {
+			return fmt.Errorf("private_scenes.chat.session_scope must be %q", GroupSceneSessionPerUser)
+		}
+	}
+	if cfg.PrivateScenes.Work.Enabled {
+		if cfg.PrivateScenes.Work.LLMProfile == "" {
+			return errors.New("private_scenes.work.llm_profile is required when work scene is enabled")
+		}
+		if cfg.PrivateScenes.Work.TriggerTag == "" {
+			return errors.New("private_scenes.work.trigger_tag is required when work scene is enabled")
+		}
+		if _, ok := cfg.LLMProfiles[cfg.PrivateScenes.Work.LLMProfile]; !ok {
+			return fmt.Errorf("private_scenes.work.llm_profile %q is undefined", cfg.PrivateScenes.Work.LLMProfile)
+		}
+		if cfg.PrivateScenes.Work.SessionScope != GroupSceneSessionPerMessage {
+			return fmt.Errorf("private_scenes.work.session_scope must be %q", GroupSceneSessionPerMessage)
+		}
+	}
 	return nil
 }
 
@@ -309,6 +341,31 @@ func validateSceneConfig(cfg Config) error {
 		}
 		if cfg.GroupScenes.Work.SessionScope != GroupSceneSessionPerThread {
 			return fmt.Errorf("group_scenes.work.session_scope must be %q", GroupSceneSessionPerThread)
+		}
+	}
+	if cfg.PrivateScenes.Chat.Enabled {
+		if cfg.PrivateScenes.Chat.LLMProfile == "" {
+			return errors.New("private_scenes.chat.llm_profile is required when chat scene is enabled")
+		}
+		if _, ok := cfg.LLMProfiles[cfg.PrivateScenes.Chat.LLMProfile]; !ok {
+			return fmt.Errorf("private_scenes.chat.llm_profile %q is undefined", cfg.PrivateScenes.Chat.LLMProfile)
+		}
+		if cfg.PrivateScenes.Chat.SessionScope != GroupSceneSessionPerUser {
+			return fmt.Errorf("private_scenes.chat.session_scope must be %q", GroupSceneSessionPerUser)
+		}
+	}
+	if cfg.PrivateScenes.Work.Enabled {
+		if cfg.PrivateScenes.Work.LLMProfile == "" {
+			return errors.New("private_scenes.work.llm_profile is required when work scene is enabled")
+		}
+		if cfg.PrivateScenes.Work.TriggerTag == "" {
+			return errors.New("private_scenes.work.trigger_tag is required when work scene is enabled")
+		}
+		if _, ok := cfg.LLMProfiles[cfg.PrivateScenes.Work.LLMProfile]; !ok {
+			return fmt.Errorf("private_scenes.work.llm_profile %q is undefined", cfg.PrivateScenes.Work.LLMProfile)
+		}
+		if cfg.PrivateScenes.Work.SessionScope != GroupSceneSessionPerMessage {
+			return fmt.Errorf("private_scenes.work.session_scope must be %q", GroupSceneSessionPerMessage)
 		}
 	}
 	return nil

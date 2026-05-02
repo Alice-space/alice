@@ -99,6 +99,9 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	if bot.GroupScenes != nil {
 		runtime.GroupScenes = *bot.GroupScenes
 	}
+	if bot.PrivateScenes != nil {
+		runtime.PrivateScenes = *bot.PrivateScenes
+	}
 	runtime.RuntimeHTTPAddr, err = deriveBotRuntimeHTTPAddr(bot, index)
 	if err != nil {
 		return Config{}, fmt.Errorf("bots.%s: derive runtime_http_addr failed: %w", runtime.BotID, err)

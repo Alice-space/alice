@@ -30,8 +30,10 @@ const DefaultCodexXHighIdleTimeoutSecs = 3600
 var configValidator = validator.New()
 
 const (
-	GroupSceneSessionPerChat   = "per_chat"
-	GroupSceneSessionPerThread = "per_thread"
+	GroupSceneSessionPerChat    = "per_chat"
+	GroupSceneSessionPerThread  = "per_thread"
+	GroupSceneSessionPerUser    = "per_user"
+	GroupSceneSessionPerMessage = "per_message"
 )
 
 type LLMProfileConfig struct {
@@ -87,6 +89,7 @@ type BotConfig struct {
 	ImmediateFeedbackReaction        string                      `mapstructure:"immediate_feedback_reaction"`
 	LLMProfiles                      map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
 	GroupScenes                      *GroupScenesConfig          `mapstructure:"group_scenes"`
+	PrivateScenes                    *GroupScenesConfig          `mapstructure:"private_scenes"`
 	RuntimeHTTPAddr                  string                      `mapstructure:"runtime_http_addr"`
 	RuntimeHTTPToken                 string                      `mapstructure:"runtime_http_token"`
 	FailureMessage                   string                      `mapstructure:"failure_message"`
@@ -120,9 +123,10 @@ type Config struct {
 	ImmediateFeedbackMode     string `mapstructure:"immediate_feedback_mode"`
 	ImmediateFeedbackReaction string `mapstructure:"immediate_feedback_reaction"`
 
-	LLMProvider string                      `mapstructure:"llm_provider"`
-	LLMProfiles map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
-	GroupScenes GroupScenesConfig           `mapstructure:"group_scenes"`
+	LLMProvider   string                      `mapstructure:"llm_provider"`
+	LLMProfiles   map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
+	GroupScenes   GroupScenesConfig           `mapstructure:"group_scenes"`
+	PrivateScenes GroupScenesConfig           `mapstructure:"private_scenes"`
 
 	// Shared env for all LLM subprocesses (HTTPS_PROXY, API keys, etc.)
 	CodexEnv  map[string]string `mapstructure:"env"`

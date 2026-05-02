@@ -225,6 +225,28 @@ bots:
         create_feishu_thread: true
         no_reply_token: ""
 
+    # ── Private message scene router ──────────────────────────────────────
+    # Controls how private (direct) messages are routed to chat or work mode.
+    # Same structure as group_scenes. Disabled by default for backward compat.
+    private_scenes:
+      chat:
+        enabled: false
+        # Session scope for DM chat:
+        # - per_user: all DM messages from the same user share one session
+        session_scope: "per_user"
+        llm_profile: "chat"
+        no_reply_token: "[[NO_REPLY]]"
+        create_feishu_thread: false
+      work:
+        enabled: false
+        trigger_tag: "#work"
+        # Session scope for DM work:
+        # - per_message: each message with #work creates its own session
+        session_scope: "per_message"
+        llm_profile: "work"
+        no_reply_token: ""
+        create_feishu_thread: true
+
     # ── Runtime HTTP API ───────────────────────────────────────────────────
     # Alice exposes a local HTTP API for bundled skills and automation tasks.
     # Listen address for the runtime HTTP API.
