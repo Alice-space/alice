@@ -123,10 +123,10 @@ type Config struct {
 	ImmediateFeedbackMode     string `mapstructure:"immediate_feedback_mode"`
 	ImmediateFeedbackReaction string `mapstructure:"immediate_feedback_reaction"`
 
-	LLMProvider string                      `mapstructure:"llm_provider"`
-	LLMProfiles map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
-	GroupScenes GroupScenesConfig           `mapstructure:"group_scenes"`
-	PrivateScenes GroupScenesConfig         `mapstructure:"private_scenes"`
+	LLMProvider   string                      `mapstructure:"llm_provider"`
+	LLMProfiles   map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
+	GroupScenes   GroupScenesConfig           `mapstructure:"group_scenes"`
+	PrivateScenes GroupScenesConfig           `mapstructure:"private_scenes"`
 
 	// Shared env for all LLM subprocesses (HTTPS_PROXY, API keys, etc.)
 	CodexEnv  map[string]string `mapstructure:"env"`
