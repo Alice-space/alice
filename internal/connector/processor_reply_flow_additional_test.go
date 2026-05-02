@@ -33,6 +33,9 @@ func TestProcessor_SkipsDuplicateAgentMessages(t *testing.T) {
 	if !strings.Contains(sender.replyCards[1], "阶段提示") || !strings.Contains(sender.replyCards[2], "最终答复") {
 		t.Fatalf("unexpected card progress content: %#v", sender.replyCards)
 	}
+	if sender.patchCardCalls != 0 {
+		t.Fatalf("progress should be sent as completed agent messages, not patched cards; got %d patches", sender.patchCardCalls)
+	}
 }
 
 func TestProcessor_NoSourceMessageUsesSendCard(t *testing.T) {

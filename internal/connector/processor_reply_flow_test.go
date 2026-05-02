@@ -127,6 +127,9 @@ func TestProcessor_SendsAgentMessagesAsRichTextMarkdown(t *testing.T) {
 	if !strings.Contains(sender.replyCards[2], "最终答复") {
 		t.Fatalf("expected final progress card content, got %q", sender.replyCards[2])
 	}
+	if sender.patchCardCalls != 0 {
+		t.Fatalf("progress should be sent as completed agent messages, not patched cards; got %d patches", sender.patchCardCalls)
+	}
 	if len(sender.reactionTypes) != 1 || sender.reactionTypes[0] != finalReplyDoneEmoji {
 		t.Fatalf("expected DONE reaction on final progress message, got %#v", sender.reactionTypes)
 	}

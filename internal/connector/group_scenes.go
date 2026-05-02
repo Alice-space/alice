@@ -2,6 +2,8 @@ package connector
 
 import (
 	"strings"
+	"unicode"
+	"unicode/utf8"
 
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 
@@ -17,6 +19,7 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 	if event != nil && event.Event != nil {
 		message = event.Event.Message
 	}
+	a.normalizeBotMentions(job, message)
 	if !isGroupChatType(job.ChatType) {
 		if cfg.privateScenes.Chat.Enabled || cfg.privateScenes.Work.Enabled {
 			return a.routePrivateSceneJob(job, event, message)
@@ -358,6 +361,135 @@ func buildWorkSceneSessionKey(receiveIDType, receiveID, sourceMessageID string) 
 		return ""
 	}
 	return base + workSceneToken + workSceneSeedToken + sourceMessageID
+}
+
+func (a *App) normalizeBotMentions(job *Job, message *larkim.EventMessage) {
+	if job == nil || message == nil || !isGroupChatType(job.ChatType) {
+		return
+	}
+	job.Text = stripBotMentionText(job.Text, message.Mentions, a.getBotOpenID(), "")
+}
+
+func stripBotMentionText(
+	text string,
+	mentions []*larkim.MentionEvent,
+	botOpenID string,
+	botUserID string,
+) string {
+	normalized := strings.TrimSpace(text)
+	if normalized == "" || len(mentions) == 0 {
+		return normalized
+	}
+
+	for {
+		changed := false
+		for _, mention := range mentions {
+			if !isBotMentionEvent(mention, botOpenID, botUserID) {
+				continue
+			}
+			for _, token := range mentionTokens(mention) {
+				next, ok := removeMentionToken(normalized, token)
+				if !ok {
+					continue
+				}
+				normalized = next
+				changed = true
+				break
+			}
+			if changed {
+				break
+			}
+		}
+		if !changed {
+			return normalized
+		}
+	}
+}
+
+func isBotMentionEvent(mention *larkim.MentionEvent, botOpenID, botUserID string) bool {
+	if mention == nil || mention.Id == nil {
+		return false
+	}
+	botOpenID = strings.TrimSpace(botOpenID)
+	botUserID = strings.TrimSpace(botUserID)
+	openID := strings.TrimSpace(deref(mention.Id.OpenId))
+	userID := strings.TrimSpace(deref(mention.Id.UserId))
+	return (botOpenID != "" && openID == botOpenID) ||
+		(botUserID != "" && userID == botUserID)
+}
+
+func mentionTokens(mention *larkim.MentionEvent) []string {
+	if mention == nil {
+		return nil
+	}
+	tokens := make([]string, 0, 2)
+	if key := strings.TrimSpace(deref(mention.Key)); key != "" {
+		tokens = append(tokens, key)
+	}
+	if name := formatMentionDisplayName(deref(mention.Name)); name != "" {
+		tokens = append(tokens, name)
+	}
+	return tokens
+}
+
+func removeMentionToken(text, token string) (string, bool) {
+	text = strings.TrimSpace(text)
+	token = strings.TrimSpace(token)
+	if text == "" || token == "" || !strings.Contains(text, token) {
+		return text, false
+	}
+
+	var b strings.Builder
+	removed := false
+	start := 0
+	for {
+		idx := strings.Index(text[start:], token)
+		if idx < 0 {
+			b.WriteString(text[start:])
+			break
+		}
+		idx += start
+		end := idx + len(token)
+		if isInboundMentionBoundaryBefore(text, idx) && isInboundMentionBoundaryAfter(text, end) {
+			b.WriteString(text[start:idx])
+			b.WriteByte(' ')
+			start = end
+			removed = true
+			continue
+		}
+		b.WriteString(text[start:end])
+		start = end
+	}
+	if !removed {
+		return text, false
+	}
+	return cleanupMentionRemovalWhitespace(b.String()), true
+}
+
+func isInboundMentionBoundaryBefore(text string, idx int) bool {
+	if idx <= 0 {
+		return true
+	}
+	r, _ := utf8.DecodeLastRuneInString(text[:idx])
+	return unicode.IsSpace(r)
+}
+
+func isInboundMentionBoundaryAfter(text string, idx int) bool {
+	if idx >= len(text) {
+		return true
+	}
+	r, _ := utf8.DecodeRuneInString(text[idx:])
+	return r == '#' || r == '/' || unicode.IsSpace(r) || unicode.IsPunct(r)
+}
+
+func cleanupMentionRemovalWhitespace(text string) string {
+	text = strings.TrimSpace(text)
+	for strings.Contains(text, "  ") {
+		text = strings.ReplaceAll(text, "  ", " ")
+	}
+	text = strings.ReplaceAll(text, " \n", "\n")
+	text = strings.ReplaceAll(text, "\n ", "\n")
+	return text
 }
 
 func buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey string) string {

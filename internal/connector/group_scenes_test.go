@@ -2,6 +2,7 @@ package connector
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	larkevent "github.com/larksuite/oapi-sdk-go/v3/event"
@@ -57,6 +58,81 @@ func newGroupScenesApp(cfg config.Config, processor *Processor) *App {
 	app := NewApp(cfg, processor)
 	app.SetBotOpenID("ou_bot")
 	return app
+}
+
+func TestStripBotMentionText_PreservesOtherMentions(t *testing.T) {
+	got := stripBotMentionText("@Codex @Carlo 请让 @Codex 看这里", []*larkim.MentionEvent{
+		{
+			Key:  strPtr("@_bot"),
+			Name: strPtr("Codex"),
+			Id:   &larkim.UserId{OpenId: strPtr("ou_bot")},
+		},
+		{
+			Key:  strPtr("@_carlo"),
+			Name: strPtr("Carlo"),
+			Id:   &larkim.UserId{OpenId: strPtr("ou_carlo")},
+		},
+	}, "ou_bot", "")
+	if got != "@Carlo 请让 看这里" {
+		t.Fatalf("unexpected normalized text: %q", got)
+	}
+}
+
+func TestApp_WorkSessionCommandStripsLeadingBotMentionKey(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	llmStub := &llmCallCountingStub{}
+	sender := &senderStub{}
+	processor := NewProcessor(llmStub, sender, "failed", "thinking")
+	app := newGroupScenesApp(cfg, processor)
+
+	sessionID := "019de8de-c0db-70c0-b52e-938ed0d21ce1"
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_session_bootstrap"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_session_bootstrap"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"@_bot #work /session 019de8de-c0db-70c0-b52e-938ed0d21ce1"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Key:  strPtr("@_bot"),
+						Name: strPtr("Codex"),
+						Id:   &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected work session command to be routed")
+	}
+	if job.Text != "/session "+sessionID {
+		t.Fatalf("expected leading bot mention and work tag stripped, got %q", job.Text)
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("unexpected scene: %q", job.Scene)
+	}
+
+	state := processor.ProcessJobState(context.Background(), *job)
+	if state != JobProcessCompleted {
+		t.Fatalf("expected completed state, got %s", state)
+	}
+	if llmStub.calls != 0 {
+		t.Fatalf("expected /session binding to bypass llm, got %d calls", llmStub.calls)
+	}
+	if got := processor.getThreadID(job.SessionKey); got != sessionID {
+		t.Fatalf("unexpected bound backend session id: %q", got)
+	}
+	if len(sender.replyCards) != 1 || !strings.Contains(sender.replyCards[0], "已绑定后端 session。") {
+		t.Fatalf("unexpected session binding reply: %#v", sender.replyCards)
+	}
 }
 
 func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testing.T) {
