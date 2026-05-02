@@ -106,7 +106,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	}
 
 	switch cfg.TriggerMode {
-	case TriggerModeAt, TriggerModePrefix:
+	case TriggerModeAt, TriggerModePrefix, TriggerModeAll:
 	default:
 		return Config{}, fmt.Errorf("unsupported trigger_mode %q", cfg.TriggerMode)
 	}

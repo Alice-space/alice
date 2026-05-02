@@ -156,6 +156,8 @@ If both `group_scenes.chat.enabled` and `group_scenes.work.enabled` are `false`,
   Only messages that mention the bot are accepted
 - `trigger_mode: prefix`
   Only messages starting with `trigger_prefix` are accepted
+- `trigger_mode: all`
+  Every group message is accepted (no @bot or prefix required)
 
 New deployments should prefer explicit `group_scenes`.
 

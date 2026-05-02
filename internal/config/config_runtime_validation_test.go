@@ -58,7 +58,7 @@ func TestLoadFromFile_TriggerModeInvalid(t *testing.T) {
 	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
-trigger_mode: "all"
+trigger_mode: "wave"
 `)
 
 	_, err := LoadFromFile(path)
@@ -67,6 +67,21 @@ trigger_mode: "all"
 	}
 	if !strings.Contains(err.Error(), "unsupported trigger_mode") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestLoadFromFile_TriggerModeAll(t *testing.T) {
+	_, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+trigger_mode: "  AlL  "
+`)
+
+	if runtime.TriggerMode != TriggerModeAll {
+		t.Fatalf("unexpected trigger_mode: %q", runtime.TriggerMode)
+	}
+	if runtime.TriggerPrefix != "" {
+		t.Fatalf("unexpected trigger_prefix: %q", runtime.TriggerPrefix)
 	}
 }
 

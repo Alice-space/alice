@@ -159,6 +159,8 @@ group_scenes:
   只有提到 bot 的消息才接受
 - `trigger_mode: prefix`
   只有以 `trigger_prefix` 开头的消息才接受
+- `trigger_mode: all`
+  接受群里的所有消息（无需 @bot 或 prefix）
 
 新部署应优先使用显式 `group_scenes`。
 

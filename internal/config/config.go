@@ -13,6 +13,7 @@ const LLMProviderKimi = "kimi"
 const LLMProviderOpenCode = "opencode"
 const TriggerModeAt = "at"
 const TriggerModePrefix = "prefix"
+const TriggerModeAll = "all"
 const ImmediateFeedbackModeReply = "reply"
 const ImmediateFeedbackModeReaction = "reaction"
 const DefaultImmediateFeedbackMode = ImmediateFeedbackModeReaction

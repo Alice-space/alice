@@ -43,20 +43,20 @@ func isGroupMessageTriggered(
 	if !isGroupChatType(deref(message.ChatType)) {
 		return true
 	}
-	mentionAccepted := isGroupMentionAccepted(message, botOpenID, botUserID)
-
 	switch normalizedTriggerMode(triggerMode) {
+	case config.TriggerModeAll:
+		return true
 	case config.TriggerModePrefix:
 		return isGroupTriggerPrefixMatched(event, triggerPrefix)
 	default:
-		return mentionAccepted
+		return isGroupMentionAccepted(message, botOpenID, botUserID)
 	}
 }
 
 func normalizedTriggerMode(mode string) string {
 	normalized := strings.ToLower(strings.TrimSpace(mode))
 	switch normalized {
-	case config.TriggerModePrefix:
+	case config.TriggerModePrefix, config.TriggerModeAll:
 		return normalized
 	default:
 		return config.TriggerModeAt
