@@ -12,6 +12,7 @@ const (
 	connectorPromptReplyContext     = "connector/reply_context.md.tmpl"
 	connectorPromptRuntimeSkillHint = "connector/runtime_skill_hint.md.tmpl"
 	connectorPromptSyntheticMention = "connector/synthetic_mention.md.tmpl"
+	connectorPromptBuiltinHelp      = "connector/help.md.tmpl"
 )
 
 type currentUserInputPromptData struct {

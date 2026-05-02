@@ -166,7 +166,7 @@ func validateBackendSessionID(sessionID string) error {
 }
 
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
-	reply := buildBuiltinHelpMarkdown(p.runtimeSnapshot().helpConfig)
+	reply := p.buildBuiltinHelpMarkdown(p.runtimeSnapshot().helpConfig)
 	replyJob := job
 	replyJob.Scene = jobSceneChat
 	replyJob.CreateFeishuThread = false
@@ -400,56 +400,23 @@ func (p *Processor) resolveWorkDir(job Job) string {
 	return "."
 }
 
-func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
-	lines := []string{
-		"## Alice 内建命令",
-		"",
-		"- `/help`",
-		"  显示内建命令，以及普通模式 / 工作模式的当前说明。",
-		"- `/status`",
-		"  显示当前会话 scope 下的 token 统计、活跃自动化任务，以及 backend/session/cwd。",
-		"- `/clear`",
-		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
-		"- `/stop`",
-		"  停止当前 session 正在运行的回复，但保留现有 session；后续新指令会在当前 session 上继续。",
-		"- `/session <backend-session-id> [instruction]`",
-		"  在 work thread 中绑定后端 session；带 instruction 时会立即 resume 该 session。",
-		"- `/cd <path>`",
-		"  切换 agent 工作目录，仅在 work 模式下有效；后续 agent 运行将使用该目录。",
-		"- `/ls [path]`",
-		"  列出工作目录内容。不指定路径时显示当前工作目录，可指定绝对或相对路径。",
-		"- `/pwd`",
-		"  显示当前 agent 工作目录。",
-	}
+type builtinHelpTemplateData struct {
+	ChatEnabled     bool
+	WorkEnabled     bool
+	WorkModeTrigger string
+}
 
-	if !helpCfg.chatEnabled && !helpCfg.workEnabled {
-		lines = append(lines,
-			"",
-			"## 模式说明",
-			"",
-			"- 当前未启用 `chat/work` 场景路由，群消息会按 legacy 触发策略处理。",
-		)
-		return strings.Join(lines, "\n")
+func (p *Processor) buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
+	rendered, err := p.renderPromptFile(connectorPromptBuiltinHelp, builtinHelpTemplateData{
+		ChatEnabled:     helpCfg.chatEnabled,
+		WorkEnabled:     helpCfg.workEnabled,
+		WorkModeTrigger: formatWorkModeTrigger(helpCfg),
+	})
+	if err != nil {
+		logging.Warnf("render builtin help failed template=%s err=%v", connectorPromptBuiltinHelp, err)
+		return fmt.Sprintf("内建帮助模板加载失败：`%s`", sanitizeInlineCode(connectorPromptBuiltinHelp))
 	}
-
-	lines = append(lines, "", "## 模式说明", "")
-	if helpCfg.chatEnabled {
-		lines = append(lines,
-			"- `普通模式`",
-			"  默认群聊模式，适合闲聊、轻量互动和非任务性交流。",
-			"  当前配置：整个群默认共享一个会话；发送 `/clear` 后会切到新的会话。模型在不需要发言时可以保持静默。",
-		)
-	}
-	if helpCfg.workEnabled {
-		lines = append(lines,
-			"- `工作模式`",
-			"  任务协作模式，适合排查问题、改代码，以及直接给出结论 / 计划 / 风险 / 下一步。",
-			fmt.Sprintf("  当前配置：群根消息需要同时满足 %s 才会进入工作模式；进入后，同一 thread 里继续满足触发条件的新消息会沿用工作上下文。", formatWorkModeTrigger(helpCfg)),
-			"  空 `@Alice #work` 只创建 work thread，不调用 LLM；适合先开一个可继续输入指令的 thread。",
-			"  `@Alice #work /session <backend-session-id>` 会新建 work thread 并绑定已有后端 session；后面继续写指令会立即 resume。",
-		)
-	}
-	return strings.Join(lines, "\n")
+	return rendered
 }
 
 func formatWorkModeTrigger(helpCfg builtinHelpConfig) string {

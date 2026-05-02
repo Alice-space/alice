@@ -11,6 +11,7 @@ import (
 
 	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/automation"
+	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type llmCallCountingStub struct {
@@ -69,6 +70,43 @@ func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected reply to contain %q, got %q", want, reply)
 		}
+	}
+}
+
+func TestProcessor_HelpCommand_UsesPromptTemplateOverride(t *testing.T) {
+	llmStub := &llmCallCountingStub{}
+	sender := &senderStub{}
+	processor := NewProcessor(llmStub, sender, "failed", "thinking")
+
+	root := t.TempDir()
+	templatePath := filepath.Join(root, "connector", "help.md.tmpl")
+	if err := os.MkdirAll(filepath.Dir(templatePath), 0o750); err != nil {
+		t.Fatalf("create prompt template dir failed: %v", err)
+	}
+	if err := os.WriteFile(templatePath, []byte("custom help {{ .WorkModeTrigger }}"), 0o600); err != nil {
+		t.Fatalf("write prompt template failed: %v", err)
+	}
+	processor.SetPromptLoader(prompting.NewLoader(root))
+
+	state := processor.ProcessJobState(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		ChatType:        "group",
+		SenderOpenID:    "ou_actor",
+		SourceMessageID: "om_src",
+		SessionKey:      "chat_id:oc_chat|message:om_root",
+		Text:            "/help",
+	})
+	if state != JobProcessCompleted {
+		t.Fatalf("expected completed state, got %s", state)
+	}
+	if llmStub.calls != 0 {
+		t.Fatalf("expected builtin command to bypass llm, got %d llm calls", llmStub.calls)
+	}
+	card := parseReplyCard(t, sender.replyCards[0])
+	reply := card.Body.Elements[0].Content
+	if reply != "custom help `@机器人` + `#work`" {
+		t.Fatalf("unexpected custom help reply: %q", reply)
 	}
 }
 
