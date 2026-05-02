@@ -407,7 +407,7 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		"- `/help`",
 		"  显示内建命令，以及普通模式 / 工作模式的当前说明。",
 		"- `/status`",
-		"  显示当前会话 scope 下的 token 统计，以及活跃自动化任务。",
+		"  显示当前会话 scope 下的 token 统计、活跃自动化任务，以及 backend/session/cwd。",
 		"- `/clear`",
 		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
 		"- `/stop`",
@@ -445,6 +445,8 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 			"- `工作模式`",
 			"  任务协作模式，适合排查问题、改代码，以及直接给出结论 / 计划 / 风险 / 下一步。",
 			fmt.Sprintf("  当前配置：群根消息需要同时满足 %s 才会进入工作模式；进入后，同一 thread 里继续满足触发条件的新消息会沿用工作上下文。", formatWorkModeTrigger(helpCfg)),
+			"  空 `@Alice #work` 只创建 work thread，不调用 LLM；适合先开一个可继续输入指令的 thread。",
+			"  `@Alice #work /session <backend-session-id>` 会新建 work thread 并绑定已有后端 session；后面继续写指令会立即 resume。",
 		)
 	}
 	return strings.Join(lines, "\n")

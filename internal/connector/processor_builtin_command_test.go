@@ -62,6 +62,9 @@ func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
 		"`普通模式`",
 		"`工作模式`",
 		"`#work`",
+		"backend/session/cwd",
+		"空 `@Alice #work`",
+		"`@Alice #work /session <backend-session-id>`",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected reply to contain %q, got %q", want, reply)
