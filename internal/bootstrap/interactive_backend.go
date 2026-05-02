@@ -191,7 +191,7 @@ func (b *interactiveProviderBackend) runInteractive(ctx context.Context, session
 				text := strings.TrimSpace(assistantText)
 				if text != "" {
 					reply = text
-					if req.OnProgress != nil && !isAssistantTextDeltaEvent(event) {
+					if req.OnProgress != nil && !isAssistantTextFragmentEvent(event) {
 						req.OnProgress(text)
 					}
 				}
@@ -233,14 +233,21 @@ func updateAssistantText(current string, event agentbridge.TurnEvent) string {
 	if event.Text == "" {
 		return current
 	}
-	if isAssistantTextDeltaEvent(event) {
+	if isAssistantTextFragmentEvent(event) {
 		return current + event.Text
 	}
 	return event.Text
 }
 
-func isAssistantTextDeltaEvent(event agentbridge.TurnEvent) bool {
-	return strings.Contains(event.Raw, `"item/agentMessage/delta"`)
+func isAssistantTextFragmentEvent(event agentbridge.TurnEvent) bool {
+	switch strings.TrimSpace(event.Provider) {
+	case agentbridge.ProviderCodex:
+		return strings.Contains(event.Raw, `"item/agentMessage/delta"`)
+	case agentbridge.ProviderKimi:
+		return strings.Contains(event.Raw, `"ContentPart"`)
+	default:
+		return false
+	}
 }
 
 func (b *interactiveProviderBackend) session(sessionKey string) *agentbridge.InteractiveSession {
