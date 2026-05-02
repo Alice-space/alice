@@ -186,6 +186,88 @@ func TestApp_RouteBuiltinStopToExistingWorkSession(t *testing.T) {
 	}
 }
 
+func TestApp_RouteBuiltinSessionToExistingWorkSessionWithoutMention(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+
+	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_work_root")
+	app.state.latest[sessionKey] = 1
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_session"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_session"),
+				ParentId:    strPtr("om_work_root"),
+				RootId:      strPtr("om_work_root"),
+				ThreadId:    strPtr("omt_work"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/session sess_123"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected builtin session to be routed")
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("unexpected scene: %q", job.Scene)
+	}
+	if job.SessionKey != sessionKey {
+		t.Fatalf("unexpected session key: %q", job.SessionKey)
+	}
+	if !job.CreateFeishuThread {
+		t.Fatal("session command in work scene should keep thread replies enabled")
+	}
+}
+
+func TestApp_RouteStatusToExistingWorkSessionWithoutMention(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+
+	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_work_root")
+	app.state.latest[sessionKey] = 1
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_status"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_status"),
+				ParentId:    strPtr("om_work_root"),
+				RootId:      strPtr("om_work_root"),
+				ThreadId:    strPtr("omt_work"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/status"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected builtin status to be routed")
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("unexpected scene: %q", job.Scene)
+	}
+	if job.SessionKey != sessionKey {
+		t.Fatalf("unexpected session key: %q", job.SessionKey)
+	}
+	if !job.CreateFeishuThread {
+		t.Fatal("status command in work scene should keep thread replies enabled")
+	}
+}
+
 func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
@@ -283,6 +365,50 @@ func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) 
 	}
 	if job2.SessionVersion != 2 {
 		t.Fatalf("unexpected followup session version: %d", job2.SessionVersion)
+	}
+}
+
+func TestApp_OnMessageReceive_EmptyWorkSceneQueuesBootstrapJob(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
+	app := newGroupScenesApp(cfg, processor)
+
+	start := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_empty_start"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_empty_root"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> #work"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), start); err != nil {
+		t.Fatalf("unexpected work start error: %v", err)
+	}
+	if got := len(app.queue); got != 1 {
+		t.Fatalf("expected queue len 1, got %d", got)
+	}
+	job := <-app.queue
+	if job.Scene != jobSceneWork {
+		t.Fatalf("unexpected scene: %q", job.Scene)
+	}
+	if job.SessionKey != "chat_id:oc_chat|scene:work|seed:om_work_empty_root" {
+		t.Fatalf("unexpected session key: %q", job.SessionKey)
+	}
+	if job.Text != "" {
+		t.Fatalf("expected empty work text after trigger trim, got %q", job.Text)
+	}
+	if !job.CreateFeishuThread {
+		t.Fatal("empty work bootstrap should keep thread replies enabled")
 	}
 }
 

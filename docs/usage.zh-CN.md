@@ -135,6 +135,8 @@ group_scenes:
 - 默认通常是 `#work @bot ...`
 - Alice 会为那个 thread 创建或恢复专用 work session
 - 回复保持在任务 thread 内，不会和闲聊状态混在一起
+- 空 work trigger，例如 `@Alice #work`，只创建飞书 work thread，不调用 LLM
+- `@Alice #work /session <backend-session-id>` 会创建 work thread，并绑定到已有后端 session
 
 当你需要 thread-local 的排障、编码、计划或自动化任务时，用 `work`。
 
@@ -145,11 +147,15 @@ group_scenes:
 - `/help`
   查看内建命令帮助卡片
 - `/status`
-  查看当前 scope 下的 usage 和活跃 automation task
+  查看当前 scope 下的 usage、活跃 automation task，以及当前后端/session 信息
 - `/clear`
   轮换当前群聊 `chat` session
 - `/stop`
   停止当前 session 正在运行的回复
+- `/session <backend-session-id> [instruction]`
+  在 work thread 中把当前飞书 thread 绑定到已有后端 session；如果带 `instruction`，Alice 会立即 resume 该后端 session。
+- `/cd <path>`、`/ls [path]`、`/pwd`
+  查看或切换当前 work session 的工作目录。
 
 ### 回退触发模式
 

@@ -251,12 +251,19 @@ func (p *Processor) ProcessJob(ctx context.Context, job Job) bool {
 func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessState {
 	job.WorkflowPhase = normalizeJobWorkflowPhase(job.WorkflowPhase)
 	p.enrichJobUserNames(ctx, &job)
+	if handled, state := p.applyLeadingSessionDirective(ctx, &job); handled {
+		return state
+	}
+	if p.isEmptyWorkThreadBootstrap(job) {
+		return p.processWorkThreadBootstrap(ctx, job)
+	}
 	if handled, state := p.processBuiltinCommand(ctx, job); handled {
 		return state
 	}
 
 	sessionKey := sessionKeyForJob(job)
 	p.touchSessionMessage(sessionKey, p.now())
+	p.recordSessionMetadata(sessionKey, job)
 
 	logging.Debugf(
 		"process job start event_id=%s receive_id_type=%s receive_id=%s source_message_id=%s message_type=%s text=%q attachments=%d",
@@ -272,6 +279,54 @@ func (p *Processor) ProcessJobState(ctx context.Context, job Job) JobProcessStat
 		return p.processReplyMessage(ctx, job)
 	}
 	return p.processSendMessage(ctx, job)
+}
+
+func (p *Processor) applyLeadingSessionDirective(ctx context.Context, job *Job) (bool, JobProcessState) {
+	if p == nil || job == nil || !isSessionCommand(job.Text) {
+		return false, JobProcessCompleted
+	}
+
+	directive, err := parseSessionDirective(job.Text)
+	if err != nil {
+		return true, p.processSessionCommand(ctx, *job)
+	}
+	if strings.TrimSpace(job.Scene) != jobSceneWork {
+		return true, p.processSessionCommand(ctx, *job)
+	}
+	if err := validateBackendSessionID(directive.SessionID); err != nil {
+		return true, p.processSessionCommand(ctx, *job)
+	}
+
+	sessionKey := sessionKeyForJob(*job)
+	p.touchSessionMessage(sessionKey, p.now())
+	p.recordSessionMetadata(sessionKey, *job)
+	p.setThreadID(sessionKey, directive.SessionID)
+	job.Text = strings.TrimSpace(directive.Remainder)
+	if job.Text == "" && len(job.Attachments) == 0 {
+		reply := p.buildWorkThreadStatusMarkdown(*job, "已绑定后端 session。")
+		if err := p.replies.respondCardWithTitle(ctx, *job, builtinWorkThreadCardTitle, reply); err != nil {
+			logging.Errorf("send session bootstrap reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return true, JobProcessCompleted
+	}
+	return false, JobProcessCompleted
+}
+
+func (p *Processor) isEmptyWorkThreadBootstrap(job Job) bool {
+	return strings.TrimSpace(job.Scene) == jobSceneWork &&
+		strings.TrimSpace(job.Text) == "" &&
+		len(job.Attachments) == 0
+}
+
+func (p *Processor) processWorkThreadBootstrap(ctx context.Context, job Job) JobProcessState {
+	sessionKey := sessionKeyForJob(job)
+	p.touchSessionMessage(sessionKey, p.now())
+	p.recordSessionMetadata(sessionKey, job)
+	reply := p.buildWorkThreadStatusMarkdown(job, "Work thread 已创建。")
+	if err := p.replies.respondCardWithTitle(ctx, job, builtinWorkThreadCardTitle, reply); err != nil {
+		logging.Errorf("send work thread bootstrap reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
 }
 
 func normalizeImmediateFeedbackMode(raw string) string {

@@ -12,13 +12,19 @@ import (
 type sessionUsageStats = statusview.UsageStats
 
 type sessionState struct {
-	ThreadID      string            `json:"thread_id"`
-	Aliases       []string          `json:"aliases,omitempty"`
-	WorkThreadID  string            `json:"work_thread_id,omitempty"`
-	WorkDir       string            `json:"work_dir,omitempty"`
-	ScopeKey      string            `json:"scope_key,omitempty"`
-	Usage         sessionUsageStats `json:"usage,omitempty"`
-	LastMessageAt time.Time         `json:"last_message_at"`
+	ThreadID               string            `json:"thread_id"`
+	Aliases                []string          `json:"aliases,omitempty"`
+	WorkThreadID           string            `json:"work_thread_id,omitempty"`
+	WorkDir                string            `json:"work_dir,omitempty"`
+	BackendProvider        string            `json:"backend_provider,omitempty"`
+	BackendModel           string            `json:"backend_model,omitempty"`
+	BackendProfile         string            `json:"backend_profile,omitempty"`
+	BackendReasoningEffort string            `json:"backend_reasoning_effort,omitempty"`
+	BackendVariant         string            `json:"backend_variant,omitempty"`
+	BackendPersonality     string            `json:"backend_personality,omitempty"`
+	ScopeKey               string            `json:"scope_key,omitempty"`
+	Usage                  sessionUsageStats `json:"usage,omitempty"`
+	LastMessageAt          time.Time         `json:"last_message_at"`
 }
 
 type sessionStateSnapshot struct {
@@ -44,7 +50,11 @@ func (p *Processor) getThreadID(sessionKey string) string {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	state, ok := p.sessions[sessionKey]
+	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
+	if canonicalKey == "" {
+		canonicalKey = sessionKey
+	}
+	state, ok := p.sessions[canonicalKey]
 	if !ok {
 		return ""
 	}
@@ -150,6 +160,68 @@ func (p *Processor) setThreadID(sessionKey string, threadID string) {
 		return
 	}
 	state.ThreadID = threadID
+	p.sessions[canonicalKey] = state
+	p.markStateChangedLocked()
+}
+
+func (p *Processor) recordSessionMetadata(sessionKey string, job Job) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return
+	}
+
+	provider := strings.ToLower(strings.TrimSpace(job.LLMProvider))
+	model := strings.TrimSpace(job.LLMModel)
+	profile := strings.TrimSpace(job.LLMProfile)
+	reasoningEffort := strings.ToLower(strings.TrimSpace(job.LLMReasoningEffort))
+	variant := strings.ToLower(strings.TrimSpace(job.LLMVariant))
+	personality := strings.ToLower(strings.TrimSpace(job.LLMPersonality))
+	if provider == "" && model == "" && profile == "" && reasoningEffort == "" && variant == "" && personality == "" {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
+	if canonicalKey == "" {
+		canonicalKey = sessionKey
+	}
+	state, ok := p.sessions[canonicalKey]
+	if !ok {
+		state = sessionState{}
+	}
+	changed := false
+	if state.ScopeKey == "" {
+		state.ScopeKey = scopeKeyFromSessionKey(canonicalKey)
+		changed = true
+	}
+	if provider != "" && state.BackendProvider != provider {
+		state.BackendProvider = provider
+		changed = true
+	}
+	if model != "" && state.BackendModel != model {
+		state.BackendModel = model
+		changed = true
+	}
+	if profile != "" && state.BackendProfile != profile {
+		state.BackendProfile = profile
+		changed = true
+	}
+	if reasoningEffort != "" && state.BackendReasoningEffort != reasoningEffort {
+		state.BackendReasoningEffort = reasoningEffort
+		changed = true
+	}
+	if variant != "" && state.BackendVariant != variant {
+		state.BackendVariant = variant
+		changed = true
+	}
+	if personality != "" && state.BackendPersonality != personality {
+		state.BackendPersonality = personality
+		changed = true
+	}
+	if !changed && ok {
+		return
+	}
 	p.sessions[canonicalKey] = state
 	p.markStateChangedLocked()
 }
@@ -311,4 +383,20 @@ func (p *Processor) setSessionWorkDir(sessionKey string, workDir string) {
 	state.WorkDir = workDir
 	p.sessions[canonicalKey] = state
 	p.markStateChangedLocked()
+}
+
+func (p *Processor) snapshotSessionState(sessionKey string) (string, sessionState, bool) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return "", sessionState{}, false
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
+	if canonicalKey == "" {
+		canonicalKey = sessionKey
+	}
+	state, ok := p.sessions[canonicalKey]
+	return canonicalKey, state, ok
 }

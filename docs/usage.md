@@ -132,6 +132,8 @@ What it does:
 - by default that usually means something like `#work @bot ...`
 - Alice creates or resumes a dedicated work-scoped session for that thread
 - replies stay in the task thread instead of mixing with casual chat state
+- an empty work trigger, such as `@Alice #work`, creates the Feishu work thread without calling the LLM
+- `@Alice #work /session <backend-session-id>` creates a work thread and binds it to an existing backend session
 
 Use `work` when you want thread-local engineering, debugging, planning, or automation tasks.
 
@@ -142,11 +144,15 @@ These commands bypass the normal LLM flow:
 - `/help`
   Show the built-in command help card
 - `/status`
-  Show usage totals and active automation tasks in the current scope
+  Show usage totals, active automation tasks, and current backend/session details
 - `/clear`
   Rotate the current group `chat` session
 - `/stop`
   Stop the current in-flight run for that session
+- `/session <backend-session-id> [instruction]`
+  In a work thread, bind the current Feishu thread to an existing backend session. If `instruction` is present, Alice resumes that backend session immediately.
+- `/cd <path>`, `/ls [path]`, `/pwd`
+  Inspect or change the current work session directory.
 
 ### Fallback Triggering
 

@@ -72,6 +72,7 @@ func (p *Processor) TrySteerJob(ctx context.Context, job Job) (bool, error) {
 
 	p.enrichJobUserNames(ctx, &job)
 	p.touchSessionMessage(sessionKey, p.now())
+	p.recordSessionMetadata(sessionKey, job)
 	p.prepareJobForLLM(ctx, &job)
 
 	currentThreadID := p.getThreadID(sessionKey)

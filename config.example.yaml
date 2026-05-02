@@ -214,6 +214,8 @@ bots:
         create_feishu_thread: false
       # Work mode: triggered by @bot + #work tag (customizable below).
       # Messages in the same thread continue in work context.
+      # Empty "@Alice #work" creates a work thread without calling the LLM.
+      # "@Alice #work /session <backend-session-id>" binds that thread to an existing backend session.
       work:
         enabled: true
         # Trigger tag required in the message (after the @bot trigger).

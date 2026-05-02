@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
@@ -18,11 +19,15 @@ const helpCommandName = "/help"
 const statusCommandName = "/status"
 const clearCommandName = "/clear"
 const stopCommandName = "/stop"
+const sessionCommandName = "/session"
 const cdCommandName = "/cd"
 const lsCommandName = "/ls"
 const pwdCommandName = "/pwd"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
+const builtinWorkThreadCardTitle = "Alice Work Thread"
+
+var backendSessionIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:@/-]*$`)
 
 func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, JobProcessState) {
 	if isHelpCommand(job.Text) {
@@ -36,6 +41,9 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 	}
 	if isStopCommand(job.Text) {
 		return true, p.processStopCommand(ctx, job)
+	}
+	if isSessionCommand(job.Text) {
+		return true, p.processSessionCommand(ctx, job)
 	}
 	if isCdCommand(job.Text) {
 		return true, p.processCdCommand(ctx, job)
@@ -51,11 +59,12 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 
 func isBuiltinCommandText(text string) bool {
 	return isHelpCommand(text) || isStatusCommand(text) || isClearCommand(text) ||
-		isStopCommand(text) || isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
+		isStopCommand(text) || isSessionCommand(text) ||
+		isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
 }
 
 func isContextualBuiltinCommand(text string) bool {
-	return isClearCommand(text) || isStopCommand(text) ||
+	return isClearCommand(text) || isStopCommand(text) || isSessionCommand(text) ||
 		isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
 }
 
@@ -91,6 +100,14 @@ func isStopCommand(text string) bool {
 	return strings.EqualFold(strings.TrimSpace(fields[0]), stopCommandName)
 }
 
+func isSessionCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), sessionCommandName)
+}
+
 func isCdCommand(text string) bool {
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) == 0 {
@@ -115,6 +132,39 @@ func isPwdCommand(text string) bool {
 	return strings.EqualFold(strings.TrimSpace(fields[0]), pwdCommandName)
 }
 
+type sessionDirective struct {
+	SessionID string
+	Remainder string
+}
+
+func parseSessionDirective(text string) (sessionDirective, error) {
+	trimmed := strings.TrimSpace(text)
+	fields := strings.Fields(trimmed)
+	if len(fields) == 0 || !strings.EqualFold(fields[0], sessionCommandName) {
+		return sessionDirective{}, fmt.Errorf("用法：`/session <backend-session-id> [instruction]`")
+	}
+	if len(fields) < 2 {
+		return sessionDirective{}, fmt.Errorf("用法：`/session <backend-session-id> [instruction]`")
+	}
+	afterCommand := strings.TrimSpace(trimmed[len(fields[0]):])
+	remainder := strings.TrimSpace(afterCommand[len(fields[1]):])
+	return sessionDirective{
+		SessionID: strings.TrimSpace(fields[1]),
+		Remainder: remainder,
+	}, nil
+}
+
+func validateBackendSessionID(sessionID string) error {
+	sessionID = strings.TrimSpace(sessionID)
+	if sessionID == "" {
+		return fmt.Errorf("用法：`/session <backend-session-id> [instruction]`")
+	}
+	if !backendSessionIDPattern.MatchString(sessionID) {
+		return fmt.Errorf("后端 session id 包含不支持的字符：`%s`", sanitizeInlineCode(sessionID))
+	}
+	return nil
+}
+
 func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessState {
 	reply := buildBuiltinHelpMarkdown(p.runtimeSnapshot().helpConfig)
 	replyJob := job
@@ -129,12 +179,56 @@ func (p *Processor) processHelpCommand(ctx context.Context, job Job) JobProcessS
 func (p *Processor) processStatusCommand(ctx context.Context, job Job) JobProcessState {
 	reply := p.buildBuiltinStatusMarkdown(job)
 	replyJob := job
-	replyJob.Scene = jobSceneChat
-	replyJob.CreateFeishuThread = false
+	if strings.TrimSpace(replyJob.Scene) != jobSceneWork {
+		replyJob.Scene = jobSceneChat
+		replyJob.CreateFeishuThread = false
+	}
 	if err := p.replies.respondCardWithTitle(ctx, replyJob, builtinStatusCardTitle, reply); err != nil {
 		logging.Errorf("send builtin status reply failed event_id=%s: %v", job.EventID, err)
 	}
 	return JobProcessCompleted
+}
+
+func (p *Processor) processSessionCommand(ctx context.Context, job Job) JobProcessState {
+	directive, err := parseSessionDirective(job.Text)
+	if err != nil {
+		replyJob := forceDirectReplyJob(job)
+		if err := p.replies.respond(ctx, replyJob, err.Error()); err != nil {
+			logging.Errorf("send builtin session usage reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
+	if strings.TrimSpace(job.Scene) != jobSceneWork {
+		reply := "当前不在 work thread 中。请使用 `@Alice #work /session <backend-session-id>` 新建 work thread 并绑定后端 session。"
+		replyJob := forceDirectReplyJob(job)
+		if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+			logging.Errorf("send builtin session scope reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
+	if err := validateBackendSessionID(directive.SessionID); err != nil {
+		replyJob := forceDirectReplyJob(job)
+		if err := p.replies.respond(ctx, replyJob, err.Error()); err != nil {
+			logging.Errorf("send builtin session validation reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
+	sessionKey := sessionKeyForJob(job)
+	p.touchSessionMessage(sessionKey, p.now())
+	p.recordSessionMetadata(sessionKey, job)
+	p.setThreadID(sessionKey, directive.SessionID)
+
+	reply := p.buildWorkThreadStatusMarkdown(job, "已绑定后端 session。")
+	if err := p.replies.respondCardWithTitle(ctx, job, builtinWorkThreadCardTitle, reply); err != nil {
+		logging.Errorf("send builtin session reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
+func forceDirectReplyJob(job Job) Job {
+	job.Scene = jobSceneChat
+	job.CreateFeishuThread = false
+	return job
 }
 
 func (p *Processor) processClearCommand(ctx context.Context, job Job) JobProcessState {
@@ -318,6 +412,8 @@ func buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 		"  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。",
 		"- `/stop`",
 		"  停止当前 session 正在运行的回复，但保留现有 session；后续新指令会在当前 session 上继续。",
+		"- `/session <backend-session-id> [instruction]`",
+		"  在 work thread 中绑定后端 session；带 instruction 时会立即 resume 该 session。",
 		"- `/cd <path>`",
 		"  切换 agent 工作目录，仅在 work 模式下有效；后续 agent 运行将使用该目录。",
 		"- `/ls [path]`",
@@ -397,6 +493,8 @@ func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
 	if updatedAt := formatBuiltinStatusTime(statusview.NewestUsageUpdate(result.BotUsages)); updatedAt != "" {
 		lines = append(lines, fmt.Sprintf("- token 统计更新：`%s`", updatedAt))
 	}
+	lines = append(lines, "", "### 当前 Session", "")
+	lines = append(lines, p.formatCurrentSessionStatusLines(job)...)
 	if result.TaskError != nil || result.UsageError != nil {
 		lines = append(lines, "")
 		if result.TaskError != nil {
@@ -426,6 +524,134 @@ func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
 		}
 	}
 	return strings.Join(lines, "\n")
+}
+
+func (p *Processor) buildWorkThreadStatusMarkdown(job Job, headline string) string {
+	lines := []string{}
+	if headline = strings.TrimSpace(headline); headline != "" {
+		lines = append(lines, headline, "")
+	}
+	lines = append(lines, "### 当前 Session", "")
+	lines = append(lines, p.formatCurrentSessionStatusLines(job)...)
+	return strings.Join(lines, "\n")
+}
+
+func (p *Processor) formatCurrentSessionStatusLines(job Job) []string {
+	sessionKey := sessionKeyForJob(job)
+	canonicalKey, state, ok := p.snapshotSessionState(sessionKey)
+	if canonicalKey == "" {
+		canonicalKey = sessionKey
+	}
+
+	scene := strings.TrimSpace(job.Scene)
+	if scene == "" {
+		scene = detectSceneFromSessionKey(canonicalKey)
+	}
+	if scene == "" {
+		scene = "legacy"
+	}
+
+	backendProvider := firstNonEmptyString(job.LLMProvider, state.BackendProvider)
+	if backendProvider == "" {
+		backendProvider = "default"
+	}
+	backendModel := firstNonEmptyString(job.LLMModel, state.BackendModel)
+	backendProfile := firstNonEmptyString(job.LLMProfile, state.BackendProfile)
+	backendSessionID := strings.TrimSpace(state.ThreadID)
+	feishuThreadID := firstNonEmptyString(job.ThreadID, state.WorkThreadID)
+	workDir := p.resolveWorkDir(job)
+
+	lines := []string{
+		fmt.Sprintf("- scene: `%s`", sanitizeInlineCode(scene)),
+		fmt.Sprintf("- Alice session key: `%s`", sanitizeInlineCode(canonicalKey)),
+		fmt.Sprintf("- Feishu thread id: `%s`", sanitizeInlineCode(defaultStatusValue(feishuThreadID, "未记录"))),
+		fmt.Sprintf("- backend: `%s`", sanitizeInlineCode(backendProvider)),
+	}
+	if backendProfile != "" {
+		lines = append(lines, fmt.Sprintf("- backend profile: `%s`", sanitizeInlineCode(backendProfile)))
+	}
+	if backendModel != "" {
+		lines = append(lines, fmt.Sprintf("- backend model: `%s`", sanitizeInlineCode(backendModel)))
+	}
+	lines = append(lines,
+		fmt.Sprintf("- backend session id: `%s`", sanitizeInlineCode(defaultStatusValue(backendSessionID, "未开始"))),
+		fmt.Sprintf("- cwd: `%s`", sanitizeInlineCode(workDir)),
+	)
+	if command := backendResumeCommand(backendProvider, backendSessionID, workDir); command != "" {
+		lines = append(lines, fmt.Sprintf("- CLI resume: `%s`", sanitizeInlineCode(command)))
+	}
+	if !ok {
+		lines = append(lines, "- session state: `未持久化`")
+	}
+	return lines
+}
+
+func detectSceneFromSessionKey(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	switch {
+	case strings.Contains(sessionKey, workSceneToken):
+		return jobSceneWork
+	case strings.Contains(sessionKey, chatSceneToken):
+		return jobSceneChat
+	default:
+		return ""
+	}
+}
+
+func firstNonEmptyString(values ...string) string {
+	for _, value := range values {
+		if trimmed := strings.TrimSpace(value); trimmed != "" {
+			return trimmed
+		}
+	}
+	return ""
+}
+
+func defaultStatusValue(value, fallback string) string {
+	if trimmed := strings.TrimSpace(value); trimmed != "" {
+		return trimmed
+	}
+	return fallback
+}
+
+func backendResumeCommand(provider, sessionID, workDir string) string {
+	provider = strings.ToLower(strings.TrimSpace(provider))
+	sessionID = strings.TrimSpace(sessionID)
+	workDir = strings.TrimSpace(workDir)
+	if sessionID == "" {
+		return ""
+	}
+	switch provider {
+	case "codex", "":
+		if workDir != "" {
+			return "codex resume -C " + shellQuote(workDir) + " " + shellQuote(sessionID)
+		}
+		return "codex resume " + shellQuote(sessionID)
+	case "claude":
+		command := "claude --resume " + shellQuote(sessionID)
+		if workDir != "" {
+			return "cd " + shellQuote(workDir) + " && " + command
+		}
+		return command
+	default:
+		return ""
+	}
+}
+
+func shellQuote(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "''"
+	}
+	if strings.IndexFunc(value, func(r rune) bool {
+		return !(r >= 'A' && r <= 'Z') &&
+			!(r >= 'a' && r <= 'z') &&
+			!(r >= '0' && r <= '9') &&
+			!strings.ContainsRune("_+-=.,/:@", r)
+	}) < 0 {
+		return value
+	}
+	return "'" + strings.ReplaceAll(value, "'", "'\"'\"'") + "'"
 }
 
 func formatBuiltinStatusTaskLine(task automation.Task) string {

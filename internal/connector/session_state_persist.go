@@ -48,6 +48,12 @@ func (p *Processor) LoadSessionState(path string) error {
 		}
 		state.ThreadID = strings.TrimSpace(state.ThreadID)
 		state.WorkThreadID = strings.TrimSpace(state.WorkThreadID)
+		state.BackendProvider = strings.ToLower(strings.TrimSpace(state.BackendProvider))
+		state.BackendModel = strings.TrimSpace(state.BackendModel)
+		state.BackendProfile = strings.TrimSpace(state.BackendProfile)
+		state.BackendReasoningEffort = strings.ToLower(strings.TrimSpace(state.BackendReasoningEffort))
+		state.BackendVariant = strings.ToLower(strings.TrimSpace(state.BackendVariant))
+		state.BackendPersonality = strings.ToLower(strings.TrimSpace(state.BackendPersonality))
 		state.ScopeKey = strings.TrimSpace(state.ScopeKey)
 		state.Aliases = normalizeSessionAliases(state.Aliases, key)
 		if isWorkSceneSessionKey(key) {
