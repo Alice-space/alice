@@ -197,9 +197,9 @@ func (b *interactiveProviderBackend) runInteractive(ctx context.Context, session
 				if req.OnProgress != nil && strings.TrimSpace(event.Text) != "" {
 					req.OnProgress("[file_change] " + strings.TrimSpace(event.Text))
 				}
-			case agentbridge.TurnEventReasoning, agentbridge.TurnEventToolUse:
-				// reasoning and tool-use events are logged separately via
-				// OnRawEvent; suppress them from Feishu progress messages.
+			case agentbridge.TurnEventUserText, agentbridge.TurnEventReasoning, agentbridge.TurnEventToolUse:
+				// User echoes, reasoning, and tool-use events are backend
+				// context, not Feishu progress messages.
 			case agentbridge.TurnEventCompleted:
 				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, nil
 			case agentbridge.TurnEventInterrupted:
