@@ -67,6 +67,13 @@ func (d *interactiveBackendTestDriver) StartTurn(_ context.Context, req agentbri
 			Provider: d.provider,
 			ThreadID: turn.ThreadID,
 			TurnID:   turn.TurnID,
+			Kind:     agentbridge.TurnEventUserText,
+			Text:     "hello",
+		}
+		d.events <- agentbridge.TurnEvent{
+			Provider: d.provider,
+			ThreadID: turn.ThreadID,
+			TurnID:   turn.TurnID,
 			Kind:     agentbridge.TurnEventToolUse,
 			Text:     "tool_use tool=`bash` command=`pwd`",
 		}
