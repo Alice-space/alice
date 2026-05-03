@@ -1,7 +1,7 @@
 dario.cat/mergo v1.0.1 h1:Ra4+bf83h2ztPIQYNP99R6m+Y7KfnARDfID+a+vLl4s=
 dario.cat/mergo v1.0.1/go.mod h1:uNxQE+84aUszobStD9th8a29P2fMDhsBdgRYvZOxGmk=
-github.com/Alice-space/agentbridge v0.1.5-0.20260502145902-52a1c8be9317 h1:6UsOTZadrDqdTp1jVVZkaioEI/jm0zpI1uMNFHmQb4k=
-github.com/Alice-space/agentbridge v0.1.5-0.20260502145902-52a1c8be9317/go.mod h1:vbqRFtfvSdI3i+lyUxe4UUiC273b5NaSiqa/Tu+HL1A=
+github.com/Alice-space/agentbridge v0.1.5-0.20260503023913-ac8ab53b9c45 h1:cqiU9wLHEEoFEC7OujMpuLzKZllnFtUsbxXDZDQJEvM=
+github.com/Alice-space/agentbridge v0.1.5-0.20260503023913-ac8ab53b9c45/go.mod h1:vbqRFtfvSdI3i+lyUxe4UUiC273b5NaSiqa/Tu+HL1A=
 github.com/Masterminds/goutils v1.1.1 h1:5nUrii3FMTL5diU80unEVvNevw1nH4+ZV4DSLVJLSYI=
 github.com/Masterminds/goutils v1.1.1/go.mod h1:8cTjp+g8YejhMuvIA5y2vz3BpJxksy863GQaJW2MFNU=
 github.com/Masterminds/semver/v3 v3.3.0 h1:B8LGeaivUe71a5qox1ICM/JLl0NqZSW5CHyL+hmvYS0=
