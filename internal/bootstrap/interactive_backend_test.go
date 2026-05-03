@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"strings"
 	"sync"
 	"testing"
 
@@ -32,10 +33,14 @@ func TestInteractiveProviderBackendForwardsAssistantTextAndDropsToolUse(t *testi
 			}
 
 			var progress []string
+			var raw []string
 			result, err := backend.runInteractive(context.Background(), sessionKey, agentbridge.RunRequest{
 				UserText: "hello",
 				OnProgress: func(step string) {
 					progress = append(progress, step)
+				},
+				OnRawEvent: func(event agentbridge.RawEvent) {
+					raw = append(raw, strings.TrimSpace(event.Kind)+":"+strings.TrimSpace(event.Detail))
 				},
 			})
 			if err != nil {
@@ -46,6 +51,14 @@ func TestInteractiveProviderBackendForwardsAssistantTextAndDropsToolUse(t *testi
 			}
 			if len(progress) != 1 || progress[0] != provider+" middle" {
 				t.Fatalf("progress = %#v, want only assistant text", progress)
+			}
+			wantRaw := []string{
+				"user_text:hello",
+				"tool_use:tool_use tool=`bash` command=`pwd`",
+				"turn_completed:",
+			}
+			if strings.Join(raw, "\n") != strings.Join(wantRaw, "\n") {
+				t.Fatalf("raw events = %#v, want %#v", raw, wantRaw)
 			}
 		})
 	}

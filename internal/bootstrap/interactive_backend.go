@@ -200,17 +200,55 @@ func (b *interactiveProviderBackend) runInteractive(ctx context.Context, session
 			case agentbridge.TurnEventUserText, agentbridge.TurnEventReasoning, agentbridge.TurnEventToolUse:
 				// User echoes, reasoning, and tool-use events are backend
 				// context, not Feishu progress messages.
+				emitInteractiveRawEvent(req.OnRawEvent, event)
 			case agentbridge.TurnEventCompleted:
+				emitInteractiveRawEvent(req.OnRawEvent, event)
 				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, nil
 			case agentbridge.TurnEventInterrupted:
+				emitInteractiveRawEvent(req.OnRawEvent, event)
 				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, context.Canceled
 			case agentbridge.TurnEventError:
+				emitInteractiveRawEvent(req.OnRawEvent, event)
 				if event.Err != nil {
 					return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, event.Err
 				}
 				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, fmt.Errorf("%s turn failed", b.provider)
 			}
 		}
+	}
+}
+
+func emitInteractiveRawEvent(fn agentbridge.RawEventFunc, event agentbridge.TurnEvent) {
+	if fn == nil {
+		return
+	}
+	kind := interactiveRawEventKind(event.Kind)
+	if kind == "" {
+		return
+	}
+	fn(agentbridge.RawEvent{
+		Kind:   kind,
+		Line:   strings.TrimSpace(event.Raw),
+		Detail: strings.TrimSpace(event.Text),
+	})
+}
+
+func interactiveRawEventKind(kind agentbridge.TurnEventKind) string {
+	switch kind {
+	case agentbridge.TurnEventUserText:
+		return "user_text"
+	case agentbridge.TurnEventReasoning:
+		return "reasoning"
+	case agentbridge.TurnEventToolUse:
+		return "tool_use"
+	case agentbridge.TurnEventCompleted:
+		return "turn_completed"
+	case agentbridge.TurnEventInterrupted:
+		return "turn_interrupted"
+	case agentbridge.TurnEventError:
+		return "error"
+	default:
+		return ""
 	}
 }
 
