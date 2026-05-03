@@ -74,7 +74,7 @@ func TestApp_OnMessageReceive_ActiveSessionSteersInsteadOfQueue(t *testing.T) {
 	processor := NewProcessor(
 		backend,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 	app := NewApp(cfg, processor)

@@ -253,7 +253,7 @@ func TestApp_WorkerLoopQueuesSameSessionWithoutInterrupting(t *testing.T) {
 	processor := NewProcessor(
 		blockingCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 	app := NewApp(cfg, processor)
@@ -334,7 +334,7 @@ func TestApp_WorkerLoopQueuesGroupThreadReplyMappedBackToRootSession(t *testing.
 	processor := NewProcessor(
 		blockingCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 	app := NewApp(cfg, processor)
@@ -423,7 +423,7 @@ func TestApp_WorkerLoopStopCommandKeepsInterruptedThreadForLaterResume(t *testin
 	processor := NewProcessor(
 		interruptibleCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 	app := NewApp(cfg, processor)

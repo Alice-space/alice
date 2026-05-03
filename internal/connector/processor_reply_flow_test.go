@@ -10,7 +10,7 @@ import (
 func TestProcessor_ReplyMessageFlow_OnFailureSendsAckThenFallback(t *testing.T) {
 	fakeCodex := codexStub{err: errors.New("boom")}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:       "oc_chat",
@@ -31,7 +31,7 @@ func TestProcessor_ReplyMessageFlow_OnFailureSendsAckThenFallback(t *testing.T) 
 	if !strings.Contains(sender.replyCards[0], "收到！") {
 		t.Fatalf("first card should be ack, got %q", sender.replyCards[0])
 	}
-	if !strings.Contains(sender.replyCards[1], "Codex 暂时不可用，请稍后重试。") {
+	if !strings.Contains(sender.replyCards[1], "暂时不可用，请稍后重试。") {
 		t.Fatalf("second card should be failure message, got %q", sender.replyCards[1])
 	}
 }
@@ -39,7 +39,7 @@ func TestProcessor_ReplyMessageFlow_OnFailureSendsAckThenFallback(t *testing.T) 
 func TestProcessor_ReplyMessageFlow_ReactionImmediateFeedbackSkipsAckReply(t *testing.T) {
 	fakeCodex := codexStub{resp: "final answer"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 	processor.SetImmediateFeedback("reaction", "smile")
 
 	processor.ProcessJob(context.Background(), Job{
@@ -73,7 +73,7 @@ func TestProcessor_ReplyMessageFlow_ReactionImmediateFeedbackSkipsAckReply(t *te
 func TestProcessor_ReplyMessageFlow_ReactionFallbacksToAckReply(t *testing.T) {
 	fakeCodex := codexStub{resp: "final answer"}
 	sender := &senderStub{reactionErr: errors.New("reaction unavailable")}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 	processor.SetImmediateFeedback("reaction", "smile")
 
 	processor.ProcessJob(context.Background(), Job{
@@ -100,7 +100,7 @@ func TestProcessor_SendsAgentMessagesAsRichTextMarkdown(t *testing.T) {
 		agentMessages: []string{"阶段提示", "最终答复"},
 	}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:       "oc_chat",
@@ -144,7 +144,7 @@ func TestProcessor_ChatSceneRepliesWithRichTextInsteadOfCards(t *testing.T) {
 		agentMessages: []string{"阶段提示", "最终答复"},
 	}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:          "oc_chat",
@@ -183,7 +183,7 @@ func TestProcessor_FileChangeEventDoesNotSendStandaloneReply(t *testing.T) {
 		agentMessages: []string{"[file_change] internal/connector/processor.go已更改，+23-34"},
 	}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:            "oc_chat",
@@ -221,7 +221,7 @@ func TestProcessor_FileChangeEventDoesNotSendStandaloneReply(t *testing.T) {
 func TestProcessor_DeduplicatesFinalReplyWhenAlreadySentViaAgentMessage(t *testing.T) {
 	fakeCodex := codexStub{resp: "final answer"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:       "oc_chat",
@@ -250,7 +250,7 @@ func TestProcessor_FallsBackToTextWhenFinalCardAndMarkdownReplyFail(t *testing.T
 		replyCardErr:         errors.New("card unavailable"),
 		replyRichMarkdownErr: errors.New("rich markdown unavailable"),
 	}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:       "oc_chat",

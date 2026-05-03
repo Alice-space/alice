@@ -91,7 +91,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 		cfg.LogLevel = "info"
 	}
 	if cfg.FailureMessage == "" {
-		cfg.FailureMessage = "Codex 暂时不可用，请稍后重试。"
+		cfg.FailureMessage = "暂时不可用，请稍后重试。"
 	}
 	if cfg.ThinkingMessage == "" {
 		cfg.ThinkingMessage = "正在思考中..."

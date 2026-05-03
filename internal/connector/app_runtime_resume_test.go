@@ -14,7 +14,7 @@ func TestApp_WorkerLoopAllowsParallelDifferentSessions(t *testing.T) {
 	processor := NewProcessor(
 		blockingCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 	app := NewApp(cfg, processor)
@@ -166,7 +166,7 @@ func TestApp_InterruptedJobRemainsPendingForRetryAfterRestart(t *testing.T) {
 	processor := NewProcessor(
 		blockingCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 	app := NewApp(cfg, processor)
@@ -232,7 +232,7 @@ func TestApp_RestartKeepsOnlyLatestSameSessionJobPending(t *testing.T) {
 	processor := NewProcessor(
 		blockingCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 	app := NewApp(cfg, processor)

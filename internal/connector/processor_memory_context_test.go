@@ -18,7 +18,7 @@ func TestProcessor_BuildsIdentityAwareUserContext(t *testing.T) {
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -49,7 +49,7 @@ func TestProcessor_BuildsIdentityAwareUserContext_WithChatMembersFallback(t *tes
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -83,7 +83,7 @@ func TestProcessor_BuildsIdentityAwareUserContext_SkipsBotIdentity(t *testing.T)
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -120,7 +120,7 @@ func TestProcessor_ResumeThreadSkipsRepeatedSenderMappingHint(t *testing.T) {
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -164,7 +164,7 @@ func TestProcessor_PreservesMentionOrderWhenTextAlreadyContainsMention(t *testin
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -196,7 +196,7 @@ func TestProcessor_AttachesReplyParentMessageContext(t *testing.T) {
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -227,7 +227,7 @@ func TestProcessor_ReplyParentContextFetchFailureFallsBackToUserText(t *testing.
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -258,7 +258,7 @@ func TestProcessor_ResumesCodexThreadWithinSameSession(t *testing.T) {
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 

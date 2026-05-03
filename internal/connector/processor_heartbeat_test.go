@@ -40,7 +40,7 @@ func (b *heartbeatBlockingBackend) Run(ctx context.Context, req agentbridge.RunR
 func TestProcessor_HeartbeatCardStopsBeforeDoneReaction(t *testing.T) {
 	backend := newHeartbeatBlockingBackend()
 	sender := &senderStub{}
-	processor := NewProcessor(backend, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(backend, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 	processor.runtimeMu.Lock()
 	processor.heartbeatConfig = llmHeartbeatConfig{
 		Enabled:           true,

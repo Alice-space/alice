@@ -12,7 +12,7 @@ func TestProcessor_SkipsDuplicateAgentMessages(t *testing.T) {
 		agentMessages: []string{"阶段提示", "阶段提示", "最终答复"},
 	}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:       "oc_chat",
@@ -41,7 +41,7 @@ func TestProcessor_SkipsDuplicateAgentMessages(t *testing.T) {
 func TestProcessor_NoSourceMessageUsesSendCard(t *testing.T) {
 	fakeCodex := codexStub{resp: "final answer"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:     "oc_chat",
@@ -73,7 +73,7 @@ func TestProcessor_ResolvesAttachmentsAndPassesLocalPathToCodex(t *testing.T) {
 			"img_123": "/tmp/alice/image.png",
 		},
 	}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:       "oc_chat",
@@ -120,7 +120,7 @@ func TestProcessor_CanceledReplyMarksInterruptedInsteadOfFailure(t *testing.T) {
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -155,7 +155,7 @@ func TestProcessor_CanceledNonReplySkipsSending(t *testing.T) {
 	processor := NewProcessor(
 		fakeCodex,
 		sender,
-		"Codex 暂时不可用，请稍后重试。",
+		"暂时不可用，请稍后重试。",
 		"正在思考中...",
 	)
 
@@ -173,7 +173,7 @@ func TestProcessor_CanceledNonReplySkipsSending(t *testing.T) {
 func TestProcessor_ReplyMentionUsesTextReply(t *testing.T) {
 	fakeCodex := codexStub{resp: "@李志昊 请看下这个结果"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 	processor.SetImmediateFeedback("reaction", "smile")
 
 	processor.ProcessJob(context.Background(), Job{
@@ -213,7 +213,7 @@ func TestProcessor_ReplyMentionUsesTextReply(t *testing.T) {
 func TestProcessor_NoSourceMentionUsesSendText(t *testing.T) {
 	fakeCodex := codexStub{resp: "@Xiang Shi 收到"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:     "oc_chat",
@@ -242,7 +242,7 @@ func TestProcessor_NoSourceMentionUsesSendText(t *testing.T) {
 func TestProcessor_MentionReplyStripsMarkdownWhenForcedToText(t *testing.T) {
 	fakeCodex := codexStub{resp: "@李志昊 **请看下** 这个`结果`"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:       "oc_chat",
@@ -268,7 +268,7 @@ func TestProcessor_MentionReplyStripsMarkdownWhenForcedToText(t *testing.T) {
 func TestProcessor_NoSourceMentionStripsMarkdownWhenForcedToText(t *testing.T) {
 	fakeCodex := codexStub{resp: "@Xiang Shi **收到** [详情](https://example.com)"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:     "oc_chat",
@@ -297,7 +297,7 @@ func TestProcessor_NoSourceMentionStripsMarkdownWhenForcedToText(t *testing.T) {
 func TestProcessor_SendModeSuppressesNoReplyToken(t *testing.T) {
 	fakeCodex := codexStub{resp: "[[NO_REPLY]]"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:     "oc_chat",
@@ -324,7 +324,7 @@ func TestProcessor_SendModeSuppressesNoReplyToken(t *testing.T) {
 func TestProcessor_SendModeSuppressesNoReplyToken_WithReplyWillBlock(t *testing.T) {
 	fakeCodex := codexStub{resp: "<reply_will>32%</reply_will>\n[[NO_REPLY]]"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:     "oc_chat",
@@ -351,7 +351,7 @@ func TestProcessor_SendModeSuppressesNoReplyToken_WithReplyWillBlock(t *testing.
 func TestProcessor_ChatSceneStripsReplyWillBlockBeforeSending(t *testing.T) {
 	fakeCodex := codexStub{resp: "<reply_will>88%</reply_will>\n<motion>轻轻晃了晃尾巴</motion>\n咱在这儿看着你喵。"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:          "oc_chat",
@@ -392,7 +392,7 @@ func TestProcessor_ChatSceneStripsReplyWillBlockBeforeSending(t *testing.T) {
 func TestProcessor_PassesJobLLMRunOptionsToBackend(t *testing.T) {
 	fakeCodex := &codexCaptureStub{resp: "[[NO_REPLY]]"}
 	sender := &senderStub{}
-	processor := NewProcessor(fakeCodex, sender, "Codex 暂时不可用，请稍后重试。", "正在思考中...")
+	processor := NewProcessor(fakeCodex, sender, "暂时不可用，请稍后重试。", "正在思考中...")
 
 	processor.ProcessJob(context.Background(), Job{
 		ReceiveID:          "oc_chat",
