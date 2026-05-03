@@ -80,6 +80,7 @@ type taskDispatch struct {
 	signal         *taskSignal
 	nextThreadID   string
 	firstMessageID string // Feishu message ID of the first sent message; used to bootstrap source_message_id
+	finalSent      bool
 }
 
 type systemTaskRuntime struct {

@@ -131,6 +131,127 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 	}
 }
 
+func TestEngine_RunUserTask_RunLLM_ForwardsProgressMessages(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 1, 2, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	created, err := store.CreateTask(Task{
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:   ActionTypeRunLLM,
+			Prompt: "progress test",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_llm task failed: %v", err)
+	}
+
+	claimAt := base.Add(61 * time.Second)
+	store.now = func() time.Time { return claimAt }
+	claimed, err := store.ClaimDueTasks(claimAt, 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim task failed: err=%v len=%d", err, len(claimed))
+	}
+
+	sender := &senderStub{}
+	runner := &llmRunnerStub{
+		progress: []string{"first update", "first update", "[file_change] changed.txt", "final answer"},
+		result:   agentbridge.RunResult{Reply: "final answer"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetLLMRunner(runner)
+	engine.now = func() time.Time { return claimAt }
+
+	engine.runUserTask(context.Background(), claimed[0])
+
+	sender.mu.Lock()
+	gotTexts := append([]string(nil), sender.texts...)
+	sender.mu.Unlock()
+	wantTexts := []string{
+		"定时任务「未命名任务」开始运行...",
+		"first update",
+		"final answer",
+	}
+	if len(gotTexts) != len(wantTexts) {
+		t.Fatalf("sent texts = %#v, want %#v", gotTexts, wantTexts)
+	}
+	for i := range wantTexts {
+		if gotTexts[i] != wantTexts[i] {
+			t.Fatalf("sent texts = %#v, want %#v", gotTexts, wantTexts)
+		}
+	}
+
+	stored, err := store.GetTask(created.ID)
+	if err != nil {
+		t.Fatalf("get task failed: %v", err)
+	}
+	if stored.LastResult == "" {
+		t.Fatalf("expected last result to be recorded, task=%+v", stored)
+	}
+	if stored.Action.SourceMessageID == "" {
+		t.Fatalf("expected source_message_id to be bootstrapped from progress send, task=%+v", stored)
+	}
+}
+
+func TestEngine_RunUserTask_RunLLM_ProgressDoesNotReplaceWorkCard(t *testing.T) {
+	base := time.Date(2026, 2, 23, 10, 1, 2, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	_, err := store.CreateTask(Task{
+		Title:    "daily summary",
+		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chat"},
+		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
+		Action: Action{
+			Type:       ActionTypeRunLLM,
+			Prompt:     "progress card test",
+			SessionKey: "chat_id:oc_chat|scene:work|thread:omt_alpha",
+		},
+	})
+	if err != nil {
+		t.Fatalf("create run_llm task failed: %v", err)
+	}
+
+	claimAt := base.Add(61 * time.Second)
+	store.now = func() time.Time { return claimAt }
+	claimed, err := store.ClaimDueTasks(claimAt, 10)
+	if err != nil || len(claimed) != 1 {
+		t.Fatalf("claim task failed: err=%v len=%d", err, len(claimed))
+	}
+
+	sender := &senderStub{}
+	runner := &llmRunnerStub{
+		progress: []string{"draft ready"},
+		result:   agentbridge.RunResult{Reply: "final card"},
+	}
+	engine := NewEngine(store, sender)
+	engine.SetLLMRunner(runner)
+	engine.now = func() time.Time { return claimAt }
+
+	engine.runUserTask(context.Background(), claimed[0])
+
+	sender.mu.Lock()
+	defer sender.mu.Unlock()
+	if sender.sendTextCalls != 2 {
+		t.Fatalf("expected start notification and one progress text, got %d texts: %#v", sender.sendTextCalls, sender.texts)
+	}
+	if sender.texts[1] != "draft ready" {
+		t.Fatalf("unexpected progress text: %#v", sender.texts)
+	}
+	if sender.sendCardCalls != 1 {
+		t.Fatalf("expected final work card, got %d", sender.sendCardCalls)
+	}
+	if !strings.Contains(sender.lastCard, "final card") {
+		t.Fatalf("unexpected card content: %q", sender.lastCard)
+	}
+}
+
 func TestEngine_RunUserTask_RunLLM_WorkSceneUsesCardAndWorkScene(t *testing.T) {
 	base := time.Date(2026, 2, 23, 10, 1, 2, 0, time.UTC)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))

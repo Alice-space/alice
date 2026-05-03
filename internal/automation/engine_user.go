@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	agentbridge "github.com/Alice-space/agentbridge"
@@ -194,14 +195,14 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 	if strings.TrimSpace(route.ReceiveIDType) == "" || strings.TrimSpace(route.ReceiveID) == "" {
 		return taskDispatch{}, errors.New("task route is incomplete")
 	}
-	dispatch, err := e.buildTaskDispatch(ctx, task)
+	dispatch, err := e.buildTaskDispatch(ctx, task, route)
 	if err != nil {
 		return taskDispatch{}, err
 	}
 	if dispatch.forceCard {
 		messageID, err := e.sendCardWithFallback(ctx, task, route, dispatch.cardContent)
 		if err == nil {
-			dispatch.firstMessageID = messageID
+			dispatch.rememberFirstMessageID(messageID)
 			e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 			return dispatch, nil
 		}
@@ -212,7 +213,7 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 		if err != nil {
 			return dispatch, err
 		}
-		dispatch.firstMessageID = messageID
+		dispatch.rememberFirstMessageID(messageID)
 		e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 		return dispatch, nil
 	}
@@ -225,17 +226,27 @@ func (e *Engine) executeUserTask(ctx context.Context, task Task) (taskDispatch, 
 		if err != nil {
 			return dispatch, err
 		}
-		dispatch.firstMessageID = messageID
+		dispatch.rememberFirstMessageID(messageID)
 		e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
+		return dispatch, nil
+	}
+	if dispatch.finalSent {
 		return dispatch, nil
 	}
 	messageID, err := e.sendTextWithFallback(ctx, task, route, dispatch.text)
 	if err != nil {
 		return dispatch, err
 	}
-	dispatch.firstMessageID = messageID
+	dispatch.rememberFirstMessageID(messageID)
 	e.maybeSendTaskUrgent(ctx, task, dispatch, messageID)
 	return dispatch, nil
+}
+
+func (d *taskDispatch) rememberFirstMessageID(messageID string) {
+	if d == nil || strings.TrimSpace(d.firstMessageID) != "" {
+		return
+	}
+	d.firstMessageID = strings.TrimSpace(messageID)
 }
 
 // sendTextWithFallback sends text via route.  If route is a source_message_id
@@ -326,7 +337,7 @@ func taskUrgentRecipient(actor Actor) (string, string, bool) {
 	return "", "", false
 }
 
-func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch, error) {
+func (e *Engine) buildTaskDispatch(ctx context.Context, task Task, route Route) (taskDispatch, error) {
 	task = NormalizeTask(task)
 	runAt := e.nowTime()
 	switch task.Action.Type {
@@ -347,6 +358,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if (provider == "codex" || provider == "kimi" || provider == "opencode") && task.Action.StateKey != "" {
 			threadID = task.Action.StateKey
 		}
+		progress := &taskProgressDispatcher{ctx: ctx, engine: e, task: task, route: route}
 		logging.Infof("automation task llm call id=%s provider=%s model=%s thread=%s", task.ID, task.Action.Provider, task.Action.Model, threadID)
 		result, err := runner.Run(ctx, agentbridge.RunRequest{
 			ThreadID:        threadID,
@@ -361,6 +373,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 			Personality:     task.Action.Personality,
 			WorkspaceDir:    task.Action.WorkspaceDir,
 			Env:             e.buildTaskRunEnv(task),
+			OnProgress:      progress.Send,
 		})
 		if err != nil {
 			return taskDispatch{}, err
@@ -385,10 +398,83 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task) (taskDispatch
 		if err != nil {
 			return taskDispatch{}, err
 		}
-		return taskDispatch{text: text, nextThreadID: strings.TrimSpace(result.NextThreadID)}, nil
+		dispatch := taskDispatch{
+			text:           text,
+			nextThreadID:   strings.TrimSpace(result.NextThreadID),
+			firstMessageID: progress.FirstMessageID(),
+		}
+		if !taskPrefersCard(task) &&
+			prefix == "" &&
+			len(task.Action.MentionUserIDs) == 0 &&
+			progress.LastMessage() == reply {
+			dispatch.finalSent = true
+		}
+		return dispatch, nil
 	default:
 		return taskDispatch{}, fmt.Errorf("unsupported action type %q", task.Action.Type)
 	}
+}
+
+type taskProgressDispatcher struct {
+	ctx    context.Context
+	engine *Engine
+	task   Task
+	route  Route
+
+	mu             sync.Mutex
+	lastMessage    string
+	lastDelivered  string
+	firstMessageID string
+}
+
+func (d *taskProgressDispatcher) Send(message string) {
+	if d == nil || d.engine == nil {
+		return
+	}
+	normalized := strings.TrimSpace(message)
+	if normalized == "" || strings.HasPrefix(normalized, "[file_change] ") {
+		return
+	}
+	d.mu.Lock()
+	if normalized == d.lastMessage {
+		d.mu.Unlock()
+		return
+	}
+	d.lastMessage = normalized
+	d.mu.Unlock()
+	ctx := d.ctx
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	messageID, err := d.engine.sendTextWithFallback(ctx, d.task, d.route, normalized)
+	if err != nil {
+		logging.Warnf("send automation agent message failed id=%s: %v", d.task.ID, err)
+		return
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	d.lastDelivered = normalized
+	if strings.TrimSpace(d.firstMessageID) == "" {
+		d.firstMessageID = strings.TrimSpace(messageID)
+	}
+}
+
+func (d *taskProgressDispatcher) FirstMessageID() string {
+	if d == nil {
+		return ""
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return strings.TrimSpace(d.firstMessageID)
+}
+
+func (d *taskProgressDispatcher) LastMessage() string {
+	if d == nil {
+		return ""
+	}
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return strings.TrimSpace(d.lastDelivered)
 }
 
 // composePromptWithPrefix prepends a system prefix to userText for new threads.

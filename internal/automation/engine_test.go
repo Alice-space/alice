@@ -20,6 +20,7 @@ type senderStub struct {
 	lastReceiveType   string
 	lastReceiveID     string
 	lastText          string
+	texts             []string
 	lastCard          string
 	urgentMessageID   string
 	urgentUserIDType  string
@@ -38,6 +39,7 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	s.lastReceiveType = receiveIDType
 	s.lastReceiveID = receiveID
 	s.lastText = text
+	s.texts = append(s.texts, text)
 	return s.sendTextErr
 }
 
@@ -137,19 +139,28 @@ func TestTaskUrgentRecipient_PrefersOpenID(t *testing.T) {
 }
 
 type llmRunnerStub struct {
-	mu      sync.Mutex
-	calls   int
-	lastReq agentbridge.RunRequest
-	result  agentbridge.RunResult
-	err     error
+	mu       sync.Mutex
+	calls    int
+	lastReq  agentbridge.RunRequest
+	progress []string
+	result   agentbridge.RunResult
+	err      error
 }
 
 func (s *llmRunnerStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
 	s.mu.Lock()
-	defer s.mu.Unlock()
 	s.calls++
 	s.lastReq = req
-	return s.result, s.err
+	progress := append([]string(nil), s.progress...)
+	result := s.result
+	err := s.err
+	s.mu.Unlock()
+	for _, step := range progress {
+		if req.OnProgress != nil {
+			req.OnProgress(step)
+		}
+	}
+	return result, err
 }
 
 type sessionCheckerStub struct {
