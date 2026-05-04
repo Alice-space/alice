@@ -110,11 +110,6 @@ func (e *Engine) nowTime() time.Time {
 
 func (e *Engine) buildTaskRunEnv(task Task) map[string]string {
 	task = NormalizeTask(task)
-	// When the route uses source_message_id (work-thread delivery), the route's
-	// ReceiveID is a Feishu message ID (om_xxx), not a channel ID.  Injecting it
-	// as ALICE_RECEIVE_ID would cause any nested automation task created by the
-	// LLM to use the message ID as the scope's chat_id, producing a task in the
-	// wrong scope.  Override with the canonical channel ID from the task scope.
 	receiveIDType := task.Route.ReceiveIDType
 	receiveID := task.Route.ReceiveID
 	if receiveIDType == "source_message_id" {
@@ -189,14 +184,14 @@ func (e *Engine) runEnvSnapshot() map[string]string {
 
 func taskSessionKey(task Task) string {
 	task = NormalizeTask(task)
-	if sessionKey := strings.TrimSpace(task.Action.SessionKey); sessionKey != "" {
+	if sessionKey := task.SessionKey; sessionKey != "" {
 		return sessionKey
 	}
 	return sessionkey.Build(task.Route.ReceiveIDType, task.Route.ReceiveID)
 }
 
 func taskScene(task Task) string {
-	switch sessionKey := strings.TrimSpace(task.Action.SessionKey); {
+	switch sessionKey := task.SessionKey; {
 	case strings.Contains(sessionKey, "|scene:work"):
 		return "work"
 	case strings.Contains(sessionKey, "|scene:chat"):

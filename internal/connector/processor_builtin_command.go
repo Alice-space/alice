@@ -628,12 +628,9 @@ func formatBuiltinStatusTaskLine(task automation.Task) string {
 	if title := strings.TrimSpace(task.Title); title != "" {
 		parts = append(parts, title)
 	}
-	parts = append(parts, fmt.Sprintf("`%s`", sanitizeInlineCode(formatBuiltinStatusTaskAction(task.Action))))
+	parts = append(parts, "`run_llm`")
 	if !task.NextRunAt.IsZero() {
 		parts = append(parts, fmt.Sprintf("next `%s`", task.NextRunAt.Local().Format("2006-01-02 15:04:05")))
-	}
-	if stateKey := strings.TrimSpace(task.Action.StateKey); stateKey != "" {
-		parts = append(parts, fmt.Sprintf("state_key `%s`", sanitizeInlineCode(stateKey)))
 	}
 	if task.MaxRuns > 0 {
 		parts = append(parts, fmt.Sprintf("runs `%d/%d`", task.RunCount, task.MaxRuns))
@@ -644,14 +641,6 @@ func formatBuiltinStatusTaskLine(task automation.Task) string {
 		parts = append(parts, "`running-now`")
 	}
 	return strings.Join(parts, " | ")
-}
-
-func formatBuiltinStatusTaskAction(action automation.Action) string {
-	label := strings.TrimSpace(string(action.Type))
-	if label == "" {
-		label = "unknown"
-	}
-	return label
 }
 
 func formatBuiltinStatusTime(ts time.Time) string {

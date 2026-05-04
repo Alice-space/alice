@@ -5,26 +5,6 @@ import (
 	"time"
 )
 
-func TestBuildDispatchText(t *testing.T) {
-	text, err := BuildDispatchText(Action{
-		Text:           "请处理",
-		MentionUserIDs: []string{"ou_1", "ou_2", "ou_1"},
-	})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-	want := `<at user_id="ou_1">ou_1</at> <at user_id="ou_2">ou_2</at> 请处理`
-	if text != want {
-		t.Fatalf("unexpected text: %q", text)
-	}
-}
-
-func TestBuildDispatchText_EmptyRejected(t *testing.T) {
-	if _, err := BuildDispatchText(Action{}); err == nil {
-		t.Fatal("expected empty action error")
-	}
-}
-
 func TestParseStatusFilter(t *testing.T) {
 	status, all, err := ParseStatusFilter("active")
 	if err != nil || all || status != TaskStatusActive {
@@ -39,106 +19,78 @@ func TestParseStatusFilter(t *testing.T) {
 	}
 }
 
-func TestValidateTask_RunLLM(t *testing.T) {
+func TestValidateTask_ValidInterval(t *testing.T) {
 	task := Task{
-		ID:       "task_run_llm",
+		ID:       "task_interval",
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action: Action{
-			Type:            ActionTypeRunLLM,
-			Prompt:          "请输出当前时间 {{now}}",
-			Model:           "gpt-4.1-mini",
-			Profile:         "worker-cheap",
-			ReasoningEffort: "high",
-			Personality:     "pragmatic",
-			MentionUserIDs:  []string{"ou_actor"},
-		},
-		Status: TaskStatusActive,
+		Schedule: Schedule{EverySeconds: 60},
+		Prompt:   "hello {{now}}",
+		Status:   TaskStatusActive,
 	}
 	if err := ValidateTask(task); err != nil {
-		t.Fatalf("expected run_llm task to be valid, got err=%v", err)
+		t.Fatalf("expected task to be valid, got err=%v", err)
 	}
 }
 
-func TestNormalizeTask_TrimRunLLMSelectors(t *testing.T) {
-	task := NormalizeTask(Task{
-		Action: Action{
-			Type:            ActionTypeRunLLM,
-			Prompt:          "hi",
-			Model:           "  gpt-4.1-mini  ",
-			Profile:         "  worker-cheap  ",
-			ReasoningEffort: "  XHIGH  ",
-			Personality:     "  Pragmatic  ",
-		},
-	})
-	if task.Action.Model != "gpt-4.1-mini" {
-		t.Fatalf("unexpected normalized model: %q", task.Action.Model)
-	}
-	if task.Action.Profile != "worker-cheap" {
-		t.Fatalf("unexpected normalized profile: %q", task.Action.Profile)
-	}
-	if task.Action.ReasoningEffort != "xhigh" {
-		t.Fatalf("unexpected normalized reasoning effort: %q", task.Action.ReasoningEffort)
-	}
-	if task.Action.Personality != "pragmatic" {
-		t.Fatalf("unexpected normalized personality: %q", task.Action.Personality)
-	}
-}
-
-func TestValidateTask_RunLLMEmptyPromptRejected(t *testing.T) {
-	task := Task{
-		ID:       "task_run_llm_empty_prompt",
-		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
-		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
-		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action: Action{
-			Type:   ActionTypeRunLLM,
-			Prompt: "",
-		},
-		Status: TaskStatusActive,
-	}
-	if err := ValidateTask(task); err == nil {
-		t.Fatal("expected empty run_llm prompt error")
-	}
-}
-
-func TestValidateTask_LegacyActionTypesRejected(t *testing.T) {
-	for _, actionType := range []ActionType{"send" + "_text", "run" + "_workflow"} {
-		task := Task{
-			ID:       "task_legacy_action",
-			Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
-			Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
-			Creator:  Actor{UserID: "ou_actor"},
-			Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-			Action: Action{
-				Type: actionType,
-			},
-			Status: TaskStatusActive,
-		}
-		if err := ValidateTask(task); err == nil {
-			t.Fatalf("expected legacy action type %q to be rejected", actionType)
-		}
-	}
-}
-
-func TestValidateTask_Cron(t *testing.T) {
+func TestValidateTask_ValidCron(t *testing.T) {
 	task := Task{
 		ID:       "task_cron",
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeCron, CronExpr: "0 9 * * *"},
-		Action: Action{
-			Type:   ActionTypeRunLLM,
-			Prompt: "daily brief",
-		},
-		Status: TaskStatusActive,
+		Schedule: Schedule{CronExpr: "0 9 * * *"},
+		Prompt:   "daily brief",
+		Status:   TaskStatusActive,
 	}
 	if err := ValidateTask(task); err != nil {
 		t.Fatalf("expected cron task to be valid, got err=%v", err)
+	}
+}
+
+func TestValidateTask_EmptyPromptRejected(t *testing.T) {
+	task := Task{
+		ID:       "task_empty_prompt",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{EverySeconds: 60},
+		Prompt:   "",
+		Status:   TaskStatusActive,
+	}
+	if err := ValidateTask(task); err == nil {
+		t.Fatal("expected empty prompt error")
+	}
+}
+
+func TestValidateTask_NoScheduleRejected(t *testing.T) {
+	task := Task{
+		ID:       "task_no_schedule",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{},
+		Prompt:   "hello",
+		Status:   TaskStatusActive,
+	}
+	if err := ValidateTask(task); err == nil {
+		t.Fatal("expected no schedule error")
+	}
+}
+
+func TestValidateTask_EverySecondsUnder60Rejected(t *testing.T) {
+	task := Task{
+		ID:       "task_short_interval",
+		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
+		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
+		Creator:  Actor{UserID: "ou_actor"},
+		Schedule: Schedule{EverySeconds: 30},
+		Prompt:   "hello",
+		Status:   TaskStatusActive,
+	}
+	if err := ValidateTask(task); err == nil {
+		t.Fatal("expected every_seconds >= 60 error")
 	}
 }
 
@@ -148,12 +100,9 @@ func TestValidateTask_CronInvalidExprRejected(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeCron, CronExpr: "bad expr"},
-		Action: Action{
-			Type:   ActionTypeRunLLM,
-			Prompt: "daily brief",
-		},
-		Status: TaskStatusActive,
+		Schedule: Schedule{CronExpr: "bad expr"},
+		Prompt:   "daily brief",
+		Status:   TaskStatusActive,
 	}
 	if err := ValidateTask(task); err == nil {
 		t.Fatal("expected invalid cron_expr error")
@@ -166,11 +115,8 @@ func TestValidateTask_MaxRunsReachedActiveRejected(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action: Action{
-			Type:   ActionTypeRunLLM,
-			Prompt: "hello",
-		},
+		Schedule: Schedule{EverySeconds: 60},
+		Prompt:   "hello",
 		Status:   TaskStatusActive,
 		MaxRuns:  1,
 		RunCount: 1,
@@ -186,11 +132,8 @@ func TestValidateTask_MaxRunsReachedPausedAllowed(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action: Action{
-			Type:   ActionTypeRunLLM,
-			Prompt: "hello",
-		},
+		Schedule: Schedule{EverySeconds: 60},
+		Prompt:   "hello",
 		Status:   TaskStatusPaused,
 		MaxRuns:  1,
 		RunCount: 1,
@@ -206,11 +149,8 @@ func TestValidateTask_MaxRunsReachedActiveRunningAllowed(t *testing.T) {
 		Scope:    Scope{Kind: ScopeKindUser, ID: "ou_actor"},
 		Route:    Route{ReceiveIDType: "user_id", ReceiveID: "ou_actor"},
 		Creator:  Actor{UserID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action: Action{
-			Type:   ActionTypeRunLLM,
-			Prompt: "hello",
-		},
+		Schedule: Schedule{EverySeconds: 60},
+		Prompt:   "hello",
 		Status:   TaskStatusActive,
 		MaxRuns:  1,
 		RunCount: 1,
@@ -221,11 +161,36 @@ func TestValidateTask_MaxRunsReachedActiveRunningAllowed(t *testing.T) {
 	}
 }
 
+func TestNormalizeTask_TrimFields(t *testing.T) {
+	task := NormalizeTask(Task{
+		Prompt:   "  hello  ",
+		Schedule: Schedule{EverySeconds: 120},
+	})
+	if task.Prompt != "hello" {
+		t.Fatalf("unexpected normalized prompt: %q", task.Prompt)
+	}
+	if task.ManageMode != ManageModeCreatorOnly {
+		t.Fatalf("unexpected default manage mode: %q", task.ManageMode)
+	}
+	if task.Status != TaskStatusActive {
+		t.Fatalf("unexpected default status: %q", task.Status)
+	}
+}
+
 func TestNextRunAt_Cron(t *testing.T) {
 	from := time.Date(2026, 2, 23, 8, 30, 0, 0, time.Local)
-	next := NextRunAt(from, Schedule{Type: ScheduleTypeCron, CronExpr: "0 9 * * *"})
+	next := NextRunAt(from, Schedule{CronExpr: "0 9 * * *"})
 	want := time.Date(2026, 2, 23, 9, 0, 0, 0, time.Local)
 	if !next.Equal(want) {
 		t.Fatalf("unexpected cron next run at: got=%s want=%s", next.Format(time.RFC3339), want.Format(time.RFC3339))
+	}
+}
+
+func TestNextRunAt_Interval(t *testing.T) {
+	from := time.Date(2026, 2, 23, 8, 30, 0, 0, time.Local)
+	next := NextRunAt(from, Schedule{EverySeconds: 300})
+	want := time.Date(2026, 2, 23, 8, 35, 0, 0, time.Local)
+	if !next.Equal(want) {
+		t.Fatalf("unexpected interval next run at: got=%s want=%s", next.Format(time.RFC3339), want.Format(time.RFC3339))
 	}
 }

@@ -35,21 +35,14 @@ func TestRenderActionTemplate_EmptyInputReturnsEmpty(t *testing.T) {
 }
 
 func TestEngine_BuildTaskRunEnv_SourceMessageIDRouteUsesScopeID(t *testing.T) {
-	// When a task's route uses source_message_id (work-thread delivery), the
-	// ReceiveID is a Feishu message ID (om_xxx).  buildTaskRunEnv must override
-	// it with the canonical chat_id from task.Scope so that any nested
-	// automation task the LLM creates lands in the correct scope.
 	engine := NewEngine(nil, nil)
 	task := Task{
-		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chatid"},
-		Route:    Route{ReceiveIDType: "source_message_id", ReceiveID: "om_messageid"},
-		Creator:  Actor{OpenID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action: Action{
-			Type:       ActionTypeRunLLM,
-			Prompt:     "test",
-			SessionKey: "chat_id:oc_chatid|scene:work|seed:om_messageid",
-		},
+		Scope:      Scope{Kind: ScopeKindChat, ID: "oc_chatid"},
+		Route:      Route{ReceiveIDType: "source_message_id", ReceiveID: "om_messageid"},
+		Creator:    Actor{OpenID: "ou_actor"},
+		Schedule:   Schedule{EverySeconds: 60},
+		Prompt:     "test",
+		SessionKey: "chat_id:oc_chatid|scene:work|seed:om_messageid",
 	}
 	env := engine.buildTaskRunEnv(task)
 	if env == nil {
@@ -66,14 +59,13 @@ func TestEngine_BuildTaskRunEnv_SourceMessageIDRouteUsesScopeID(t *testing.T) {
 }
 
 func TestEngine_BuildTaskRunEnv_ChatIDRoutePassedThrough(t *testing.T) {
-	// When the route already uses chat_id, it should pass through unchanged.
 	engine := NewEngine(nil, nil)
 	task := Task{
 		Scope:    Scope{Kind: ScopeKindChat, ID: "oc_chatid"},
 		Route:    Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chatid"},
 		Creator:  Actor{OpenID: "ou_actor"},
-		Schedule: Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:   Action{Type: ActionTypeRunLLM, Prompt: "test"},
+		Schedule: Schedule{EverySeconds: 60},
+		Prompt:   "test",
 	}
 	env := engine.buildTaskRunEnv(task)
 	if env["ALICE_RECEIVE_ID_TYPE"] != "chat_id" {

@@ -329,13 +329,9 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
 		Route:    automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:  automation.Actor{OpenID: "ou_actor"},
-		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 600},
-		Action: automation.Action{
-			Type:     automation.ActionTypeRunLLM,
-			Prompt:   "/alice reconcile camp_active",
-			StateKey: "camp_active",
-		},
-		Status: automation.TaskStatusActive,
+		Schedule: automation.Schedule{EverySeconds: 600},
+		Prompt:   "/alice reconcile camp_active",
+		Status:   automation.TaskStatusActive,
 	}); err != nil {
 		t.Fatalf("create active task failed: %v", err)
 	}
@@ -345,12 +341,9 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
 		Route:    automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:  automation.Actor{OpenID: "ou_actor"},
-		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 3600},
-		Action: automation.Action{
-			Type:   automation.ActionTypeRunLLM,
-			Prompt: "summarize current progress",
-		},
-		Status: automation.TaskStatusPaused,
+		Schedule: automation.Schedule{EverySeconds: 3600},
+		Prompt:   "summarize current progress",
+		Status:   automation.TaskStatusPaused,
 	}); err != nil {
 		t.Fatalf("create paused task failed: %v", err)
 	}
@@ -425,7 +418,6 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 		"活跃自动化任务：`1`",
 		"`task_active`",
 		"`run_llm`",
-		"state_key `camp_active`",
 	} {
 		if !strings.Contains(reply, want) {
 			t.Fatalf("expected status reply to contain %q, got %q", want, reply)

@@ -35,14 +35,16 @@ type FileRequest struct {
 }
 
 type CreateTaskRequest struct {
-	Title            string                `json:"title,omitempty"`
-	Schedule         automation.Schedule   `json:"schedule"`
-	Action           automation.Action     `json:"action"`
-	ManageMode       automation.ManageMode `json:"manage_mode,omitempty"`
-	MaxRuns          int                   `json:"max_runs,omitempty"`
-	NextRunAt        time.Time             `json:"next_run_at,omitempty"`
-	Enabled          *bool                 `json:"enabled,omitempty"`
-	ResumeSessionKey string                `json:"resume_session_key,omitempty"`
+	Prompt         string                `json:"prompt"`
+	EverySeconds   int                   `json:"every_seconds,omitempty"`
+	CronExpr       string                `json:"cron,omitempty"`
+	MaxRuns        int                   `json:"max_runs,omitempty"`
+	Fresh          bool                  `json:"fresh,omitempty"`
+	Title          string                `json:"title,omitempty"`
+	ResumeThreadID string                `json:"resume_thread_id,omitempty"`
+	ManageMode     automation.ManageMode `json:"manage_mode,omitempty"`
+	NextRunAt      time.Time             `json:"next_run_at,omitempty"`
+	Enabled        *bool                 `json:"enabled,omitempty"`
 }
 
 func BaseURL(addr string) string {

@@ -76,13 +76,15 @@ func buildTitledReplyCardContent(title, markdown string) string {
 }
 
 type llmHeartbeatCardState struct {
-	Status          string
-	Elapsed         time.Duration
-	SinceVisible    time.Duration
-	SinceBackend    time.Duration
-	LastBackendKind string
-	FileChanges     []string
-	FileChangeTotal int
+	Status           string
+	Elapsed          time.Duration
+	SinceVisible     time.Duration
+	SinceBackend     time.Duration
+	LastBackendKind  string
+	ShellCommand     string
+	ShellCommandKind string
+	FileChanges      []string
+	FileChangeTotal  int
 }
 
 func buildLLMHeartbeatCardContent(state llmHeartbeatCardState) string {
@@ -100,6 +102,16 @@ func buildLLMHeartbeatCardContent(state llmHeartbeatCardState) string {
 		"**最近可见输出**：" + formatElapsed(state.SinceVisible) + " 前",
 		"**最近后端活动**：" + formatElapsed(state.SinceBackend) + " 前",
 		"**后端事件**：" + backendKind,
+	}
+	if state.ShellCommand != "" {
+		kindLabel := strings.TrimSpace(state.ShellCommandKind)
+		switch kindLabel {
+		case "tool_use", "tool_call":
+			kindLabel = "后端指令"
+		default:
+			kindLabel = "后端操作"
+		}
+		lines = append(lines, "**"+kindLabel+"**："+clipText(state.ShellCommand, 300))
 	}
 	if len(state.FileChanges) == 0 {
 		lines = append(lines, "**最近代码编辑**：暂无")

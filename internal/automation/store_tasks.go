@@ -251,16 +251,7 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 				changed = true
 				continue
 			}
-			switch task.Schedule.Type {
-			case ScheduleTypeInterval:
-				if task.Schedule.EverySeconds <= 0 {
-					continue
-				}
-			case ScheduleTypeCron:
-				if strings.TrimSpace(task.Schedule.CronExpr) == "" {
-					continue
-				}
-			default:
+			if !task.Schedule.isCron() && !task.Schedule.isInterval() {
 				continue
 			}
 			next := task.NextRunAt.Local()
@@ -289,14 +280,6 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 	return claimed, nil
 }
 
-// UnclaimTask reverts a prior ClaimDueTasks claim for the given task.
-// It sets Running=false, decrements RunCount (if positive), and resets
-// NextRunAt to zero so the task becomes immediately eligible on the next
-// scheduling tick.
-// This is used when the engine skips execution because the target session
-// is busy, without recording a run result.
-// NOTE: Implemented via updateSnapshot (not PatchTask) to bypass the
-// auto-recompute of NextRunAt that PatchTask applies to active tasks.
 func (s *Store) UnclaimTask(taskID string) error {
 	if s == nil {
 		return errors.New("store is nil")
@@ -343,12 +326,6 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 		if runErr != nil {
 			task.ConsecutiveFailures++
 			task.LastResult = "error: " + strings.TrimSpace(runErr.Error())
-			if shouldRetrySingleRunInternalWorkflowTask(*task) && task.ConsecutiveFailures < maxConsecutiveTaskFailures {
-				task.Status = TaskStatusActive
-				task.RunCount = 0
-				task.NextRunAt = NextRunAt(at, task.Schedule)
-				return nil
-			}
 			if task.ConsecutiveFailures >= maxConsecutiveTaskFailures {
 				task.Status = TaskStatusPaused
 				task.NextRunAt = time.Time{}
@@ -370,22 +347,6 @@ func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) erro
 		return nil
 	}
 	return err
-}
-
-func shouldRetrySingleRunInternalWorkflowTask(task Task) bool {
-	task = NormalizeTask(task)
-	if task.MaxRuns != 1 {
-		return false
-	}
-	stateKey := strings.TrimSpace(task.Action.StateKey)
-	return strings.HasPrefix(stateKey, "campaign_dispatch:") || strings.HasPrefix(stateKey, "campaign_wake:")
-}
-
-func ShouldEscalateInternalWorkflowFailure(task Task) bool {
-	task = NormalizeTask(task)
-	return shouldRetrySingleRunInternalWorkflowTask(task) &&
-		task.Status == TaskStatusPaused &&
-		task.ConsecutiveFailures == maxConsecutiveTaskFailures
 }
 
 func applyDeletedTaskState(task Task, now time.Time) Task {
@@ -436,7 +397,7 @@ func (s *Store) RecordTaskResumeThreadID(taskID, nextThreadID string) error {
 		if task.Status == TaskStatusDeleted {
 			return errSkipDeletedTaskMutation
 		}
-		task.Action.ResumeThreadID = nextThreadID
+		task.ResumeThreadID = nextThreadID
 		return nil
 	})
 	if errors.Is(err, ErrTaskNotFound) {
@@ -448,9 +409,6 @@ func (s *Store) RecordTaskResumeThreadID(taskID, nextThreadID string) error {
 	return err
 }
 
-// RecordTaskSourceMessageID persists the first sent message ID as the thread
-// anchor for subsequent runs.  It only writes if source_message_id is not yet
-// set, making it safe to call on every successful run.
 func (s *Store) RecordTaskSourceMessageID(taskID, messageID string) error {
 	if s == nil {
 		return errors.New("store is nil")
@@ -463,52 +421,10 @@ func (s *Store) RecordTaskSourceMessageID(taskID, messageID string) error {
 		if task.Status == TaskStatusDeleted {
 			return errSkipDeletedTaskMutation
 		}
-		if strings.TrimSpace(task.Action.SourceMessageID) != "" {
-			// Already set; do not overwrite — first message wins.
+		if strings.TrimSpace(task.SourceMessageID) != "" {
 			return errSkipDeletedTaskMutation
 		}
-		task.Action.SourceMessageID = messageID
-		return nil
-	})
-	if errors.Is(err, ErrTaskNotFound) {
-		return nil
-	}
-	if errors.Is(err, errSkipDeletedTaskMutation) {
-		return nil
-	}
-	return err
-}
-
-func (s *Store) RecordTaskSignal(taskID string, at time.Time, kind, message string, pause bool) error {
-	if s == nil {
-		return errors.New("store is nil")
-	}
-	kind = strings.ToLower(strings.TrimSpace(kind))
-	if kind == "" {
-		kind = "signal"
-	}
-	_, err := s.PatchTask(taskID, func(task *Task) error {
-		if task.Status == TaskStatusDeleted {
-			return errSkipDeletedTaskMutation
-		}
-		if at.IsZero() {
-			at = s.nowLocal()
-		}
-		at = at.Local()
-		task.Running = false
-		task.ConsecutiveFailures = 0
-		task.LastSignalKind = kind
-		message = strings.TrimSpace(message)
-		task.LastSignalMessage = message
-		if message == "" {
-			task.LastResult = kind + ": " + at.Format(time.RFC3339)
-		} else {
-			task.LastResult = kind + ": " + message
-		}
-		if pause || (task.MaxRuns > 0 && task.RunCount >= task.MaxRuns) {
-			task.Status = TaskStatusPaused
-			task.NextRunAt = time.Time{}
-		}
+		task.SourceMessageID = messageID
 		return nil
 	})
 	if errors.Is(err, ErrTaskNotFound) {

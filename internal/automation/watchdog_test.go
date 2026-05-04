@@ -18,8 +18,8 @@ func TestStore_ScanWatchdogAlertsFindsOverdueAndStuckTasks(t *testing.T) {
 		Scope:     Scope{Kind: ScopeKindChat, ID: "oc_chat"},
 		Route:     Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:   Actor{OpenID: "ou_actor"},
-		Schedule:  Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:    Action{Type: ActionTypeRunLLM, Prompt: "ping"},
+		Schedule:  Schedule{EverySeconds: 60},
+		Prompt:    "ping",
 		NextRunAt: base.Add(-5 * time.Minute),
 	})
 	if err != nil {
@@ -30,8 +30,8 @@ func TestStore_ScanWatchdogAlertsFindsOverdueAndStuckTasks(t *testing.T) {
 		Scope:     Scope{Kind: ScopeKindChat, ID: "oc_chat"},
 		Route:     Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:   Actor{OpenID: "ou_actor"},
-		Schedule:  Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:    Action{Type: ActionTypeRunLLM, Prompt: "ping"},
+		Schedule:  Schedule{EverySeconds: 60},
+		Prompt:    "ping",
 		NextRunAt: base.Add(time.Hour),
 		LastRunAt: base.Add(-20 * time.Minute),
 		Running:   true,
@@ -68,8 +68,8 @@ func TestEngine_RunWatchdogOnceSendsCooldownLimitedAlert(t *testing.T) {
 		Scope:     Scope{Kind: ScopeKindChat, ID: "oc_chat"},
 		Route:     Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:   Actor{OpenID: "ou_actor"},
-		Schedule:  Schedule{Type: ScheduleTypeInterval, EverySeconds: 60},
-		Action:    Action{Type: ActionTypeRunLLM, Prompt: "ping"},
+		Schedule:  Schedule{EverySeconds: 60},
+		Prompt:    "ping",
 		NextRunAt: base.Add(-5 * time.Minute),
 	}); err != nil {
 		t.Fatalf("create task failed: %v", err)
@@ -82,10 +82,15 @@ func TestEngine_RunWatchdogOnceSendsCooldownLimitedAlert(t *testing.T) {
 	engine.RunWatchdogOnce(context.Background())
 	engine.RunWatchdogOnce(context.Background())
 
-	if sender.sendCardCalls != 1 {
-		t.Fatalf("expected one cooldown-limited watchdog card, got %d", sender.sendCardCalls)
+	sender.mu.Lock()
+	calls := sender.sendTextCalls
+	lastText := sender.lastText
+	sender.mu.Unlock()
+
+	if calls != 1 {
+		t.Fatalf("expected one cooldown-limited watchdog text, got %d", calls)
 	}
-	if !strings.Contains(sender.lastCard, "定时任务可能没有按时触发") || !strings.Contains(sender.lastCard, "daily report") {
-		t.Fatalf("unexpected watchdog card: %q", sender.lastCard)
+	if !strings.Contains(lastText, "定时任务可能没有按时触发") || !strings.Contains(lastText, "daily report") {
+		t.Fatalf("unexpected watchdog text: %q", lastText)
 	}
 }

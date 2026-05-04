@@ -8,7 +8,6 @@ import (
 	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/messaging"
-	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/go-co-op/gocron/v2"
 )
 
@@ -67,19 +66,10 @@ type Engine struct {
 	watchdogLastAlert  map[string]time.Time
 }
 
-type taskSignal struct {
-	kind    string
-	message string
-	pause   bool
-}
-
 type taskDispatch struct {
 	text           string
-	cardContent    string
-	forceCard      bool
-	signal         *taskSignal
 	nextThreadID   string
-	firstMessageID string // Feishu message ID of the first sent message; used to bootstrap source_message_id
+	firstMessageID string
 	finalSent      bool
 }
 
@@ -89,8 +79,6 @@ type systemTaskRuntime struct {
 	run      SystemTaskFunc
 	running  bool
 }
-
-var actionTemplateRenderer = prompting.NewLoader(".")
 
 func NewEngine(store *Store, sender Sender) *Engine {
 	return &Engine{

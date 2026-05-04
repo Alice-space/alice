@@ -49,8 +49,8 @@ func TestRuntimeAPI_AutomationPermissionDenied(t *testing.T) {
 		ChatType:      "group",
 		SessionKey:    "chat_id:oc_chat|scene:chat",
 	}, CreateTaskRequest{
-		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 60},
-		Action:   automation.Action{Text: "hello"},
+		Prompt:       "hello",
+		EverySeconds: 60,
 	})
 	if err == nil || !strings.Contains(err.Error(), "runtime automation is disabled for this bot") {
 		t.Fatalf("expected runtime automation forbidden error, got %v", err)

@@ -25,6 +25,7 @@ type llmHeartbeatConfig struct {
 	FirstSilenceAfter time.Duration
 	UpdateInterval    time.Duration
 	BackendStaleAfter time.Duration
+	ShowShellCommands bool
 }
 
 func defaultLLMHeartbeatConfig() llmHeartbeatConfig {
@@ -33,6 +34,7 @@ func defaultLLMHeartbeatConfig() llmHeartbeatConfig {
 		FirstSilenceAfter: defaultHeartbeatFirstSilence,
 		UpdateInterval:    defaultHeartbeatUpdate,
 		BackendStaleAfter: defaultHeartbeatBackendStale,
+		ShowShellCommands: true,
 	}
 }
 
@@ -56,6 +58,7 @@ type llmRunObserver interface {
 	RecordVisibleOutput(message string)
 	RecordFileChange(message string)
 	RecordBackendEvent(agentbridge.RawEvent)
+	RecordShellCommand(kind, detail string)
 }
 
 type cardPatcher interface {
@@ -72,13 +75,15 @@ type llmHeartbeat struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 
-	mu              sync.Mutex
-	lastVisibleAt   time.Time
-	lastBackendAt   time.Time
-	lastBackendKind string
-	fileChanges     map[string]llmHeartbeatFileChange
-	fileChangeOrder []string
-	statusMessageID string
+	mu                   sync.Mutex
+	lastVisibleAt        time.Time
+	lastBackendAt        time.Time
+	lastBackendKind      string
+	lastShellCommand     string
+	lastShellCommandKind string
+	fileChanges          map[string]llmHeartbeatFileChange
+	fileChangeOrder      []string
+	statusMessageID      string
 }
 
 type llmHeartbeatFileChange struct {
@@ -154,9 +159,27 @@ func (h *llmHeartbeat) RecordBackendEvent(event agentbridge.RawEvent) {
 	if kind == "" {
 		kind = "raw"
 	}
+	now := h.processor.now()
 	h.mu.Lock()
-	h.lastBackendAt = h.processor.now()
+	h.lastBackendAt = now
 	h.lastBackendKind = kind
+	if h.cfg.ShowShellCommands && (kind == "tool_use" || kind == "tool_call") {
+		detail := strings.TrimSpace(event.Detail)
+		if detail != "" {
+			h.lastShellCommand = detail
+			h.lastShellCommandKind = kind
+		}
+	}
+	h.mu.Unlock()
+}
+
+func (h *llmHeartbeat) RecordShellCommand(kind, detail string) {
+	if h == nil || !h.cfg.ShowShellCommands {
+		return
+	}
+	h.mu.Lock()
+	h.lastShellCommand = strings.TrimSpace(detail)
+	h.lastShellCommandKind = strings.TrimSpace(kind)
 	h.mu.Unlock()
 }
 
@@ -189,13 +212,15 @@ func (h *llmHeartbeat) tick(ctx context.Context) {
 		return
 	}
 	content := buildLLMHeartbeatCardContent(llmHeartbeatCardState{
-		Status:          h.statusLabel(snapshot),
-		Elapsed:         snapshot.elapsed,
-		SinceVisible:    snapshot.sinceVisible,
-		SinceBackend:    snapshot.sinceBackend,
-		LastBackendKind: snapshot.lastBackendKind,
-		FileChanges:     snapshot.fileChangeLines,
-		FileChangeTotal: snapshot.fileChangeTotal,
+		Status:           h.statusLabel(snapshot),
+		Elapsed:          snapshot.elapsed,
+		SinceVisible:     snapshot.sinceVisible,
+		SinceBackend:     snapshot.sinceBackend,
+		LastBackendKind:  snapshot.lastBackendKind,
+		ShellCommand:     snapshot.shellCommand,
+		ShellCommandKind: snapshot.shellCommandKind,
+		FileChanges:      snapshot.fileChangeLines,
+		FileChangeTotal:  snapshot.fileChangeTotal,
 	})
 	if snapshot.statusMessageID == "" {
 		h.createStatusCard(ctx, content)
@@ -214,13 +239,15 @@ func (h *llmHeartbeat) patchFinalState(ctx context.Context, state string) {
 		return
 	}
 	content := buildLLMHeartbeatCardContent(llmHeartbeatCardState{
-		Status:          state,
-		Elapsed:         snapshot.elapsed,
-		SinceVisible:    snapshot.sinceVisible,
-		SinceBackend:    snapshot.sinceBackend,
-		LastBackendKind: snapshot.lastBackendKind,
-		FileChanges:     snapshot.fileChangeLines,
-		FileChangeTotal: snapshot.fileChangeTotal,
+		Status:           state,
+		Elapsed:          snapshot.elapsed,
+		SinceVisible:     snapshot.sinceVisible,
+		SinceBackend:     snapshot.sinceBackend,
+		LastBackendKind:  snapshot.lastBackendKind,
+		ShellCommand:     snapshot.shellCommand,
+		ShellCommandKind: snapshot.shellCommandKind,
+		FileChanges:      snapshot.fileChangeLines,
+		FileChangeTotal:  snapshot.fileChangeTotal,
 	})
 	h.patchStatusCard(ctx, snapshot.statusMessageID, content)
 }
@@ -270,13 +297,15 @@ func (h *llmHeartbeat) patchStatusCard(ctx context.Context, messageID, content s
 }
 
 type llmHeartbeatSnapshot struct {
-	statusMessageID string
-	elapsed         time.Duration
-	sinceVisible    time.Duration
-	sinceBackend    time.Duration
-	lastBackendKind string
-	fileChangeLines []string
-	fileChangeTotal int
+	statusMessageID  string
+	elapsed          time.Duration
+	sinceVisible     time.Duration
+	sinceBackend     time.Duration
+	lastBackendKind  string
+	shellCommand     string
+	shellCommandKind string
+	fileChangeLines  []string
+	fileChangeTotal  int
 }
 
 func (h *llmHeartbeat) snapshot() llmHeartbeatSnapshot {
@@ -285,13 +314,15 @@ func (h *llmHeartbeat) snapshot() llmHeartbeatSnapshot {
 	defer h.mu.Unlock()
 	fileChangeLines, fileChangeTotal := h.fileChangeSnapshotLocked()
 	return llmHeartbeatSnapshot{
-		statusMessageID: h.statusMessageID,
-		elapsed:         now.Sub(h.started),
-		sinceVisible:    now.Sub(h.lastVisibleAt),
-		sinceBackend:    now.Sub(h.lastBackendAt),
-		lastBackendKind: h.lastBackendKind,
-		fileChangeLines: fileChangeLines,
-		fileChangeTotal: fileChangeTotal,
+		statusMessageID:  h.statusMessageID,
+		elapsed:          now.Sub(h.started),
+		sinceVisible:     now.Sub(h.lastVisibleAt),
+		sinceBackend:     now.Sub(h.lastBackendAt),
+		lastBackendKind:  h.lastBackendKind,
+		shellCommand:     h.lastShellCommand,
+		shellCommandKind: h.lastShellCommandKind,
+		fileChangeLines:  fileChangeLines,
+		fileChangeTotal:  fileChangeTotal,
 	}
 }
 

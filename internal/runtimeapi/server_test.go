@@ -9,40 +9,14 @@ import (
 	"github.com/Alice-space/alice/internal/sessionctx"
 )
 
-func TestBuildTaskFromRequest_UsesWorkSceneLLMProfile(t *testing.T) {
-	srv := NewServer(
-		"",
-		"",
-		nil,
-		nil,
-		config.Config{
-			LLMProvider: "codex",
-			LLMProfiles: map[string]config.LLMProfileConfig{
-				"work": {
-					Provider:        "codex",
-					Model:           "gpt-5.4",
-					ReasoningEffort: "xhigh",
-					Personality:     "pragmatic",
-				},
-			},
-			GroupScenes: config.GroupScenesConfig{
-				Work: config.GroupSceneConfig{
-					Enabled:    true,
-					LLMProfile: "work",
-				},
-			},
-		},
-	)
+func TestBuildTaskFromRequest_BasicFields(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
 	task, err := srv.buildTaskFromRequest(
 		CreateTaskRequest{
-			Title: "heartbeat",
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 3600,
-			},
-			Action: automation.Action{
-				Prompt: "总结当前状态",
-			},
+			Title:        "heartbeat",
+			Prompt:       "总结当前状态",
+			EverySeconds: 3600,
+			MaxRuns:      5,
 		},
 		automationScopeContext{
 			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
@@ -54,65 +28,29 @@ func TestBuildTaskFromRequest_UsesWorkSceneLLMProfile(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if task.Action.Type != automation.ActionTypeRunLLM {
-		t.Fatalf("unexpected action type: %q", task.Action.Type)
+	if task.Prompt != "总结当前状态" {
+		t.Fatalf("unexpected prompt: %q", task.Prompt)
 	}
-	if task.Action.Provider != "codex" {
-		t.Fatalf("unexpected provider: %q", task.Action.Provider)
+	if task.Title != "heartbeat" {
+		t.Fatalf("unexpected title: %q", task.Title)
 	}
-	if task.Action.Model != "gpt-5.4" {
-		t.Fatalf("unexpected model: %q", task.Action.Model)
+	if task.MaxRuns != 5 {
+		t.Fatalf("unexpected max_runs: %d", task.MaxRuns)
 	}
-	if task.Action.Profile != "work" {
-		t.Fatalf("unexpected profile: %q", task.Action.Profile)
+	if task.Schedule.EverySeconds != 3600 {
+		t.Fatalf("unexpected every_seconds: %d", task.Schedule.EverySeconds)
 	}
-	if task.Action.ReasoningEffort != "xhigh" {
-		t.Fatalf("unexpected reasoning effort: %q", task.Action.ReasoningEffort)
-	}
-	if task.Action.Personality != "pragmatic" {
-		t.Fatalf("unexpected personality: %q", task.Action.Personality)
-	}
-	if task.Action.SessionKey != "chat_id:oc_chat|scene:work|seed:om_1" {
-		t.Fatalf("unexpected session key: %q", task.Action.SessionKey)
+	if task.Status != automation.TaskStatusActive {
+		t.Fatalf("unexpected status: %q", task.Status)
 	}
 }
 
-func TestBuildTaskFromRequest_PreservesExplicitRunLLMSelectors(t *testing.T) {
-	srv := NewServer(
-		"",
-		"",
-		nil,
-		nil,
-		config.Config{
-			LLMProvider: "codex",
-			LLMProfiles: map[string]config.LLMProfileConfig{
-				"work": {
-					Provider:        "codex",
-					Model:           "gpt-5.4",
-					ReasoningEffort: "xhigh",
-					Personality:     "pragmatic",
-				},
-			},
-			GroupScenes: config.GroupScenesConfig{
-				Work: config.GroupSceneConfig{
-					Enabled:    true,
-					LLMProfile: "work",
-				},
-			},
-		},
-	)
+func TestBuildTaskFromRequest_SessionKeyIsSet(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
 	task, err := srv.buildTaskFromRequest(
 		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 3600,
-			},
-			Action: automation.Action{
-				Prompt:          "总结当前状态",
-				Model:           "gpt-5.4-mini",
-				ReasoningEffort: "low",
-				Personality:     "friendly",
-			},
+			Prompt:       "ping",
+			EverySeconds: 60,
 		},
 		automationScopeContext{
 			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
@@ -124,143 +62,8 @@ func TestBuildTaskFromRequest_PreservesExplicitRunLLMSelectors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if task.Action.Model != "gpt-5.4-mini" {
-		t.Fatalf("unexpected model override: %q", task.Action.Model)
-	}
-	if task.Action.ReasoningEffort != "low" {
-		t.Fatalf("unexpected reasoning effort override: %q", task.Action.ReasoningEffort)
-	}
-	if task.Action.Personality != "friendly" {
-		t.Fatalf("unexpected personality override: %q", task.Action.Personality)
-	}
-}
-
-func TestBuildTaskFromRequest_InferRunLLMAndSetSessionKey(t *testing.T) {
-	srv := NewServer(
-		"",
-		"",
-		nil,
-		nil,
-		config.Config{
-			LLMProfiles: map[string]config.LLMProfileConfig{
-				"work": {
-					Provider:        "codex",
-					Model:           "gpt-5.4",
-					Profile:         "work-profile",
-					ReasoningEffort: "xhigh",
-					Personality:     "pragmatic",
-				},
-			},
-			GroupScenes: config.GroupScenesConfig{
-				Work: config.GroupSceneConfig{
-					Enabled:    true,
-					LLMProfile: "work",
-				},
-			},
-		},
-	)
-	task, err := srv.buildTaskFromRequest(
-		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 900,
-			},
-			Action: automation.Action{
-				Prompt: "/alice reconcile campaign camp_x",
-			},
-		},
-		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
-			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
-			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
-		},
-	)
-	if err != nil {
-		t.Fatalf("build task failed: %v", err)
-	}
-	if task.Action.Type != automation.ActionTypeRunLLM {
-		t.Fatalf("unexpected action type: %q", task.Action.Type)
-	}
-	if task.Action.Model != "gpt-5.4" {
-		t.Fatalf("unexpected model: %q", task.Action.Model)
-	}
-	if task.Action.Profile != "work" {
-		t.Fatalf("unexpected profile: %q", task.Action.Profile)
-	}
-	if task.Action.ReasoningEffort != "xhigh" {
-		t.Fatalf("unexpected reasoning effort: %q", task.Action.ReasoningEffort)
-	}
-	if task.Action.Personality != "pragmatic" {
-		t.Fatalf("unexpected personality: %q", task.Action.Personality)
-	}
-	if task.Action.SessionKey != "chat_id:oc_chat|scene:work|thread:omt_1" {
-		t.Fatalf("unexpected session key: %q", task.Action.SessionKey)
-	}
-}
-
-func TestBuildTaskFromRequest_RunLLMExplicitProfileOverridesSceneDefaults(t *testing.T) {
-	srv := NewServer(
-		"",
-		"",
-		nil,
-		nil,
-		config.Config{
-			LLMProvider: "codex",
-			LLMProfiles: map[string]config.LLMProfileConfig{
-				"work": {
-					Provider:        "codex",
-					Model:           "gpt-5.4",
-					ReasoningEffort: "xhigh",
-					Personality:     "pragmatic",
-				},
-				"executor": {
-					Provider:        "kimi",
-					Model:           "kimi-k2",
-					ReasoningEffort: "high",
-					Personality:     "pragmatic",
-				},
-			},
-			GroupScenes: config.GroupScenesConfig{
-				Work: config.GroupSceneConfig{
-					Enabled:    true,
-					LLMProfile: "work",
-				},
-			},
-		},
-	)
-	task, err := srv.buildTaskFromRequest(
-		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 900,
-			},
-			Action: automation.Action{
-				Prompt:  "/alice reconcile campaign camp_x",
-				Profile: "executor",
-			},
-		},
-		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
-			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
-			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
-		},
-	)
-	if err != nil {
-		t.Fatalf("build task failed: %v", err)
-	}
-	if task.Action.Provider != "kimi" {
-		t.Fatalf("unexpected provider: %q", task.Action.Provider)
-	}
-	if task.Action.Model != "kimi-k2" {
-		t.Fatalf("unexpected model: %q", task.Action.Model)
-	}
-	if task.Action.Profile != "executor" {
-		t.Fatalf("unexpected profile: %q", task.Action.Profile)
-	}
-	if task.Action.ReasoningEffort != "high" {
-		t.Fatalf("unexpected reasoning effort: %q", task.Action.ReasoningEffort)
+	if task.SessionKey != "chat_id:oc_chat|scene:work|seed:om_1" {
+		t.Fatalf("unexpected session key: %q", task.SessionKey)
 	}
 }
 
@@ -270,21 +73,15 @@ func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
 
 	task, err := srv.buildTaskFromRequest(
 		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 900,
-			},
-			Action: automation.Action{
-				Type:   automation.ActionTypeRunLLM,
-				Prompt: "ping",
-			},
-			NextRunAt: nextRunAt,
+			Prompt:       "ping",
+			EverySeconds: 900,
+			NextRunAt:    nextRunAt,
 		},
 		automationScopeContext{
 			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
 			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1"},
+			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|seed:om_1"},
 		},
 	)
 	if err != nil {
@@ -295,102 +92,12 @@ func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
 	}
 }
 
-func TestBuildTaskFromRequest_RunLLMExplicitProviderDoesNotInheritSceneModel(t *testing.T) {
-	srv := NewServer(
-		"",
-		"",
-		nil,
-		nil,
-		config.Config{
-			LLMProvider: "codex",
-			LLMProfiles: map[string]config.LLMProfileConfig{
-				"work": {
-					Provider:        "codex",
-					Model:           "gpt-5.4",
-					ReasoningEffort: "xhigh",
-					Personality:     "pragmatic",
-				},
-			},
-			GroupScenes: config.GroupScenesConfig{
-				Work: config.GroupSceneConfig{
-					Enabled:    true,
-					LLMProfile: "work",
-				},
-			},
-		},
-	)
-	task, err := srv.buildTaskFromRequest(
-		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 900,
-			},
-			Action: automation.Action{
-				Prompt:   "/alice reconcile campaign camp_x",
-				Provider: "kimi",
-			},
-		},
-		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
-			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
-			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
-		},
-	)
-	if err != nil {
-		t.Fatalf("build task failed: %v", err)
-	}
-	if task.Action.Provider != "kimi" {
-		t.Fatalf("unexpected provider: %q", task.Action.Provider)
-	}
-	if task.Action.Model != "" {
-		t.Fatalf("explicit provider should not inherit scene model, got %q", task.Action.Model)
-	}
-	if task.Action.Profile != "" {
-		t.Fatalf("explicit provider should not inherit scene profile, got %q", task.Action.Profile)
-	}
-}
-
-func TestApplyTaskPatch_PreservesScopedSessionKeyForRunLLM(t *testing.T) {
-	current := automation.Task{
-		ID:       "task_123",
-		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
-		Route:    automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
-		Creator:  automation.Actor{OpenID: "ou_actor"},
-		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 3600},
-		Action: automation.Action{
-			Type:       automation.ActionTypeRunLLM,
-			Prompt:     "总结当前状态",
-			SessionKey: "chat_id:oc_chat|scene:chat",
-		},
-		Status: automation.TaskStatusActive,
-	}
-
-	next, err := applyTaskPatch(current, []byte(`{"action":{"text":"播报"}}`), "application/merge-patch+json", automationScopeContext{
-		scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
-		route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
-		creator: automation.Actor{OpenID: "ou_actor"},
-		session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"},
-	})
-	if err != nil {
-		t.Fatalf("apply task patch failed: %v", err)
-	}
-	if next.Action.SessionKey != "chat_id:oc_chat|scene:work|thread:omt_1" {
-		t.Fatalf("unexpected patched session key: %q", next.Action.SessionKey)
-	}
-}
-
 func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_P2P(t *testing.T) {
 	srv := NewServer("", "", nil, nil, config.Config{})
 	task, err := srv.buildTaskFromRequest(
 		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 600,
-			},
-			Action: automation.Action{
-				Prompt: "summarize",
-			},
+			Prompt:       "summarize",
+			EverySeconds: 600,
 		},
 		automationScopeContext{
 			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
@@ -405,8 +112,8 @@ func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_P2P(t *te
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if want := "open_id:ou_actor|message:om_thread_abc"; task.Action.SessionKey != want {
-		t.Fatalf("unexpected session key: got=%q want=%q", task.Action.SessionKey, want)
+	if want := "open_id:ou_actor|message:om_thread_abc"; task.SessionKey != want {
+		t.Fatalf("unexpected session key: got=%q want=%q", task.SessionKey, want)
 	}
 	if task.Route.ReceiveIDType != "source_message_id" {
 		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
@@ -420,13 +127,8 @@ func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_GroupChat
 	srv := NewServer("", "", nil, nil, config.Config{})
 	task, err := srv.buildTaskFromRequest(
 		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 600,
-			},
-			Action: automation.Action{
-				Prompt: "summarize",
-			},
+			Prompt:       "summarize",
+			EverySeconds: 600,
 		},
 		automationScopeContext{
 			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_group"},
@@ -441,8 +143,8 @@ func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_GroupChat
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if want := "chat_id:oc_group|scene:chat|message:om_thread_xyz"; task.Action.SessionKey != want {
-		t.Fatalf("unexpected session key: got=%q want=%q", task.Action.SessionKey, want)
+	if want := "chat_id:oc_group|scene:chat|message:om_thread_xyz"; task.SessionKey != want {
+		t.Fatalf("unexpected session key: got=%q want=%q", task.SessionKey, want)
 	}
 	if task.Route.ReceiveIDType != "source_message_id" {
 		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
@@ -456,13 +158,8 @@ func TestBuildTaskFromRequest_SourceMessageIDDoesNotAffectNoSource(t *testing.T)
 	srv := NewServer("", "", nil, nil, config.Config{})
 	task, err := srv.buildTaskFromRequest(
 		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 600,
-			},
-			Action: automation.Action{
-				Prompt: "summarize",
-			},
+			Prompt:       "summarize",
+			EverySeconds: 600,
 		},
 		automationScopeContext{
 			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
@@ -476,68 +173,134 @@ func TestBuildTaskFromRequest_SourceMessageIDDoesNotAffectNoSource(t *testing.T)
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if want := "open_id:ou_actor"; task.Action.SessionKey != want {
-		t.Fatalf("unexpected session key: got=%q want=%q", task.Action.SessionKey, want)
+	if want := "open_id:ou_actor"; task.SessionKey != want {
+		t.Fatalf("unexpected session key: got=%q want=%q", task.SessionKey, want)
 	}
 	if task.Route.ReceiveIDType != "open_id" {
 		t.Fatalf("unexpected route type: got=%q want=open_id", task.Route.ReceiveIDType)
 	}
 }
 
-func TestBuildTaskFromRequest_ResumeSessionKeyOverridesSourceMessageID(t *testing.T) {
+func TestBuildTaskFromRequest_CronSchedule(t *testing.T) {
 	srv := NewServer("", "", nil, nil, config.Config{})
 	task, err := srv.buildTaskFromRequest(
 		CreateTaskRequest{
-			Schedule: automation.Schedule{
-				Type:         automation.ScheduleTypeInterval,
-				EverySeconds: 600,
-			},
-			Action: automation.Action{
-				Prompt: "summarize",
-			},
-			ResumeSessionKey: "chat_id:oc_chat|scene:work|seed:om_seed",
+			Prompt:   "daily report",
+			CronExpr: "0 9 * * *",
 		},
 		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
-			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
 			creator: automation.Actor{OpenID: "ou_actor"},
-			isGroup: true,
-			session: sessionctx.SessionContext{
-				SessionKey:      "chat_id:oc_chat|scene:chat",
-				SourceMessageID: "om_should_be_overridden",
-			},
+			session: sessionctx.SessionContext{SessionKey: "open_id:ou_actor"},
 		},
 	)
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if want := "chat_id:oc_chat|scene:work|seed:om_seed"; task.Action.SessionKey != want {
-		t.Fatalf("resume key should override source msg: got=%q want=%q", task.Action.SessionKey, want)
+	if task.Schedule.CronExpr != "0 9 * * *" {
+		t.Fatalf("unexpected cron_expr: %q", task.Schedule.CronExpr)
 	}
-	if task.Route.ReceiveIDType != "source_message_id" {
-		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
-	}
-	if task.Route.ReceiveID != "om_seed" {
-		t.Fatalf("unexpected route id from resume: got=%q want=om_seed", task.Route.ReceiveID)
+	if task.Schedule.EverySeconds != 0 {
+		t.Fatalf("expected every_seconds to be cleared when cron is set, got %d", task.Schedule.EverySeconds)
 	}
 }
 
-func TestApplyTaskPatch_PreservesSourceMessageThreadedSessionKey(t *testing.T) {
-	current := automation.Task{
-		ID:       "task_threaded",
-		Scope:    automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
-		Route:    automation.Route{ReceiveIDType: "source_message_id", ReceiveID: "om_thread_a"},
-		Creator:  automation.Actor{OpenID: "ou_actor"},
-		Schedule: automation.Schedule{Type: automation.ScheduleTypeInterval, EverySeconds: 3600},
-		Action: automation.Action{
-			Type:       automation.ActionTypeRunLLM,
-			Prompt:     "ping",
-			SessionKey: "open_id:ou_actor|message:om_thread_a",
+func TestBuildTaskFromRequest_EnabledFalse(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
+	enabled := false
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Prompt:       "hello",
+			EverySeconds: 60,
+			Enabled:      &enabled,
 		},
-		Status: automation.TaskStatusActive,
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: sessionctx.SessionContext{SessionKey: "open_id:ou_actor"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if task.Status != automation.TaskStatusPaused {
+		t.Fatalf("expected paused status for disabled task, got %q", task.Status)
+	}
+}
+
+func TestBuildTaskFromRequest_ResumeThreadID(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
+	task, err := srv.buildTaskFromRequest(
+		CreateTaskRequest{
+			Prompt:         "continue work",
+			EverySeconds:   300,
+			ResumeThreadID: "uuid-xxx",
+			Fresh:          false,
+		},
+		automationScopeContext{
+			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+			creator: automation.Actor{OpenID: "ou_actor"},
+			session: sessionctx.SessionContext{SessionKey: "open_id:ou_actor"},
+		},
+	)
+	if err != nil {
+		t.Fatalf("build task failed: %v", err)
+	}
+	if task.ResumeThreadID != "uuid-xxx" {
+		t.Fatalf("unexpected resume_thread_id: %q", task.ResumeThreadID)
+	}
+	if task.Fresh != false {
+		t.Fatalf("unexpected fresh: %v", task.Fresh)
+	}
+}
+
+func TestApplyTaskPatch_PreservesSessionKey(t *testing.T) {
+	current := automation.Task{
+		ID:         "task_123",
+		Scope:      automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+		Route:      automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    automation.Actor{OpenID: "ou_actor"},
+		Schedule:   automation.Schedule{EverySeconds: 3600},
+		Prompt:     "总结当前状态",
+		SessionKey: "chat_id:oc_chat|scene:chat",
+		Status:     automation.TaskStatusActive,
 	}
 
-	next, err := applyTaskPatch(current, []byte(`{"action":{"text":"updated"}}`), "application/merge-patch+json", automationScopeContext{
+	next, err := applyTaskPatch(current, []byte(`{"prompt":"updated prompt"}`), "application/merge-patch+json", automationScopeContext{
+		scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+		route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		creator: automation.Actor{OpenID: "ou_actor"},
+		session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|seed:om_1|message:om_2"},
+	})
+	if err != nil {
+		t.Fatalf("apply task patch failed: %v", err)
+	}
+	if next.SessionKey != "chat_id:oc_chat|scene:chat" {
+		t.Fatalf("patch should preserve system session key, got %q", next.SessionKey)
+	}
+	if next.Prompt != "updated prompt" {
+		t.Fatalf("patch should update prompt, got %q", next.Prompt)
+	}
+}
+
+func TestApplyTaskPatch_PreservesResumeThreadID(t *testing.T) {
+	current := automation.Task{
+		ID:              "task_threaded",
+		Scope:           automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+		Route:           automation.Route{ReceiveIDType: "source_message_id", ReceiveID: "om_thread_a"},
+		Creator:         automation.Actor{OpenID: "ou_actor"},
+		Schedule:        automation.Schedule{EverySeconds: 3600},
+		Prompt:          "ping",
+		SessionKey:      "open_id:ou_actor|message:om_thread_a",
+		ResumeThreadID:  "uuid_sticky",
+		SourceMessageID: "om_thread_a",
+		Status:          automation.TaskStatusActive,
+	}
+
+	next, err := applyTaskPatch(current, []byte(`{"prompt":"updated"}`), "application/merge-patch+json", automationScopeContext{
 		scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
 		route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
 		creator: automation.Actor{OpenID: "ou_actor"},
@@ -549,10 +312,39 @@ func TestApplyTaskPatch_PreservesSourceMessageThreadedSessionKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("apply task patch failed: %v", err)
 	}
-	if next.Action.SessionKey != "open_id:ou_actor|message:om_thread_a" {
-		t.Fatalf("patch should preserve original thread-specific session key, got %q", next.Action.SessionKey)
+	if next.SessionKey != "open_id:ou_actor|message:om_thread_a" {
+		t.Fatalf("patch should preserve original session key, got %q", next.SessionKey)
+	}
+	if next.ResumeThreadID != "uuid_sticky" {
+		t.Fatalf("patch should preserve resume_thread_id, got %q", next.ResumeThreadID)
 	}
 	if next.Route.ReceiveIDType != "source_message_id" {
-		t.Fatalf("patch should preserve thread route type, got %q", next.Route.ReceiveIDType)
+		t.Fatalf("patch should preserve route type, got %q", next.Route.ReceiveIDType)
+	}
+}
+
+func TestApplyTaskPatch_CanChangeStatus(t *testing.T) {
+	current := automation.Task{
+		ID:         "task_status",
+		Scope:      automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+		Route:      automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+		Creator:    automation.Actor{OpenID: "ou_actor"},
+		Schedule:   automation.Schedule{EverySeconds: 60},
+		Prompt:     "hello",
+		SessionKey: "open_id:ou_actor",
+		Status:     automation.TaskStatusActive,
+	}
+
+	next, err := applyTaskPatch(current, []byte(`{"status":"paused"}`), "application/merge-patch+json", automationScopeContext{
+		scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+		route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+		creator: automation.Actor{OpenID: "ou_actor"},
+		session: sessionctx.SessionContext{SessionKey: "open_id:ou_actor"},
+	})
+	if err != nil {
+		t.Fatalf("apply task patch failed: %v", err)
+	}
+	if next.Status != automation.TaskStatusPaused {
+		t.Fatalf("expected paused status, got %q", next.Status)
 	}
 }

@@ -2,10 +2,8 @@ package automation
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/Alice-space/alice/internal/logging"
@@ -146,58 +144,10 @@ func (e *Engine) markWatchdogAlertSent(alert TaskWatchdogAlert, now time.Time) {
 
 func (e *Engine) sendWatchdogAlert(ctx context.Context, alert TaskWatchdogAlert) error {
 	task := NormalizeTask(alert.Task)
-	cardContent, err := buildWatchdogAlertCardContent(alert)
-	if err != nil {
-		return err
-	}
+	text := watchdogAlertText(alert)
 	route := effectiveRoute(task)
-	messageID, err := e.sendCardWithFallback(ctx, task, route, cardContent)
-	if err != nil {
-		text := watchdogAlertText(alert)
-		messageID, err = e.sendTextWithFallback(ctx, task, route, text)
-	}
-	if err != nil {
-		return err
-	}
-	if strings.TrimSpace(messageID) != "" {
-		logging.Warnf("automation watchdog alert sent id=%s kind=%s message_id=%s", task.ID, alert.Kind, messageID)
-	}
-	return nil
-}
-
-func buildWatchdogAlertCardContent(alert TaskWatchdogAlert) (string, error) {
-	task := NormalizeTask(alert.Task)
-	title := "自动任务提醒"
-	if task.Title != "" {
-		title = task.Title
-	}
-	card := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{
-			"enable_forward": true,
-			"update_multi":   true,
-		},
-		"header": map[string]any{
-			"title": map[string]any{
-				"tag":     "plain_text",
-				"content": title,
-			},
-			"template": "orange",
-		},
-		"body": map[string]any{
-			"elements": []any{
-				map[string]any{
-					"tag":     "markdown",
-					"content": watchdogAlertText(alert),
-				},
-			},
-		},
-	}
-	raw, err := json.Marshal(card)
-	if err != nil {
-		return "", fmt.Errorf("marshal watchdog alert card failed: %w", err)
-	}
-	return string(raw), nil
+	_, err := e.sendTextWithFallback(ctx, task, route, text)
+	return err
 }
 
 func watchdogAlertText(alert TaskWatchdogAlert) string {

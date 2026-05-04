@@ -1,167 +1,78 @@
 ---
 name: alice-scheduler
-description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化任务。适用于创建、列出、查看、补丁更新、暂停、恢复、删除任务，以及处理 `run_llm` 任务。
+description: 通过 Alice 本地 runtime HTTP API 管理当前会话的自动化任务。适用于创建、列出、查看、补丁更新、暂停、恢复、删除任务。
 ---
 
 # Alice 调度器
 
-使用 `scripts/alice-scheduler.sh` 管理当前会话自动化任务。脚本会自动使用本地 runtime HTTP API 与当前会话上下文。
-
-维护约束：当前会话里 `.agents/skills/...` 的已安装 skill 副本来自 Alice 安装/更新流程，不应直接修改；需要变更 skill 时，应修改 Alice 仓库里的 `alice/skills/...` 源文件，再通过安装流程同步进去。
+使用 `scripts/alice-scheduler.sh` 管理当前会话自动化任务。脚本会自动处理当前会话上下文（session key、thread ID 等），无需手动填写。
 
 ## 常用命令
 
 - 列出当前作用域任务：
   `scripts/alice-scheduler.sh list`
-- 用 JSON 创建任务：
-  `scripts/alice-scheduler.sh create <<'JSON'`
-  `{ "title": "daily sync", "schedule": { "type": "cron", "cron_expr": "0 1 * * *" }, "action": { "type": "run_llm", "prompt": "总结今天的进展" } }`
-  `JSON`
-  **注意**：`create` 子命令会自动从环境变量注入 `resume_session_key`（来自 `ALICE_SESSION_KEY`）和 `action.resume_thread_id`（来自 `ALICE_RESUME_THREAD_ID`），如果 JSON 中这两个字段为空/未设置。JSON 中显式提供的值优先，不会被覆盖。
-- **获取当前 session 信息**（仅当需要手动查看或调试会话上下文时使用）：
-  `scripts/alice-scheduler.sh current-session`
-  输出：`{"session_key":"...","resume_thread_id":"..."}`
+
+- 用 JSON 创建任务（最小字段）：
+  `scripts/alice-scheduler.sh create '{"prompt":"总结今天的进展","every_seconds":300,"max_runs":1}'`
+
 - 查看单个任务：
   `scripts/alice-scheduler.sh get task_xxx`
+
 - 用 merge patch 更新任务：
   `scripts/alice-scheduler.sh patch task_xxx '{"status":"paused"}'`
+
 - 删除任务：
   `scripts/alice-scheduler.sh delete task_xxx`
 
-## 任务结构
+## 任务字段
 
-- `schedule.type`：`interval` 或 `cron`
-- `schedule.every_seconds`：`interval` 必填，最小 `60`
-- `schedule.cron_expr`：`cron` 必填
-- `action.type`：固定为 `run_llm`
-- `action.prompt`：必填；本次定时运行要执行的提示词、目标或操作说明
-- `action.state_key`：可选；给支持稳定状态槽位的后端提供 thread-ID 槽位，让同一类任务持续落在同一会话状态上
-- `action.resume_thread_id`：可选；sticky thread ID。若已知上一次运行对应的后端 thread/session，可在这里显式续接；每次成功执行后系统会自动更新为最新 thread/session ID
-- `action.source_message_id`：可选；Feishu message ID（`om_xxx`）。设置后，每次发送改走 Reply API + `reply_in_thread=true`，结果落在同一 thread。首次留空时，系统会在第一次成功发送后自动写回该字段，后续运行自动 in-thread 回复
-- `resume_session_key`：可选顶层字段；把结果路由到指定 Feishu 渠道或 work thread，而不是默认当前会话。适合把定时任务固定回复到某个群、P2P 会话或现有 thread
-- `manage_mode`：`creator_only` 或 `scope_all`（`scope_all` 仅群聊有意义）
+模型只需要填以下字段：
 
-## run_llm 使用指南
+| 字段 | 类型 | 必须 | 说明 |
+|------|------|------|------|
+| `prompt` | string | 是 | 醒来后执行什么操作，支持 `{{now}}` `{{date}}` `{{time}}` `{{unix}}` 模板变量 |
+| `every_seconds` | int | 与cron二选一 | 间隔秒数，最小60 |
+| `cron` | string | 与every_seconds二选一 | cron 表达式 |
+| `max_runs` | int | 否 | 最大执行次数，0=无限（默认） |
+| `fresh` | bool | 否 | 每次新开 LLM 线程，默认 false（续接当前对话） |
+| `title` | string | 否 | 任务标题，不填自动显示"未命名任务" |
 
-### 基础字段
+**以下字段由脚本自动注入，模型不需要填写：**
+- `resume_thread_id`：当前 LLM 线程 ID（从 `$ALICE_RESUME_THREAD_ID` 注入）
+- session 路由、scope、creator 等上下文信息（服务端自动处理）
 
-最小可用任务只需要 `action.type: run_llm` 和 `action.prompt`。不要主动填写模型选择字段；Alice 会按当前 session/thread 所属 scene 继承运行时配置里的模型档位。
+## 使用模式
 
-```yaml
-title: daily-sync
-schedule:
-  type: cron
-  cron_expr: "0 9 * * *"
-action:
-  type: run_llm
-  prompt: |
-    总结昨天进展，列出今天优先级最高的三件事。
+### 1. 一次性唤醒（wake-up）
+
+在当前 thread 里工作，需要等待外部结果，N秒后醒来继续：
+
+```json
+{"prompt":"检查上一步的脚本输出，汇报结果","every_seconds":300,"max_runs":1}
 ```
 
-### 模型选择
+`fresh` 默认 false → 续接当前 LLM 会话上下文，醒来后能看到之前的对话。
 
-默认不要选择模型。普通定时任务应继承当前会话的模型设置：当前 session/thread → scene → `group_scenes.<scene>.llm_profile` → `llm_profiles`。
+### 2. 每日定时报告
 
-只有用户明确要求切换模型档位时，才使用高级模型选择字段。优先使用 `action.profile` 指向 Alice 配置中的 `llm_profiles` 名字；不要自行编造 provider 或 model 名。
+在群聊里创建，每次独立运行：
 
-```yaml
-title: deep-review
-schedule:
-  type: interval
-  every_seconds: 3600
-action:
-  type: run_llm
-  profile: work
-  prompt: |
-    对当前任务做深入复盘，只汇报新的风险和下一步。
+```json
+{"prompt":"总结昨天群里的讨论要点","cron":"0 9 * * *","fresh":true}
 ```
 
-`action.provider` 和 `action.model` 是更底层的高级字段，只有用户明确给出完整 backend/model 组合时才使用；不要为了“更精确”而主动填写。
+`fresh: true` → 每次都是新的 LLM 会话，不续接上一次。
 
-### 持续续接同一线程
+### 3. 暂停/恢复任务
 
-`action.state_key`、`action.resume_thread_id`、`action.source_message_id` 解决的是不同层面的“续接”：
-
-- `action.state_key`：给支持稳定状态槽位的后端一个稳定状态槽位。适合同一类定时任务长期复用同一后端线程标识
-- `action.resume_thread_id`：显式保存并续接某个后端 thread/session。系统每次成功运行后都会自动刷新它，适合 sticky thread
-- `action.source_message_id`：控制 Feishu 投递 thread。第一次成功发送后可自动 bootstrap，后续始终 reply 到同一条消息线程
-
-如果你想让任务既续接 LLM 会话，又持续回复到同一个 Feishu thread，可以三者一起使用：
-
-```yaml
-title: campaign-followup
-resume_session_key: chat_id:oc_xxx|scene:work|seed:om_seed_xxx
-schedule:
-  type: interval
-  every_seconds: 1800
-action:
-  type: run_llm
-  state_key: camp_active
-  resume_thread_id: uuid-xxx
-  source_message_id: om_seed_xxx
-  prompt: |
-    延续当前任务上下文，检查最新状态，只汇报新的阻塞和下一步。
-```
-
-### 用 `resume_session_key` 固定回复渠道
-
-`resume_session_key` 是顶层字段，不放在 `action` 里。它决定结果发往哪个 Feishu 渠道或 thread：
-
-- **群或 P2P 会话**：`chat_id:oc_xxx` 或 `user_id:xxx`
-- **Work thread（推荐）**：`chat_id:oc_xxx|scene:work|seed:om_xxx`
-- **不推荐别名**：`|thread:omt_xxx` 不能作为 thread 级投递目标，最终会回退到群主渠道
-
-`create` 命令会自动注入 `resume_session_key` 和 `action.resume_thread_id`，无需手动调用 `current-session` 再复制粘贴。
-
-下面是把旧的 Resume 模式直接写成 `run_llm` YAML 的方式：
-
-```yaml
-title: thread-resume
-resume_session_key: chat_id:oc_xxx|scene:work|seed:om_xxx
-schedule:
-  type: cron
-  cron_expr: "0 9 * * *"
-action:
-  type: run_llm
-  resume_thread_id: uuid-xxx
-  prompt: |
-    继续昨天的线程上下文，汇总最新进展并指出仍未解决的问题。
-```
-
-触发时的行为：
-1. 若 `action.resume_thread_id` 非空，系统会按该 thread/session 续接；首次可留空，由第一次成功运行自动写回
-2. 若 `resume_session_key` 指向 work thread，系统会按 `seed:om_xxx` 回复到正确的 Feishu thread
-3. 若 `action.source_message_id` 为空，系统会在首次成功发送后自动 bootstrap，供后续继续 in-thread 回复
-
-安全约束：`resume_session_key` 的 channel 必须与创建请求的当前 scope 一致，不能跨渠道重定向。
-
-### 自动 bootstrap thread
-
-如果不想手动准备 thread 锚点，可以只创建普通 `run_llm` 任务，不填 `action.source_message_id`。系统会在第一次成功发送后自动把首条消息 ID 写回 `action.source_message_id`，之后每次运行都回复到同一 thread。
-
-```yaml
-title: weekly-report
-schedule:
-  type: cron
-  cron_expr: "0 18 * * 5"
-action:
-  type: run_llm
-  state_key: weekly_report
-  prompt: |
-    生成本周总结，突出已完成事项、风险和下周计划。
+```bash
+scripts/alice-scheduler.sh patch task_xxx '{"status":"paused"}'
+scripts/alice-scheduler.sh patch task_xxx '{"status":"active"}'
 ```
 
 ## 使用建议
 
 1. 不知道任务 ID 时，先 `list` 再改删。
-2. 更新任务优先用小范围 `patch`，不要整对象重写。
-3. 一次性执行推荐：`interval + every_seconds: 60 + max_runs: 1`。
-4. `action.prompt` 要写清楚产出格式、边界和是否只汇报不执行，避免周期任务逐次漂移。
-5. `action.state_key` 适合按任务类别复用上下文；`action.resume_thread_id` 适合续接某个具体会话；两者可以同时存在，但要明确谁是你要固定的主键。
-6. 需要把结果持续发回同一个 Feishu 线程时，优先使用 `resume_session_key` 的规范形式 `chat_id:...|scene:work|seed:...`；如果没有现成 thread，就依赖 `action.source_message_id` 的自动 bootstrap。
-
-## 回复模式
-
-- 明确说明执行了什么操作，以及对应的 `task.id`。
-- 新建或重排任务时，给出精确 `next_run_at`。
-- 说明这是一次性任务还是周期任务。
+2. 更新任务优先用 patch，不要整体重写。
+3. `prompt` 写清楚产出格式和边界，避免周期任务逐次漂移。
+4. 续接对话用默认的 `fresh: false`，日常报表用 `fresh: true`。
