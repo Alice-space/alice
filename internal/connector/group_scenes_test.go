@@ -344,6 +344,56 @@ func TestApp_RouteStatusToExistingWorkSessionWithoutMention(t *testing.T) {
 	}
 }
 
+func TestApp_RouteStatusSkipsWhenInThreadWithoutMatchingWorkSession(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+
+	threadEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_thread_status"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_thread_status"),
+				ParentId:    strPtr("om_unrelated"),
+				RootId:      strPtr("om_unrelated"),
+				ThreadId:    strPtr("omt_unrelated"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/status"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job, err := BuildJob(threadEvent)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if app.routeIncomingJob(job, threadEvent) {
+		t.Fatal("expected /status in unrelated thread to be skipped")
+	}
+
+	mainChatEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_main_status"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_main_status"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/status"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job2, err := BuildJob(mainChatEvent)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job2, mainChatEvent) {
+		t.Fatal("expected /status in main group chat to be routed")
+	}
+}
+
 func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")

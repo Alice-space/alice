@@ -40,6 +40,9 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 					return true
 				}
 			}
+			if hasThreadContext(message) {
+				return false
+			}
 			if message != nil {
 				a.resolveJobSessionKey(job, message)
 			}
@@ -502,6 +505,15 @@ func buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey string) string {
 
 func isWorkSceneSessionKey(sessionKey string) bool {
 	return strings.Contains(strings.TrimSpace(sessionKey), workSceneToken)
+}
+
+func hasThreadContext(message *larkim.EventMessage) bool {
+	if message == nil {
+		return false
+	}
+	return strings.TrimSpace(deref(message.ThreadId)) != "" ||
+		strings.TrimSpace(deref(message.RootId)) != "" ||
+		strings.TrimSpace(deref(message.ParentId)) != ""
 }
 
 func hasSceneTriggerTag(text, tag string) bool {
