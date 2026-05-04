@@ -187,6 +187,15 @@ func (p *Processor) SetWorkspaceDir(workspaceDir string) {
 	p.workspaceDir = strings.TrimSpace(workspaceDir)
 }
 
+func (p *Processor) SetHeartbeatShowShellCommands(show bool) {
+	if p == nil {
+		return
+	}
+	p.runtimeMu.Lock()
+	defer p.runtimeMu.Unlock()
+	p.heartbeatConfig.ShowShellCommands = show
+}
+
 func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 	if p == nil {
 		return processorRuntimeSnapshot{}

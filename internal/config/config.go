@@ -110,6 +110,7 @@ type BotConfig struct {
 	CodexIdleTimeoutSecs             int                         `mapstructure:"codex_idle_timeout_secs"`
 	CodexHighIdleTimeoutSecs         int                         `mapstructure:"codex_high_idle_timeout_secs"`
 	CodexXHighIdleTimeoutSecs        int                         `mapstructure:"codex_xhigh_idle_timeout_secs"`
+	ShowShellCommands                *bool                       `mapstructure:"show_shell_commands"`
 	Permissions                      *BotPermissionsConfig       `mapstructure:"permissions"`
 }
 
@@ -161,6 +162,7 @@ type Config struct {
 	CodexHighIdleTimeout             time.Duration `mapstructure:"-"`
 	CodexXHighIdleTimeoutSecs        int           `mapstructure:"codex_xhigh_idle_timeout_secs"`
 	CodexXHighIdleTimeout            time.Duration `mapstructure:"-"`
+	ShowShellCommands                *bool         `mapstructure:"show_shell_commands"`
 
 	LogLevel      string `mapstructure:"log_level"`
 	LogFile       string `mapstructure:"log_file"`

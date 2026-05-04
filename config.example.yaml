@@ -294,6 +294,12 @@ bots:
     codex_high_idle_timeout_secs: 1800
     codex_xhigh_idle_timeout_secs: 3600
 
+    # Whether to show recently executed shell commands in the heartbeat status
+    # card. When enabled, the last tool_use / command_execution event detail is
+    # displayed while the LLM is running.
+    # Default: true
+    show_shell_commands: true
+
 # ── Logging ────────────────────────────────────────────────────────────────
 # Log level: debug | info | warn | error
 log_level: "info"

@@ -141,6 +141,7 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 	processor.SetPromptLoader(b.promptLoader)
 	processor.SetImmediateFeedback(b.cfg.ImmediateFeedbackMode, b.cfg.ImmediateFeedbackReaction)
 	processor.SetWorkspaceDir(strings.TrimSpace(b.cfg.WorkspaceDir))
+	processor.SetHeartbeatShowShellCommands(b.cfg.ShowShellCommands == nil || *b.cfg.ShowShellCommands)
 	processor.SetRuntimeAPI(
 		runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
 		b.resolveRuntimeAPIToken(),
