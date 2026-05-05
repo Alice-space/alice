@@ -76,15 +76,25 @@ type llmRunnerStub struct {
 	progress []string
 	result   llm.RunResult
 	err      error
+	idx      int
+	results  []llm.RunResult
 }
 
 func (s *llmRunnerStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	s.mu.Lock()
+	idx := s.idx
+	s.idx++
 	s.calls++
 	s.lastReq = req
 	progress := append([]string(nil), s.progress...)
-	result := s.result
-	err := s.err
+	var result llm.RunResult
+	var err error
+	if idx < len(s.results) {
+		result = s.results[idx]
+	} else {
+		result = s.result
+		err = s.err
+	}
 	s.mu.Unlock()
 	for _, step := range progress {
 		if req.OnProgress != nil {
@@ -498,4 +508,28 @@ func (r *interruptibleRunnerStub) Run(ctx context.Context, _ llm.RunRequest) (ll
 	r.called = true
 	<-ctx.Done()
 	return llm.RunResult{}, ctx.Err()
+}
+
+type blockingGoalRunner struct {
+	results []llm.RunResult
+	calls   int
+	started chan struct{}
+	unblock chan struct{}
+}
+
+func (r *blockingGoalRunner) Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error) {
+	idx := r.calls
+	r.calls++
+	r.started <- struct{}{}
+	if r.unblock != nil {
+		select {
+		case <-ctx.Done():
+			return llm.RunResult{}, ctx.Err()
+		case <-r.unblock:
+		}
+	}
+	if idx < len(r.results) {
+		return r.results[idx], nil
+	}
+	return llm.RunResult{}, nil
 }

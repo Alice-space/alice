@@ -57,6 +57,7 @@ type GoalTask struct {
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 	Revision  int64     `json:"revision"`
+	Running   bool      `json:"running,omitempty"`
 }
 
 func NormalizeGoal(goal GoalTask) GoalTask {

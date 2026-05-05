@@ -147,7 +147,11 @@ func isGoalCommand(text string) bool {
 
 func (p *Processor) processGoalCommand(ctx context.Context, job Job) JobProcessState {
 	reply := p.buildGoalStatusMarkdown(job)
-	replyJob := forceDirectReplyJob(job)
+	replyJob := job
+	if strings.TrimSpace(replyJob.Scene) != jobSceneWork {
+		replyJob.Scene = jobSceneChat
+		replyJob.CreateFeishuThread = false
+	}
 	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
 		logging.Errorf("send builtin goal reply failed event_id=%s: %v", job.EventID, err)
 	}
@@ -159,15 +163,7 @@ func (p *Processor) buildGoalStatusMarkdown(job Job) string {
 	if snapshot.statusService == nil {
 		return "目标状态查询暂不可用。"
 	}
-	scope := automation.Scope{
-		Kind: automation.ScopeKind(strings.ToLower(job.ChatType)),
-		ID:   job.ReceiveID,
-	}
-	if job.ChatType == "group" {
-		scope.Kind = automation.ScopeKindChat
-	} else {
-		scope.Kind = automation.ScopeKindUser
-	}
+	scope := buildGoalScopeFromJob(job)
 	goal, err := snapshot.statusService.GetGoal(scope)
 	if err != nil {
 		return "当前会话没有设置目标。\n\n用 `/goal <目标描述>` 来创建一个长期目标，Alice 会自动持续执行直到完成。"
@@ -186,6 +182,7 @@ func (p *Processor) buildGoalStatusMarkdown(job Job) string {
 	lines := []string{
 		"**目标**",
 		"",
+		fmt.Sprintf("- scope: `%s`", getScopeLabel(job)),
 		"状态: " + statusText,
 		"目标: " + goal.Objective,
 		"已用时间: " + formatDurationShort(elapsed),
@@ -197,6 +194,30 @@ func (p *Processor) buildGoalStatusMarkdown(job Job) string {
 		}
 	}
 	return strings.Join(lines, "  \n")
+}
+
+func buildGoalScopeFromJob(job Job) automation.Scope {
+	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
+	if chatType == "group" || chatType == "topic_group" {
+		return automation.Scope{Kind: automation.ScopeKindChat, ID: strings.TrimSpace(job.ReceiveID)}
+	}
+	actorID := strings.TrimSpace(job.SenderUserID)
+	if actorID == "" {
+		actorID = strings.TrimSpace(job.SenderOpenID)
+	}
+	return automation.Scope{Kind: automation.ScopeKindUser, ID: actorID}
+}
+
+func getScopeLabel(job Job) string {
+	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
+	if chatType == "group" || chatType == "topic_group" {
+		return "chat:" + strings.TrimSpace(job.ReceiveID)
+	}
+	actorID := strings.TrimSpace(job.SenderUserID)
+	if actorID == "" {
+		actorID = strings.TrimSpace(job.SenderOpenID)
+	}
+	return "user:" + actorID
 }
 
 func formatDurationShort(d time.Duration) string {

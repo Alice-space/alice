@@ -1,6 +1,7 @@
 package automation
 
 import (
+	"context"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -513,7 +514,7 @@ func TestEngine_ExecuteGoal_PersistsThreadID(t *testing.T) {
 	engine.now = func() time.Time { return base }
 
 	runner := &llmRunnerStub{
-		result: llm.RunResult{Reply: "ok", NextThreadID: "new_thread_xyz"},
+		result: llm.RunResult{Reply: "ok", NextThreadID: "new_thread_xyz", GoalDone: true},
 	}
 	engine.SetLLMRunner(runner)
 
@@ -556,7 +557,7 @@ func TestEngine_ExecuteGoal_FirstRunUsesStartTemplate(t *testing.T) {
 	engine := NewEngine(store, sender)
 	engine.now = func() time.Time { return base }
 
-	runner := &llmRunnerStub{result: llm.RunResult{Reply: "ok"}}
+	runner := &llmRunnerStub{result: llm.RunResult{Reply: "ok", GoalDone: true}}
 	engine.SetLLMRunner(runner)
 
 	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
@@ -598,7 +599,7 @@ func TestEngine_ExecuteGoal_SecondRunUsesContinueTemplate(t *testing.T) {
 	engine.now = func() time.Time { return base }
 
 	runner := &llmRunnerStub{
-		result: llm.RunResult{Reply: "ok", NextThreadID: "thread_existing"},
+		result: llm.RunResult{Reply: "ok", NextThreadID: "thread_existing", GoalDone: true},
 	}
 	engine.SetLLMRunner(runner)
 
@@ -627,6 +628,351 @@ func TestEngine_ExecuteGoal_SecondRunUsesContinueTemplate(t *testing.T) {
 	runner.mu.Unlock()
 	if !contains(prompt, "CONT|test objective") {
 		t.Fatalf("expected continue template, got: %s", prompt)
+	}
+}
+
+func TestEngine_ExecuteGoal_EventDrivenContinuation(t *testing.T) {
+	SetGoalTemplates("START|{{.Objective}}", "CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &llmRunnerStub{
+		results: []llm.RunResult{
+			{Reply: "iteration 1", NextThreadID: "thread_1"},
+			{Reply: "iteration 2", NextThreadID: "thread_2"},
+			{Reply: "done", GoalDone: true},
+		},
+	}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_1",
+		Objective:  "event driven test",
+		Status:     GoalStatusActive,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 3 {
+		t.Fatalf("expected 3 LLM calls (event-driven loop), got %d", calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected complete status, got %s", goal.Status)
+	}
+	if goal.ThreadID != "thread_2" {
+		t.Fatalf("expected thread_2, got %s", goal.ThreadID)
+	}
+}
+
+func TestEngine_ExecuteGoal_ContinuePromptAfterFirstRun(t *testing.T) {
+	SetGoalTemplates("START|{{.Objective}}", "CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &llmRunnerStub{
+		results: []llm.RunResult{
+			{Reply: "step 1", NextThreadID: "t1"},
+			{Reply: "step 2", NextThreadID: "t2", GoalDone: true},
+		},
+	}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_1",
+		Objective:  "continue test",
+		Status:     GoalStatusActive,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	runner.mu.Lock()
+	calls := runner.calls
+	step1Req := runner.lastReq
+	runner.mu.Unlock()
+	_ = step1Req
+
+	if calls != 2 {
+		t.Fatalf("expected 2 LLM calls (continue after first), got %d", calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected complete status, got %s", goal.Status)
+	}
+	if goal.ThreadID != "t2" {
+		t.Fatalf("expected t2, got %s", goal.ThreadID)
+	}
+}
+
+func TestEngine_ExecuteGoal_InterruptedByUserMessage(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	gate := &sessionGateStub{}
+	engine.SetSessionActivityChecker(gate)
+
+	runner := &interruptibleRunnerStub{}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_1",
+		Objective:  "interrupt test",
+		Status:     GoalStatusActive,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	done := make(chan error, 1)
+	go func() {
+		done <- engine.ExecuteGoal(context.Background(), scope)
+	}()
+
+	time.Sleep(100 * time.Millisecond)
+	gate.mu.Lock()
+	if gate.cancel != nil {
+		gate.cancel(context.Canceled)
+	}
+	gate.mu.Unlock()
+
+	err = <-done
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusActive {
+		t.Fatalf("expected goal to remain active after interrupt, got %s", goal.Status)
+	}
+}
+
+func TestEngine_ExecuteGoal_SessionBusyRetriedByTick(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &llmRunnerStub{
+		result: llm.RunResult{Reply: "ok", GoalDone: true},
+	}
+	engine.SetLLMRunner(runner)
+
+	gate := &sessionGateStub{}
+	engine.SetSessionActivityChecker(gate)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_1",
+		Objective:  "tick retry test",
+		Status:     GoalStatusActive,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	gate.busy = true
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal busy: %v", err)
+	}
+	runner.mu.Lock()
+	if runner.calls > 0 {
+		t.Fatal("expected no LLM calls when session busy")
+	}
+	runner.mu.Unlock()
+
+	gate.busy = false
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal free: %v", err)
+	}
+
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected 1 LLM call after session freed, got %d", calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected complete, got %s", goal.Status)
+	}
+}
+
+func TestEngine_ExecuteGoal_RunningFlagPreventsDuplicateExecution(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	iterStarted := make(chan struct{}, 2)
+	iterUnblock := make(chan struct{})
+	runner := &blockingGoalRunner{
+		results: []llm.RunResult{
+			{Reply: "step 1", NextThreadID: "t1"},
+			{Reply: "step 2", NextThreadID: "t2", GoalDone: true},
+		},
+		started: iterStarted,
+		unblock: iterUnblock,
+	}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_1",
+		Objective:  "running flag test",
+		Status:     GoalStatusActive,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	g1, _ := store.GetGoal(scope)
+	if g1.Running {
+		t.Fatal("expected Running=false before execution")
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = engine.ExecuteGoal(context.Background(), scope)
+	}()
+
+	<-iterStarted
+	g2, _ := store.GetGoal(scope)
+	if !g2.Running {
+		t.Fatal("expected Running=true during execution")
+	}
+
+	engine.runGoals(context.Background())
+
+	close(iterUnblock)
+	<-done
+
+	g3, _ := store.GetGoal(scope)
+	if g3.Running {
+		t.Fatal("expected Running=false after completion")
+	}
+	if g3.Status != GoalStatusComplete {
+		t.Fatalf("expected complete, got %s", g3.Status)
+	}
+
+	if runner.calls != 2 {
+		t.Fatalf("expected exactly 2 LLM calls, got %d", runner.calls)
+	}
+}
+
+func TestStore_ResetRunningGoals(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:        "goal_1",
+		Objective: "reset test",
+		Status:    GoalStatusActive,
+		Scope:     scope,
+		Route:     Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
+		Creator:   Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	_, _ = store.PatchGoal(scope, func(g *GoalTask) error {
+		g.Running = true
+		return nil
+	})
+
+	g, _ := store.GetGoal(scope)
+	if !g.Running {
+		t.Fatal("expected Running=true before reset")
+	}
+
+	if err := store.ResetRunningGoals(); err != nil {
+		t.Fatalf("ResetRunningGoals: %v", err)
+	}
+
+	g, _ = store.GetGoal(scope)
+	if g.Running {
+		t.Fatal("expected Running=false after reset")
 	}
 }
 

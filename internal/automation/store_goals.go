@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	bolt "go.etcd.io/bbolt"
 )
@@ -12,6 +13,39 @@ var (
 	ErrGoalNotFound = errors.New("goal not found")
 	goalsBucket     = []byte("goals")
 )
+
+func (s *Store) ListGoals(filterStatus GoalStatus) ([]GoalTask, error) {
+	filterStatus = GoalStatus(strings.ToLower(strings.TrimSpace(string(filterStatus))))
+	if s == nil {
+		return nil, errors.New("store is nil")
+	}
+	db, err := s.dbOrOpen()
+	if err != nil {
+		return nil, err
+	}
+	var goals []GoalTask
+	err = db.View(func(tx *bolt.Tx) error {
+		b := tx.Bucket(goalsBucket)
+		if b == nil {
+			return nil
+		}
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			goal, decErr := decodeGoal(v)
+			if decErr != nil {
+				return decErr
+			}
+			if filterStatus == "" || goal.Status == filterStatus {
+				goals = append(goals, goal)
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return goals, nil
+}
 
 func (s *Store) GetGoal(scope Scope) (GoalTask, error) {
 	if s == nil {
@@ -176,6 +210,44 @@ func (s *Store) DeleteGoal(scope Scope) error {
 			return ErrGoalNotFound
 		}
 		return b.Delete(key)
+	})
+}
+
+func (s *Store) ResetRunningGoals() error {
+	if s == nil {
+		return errors.New("store is nil")
+	}
+	db, err := s.dbOrOpen()
+	if err != nil {
+		return err
+	}
+	now := s.nowLocal()
+	return db.Update(func(tx *bolt.Tx) error {
+		b := tx.Bucket(goalsBucket)
+		if b == nil {
+			return nil
+		}
+		c := b.Cursor()
+		for k, v := c.First(); k != nil; k, v = c.Next() {
+			goal, decErr := decodeGoal(v)
+			if decErr != nil {
+				return decErr
+			}
+			if !goal.Running {
+				continue
+			}
+			goal.Running = false
+			goal.UpdatedAt = now
+			goal.Revision++
+			data, encErr := encodeGoal(goal)
+			if encErr != nil {
+				return encErr
+			}
+			if err := b.Put(k, data); err != nil {
+				return err
+			}
+		}
+		return nil
 	})
 }
 
