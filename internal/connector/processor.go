@@ -14,29 +14,30 @@ import (
 )
 
 type Processor struct {
-	llm             agentbridge.Backend
-	sender          Sender
-	replies         *replyDispatcher
-	failureMessage  string
-	thinkingMessage string
-	feedbackMode    string
-	feedbackEmoji   string
-	heartbeatConfig llmHeartbeatConfig
-	runtimeMu       sync.RWMutex
-	mu              sync.Mutex
-	sessions        map[string]sessionState
-	sessionAliases  map[string]string
-	stateFilePath   string
-	stateVersion    uint64
-	flushedVersion  uint64
-	now             func() time.Time
-	runtimeAPIBase  string
-	runtimeAPIToken string
-	runtimeAPIBin   string
-	helpConfig      builtinHelpConfig
-	statusService   *builtinStatusService
-	workspaceDir    string
-	prompts         *prompting.Loader
+	llm                  agentbridge.Backend
+	sender               Sender
+	replies              *replyDispatcher
+	failureMessage       string
+	thinkingMessage      string
+	feedbackMode         string
+	feedbackEmoji        string
+	disableIdentityHints bool
+	heartbeatConfig      llmHeartbeatConfig
+	runtimeMu            sync.RWMutex
+	mu                   sync.Mutex
+	sessions             map[string]sessionState
+	sessionAliases       map[string]string
+	stateFilePath        string
+	stateVersion         uint64
+	flushedVersion       uint64
+	now                  func() time.Time
+	runtimeAPIBase       string
+	runtimeAPIToken      string
+	runtimeAPIBin        string
+	helpConfig           builtinHelpConfig
+	statusService        *builtinStatusService
+	workspaceDir         string
+	prompts              *prompting.Loader
 }
 
 type StatusUsageSource struct {
@@ -194,6 +195,15 @@ func (p *Processor) SetHeartbeatShowShellCommands(show bool) {
 	p.runtimeMu.Lock()
 	defer p.runtimeMu.Unlock()
 	p.heartbeatConfig.ShowShellCommands = show
+}
+
+func (p *Processor) SetDisableIdentityHints(disable bool) {
+	if p == nil {
+		return
+	}
+	p.runtimeMu.Lock()
+	defer p.runtimeMu.Unlock()
+	p.disableIdentityHints = disable
 }
 
 func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {

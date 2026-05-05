@@ -335,6 +335,9 @@ func (p *Processor) appendRuntimeSkillHint(userText string, job Job) string {
 	if strings.TrimSpace(job.SourceMessageID) == "" {
 		return userText
 	}
+	if p.disableIdentityHints {
+		return userText
+	}
 
 	rendered, err := p.renderPromptFile(connectorPromptRuntimeSkillHint, map[string]any{
 		"UserText": strings.TrimSpace(userText),
@@ -517,10 +520,10 @@ func (p *Processor) buildCurrentUserInputWithThread(job Job, threadID string) st
 	senderName := normalizeUserDisplayName(strings.TrimSpace(job.SenderName), "用户")
 	mentionedNames := buildMentionDisplayNames(job.MentionedUsers, botOpenID, botUserID)
 	speakerKnown := strings.TrimSpace(job.SenderName) != ""
-	identityContextEnabled := speakerKnown || len(mentionedNames) > 0
+	identityContextEnabled := (speakerKnown || len(mentionedNames) > 0) && !p.disableIdentityHints
 
 	speechText := baseText
-	if len(mentionedNames) > 0 {
+	if !p.disableIdentityHints && len(mentionedNames) > 0 {
 		missingMentions := missingMentionDisplayNames(speechText, mentionedNames)
 		if len(missingMentions) > 0 {
 			mentionedText := "@" + strings.Join(missingMentions, " @")
