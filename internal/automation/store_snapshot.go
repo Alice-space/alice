@@ -8,6 +8,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/storeutil"
 	bolt "go.etcd.io/bbolt"
+	bbolterrors "go.etcd.io/bbolt/errors"
 )
 
 func (s *Store) viewSnapshot(fn func(snapshot Snapshot) error) error {
@@ -98,7 +99,7 @@ func writeSnapshotTx(tx *bolt.Tx, snapshot Snapshot) error {
 		return err
 	}
 
-	if err := tx.DeleteBucket(automationTasksBucket); err != nil && !errors.Is(err, bolt.ErrBucketNotFound) {
+	if err := tx.DeleteBucket(automationTasksBucket); err != nil && !errors.Is(err, bbolterrors.ErrBucketNotFound) {
 		return fmt.Errorf("reset automation tasks bucket failed: %w", err)
 	}
 	tasksBucket, err := tx.CreateBucketIfNotExists(automationTasksBucket)
@@ -146,7 +147,7 @@ func readTaskTx(tx *bolt.Tx, taskID string) (Task, error) {
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return Task{}, errors.New("task id is empty")
+		return Task{}, ErrTaskIDEmpty
 	}
 	tasksBucket := tx.Bucket(automationTasksBucket)
 	if tasksBucket == nil {
@@ -173,7 +174,7 @@ func writeTaskTx(tx *bolt.Tx, task Task) error {
 	}
 	task = NormalizeTask(task)
 	if task.ID == "" {
-		return errors.New("task id is empty")
+		return ErrTaskIDEmpty
 	}
 	tasksBucket := tx.Bucket(automationTasksBucket)
 	if tasksBucket == nil {

@@ -21,7 +21,7 @@ func (s *Store) ListTasks(scope Scope, statusFilter string, limit int) ([]Task, 
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
-		return nil, errors.New("scope is empty")
+		return nil, ErrScopeEmpty
 	}
 	status, includeAll, err := ParseStatusFilter(statusFilter)
 	if err != nil {
@@ -84,7 +84,7 @@ func (s *Store) GetTask(taskID string) (Task, error) {
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return Task{}, errors.New("task id is empty")
+		return Task{}, ErrTaskIDEmpty
 	}
 
 	var task Task
@@ -166,7 +166,7 @@ func (s *Store) PatchTask(taskID string, mutate func(task *Task) error) (Task, e
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return Task{}, errors.New("task id is empty")
+		return Task{}, ErrTaskIDEmpty
 	}
 	if mutate == nil {
 		return Task{}, errors.New("mutate callback is nil")
@@ -286,7 +286,7 @@ func (s *Store) UnclaimTask(taskID string) error {
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
-		return errors.New("task id is empty")
+		return ErrTaskIDEmpty
 	}
 	return s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
 		idx := findTaskIndex(snapshot.Tasks, taskID)

@@ -34,7 +34,7 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 }
 
 func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardContent string) error {
-	return s.SendText(nil, receiveIDType, receiveID, cardContent)
+	return s.SendText(context.TODO(), receiveIDType, receiveID, cardContent)
 }
 
 func (s *senderStub) SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
@@ -122,11 +122,11 @@ type sessionCheckerStub struct {
 }
 
 func (s *sessionCheckerStub) IsSessionActive(sessionKey string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s == nil || s.activeSessions == nil {
 		return false
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.activeSessions[sessionKey]
 }
 

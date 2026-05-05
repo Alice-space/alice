@@ -53,7 +53,7 @@ func (s *Store) GetGoal(scope Scope) (GoalTask, error) {
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
-		return GoalTask{}, errors.New("scope is empty")
+		return GoalTask{}, ErrScopeEmpty
 	}
 	var goal GoalTask
 	db, err := s.dbOrOpen()
@@ -139,7 +139,7 @@ func (s *Store) PatchGoal(scope Scope, mutate func(goal *GoalTask) error) (GoalT
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
-		return GoalTask{}, errors.New("scope is empty")
+		return GoalTask{}, ErrScopeEmpty
 	}
 	if mutate == nil {
 		return GoalTask{}, errors.New("mutate callback is nil")
@@ -194,7 +194,7 @@ func (s *Store) DeleteGoal(scope Scope) error {
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
-		return errors.New("scope is empty")
+		return ErrScopeEmpty
 	}
 	db, err := s.dbOrOpen()
 	if err != nil {

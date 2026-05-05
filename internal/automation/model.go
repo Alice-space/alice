@@ -14,6 +14,8 @@ var (
 	ErrRouteIncomplete = errors.New("route is incomplete")
 	ErrCreatorIDEmpty  = errors.New("creator id is empty")
 
+	ErrScopeEmpty = errors.New("scope is empty")
+
 	ErrTaskIDEmpty        = errors.New("task id is empty")
 	ErrPromptEmpty        = errors.New("prompt is empty")
 	ErrScheduleRequired   = errors.New("schedule requires every_seconds or cron_expr")

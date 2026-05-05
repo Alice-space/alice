@@ -320,7 +320,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 		}
 		if !report.LoggedIn {
 			return fmt.Errorf(
-				"Codex login required for bots %s (command=%q, CODEX_HOME=%s): %s",
+				"codex login required for bots %s (command=%q, CODEX_HOME=%s): %s",
 				check.botList(),
 				report.Command,
 				report.CodexHome,
@@ -342,7 +342,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 		}
 		if !report.LoggedIn {
 			return fmt.Errorf(
-				"Claude login required for bots %s (command=%q): %s",
+				"claude login required for bots %s (command=%q): %s",
 				check.botList(),
 				report.Command,
 				formatClaudeLoginOutput(report.Command, report.Output),
