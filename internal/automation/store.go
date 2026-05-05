@@ -53,7 +53,7 @@ func (s *Store) Path() string {
 
 func (s *Store) dbOrOpen() (*bolt.DB, error) {
 	if s == nil {
-		return nil, errors.New("store is nil")
+		return nil, ErrStoreNil
 	}
 	s.openOnce.Do(func() {
 		s.openErr = s.openDB()
