@@ -3,6 +3,7 @@ package bootstrap
 import (
 	"context"
 	"errors"
+	"io/fs"
 	"path/filepath"
 	"strings"
 	"time"
@@ -10,6 +11,7 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	"github.com/oklog/ulid/v2"
 
+	aliceassets "github.com/Alice-space/alice"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
@@ -181,6 +183,11 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 		runtimeapi.EnvToken:   b.resolveRuntimeAPIToken(),
 		runtimeapi.EnvBin:     ResolveRuntimeBinary(b.cfg.WorkspaceDir),
 	})
+	automation.SetGoalTemplates(
+		b.loadEmbeddedGoalTemplate("goal_start.tmpl"),
+		b.loadEmbeddedGoalTemplate("goal_continue.tmpl"),
+		b.loadEmbeddedGoalTemplate("goal_timeout.tmpl"),
+	)
 
 	if err := automationEngine.RegisterSystemTask("system.state_flush", 1*time.Second, func(context.Context) {
 		if err := b.processor.FlushSessionStateIfDirty(); err != nil {
@@ -213,6 +220,18 @@ func (b *connectorRuntimeBuilder) buildRuntimeAPI() {
 		b.automationStore,
 		b.cfg,
 	)
+	if b.automationEngine != nil {
+		b.apiServer.SetGoalExecutor(b.automationEngine)
+	}
+}
+
+func (b *connectorRuntimeBuilder) loadEmbeddedGoalTemplate(name string) string {
+	data, err := fs.ReadFile(aliceassets.PromptFS, "goals/"+name)
+	if err != nil {
+		logging.Warnf("load goal template %s failed: %v", name, err)
+		return ""
+	}
+	return string(data)
 }
 
 func (b *connectorRuntimeBuilder) resolveRuntimeAPIToken() string {

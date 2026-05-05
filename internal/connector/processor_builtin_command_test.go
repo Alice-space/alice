@@ -622,3 +622,32 @@ func TestIsSessionCommand(t *testing.T) {
 		}
 	}
 }
+
+func TestIsGoalCommand(t *testing.T) {
+	tests := []struct {
+		name     string
+		text     string
+		expected bool
+	}{
+		{name: "exact", text: "/goal", expected: true},
+		{name: "with spaces", text: "  /goal  ", expected: true},
+		{name: "case insensitive", text: "/GOAL", expected: true},
+		{name: "with trailing text", text: "/goal do something", expected: true},
+		{name: "not goal", text: "/help", expected: false},
+		{name: "empty", text: "", expected: false},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			result := isGoalCommand(tc.text)
+			if result != tc.expected {
+				t.Fatalf("isGoalCommand(%q) = %v, want %v", tc.text, result, tc.expected)
+			}
+		})
+	}
+}
+
+func TestIsBuiltinCommandText_IncludesGoal(t *testing.T) {
+	if !isBuiltinCommandText("/goal") {
+		t.Fatal("expected /goal to be a builtin command")
+	}
+}

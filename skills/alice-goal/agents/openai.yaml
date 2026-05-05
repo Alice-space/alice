@@ -1,0 +1,4 @@
+interface:
+  display_name: "Alice 目标"
+  short_description: "管理当前会话的长期目标，支持自动续跑执行"
+  default_prompt: "使用 $alice-goal 在当前 Alice 会话中设定并追踪长期目标。调用 alice-goal complete 标记完成。"

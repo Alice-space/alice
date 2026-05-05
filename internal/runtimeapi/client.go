@@ -89,6 +89,30 @@ func (c *Client) DeleteTask(ctx context.Context, session sessionctx.SessionConte
 	return c.delete(ctx, session, "/api/v1/automation/tasks/"+taskID, nil)
 }
 
+func (c *Client) GetGoal(ctx context.Context, session sessionctx.SessionContext) (map[string]any, error) {
+	return c.get(ctx, session, "/api/v1/goal", nil)
+}
+
+func (c *Client) CreateGoal(ctx context.Context, session sessionctx.SessionContext, req CreateGoalRequest) (map[string]any, error) {
+	return c.post(ctx, session, "/api/v1/goal", req)
+}
+
+func (c *Client) GoalPause(ctx context.Context, session sessionctx.SessionContext) (map[string]any, error) {
+	return c.post(ctx, session, "/api/v1/goal/pause", nil)
+}
+
+func (c *Client) GoalResume(ctx context.Context, session sessionctx.SessionContext) (map[string]any, error) {
+	return c.post(ctx, session, "/api/v1/goal/resume", nil)
+}
+
+func (c *Client) GoalComplete(ctx context.Context, session sessionctx.SessionContext) (map[string]any, error) {
+	return c.post(ctx, session, "/api/v1/goal/complete", nil)
+}
+
+func (c *Client) DeleteGoal(ctx context.Context, session sessionctx.SessionContext) (map[string]any, error) {
+	return c.delete(ctx, session, "/api/v1/goal", nil)
+}
+
 func (c *Client) get(
 	ctx context.Context,
 	session sessionctx.SessionContext,

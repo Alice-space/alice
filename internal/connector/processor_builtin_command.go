@@ -23,6 +23,7 @@ const sessionCommandName = "/session"
 const cdCommandName = "/cd"
 const lsCommandName = "/ls"
 const pwdCommandName = "/pwd"
+const goalCommandName = "/goal"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
 const builtinWorkThreadCardTitle = "Alice Work Thread"
@@ -54,13 +55,17 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 	if isPwdCommand(job.Text) {
 		return true, p.processPwdCommand(ctx, job)
 	}
+	if isGoalCommand(job.Text) {
+		return true, p.processGoalCommand(ctx, job)
+	}
 	return false, JobProcessCompleted
 }
 
 func isBuiltinCommandText(text string) bool {
 	return isHelpCommand(text) || isStatusCommand(text) || isClearCommand(text) ||
 		isStopCommand(text) || isSessionCommand(text) ||
-		isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
+		isCdCommand(text) || isLsCommand(text) || isPwdCommand(text) ||
+		isGoalCommand(text)
 }
 
 func isContextualBuiltinCommand(text string) bool {
@@ -130,6 +135,84 @@ func isPwdCommand(text string) bool {
 		return false
 	}
 	return strings.EqualFold(strings.TrimSpace(fields[0]), pwdCommandName)
+}
+
+func isGoalCommand(text string) bool {
+	fields := strings.Fields(strings.TrimSpace(text))
+	if len(fields) == 0 {
+		return false
+	}
+	return strings.EqualFold(strings.TrimSpace(fields[0]), goalCommandName)
+}
+
+func (p *Processor) processGoalCommand(ctx context.Context, job Job) JobProcessState {
+	reply := p.buildGoalStatusMarkdown(job)
+	replyJob := forceDirectReplyJob(job)
+	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+		logging.Errorf("send builtin goal reply failed event_id=%s: %v", job.EventID, err)
+	}
+	return JobProcessCompleted
+}
+
+func (p *Processor) buildGoalStatusMarkdown(job Job) string {
+	snapshot := p.runtimeSnapshot()
+	if snapshot.statusService == nil {
+		return "目标状态查询暂不可用。"
+	}
+	scope := automation.Scope{
+		Kind: automation.ScopeKind(strings.ToLower(job.ChatType)),
+		ID:   job.ReceiveID,
+	}
+	if job.ChatType == "group" {
+		scope.Kind = automation.ScopeKindChat
+	} else {
+		scope.Kind = automation.ScopeKindUser
+	}
+	goal, err := snapshot.statusService.GetGoal(scope)
+	if err != nil {
+		return "当前会话没有设置目标。\n\n用 `/goal <目标描述>` 来创建一个长期目标，Alice 会自动持续执行直到完成。"
+	}
+	statusText := map[automation.GoalStatus]string{
+		automation.GoalStatusActive:   "执行中",
+		automation.GoalStatusPaused:   "已暂停",
+		automation.GoalStatusComplete: "已完成",
+		automation.GoalStatusTimeout:  "已超时",
+	}[goal.Status]
+	if statusText == "" {
+		statusText = string(goal.Status)
+	}
+	elapsed := time.Since(goal.CreatedAt)
+	remaining := time.Until(goal.DeadlineAt)
+	lines := []string{
+		"**目标**",
+		"",
+		"状态: " + statusText,
+		"目标: " + goal.Objective,
+		"已用时间: " + formatDurationShort(elapsed),
+	}
+	if !goal.DeadlineAt.IsZero() {
+		lines = append(lines, "截止时间: "+goal.DeadlineAt.Format("2006-01-02 15:04"))
+		if remaining > 0 {
+			lines = append(lines, "剩余时间: "+formatDurationShort(remaining))
+		}
+	}
+	return strings.Join(lines, "  \n")
+}
+
+func formatDurationShort(d time.Duration) string {
+	if d < 0 {
+		d = 0
+	}
+	h := int(d.Hours())
+	m := int(d.Minutes()) % 60
+	if h > 0 {
+		return fmt.Sprintf("%dh%dm", h, m)
+	}
+	s := int(d.Seconds()) % 60
+	if m > 0 {
+		return fmt.Sprintf("%dm%ds", m, s)
+	}
+	return fmt.Sprintf("%ds", s)
 }
 
 type sessionDirective struct {

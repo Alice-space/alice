@@ -39,6 +39,7 @@ type Server struct {
 	engine          *gin.Engine
 	httpSrv         *http.Server
 	authLimiter     *authRateLimiter
+	goalExecutor    GoalExecutor
 }
 
 type automationRuntimeConfig struct {
@@ -46,6 +47,10 @@ type automationRuntimeConfig struct {
 	llmProfiles map[string]config.LLMProfileConfig
 	groupScenes config.GroupScenesConfig
 	permissions config.BotPermissionsConfig
+}
+
+type GoalExecutor interface {
+	ExecuteGoal(ctx context.Context, scope automation.Scope) error
 }
 
 func NewServer(
@@ -83,7 +88,21 @@ func NewServer(
 	api.GET("/automation/tasks/:taskID", srv.handleAutomationTaskGet)
 	api.PATCH("/automation/tasks/:taskID", srv.handleAutomationTaskPatch)
 	api.DELETE("/automation/tasks/:taskID", srv.handleAutomationTaskDelete)
+
+	goal := api.Group("/goal")
+	goal.GET("", srv.handleGoalGet)
+	goal.POST("", srv.handleGoalCreate)
+	goal.POST("/pause", srv.handleGoalPause)
+	goal.POST("/resume", srv.handleGoalResume)
+	goal.POST("/complete", srv.handleGoalComplete)
+	goal.DELETE("", srv.handleGoalDelete)
 	return srv
+}
+
+func (s *Server) SetGoalExecutor(executor GoalExecutor) {
+	if s != nil {
+		s.goalExecutor = executor
+	}
 }
 
 func (s *Server) Run(ctx context.Context) error {

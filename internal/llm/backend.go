@@ -106,6 +106,8 @@ type RunResult struct {
 	// NextThreadID is the session/thread ID to pass as ThreadID on the next
 	// call to continue the conversation.
 	NextThreadID string
+	// GoalDone indicates that the agent has signalled goal completion.
+	GoalDone bool
 	// Usage contains token counts if the backend reported them.
 	Usage Usage
 }

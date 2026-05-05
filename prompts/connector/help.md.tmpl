@@ -17,6 +17,8 @@
   列出工作目录内容。不指定路径时显示当前工作目录，可指定绝对或相对路径。
 - `/pwd`
   显示当前 agent 工作目录。
+- `/goal`
+  查看当前会话的长期目标及其状态（active/paused/complete/timeout）。
 {{- if and (not .ChatEnabled) (not .WorkEnabled) }}
 
 ## 模式说明

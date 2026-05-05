@@ -8,6 +8,7 @@ import (
 type builtinStatusService struct {
 	query statusview.Service
 	usage *processorStatusUsageProvider
+	store *automation.Store
 }
 
 func newBuiltinStatusService(processor *Processor) *builtinStatusService {
@@ -25,6 +26,7 @@ func (s *builtinStatusService) SetStores(automationStore *automation.Store) {
 		return
 	}
 	s.query.Automation = automationStore
+	s.store = automationStore
 }
 
 func (s *builtinStatusService) SetIdentity(botID, botName string) {
@@ -65,4 +67,11 @@ func (s *builtinStatusService) Identity() (string, string) {
 		return "", ""
 	}
 	return s.usage.Identity()
+}
+
+func (s *builtinStatusService) GetGoal(scope automation.Scope) (automation.GoalTask, error) {
+	if s == nil || s.store == nil {
+		return automation.GoalTask{}, automation.ErrGoalNotFound
+	}
+	return s.store.GetGoal(scope)
 }

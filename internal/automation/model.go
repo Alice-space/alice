@@ -29,6 +29,83 @@ const (
 	TaskStatusDeleted TaskStatus = "deleted"
 )
 
+type GoalStatus string
+
+const (
+	GoalStatusActive   GoalStatus = "active"
+	GoalStatusPaused   GoalStatus = "paused"
+	GoalStatusComplete GoalStatus = "complete"
+	GoalStatusTimeout  GoalStatus = "timeout"
+)
+
+func (s GoalStatus) IsTerminal() bool {
+	return s == GoalStatusComplete || s == GoalStatusTimeout
+}
+
+type GoalTask struct {
+	ID         string     `json:"id"`
+	Objective  string     `json:"objective"`
+	Status     GoalStatus `json:"status"`
+	DeadlineAt time.Time  `json:"deadline_at"`
+	ThreadID   string     `json:"thread_id,omitempty"`
+
+	Scope      Scope  `json:"scope"`
+	Route      Route  `json:"route"`
+	Creator    Actor  `json:"creator"`
+	SessionKey string `json:"session_key,omitempty"`
+
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+	Revision  int64     `json:"revision"`
+}
+
+func NormalizeGoal(goal GoalTask) GoalTask {
+	goal.ID = strings.TrimSpace(goal.ID)
+	goal.Objective = strings.TrimSpace(goal.Objective)
+	goal.Status = GoalStatus(strings.ToLower(strings.TrimSpace(string(goal.Status))))
+	goal.ThreadID = strings.TrimSpace(goal.ThreadID)
+	goal.Scope.Kind = ScopeKind(strings.ToLower(strings.TrimSpace(string(goal.Scope.Kind))))
+	goal.Scope.ID = strings.TrimSpace(goal.Scope.ID)
+	goal.Route.ReceiveIDType = strings.TrimSpace(goal.Route.ReceiveIDType)
+	goal.Route.ReceiveID = strings.TrimSpace(goal.Route.ReceiveID)
+	goal.Creator.UserID = strings.TrimSpace(goal.Creator.UserID)
+	goal.Creator.OpenID = strings.TrimSpace(goal.Creator.OpenID)
+	goal.Creator.Name = strings.TrimSpace(goal.Creator.Name)
+	goal.SessionKey = strings.TrimSpace(goal.SessionKey)
+	if goal.Status == "" {
+		goal.Status = GoalStatusActive
+	}
+	return goal
+}
+
+func ValidateGoal(goal GoalTask) error {
+	goal = NormalizeGoal(goal)
+	if goal.ID == "" {
+		return errors.New("goal id is empty")
+	}
+	if goal.Objective == "" {
+		return errors.New("objective is empty")
+	}
+	if goal.Scope.Kind != ScopeKindUser && goal.Scope.Kind != ScopeKindChat {
+		return fmt.Errorf("invalid scope kind %q", goal.Scope.Kind)
+	}
+	if goal.Scope.ID == "" {
+		return errors.New("scope id is empty")
+	}
+	if goal.Route.ReceiveIDType == "" || goal.Route.ReceiveID == "" {
+		return errors.New("route is incomplete")
+	}
+	if goal.Creator.PreferredID() == "" {
+		return errors.New("creator id is empty")
+	}
+	switch goal.Status {
+	case GoalStatusActive, GoalStatusPaused, GoalStatusComplete, GoalStatusTimeout:
+	default:
+		return fmt.Errorf("invalid goal status %q", goal.Status)
+	}
+	return nil
+}
+
 type Scope struct {
 	Kind ScopeKind `json:"kind"`
 	ID   string    `json:"id"`

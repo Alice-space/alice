@@ -23,6 +23,7 @@ func newRuntimeCmd() *cobra.Command {
 	runtimeCmd.AddCommand(
 		newRuntimeMessageCmd(),
 		newRuntimeAutomationCmd(),
+		newRuntimeGoalCmd(),
 	)
 	return runtimeCmd
 }

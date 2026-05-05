@@ -47,6 +47,12 @@ type CreateTaskRequest struct {
 	Enabled        *bool                 `json:"enabled,omitempty"`
 }
 
+// CreateGoalRequest is the API payload for creating or replacing a long-running goal.
+type CreateGoalRequest struct {
+	Objective  string `json:"objective"`
+	DeadlineIn string `json:"deadline_in,omitempty"`
+}
+
 func BaseURL(addr string) string {
 	addr = strings.TrimSpace(addr)
 	if addr == "" {
