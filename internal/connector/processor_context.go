@@ -359,6 +359,10 @@ func (p *Processor) buildUserTextWithReplyContext(ctx context.Context, job Job, 
 		)
 		return currentText
 	}
+	if strings.TrimSpace(job.Scene) == jobSceneWork {
+		logging.Debugf("reply context skipped event_id=%s reason=work_scene", job.EventID)
+		return currentText
+	}
 
 	parentMessageID := strings.TrimSpace(job.ReplyParentMessageID)
 	if currentText == "" || parentMessageID == "" {

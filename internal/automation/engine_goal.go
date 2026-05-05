@@ -2,6 +2,7 @@ package automation
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -229,7 +230,7 @@ func (e *Engine) sendGoalNotification(goal GoalTask, text string) {
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 	defer cancel()
 	if sender, ok := any(e.sender).(taskMessageSender); ok {
-		sender.SendTextMessage(ctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text)
+		sender.SendCardMessage(ctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text))
 		return
 	}
 	e.sender.SendText(ctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text)
@@ -263,7 +264,7 @@ func (e *Engine) goalProgressDispatcher(ctx context.Context, goal GoalTask) llm.
 			return
 		}
 		if sender, ok := any(e.sender).(taskMessageSender); ok {
-			sender.SendTextMessage(ctx, route.ReceiveIDType, route.ReceiveID, normalized)
+			sender.SendCardMessage(ctx, route.ReceiveIDType, route.ReceiveID, richTextCardContent(normalized))
 			return
 		}
 		e.sender.SendText(ctx, route.ReceiveIDType, route.ReceiveID, normalized)
@@ -361,4 +362,25 @@ func (e *Engine) setGoalRunning(scope Scope, running bool) {
 	}); err != nil && !errors.Is(err, ErrGoalNotFound) {
 		logging.Warnf("goal set running=%v failed scope=%s:%s err=%v", running, scope.Kind, scope.ID, err)
 	}
+}
+
+func richTextCardContent(markdown string) string {
+	trimmed := strings.TrimSpace(markdown)
+	if trimmed == "" {
+		return ""
+	}
+	elements := []map[string]any{
+		{"tag": "markdown", "content": trimmed},
+	}
+	card := map[string]any{
+		"schema": "2.0",
+		"config": map[string]any{
+			"enable_forward": true,
+		},
+		"body": map[string]any{
+			"elements": elements,
+		},
+	}
+	raw, _ := json.Marshal(card)
+	return string(raw)
 }

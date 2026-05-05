@@ -138,3 +138,24 @@ func TestProcessorRunLLM_LogsBackendProgress(t *testing.T) {
 		}
 	}
 }
+
+func TestProcessor_BuildUserTextWithReplyContext_SkipsReplyContextForWorkScene(t *testing.T) {
+	stub := &codexStub{resp: "ok"}
+	sender := &senderStub{}
+	processor := NewProcessor(stub, sender, "failed", "thinking")
+
+	job := Job{
+		Text:                 "继续处理",
+		Scene:                jobSceneWork,
+		ReplyParentMessageID: "om_parent",
+		EventID:              "evt_test",
+	}
+
+	result := processor.buildUserTextWithReplyContext(context.Background(), job, "")
+	if !strings.Contains(result, "继续处理") {
+		t.Fatalf("expected user text in result, got %q", result)
+	}
+	if strings.Contains(result, "你正在回复") {
+		t.Fatalf("expected NO reply context wrapper for work scene, got %q", result)
+	}
+}

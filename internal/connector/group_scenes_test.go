@@ -1168,3 +1168,47 @@ func TestApp_OnMessageReceive_SlashCommandInWorkSession(t *testing.T) {
 		t.Fatalf("expected work scene, got %q", job.Scene)
 	}
 }
+
+func TestApp_OnMessageReceive_WorkSessionFollowupViaReplyMessageBinding(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	processor := NewProcessor(codexStub{resp: "ok"}, &senderStub{}, "", "")
+	app := newGroupScenesApp(cfg, processor)
+	app.SetBotOpenID("ou_bot")
+
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_seed_msg")
+	processor.setThreadID(sessionKey, "thread_backend")
+	processor.bindReplyMessage(sessionKey, "om_reply_card")
+
+	followupViaBotReply := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_followup_via_reply"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_followup"),
+				ThreadId:    strPtr("omt_thread_xyz"),
+				RootId:      strPtr("om_reply_card"),
+				ParentId:    strPtr("om_reply_card"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> /goal"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(followupViaBotReply)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, followupViaBotReply) {
+		t.Fatal("expected followup via bot reply card to be routed to work session")
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("expected work scene for followup via bot reply message binding, got %q", job.Scene)
+	}
+	if job.SessionKey != sessionKey {
+		t.Fatalf("expected session key %q, got %q", sessionKey, job.SessionKey)
+	}
+}

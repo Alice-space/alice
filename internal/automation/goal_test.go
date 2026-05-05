@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -1141,4 +1142,17 @@ func searchString(s, substr string) bool {
 		}
 	}
 	return false
+}
+
+func TestRichTextCardContent_WrapsMarkdownInCardJSON(t *testing.T) {
+	c := richTextCardContent("**hello** world")
+	if !strings.Contains(c, `"schema":"2.0"`) {
+		t.Fatalf("expected card schema, got %q", c)
+	}
+	if !strings.Contains(c, `"tag":"markdown"`) {
+		t.Fatalf("expected markdown element tag, got %q", c)
+	}
+	if !strings.Contains(c, `**hello**`) {
+		t.Fatalf("expected markdown content, got %q", c)
+	}
 }

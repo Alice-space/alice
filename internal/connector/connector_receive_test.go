@@ -478,11 +478,53 @@ func TestApp_OnMessageReceive_BuiltinCommandNotSteeredInActiveSession(t *testing
 	if err := app.onMessageReceive(context.Background(), event); err != nil {
 		t.Fatalf("unexpected event error: %v", err)
 	}
-	if got := len(app.queue); got != 1 {
-		t.Fatalf("expected builtin command to be queued, got queue len %d", got)
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected builtin command to be processed inline, got queue len %d", got)
 	}
 	if got := backend.SteerCalls(); got != 0 {
 		t.Fatalf("expected no steer calls for builtin command, got %d", got)
+	}
+	if len(sender.replyMarkdownTexts) == 0 && len(sender.replyCards) == 0 {
+		t.Fatal("expected builtin command to produce a reply")
+	}
+}
+
+func TestApp_OnMessageReceive_ReadOnlyBuiltinInlineDoesNotQueue(t *testing.T) {
+	cfg := configForTest()
+	sender := &senderStub{}
+	processor := NewProcessor(codexStub{resp: "ok"}, sender, "failed", "thinking")
+	app := NewApp(cfg, processor)
+
+	sessionKey := "chat_id:oc_chat|work:om_test"
+	processor.setThreadID(sessionKey, "thread_active")
+	app.state.latest[sessionKey] = 1
+	app.state.active[sessionKey] = activeSessionRun{
+		eventID: "evt_running",
+		version: 1,
+		cancel:  func(error) {},
+	}
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_inline_pwd"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_test_pwd"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/pwd"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("p2p"),
+			},
+		},
+	}
+
+	if err := app.onMessageReceive(context.Background(), event); err != nil {
+		t.Fatalf("unexpected event error: %v", err)
+	}
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected inline processing for /pwd, got queue len %d", got)
+	}
+	if len(sender.replyMarkdownTexts) == 0 {
+		t.Fatal("expected /pwd to reply")
 	}
 }
 

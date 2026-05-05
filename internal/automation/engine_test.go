@@ -49,6 +49,18 @@ func (s *senderStub) SendTextMessage(ctx context.Context, receiveIDType, receive
 	return "om_text", nil
 }
 
+func (s *senderStub) SendCardMessage(ctx context.Context, receiveIDType, receiveID, cardContent string) (string, error) {
+	if err := s.SendText(ctx, receiveIDType, receiveID, cardContent); err != nil {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if strings.TrimSpace(s.sendTextMessageID) != "" {
+		return s.sendTextMessageID, nil
+	}
+	return "om_card", nil
+}
+
 type deadlineSenderStub struct {
 	mu          sync.Mutex
 	deadlineSet bool

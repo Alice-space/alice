@@ -14,6 +14,7 @@ import (
 
 type taskMessageSender interface {
 	SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error)
+	SendCardMessage(ctx context.Context, receiveIDType, receiveID, cardContent string) (string, error)
 }
 
 func (e *Engine) runUserTasks(ctx context.Context, now time.Time) {
