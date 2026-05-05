@@ -299,7 +299,7 @@ func (s *InteractiveSession) handleEvent(event TurnEvent) {
 }
 
 func (s *InteractiveSession) startQueued(req RunRequest) {
-	turn, err := s.driver.StartTurn(context.Background(), req)
+	turn, err := s.driver.StartTurn(context.TODO(), req)
 
 	s.mu.Lock()
 	if s.closed {

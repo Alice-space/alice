@@ -97,7 +97,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	}
 	now := e.nowTime()
 	if !goal.DeadlineAt.IsZero() && now.After(goal.DeadlineAt) {
-		e.markGoalTimeout(goal)
+		e.markGoalTimeout(ctx, goal)
 		return nil
 	}
 	sk := goalSessionKey(goal)
@@ -127,7 +127,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		}
 		now = e.nowTime()
 		if !goal.DeadlineAt.IsZero() && now.After(goal.DeadlineAt) {
-			e.markGoalTimeout(goal)
+			e.markGoalTimeout(goalCtx, goal)
 			return nil
 		}
 		select {
@@ -177,7 +177,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		}
 		logging.Infof("goal iteration done scope=%s:%s done=%v next_thread=%s", goal.Scope.Kind, goal.Scope.ID, result.GoalDone, strings.TrimSpace(result.NextThreadID))
 		if result.GoalDone {
-			e.markGoalComplete(goal)
+			e.markGoalComplete(goalCtx, goal)
 			e.resetFastRunCount(scope)
 			return nil
 		}
@@ -217,7 +217,7 @@ func (e *Engine) buildGoalPrompt(goal GoalTask) string {
 	return renderGoalTemplate(getGoalTemplates().continueTemplate, data)
 }
 
-func (e *Engine) markGoalComplete(goal GoalTask) {
+func (e *Engine) markGoalComplete(ctx context.Context, goal GoalTask) {
 	if _, err := e.store.PatchGoal(goal.Scope, func(g *GoalTask) error {
 		g.Status = GoalStatusComplete
 		return nil
@@ -229,10 +229,10 @@ func (e *Engine) markGoalComplete(goal GoalTask) {
 	logging.Infof("goal completed scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
 	elapsed := e.nowTime().Sub(goal.CreatedAt)
 	msg := "✅ 目标已完成\n   耗时: " + formatDurationHMS(elapsed)
-	e.sendGoalNotification(goal, msg)
+	e.sendGoalNotification(ctx, goal, msg)
 }
 
-func (e *Engine) markGoalTimeout(goal GoalTask) {
+func (e *Engine) markGoalTimeout(ctx context.Context, goal GoalTask) {
 	if _, err := e.store.PatchGoal(goal.Scope, func(g *GoalTask) error {
 		g.Status = GoalStatusTimeout
 		return nil
@@ -244,20 +244,20 @@ func (e *Engine) markGoalTimeout(goal GoalTask) {
 	elapsed := e.nowTime().Sub(goal.CreatedAt)
 	msg := "⏰ 目标已超时\n   已用时间: " + formatDurationHMS(elapsed) +
 		"\n   目标: " + goal.Objective
-	e.sendGoalNotification(goal, msg)
+	e.sendGoalNotification(ctx, goal, msg)
 }
 
-func (e *Engine) sendGoalNotification(goal GoalTask, text string) {
+func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) {
 	if e.sender == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if sender, ok := any(e.sender).(taskMessageSender); ok {
-		sender.SendCardMessage(ctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text))
+		sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text))
 		return
 	}
-	e.sender.SendText(ctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text)
+	e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text)
 }
 
 func (e *Engine) goalRunContext(ctx context.Context, goal GoalTask) (context.Context, context.CancelCauseFunc) {
