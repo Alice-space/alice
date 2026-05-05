@@ -125,7 +125,11 @@ After setup:
 
 			// 4. Write systemd user unit (Linux only)
 			if runtime.GOOS == "linux" {
-				serviceDir := os.ExpandEnv("${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user")
+				configHome := os.Getenv("XDG_CONFIG_HOME")
+				if configHome == "" {
+					configHome = filepath.Join(os.Getenv("HOME"), ".config")
+				}
+				serviceDir := filepath.Join(configHome, "systemd", "user")
 				serviceFile := filepath.Join(serviceDir, serviceName)
 				if err := os.MkdirAll(serviceDir, 0o750); err != nil {
 					return fmt.Errorf("create systemd dir: %w", err)
@@ -169,7 +173,7 @@ WantedBy=default.target
 			}
 
 			// 5. Write OpenCode plugin
-			pluginDir := os.ExpandEnv("$HOME/.config/opencode/plugins")
+			pluginDir := filepath.Join(os.Getenv("HOME"), ".config", "opencode", "plugins")
 			if err := os.MkdirAll(pluginDir, 0o750); err != nil {
 				info("plugin dir create failed: %v", err)
 			} else {
