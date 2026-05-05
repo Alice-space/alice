@@ -2,6 +2,10 @@
 
 > 5 分钟把 DeepSeek V4 接入飞书群聊。不需要 API Key — 只需要你现有的 OpenCode CLI。
 
+> **Goal 模式 × DeepSeek 低价** = 几毛钱并行跑几十个开发任务。
+> **手机上的飞书** = 随时随地发起任务、收到完成通知。不用一直坐在电脑前。
+> **原生 CLI，非云 API** = 终端里开始的任务，手机上用飞书接着跑。一条 `/session resume` 上下文全在 — 不存在厂商锁定，也没有云依赖。
+
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
 [![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/alice)](https://goreportcard.com/report/github.com/Alice-space/alice)
