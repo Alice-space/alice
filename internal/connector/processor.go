@@ -13,6 +13,8 @@ import (
 	"github.com/Alice-space/alice/internal/prompting"
 )
 
+// Processor handles job execution, prompt building, session state, and reply
+// dispatch for incoming connector messages.
 type Processor struct {
 	llm                        llm.Backend
 	sender                     Sender
@@ -41,6 +43,7 @@ type Processor struct {
 	prompts                    *prompting.Loader
 }
 
+// StatusUsageSource provides token usage data for status display.
 type StatusUsageSource struct {
 	BotID            string
 	BotName          string
@@ -63,6 +66,7 @@ const immediateFeedbackModeReaction = "reaction"
 const defaultImmediateFeedbackEmoji = "SMILE"
 const finalReplyDoneEmoji = "DONE"
 
+// NewProcessor creates a Processor with the required dependencies.
 func NewProcessor(
 	backend llm.Backend,
 	sender Sender,

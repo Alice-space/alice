@@ -13,6 +13,7 @@ import (
 var mentionPattern = regexp.MustCompile(`<at[^>]*>.*?</at>`)
 var mentionUserIDPattern = regexp.MustCompile(`<at[^>]*\buser_id="([^"]+)"[^>]*>`)
 
+// ErrIgnoreMessage is returned when a message should be silently dropped.
 var ErrIgnoreMessage = errors.New("ignore message")
 var errSessionInterrupted = errors.New("session interrupted by newer message")
 var errSessionStopped = errors.New("session stopped by slash command")
@@ -33,22 +34,27 @@ func wasStoppedByCommand(ctx context.Context) bool {
 
 type Sender = messaging.ConversationSender
 
+// ReplyContextProvider provides the text of a previously sent reply message.
 type ReplyContextProvider interface {
 	GetMessageText(ctx context.Context, messageID string) (string, error)
 }
 
+// AttachmentDownloader downloads attachments to the local filesystem.
 type AttachmentDownloader interface {
 	DownloadAttachment(ctx context.Context, resourceScopeKey, sourceMessageID string, attachment *Attachment) error
 }
 
+// UserNameResolver resolves a user's display name.
 type UserNameResolver interface {
 	ResolveUserName(ctx context.Context, openID, userID string) (string, error)
 }
 
+// ChatMemberNameResolver resolves a user's display name within a specific chat.
 type ChatMemberNameResolver interface {
 	ResolveChatMemberName(ctx context.Context, chatID, openID, userID string) (string, error)
 }
 
+// Attachment represents a file or image attached to an incoming message.
 type Attachment struct {
 	SourceMessageID string
 	Kind            string
@@ -59,6 +65,7 @@ type Attachment struct {
 	DownloadError   string
 }
 
+// MentionedUser holds information about a user @-mentioned in a message.
 type MentionedUser struct {
 	Key     string
 	Name    string
@@ -67,6 +74,7 @@ type MentionedUser struct {
 	UnionID string
 }
 
+// Job is a unit of work dispatched to the connector's processing pipeline.
 type Job struct {
 	ReceiveID            string
 	ReceiveIDType        string

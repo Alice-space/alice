@@ -6,37 +6,83 @@ import (
 	"github.com/go-playground/validator/v10"
 )
 
+// DefaultLLMProvider is the default LLM backend identifier.
 const DefaultLLMProvider = "codex"
+
+// LLMProviderClaude is the Claude provider name constant.
 const LLMProviderClaude = "claude"
+
+// LLMProviderGemini is the Gemini provider name constant.
 const LLMProviderGemini = "gemini"
+
+// LLMProviderKimi is the Kimi provider name constant.
 const LLMProviderKimi = "kimi"
+
+// LLMProviderOpenCode is the OpenCode provider name constant.
 const LLMProviderOpenCode = "opencode"
+
+// TriggerModeAt sets the trigger mode to at-mentions only.
 const TriggerModeAt = "at"
+
+// TriggerModePrefix sets the trigger mode to message prefix matching.
 const TriggerModePrefix = "prefix"
+
+// TriggerModeAll sets the trigger mode to all messages.
 const TriggerModeAll = "all"
+
+// ImmediateFeedbackModeReply sends a reply as immediate feedback.
 const ImmediateFeedbackModeReply = "reply"
+
+// ImmediateFeedbackModeReaction sends a reaction as immediate feedback.
 const ImmediateFeedbackModeReaction = "reaction"
+
+// DefaultImmediateFeedbackMode is the default immediate feedback mode.
 const DefaultImmediateFeedbackMode = ImmediateFeedbackModeReaction
+
+// DefaultImmediateFeedbackReaction is the default reaction emoji for immediate feedback.
 const DefaultImmediateFeedbackReaction = "OK"
+
+// DefaultRuntimeHTTPAddr is the default runtime HTTP listen address.
 const DefaultRuntimeHTTPAddr = "127.0.0.1:7331"
+
+// DefaultWorkerConcurrency is the default worker pool size.
 const DefaultWorkerConcurrency = 3
+
+// DefaultLLMTimeoutSecs is the default LLM subprocess timeout in seconds.
 const DefaultLLMTimeoutSecs = 172800
+
+// DefaultAuthStatusTimeoutSecs is the default auth status check timeout in seconds.
 const DefaultAuthStatusTimeoutSecs = 15
+
+// DefaultRuntimeAPIShutdownTimeoutSecs is the default runtime API shutdown timeout in seconds.
 const DefaultRuntimeAPIShutdownTimeoutSecs = 5
+
+// DefaultLocalRuntimeStoreOpenTimeoutSecs is the default local runtime store open timeout in seconds.
 const DefaultLocalRuntimeStoreOpenTimeoutSecs = 10
+
+// DefaultCodexIdleTimeoutSecs is the default low idle timeout in seconds.
 const DefaultCodexIdleTimeoutSecs = 900
+
+// DefaultCodexHighIdleTimeoutSecs is the default high idle timeout in seconds.
 const DefaultCodexHighIdleTimeoutSecs = 1800
+
+// DefaultCodexXHighIdleTimeoutSecs is the default extreme idle timeout in seconds.
 const DefaultCodexXHighIdleTimeoutSecs = 3600
 
 var configValidator = validator.New()
 
 const (
-	GroupSceneSessionPerChat    = "per_chat"
-	GroupSceneSessionPerThread  = "per_thread"
-	GroupSceneSessionPerUser    = "per_user"
+	// GroupSceneSessionPerChat scopes group sessions per chat.
+	GroupSceneSessionPerChat = "per_chat"
+	// GroupSceneSessionPerThread scopes group sessions per thread.
+	GroupSceneSessionPerThread = "per_thread"
+	// GroupSceneSessionPerUser scopes group sessions per user.
+	GroupSceneSessionPerUser = "per_user"
+	// GroupSceneSessionPerMessage scopes group sessions per message.
 	GroupSceneSessionPerMessage = "per_message"
 )
 
+// LLMProfileConfig is an LLM backend profile configuration.
 type LLMProfileConfig struct {
 	Provider        string                 `mapstructure:"provider"`
 	Command         string                 `mapstructure:"command"`
@@ -53,6 +99,7 @@ type LLMProfileConfig struct {
 	Timeout time.Duration `mapstructure:"-"`
 }
 
+// GroupSceneConfig is a group chat scene configuration.
 type GroupSceneConfig struct {
 	Enabled              bool   `mapstructure:"enabled"`
 	TriggerTag           string `mapstructure:"trigger_tag"`
@@ -63,23 +110,27 @@ type GroupSceneConfig struct {
 	DisableIdentityHints *bool  `mapstructure:"disable_identity_hints"`
 }
 
+// GroupScenesConfig is a pair of group chat scene configurations.
 type GroupScenesConfig struct {
 	Chat GroupSceneConfig `mapstructure:"chat"`
 	Work GroupSceneConfig `mapstructure:"work"`
 }
 
+// CodexExecPolicyConfig is the sandbox and approval policy configuration.
 type CodexExecPolicyConfig struct {
 	Sandbox        string   `mapstructure:"sandbox"`
 	AskForApproval string   `mapstructure:"ask_for_approval"`
 	AddDirs        []string `mapstructure:"add_dirs"`
 }
 
+// BotPermissionsConfig is bot-level permission controls.
 type BotPermissionsConfig struct {
 	RuntimeMessage    *bool    `mapstructure:"runtime_message"`
 	RuntimeAutomation *bool    `mapstructure:"runtime_automation"`
 	AllowedSkills     []string `mapstructure:"allowed_skills"`
 }
 
+// BotConfig is a per-bot configuration.
 type BotConfig struct {
 	Name                             string                      `mapstructure:"name"`
 	FeishuAppID                      string                      `mapstructure:"feishu_app_id"`
@@ -116,6 +167,7 @@ type BotConfig struct {
 	Permissions                      *BotPermissionsConfig       `mapstructure:"permissions"`
 }
 
+// Config is the top-level runtime configuration.
 type Config struct {
 	BotID                     string `mapstructure:"-"`
 	BotName                   string `mapstructure:"bot_name"`
