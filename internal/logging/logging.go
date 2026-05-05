@@ -221,14 +221,6 @@ func levelValue(level string) int32 {
 	}
 }
 
-func codeBlock(text string) string {
-	trimmed := strings.TrimSpace(text)
-	if trimmed == "" {
-		trimmed = "(empty)"
-	}
-	return "```md\n" + trimmed + "\n```"
-}
-
 func defaultString(value, fallback string) string {
 	value = strings.TrimSpace(value)
 	if value == "" {

@@ -24,10 +24,6 @@ func buildRunArgs(threadID, prompt, model, variant string) []string {
 	return args
 }
 
-func buildLoginCheckArgs() []string {
-	return []string{"--version"}
-}
-
 type LoginReport struct {
 	Command string
 	Version string

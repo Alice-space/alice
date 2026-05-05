@@ -225,34 +225,6 @@ func (a *App) routeWithSessionKeyBuilder(job *Job, event *larkim.P2MessageReceiv
 	return false
 }
 
-func (a *App) resolveCurrentChatSceneSessionKey(receiveIDType, receiveID string) string {
-	return restoreChatSceneKey(receiveIDType, receiveID)
-}
-
-func (a *App) resolveExistingWorkSession(job *Job, event *larkim.P2MessageReceiveV1, message *larkim.EventMessage) string {
-	if job == nil || message == nil {
-		return ""
-	}
-	builder := newSessionKeyBuilder("group", "", "", a.getBotOpenID(), false, true, "#work", a, job)
-	builder.evaluate(event, message)
-	if builder.existingWork != "" {
-		return builder.existingWork
-	}
-	return ""
-}
-
-func (a *App) resolveExistingPrivateWorkSession(job *Job, message *larkim.EventMessage) string {
-	if job == nil || message == nil {
-		return ""
-	}
-	builder := newSessionKeyBuilder("private", "", "", a.getBotOpenID(), false, true, "#work", a, job)
-	builder.evaluate(nil, message)
-	if builder.existingWork != "" {
-		return builder.existingWork
-	}
-	return ""
-}
-
 // applySceneConfigToJob applies the scene configuration from a job, group scene config, and session key.
 func applyChatSceneToJob(job *Job, sessionKey string) {
 	if job == nil {
@@ -278,24 +250,6 @@ func (a *App) applyWorkSceneToJob(job *Job, sessionKey string) {
 	job.ResponseMode = jobResponseModeReply
 	job.SessionKey = strings.TrimSpace(sessionKey)
 	job.ResourceScopeKey = buildWorkSessionResourceScopeKey(sessionKey)
-	job.CreateFeishuThread = sceneCfg.CreateFeishuThread
-	job.NoReplyToken = strings.TrimSpace(sceneCfg.NoReplyToken)
-	applyLLMProfile(job, cfg.llmProvider, sceneCfg.LLMProfile, cfg.llmProfiles[sceneCfg.LLMProfile])
-}
-
-func (a *App) applyPrivateSceneJob(job *Job, sessionKey string, scene string, sceneCfg config.GroupSceneConfig) {
-	if job == nil {
-		return
-	}
-	cfg := a.runtimeConfig()
-	job.Scene = scene
-	job.ResponseMode = jobResponseModeReply
-	job.SessionKey = strings.TrimSpace(sessionKey)
-	if scene == jobSceneWork {
-		job.ResourceScopeKey = buildWorkSessionResourceScopeKey(sessionKey)
-	} else {
-		job.ResourceScopeKey = sessionKey
-	}
 	job.CreateFeishuThread = sceneCfg.CreateFeishuThread
 	job.NoReplyToken = strings.TrimSpace(sceneCfg.NoReplyToken)
 	applyLLMProfile(job, cfg.llmProvider, sceneCfg.LLMProfile, cfg.llmProfiles[sceneCfg.LLMProfile])

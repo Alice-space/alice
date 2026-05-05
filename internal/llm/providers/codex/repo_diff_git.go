@@ -7,11 +7,6 @@ import (
 	"strings"
 )
 
-func resolveFileChangeStatByGitDiff(ctx context.Context, repos []string, path string) (fileDiffStat, bool) {
-	_, stat, found := resolveFileChangeInfoByGitDiff(ctx, repos, path)
-	return stat, found
-}
-
 func resolveFileChangeInfoByGitDiff(
 	ctx context.Context,
 	repos []string,

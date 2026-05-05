@@ -203,34 +203,6 @@ func (a *App) rememberPendingJobLocked(job Job) {
 	a.markRuntimeStateChangedLocked()
 }
 
-func (a *App) updatePendingJobWorkflowPhase(job Job, phase string) {
-	key := pendingJobKey(job)
-	if key == "" {
-		return
-	}
-	normalizedPhase := normalizeJobWorkflowPhase(phase)
-
-	a.state.mu.Lock()
-	defer a.state.mu.Unlock()
-
-	pendingJob, ok := a.state.pending[key]
-	if !ok {
-		pendingJob = job
-	}
-	pendingJob.WorkflowPhase = normalizedPhase
-
-	normalizedJob, normalized := normalizeRuntimeJob(pendingJob)
-	if !normalized {
-		return
-	}
-	if existing, ok := a.state.pending[key]; ok && normalizeJobWorkflowPhase(existing.WorkflowPhase) == normalizedJob.WorkflowPhase {
-		return
-	}
-
-	a.state.pending[key] = normalizedJob
-	a.markRuntimeStateChangedLocked()
-}
-
 func (a *App) removeOlderPendingJobsLocked(sessionKey string, keepVersion uint64) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" || keepVersion == 0 {
@@ -249,27 +221,6 @@ func (a *App) removeOlderPendingJobsLocked(sessionKey string, keepVersion uint64
 			continue
 		}
 		if job.SessionVersion >= keepVersion {
-			continue
-		}
-		delete(a.state.pending, key)
-		changed = true
-	}
-	if changed {
-		a.markRuntimeStateChangedLocked()
-	}
-}
-
-func (a *App) removePendingBySessionVersionLocked(sessionKey string, sessionVersion uint64) {
-	sessionKey = strings.TrimSpace(sessionKey)
-	if sessionKey == "" || sessionVersion == 0 {
-		return
-	}
-	changed := false
-	for key, job := range a.state.pending {
-		if strings.TrimSpace(job.SessionKey) != sessionKey {
-			continue
-		}
-		if job.SessionVersion != sessionVersion {
 			continue
 		}
 		delete(a.state.pending, key)

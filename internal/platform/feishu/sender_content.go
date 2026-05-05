@@ -7,7 +7,6 @@ import (
 )
 
 var markdownLinkPattern = regexp.MustCompile(`\[(.*?)\]\((https?://[^\s)]+)\)`)
-var markdownInlineCodePattern = regexp.MustCompile("`([^`]+)`")
 var markdownStrongPattern = regexp.MustCompile(`\*\*([^*]+)\*\*`)
 var markdownEmPattern = regexp.MustCompile(`\*([^*]+)\*`)
 var markdownStrongUnderscorePattern = regexp.MustCompile(`__([^_]+)__`)

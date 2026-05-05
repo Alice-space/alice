@@ -146,10 +146,3 @@ func sessionContextFromHeadersNoError(c *gin.Context) sessionctx.SessionContext 
 		SessionKey:      strings.TrimSpace(c.GetHeader(HeaderSessionKey)),
 	}
 }
-
-func defaultSessionKey(session sessionctx.SessionContext) string {
-	if sessionKey := strings.TrimSpace(session.SessionKey); sessionKey != "" {
-		return sessionKey
-	}
-	return scopeSessionKey(session)
-}

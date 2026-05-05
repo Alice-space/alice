@@ -7,58 +7,6 @@ import (
 	"time"
 )
 
-func normalizeReasoning(step string) string {
-	step = strings.TrimSpace(step)
-	step = strings.Trim(step, "*")
-	step = strings.TrimSpace(step)
-	if step == "" {
-		return ""
-	}
-	return clipText(step, 600)
-}
-
-func buildProgressCardContent(thinkingText, answerText string, failed bool, interrupted bool, elapsed time.Duration) string {
-	status := "思考中"
-	if interrupted {
-		status = "已中断"
-	} else if failed {
-		status = "失败"
-	} else if strings.TrimSpace(answerText) != "" {
-		status = "已完成"
-	}
-
-	thinking := clipText(strings.TrimSpace(thinkingText), 4000)
-	answer := clipText(strings.TrimSpace(answerText), 4000)
-	if thinking == "" {
-		thinking = "（暂无）"
-	}
-	durationLabel := "已思考：" + formatElapsed(elapsed)
-	if interrupted || failed || strings.TrimSpace(answer) != "" {
-		durationLabel = "总耗时：" + formatElapsed(elapsed)
-	}
-
-	elements := []any{
-		cardMarkdown("**状态**：" + status + "（" + durationLabel + "）"),
-		cardMarkdown("**Codex 思考**\n" + thinking),
-	}
-	if strings.TrimSpace(answer) != "" {
-		elements = append(elements, cardMarkdown("**回复**\n"+answer))
-	}
-
-	card := map[string]any{
-		"schema": "2.0",
-		"config": map[string]any{
-			"enable_forward": true,
-			"update_multi":   true,
-		},
-		"body": map[string]any{
-			"elements": elements,
-		},
-	}
-	raw, _ := json.Marshal(card)
-	return string(raw)
-}
-
 func buildReplyCardContent(markdown string) string {
 	reply := strings.TrimSpace(markdown)
 	if reply == "" {

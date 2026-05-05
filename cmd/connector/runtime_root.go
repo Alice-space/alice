@@ -63,18 +63,6 @@ func printRuntimeJSON(value any) error {
 	return encoder.Encode(value)
 }
 
-func readRuntimeTextArgOrStdin(args []string) (string, error) {
-	body, err := readRuntimeBodyArgOrStdin(args)
-	if err != nil {
-		return "", err
-	}
-	text := strings.TrimSpace(string(body))
-	if text == "" {
-		return "", fmt.Errorf("message body is empty")
-	}
-	return text, nil
-}
-
 func readRuntimeBodyArgOrStdin(args []string) ([]byte, error) {
 	if len(args) > 0 {
 		return []byte(args[0]), nil

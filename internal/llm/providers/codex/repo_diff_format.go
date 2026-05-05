@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-func formatFileChangeMessage(path string, stat fileDiffStat) string {
-	return formatFileChangeMessageWithStatus(path, fileChangeStatusModified, stat)
-}
-
 func formatFileChangeMessageWithStatus(path string, status fileChangeStatus, stat fileDiffStat) string {
 	path = strings.TrimSpace(path)
 	if path == "" {
