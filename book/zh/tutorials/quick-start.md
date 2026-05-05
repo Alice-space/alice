@@ -79,9 +79,40 @@ alice --feishu-websocket
 
 你应该能看到飞书 WebSocket 连接和每个 bot runtime 初始化的日志。
 
-## 第 6 步：测试
+## 第 6 步：用 Work 模式测试
 
-在飞书中，在群聊中找到你的 bot 或给它发一条私信。输入 `/help` —— bot 应该回复内置命令帮助卡片。然后发送一条普通消息，验证 LLM 后端是否正常工作。
+大多数人用 Alice 是冲着 **work 模式**来的 — 工程任务、调试、自动化。用法：
+
+在飞书群聊里 @你的 bot：
+
+```
+@Alice #work 修复 auth.go 里的登录超时问题
+```
+
+发生了什么：
+1. Alice 为这个任务创建飞书 thread
+2. 启动配置好的 LLM 后端（如 DeepSeek V4）
+3. 进度和工具调用实时推送到 thread
+4. 会话被持久化 — 之后可以从终端恢复
+
+试试内置命令：
+```
+/help       — 显示命令列表
+/status     — 查看当前会话和后端信息
+/stop       — 取消正在运行的任务
+```
+
+### Chat 模式（闲聊）
+
+Alice 也支持 casual `chat` 模式，bot 像群里的常住成员一样参与对话。直接 @ 即可：
+
+```
+@Alice 今天天气怎么样？
+```
+
+Chat 模式使用 `chat` LLM profile（轻量模型），整个群共享一个会话，不创建 thread。用 `/clear` 重置聊天会话。
+
+> **提示**：默认 `config.example.yaml` 同时启用了两种模式。大多数运维场景以 work 模式为主。如果只需要 work，设置 `group_scenes.chat.enabled: false` 即可。
 
 ## 接下来？
 

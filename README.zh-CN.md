@@ -44,6 +44,8 @@ alice setup
 alice --feishu-websocket
 ```
 
+然后在飞书群里发送：`@Alice #work 部署 staging 环境` — Alice 会创建任务 thread，调用 LLM 后端，实时推送进度。随时用 `/session` 从终端恢复这个任务。
+
 ## 开发
 
 ```bash

@@ -45,6 +45,8 @@ alice setup
 alice --feishu-websocket
 ```
 
+Then in Feishu: `@Alice #work deploy the staging environment` — Alice creates a task thread, runs your LLM backend, and streams progress back. Use `/session` anytime to resume the task from your terminal.
+
 ## Development
 
 ```bash

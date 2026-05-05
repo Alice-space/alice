@@ -79,9 +79,40 @@ alice --feishu-websocket
 
 You should see log output indicating the Feishu WebSocket connection and per-bot runtime initialization.
 
-## Step 6: Test
+## Step 6: Test with Work Mode
 
-In Feishu, find your bot in a group chat or send it a DM. Type `/help` — the bot should respond with the built-in command help card. Then try a normal message to verify the LLM backend is working.
+Most people use Alice for **work mode** — task-oriented engineering, debugging, and automation. Here's how:
+
+In any Feishu group chat where your bot is present:
+
+```
+@Alice #work fix the login timeout in auth.go
+```
+
+What happens:
+1. Alice creates a Feishu thread for this task
+2. Starts the configured LLM backend (e.g. DeepSeek V4)
+3. Streams progress and tool calls back to the thread
+4. The session is persisted — you can resume from your terminal later
+
+Try the built-in commands too:
+```
+/help       — Show command list
+/status     — Show current session and backend info
+/stop       — Cancel the running task
+```
+
+### Chat Mode (Casual)
+
+Alice also supports a casual `chat` mode where the bot behaves like a persistent group participant. Just message with `@Alice`:
+
+```
+@Alice what's the weather like?
+```
+
+Chat mode uses the `chat` LLM profile (lighter model), shares one session per group, and doesn't create threads. Use `/clear` to reset the chat session.
+
+> **Tip**: The default `config.example.yaml` enables both modes. Work mode is the primary use case for most operators. If you only need work mode, set `group_scenes.chat.enabled: false`.
 
 ## What's Next?
 

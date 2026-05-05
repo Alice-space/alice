@@ -16,267 +16,194 @@ body {
   min-height: 100vh;
   overflow-x: hidden;
 }
-
-/* Grid background */
 body::before {
   content: '';
-  position: fixed;
-  inset: 0;
+  position: fixed; inset: 0;
   background:
-    linear-gradient(rgba(100, 255, 218, 0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(100, 255, 218, 0.03) 1px, transparent 1px);
+    linear-gradient(rgba(100,255,218,0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100,255,218,0.03) 1px, transparent 1px);
   background-size: 60px 60px;
-  pointer-events: none;
-  z-index: 0;
+  pointer-events: none; z-index: 0;
 }
-
-/* Scanline overlay */
 body::after {
   content: '';
-  position: fixed;
-  inset: 0;
-  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
-  pointer-events: none;
-  z-index: 999;
+  position: fixed; inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.06) 2px, rgba(0,0,0,0.06) 4px);
+  pointer-events: none; z-index: 999;
 }
 
 .container {
-  position: relative;
-  z-index: 1;
-  max-width: 900px;
-  margin: 0 auto;
-  padding: 3rem 1.5rem;
+  position: relative; z-index: 1;
+  max-width: 980px; margin: 0 auto;
+  padding: 2rem 1rem 3rem;
   min-height: 100vh;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;
+  display: flex; flex-direction: column; justify-content: center;
 }
 
-/* Terminal window */
+/* ── Terminal window ── */
 .terminal {
-  background: rgba(10, 10, 20, 0.85);
-  border: 1px solid rgba(100, 255, 218, 0.2);
-  border-radius: 12px;
-  padding: 0;
+  background: rgba(10,10,20,0.88);
+  border: 1px solid rgba(100,255,218,0.2);
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow: 0 0 60px rgba(100, 255, 218, 0.08), 0 0 120px rgba(100, 255, 218, 0.03);
+  box-shadow: 0 0 80px rgba(100,255,218,0.06), 0 0 160px rgba(100,255,218,0.02);
 }
 
 .terminal-bar {
-  background: rgba(100, 255, 218, 0.05);
-  border-bottom: 1px solid rgba(100, 255, 218, 0.15);
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  background: rgba(100,255,218,0.04);
+  border-bottom: 1px solid rgba(100,255,218,0.12);
+  padding: 10px 18px;
+  display: flex; align-items: center; gap: 8px;
 }
 
 .terminal-dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 50%;
-  border: 1px solid;
+  width: 11px; height: 11px; border-radius: 50%; border: 1px solid;
 }
-.terminal-dot.red   { background: rgba(255,95,95,0.3);  border-color: rgba(255,95,95,0.6); }
-.terminal-dot.yellow{ background: rgba(255,213,79,0.3); border-color: rgba(255,213,79,0.6); }
-.terminal-dot.green { background: rgba(100,255,218,0.3);border-color: rgba(100,255,218,0.6); }
+.terminal-dot.r { background:rgba(255,95,95,0.3);  border-color:rgba(255,95,95,0.6); }
+.terminal-dot.y { background:rgba(255,213,79,0.3); border-color:rgba(255,213,79,0.6); }
+.terminal-dot.g { background:rgba(100,255,218,0.3);border-color:rgba(100,255,218,0.6); }
 
 .terminal-title {
-  margin-left: 12px;
-  font-size: 0.75rem;
-  color: rgba(100, 255, 218, 0.4);
+  margin-left: 10px; font-size: 0.7rem; color: rgba(100,255,218,0.35);
 }
 
-.terminal-body {
-  padding: 30px 32px 36px;
+/* ── Lang toggle in bar ── */
+.lang-toggle {
+  margin-left: auto; display: flex; gap: 4px;
 }
+.lang-toggle button {
+  font-family: inherit; font-size: 0.65rem; font-weight: 700;
+  padding: 3px 10px; border-radius: 5px; cursor: pointer;
+  background: transparent; color: #556; border: 1px solid rgba(100,255,218,0.15);
+  transition: all 0.2s;
+}
+.lang-toggle button.active {
+  background: rgba(100,255,218,0.12); color: #64ffda;
+  border-color: rgba(100,255,218,0.4);
+}
+.lang-toggle button:hover { border-color: #64ffda; color: #64ffda; }
 
-/* Logo / Title */
+.terminal-body { padding: 28px 32px 32px; }
+
+/* ── Logo ── */
 .logo {
-  font-size: 4rem;
-  font-weight: 700;
+  font-size: 3.5rem; font-weight: 700;
   background: linear-gradient(135deg, #64ffda 0%, #00e5ff 50%, #82b1ff 100%);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   background-clip: text;
-  letter-spacing: 2px;
-  line-height: 1.1;
-  margin-bottom: 0.3rem;
+  letter-spacing: 2px; line-height: 1.1; margin-bottom: 0.2rem;
 }
 
-.subtitle {
-  font-size: 1.1rem;
-  color: rgba(100, 255, 218, 0.7);
-  margin-bottom: 2rem;
-  font-weight: 400;
-}
+.tagline { font-size: 1rem; color: rgba(100,255,218,0.65); margin-bottom: 1.8rem; font-weight: 400; }
 
-/* Terminal prompt */
-.prompt {
-  background: rgba(100, 255, 218, 0.04);
-  border-left: 2px solid #64ffda;
-  padding: 1.2rem 1.5rem;
-  margin: 1.5rem 0;
-  border-radius: 0 8px 8px 0;
-}
+/* ── Dual terminal panes ── */
+.terminals { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin-bottom: 1.8rem; }
 
-.prompt-line {
-  font-size: 0.95rem;
-  color: #7c8db5;
-  margin: 0.3rem 0;
+.pane {
+  background: rgba(0,0,0,0.35);
+  border: 1px solid rgba(100,255,218,0.1);
+  border-radius: 10px; overflow: hidden;
 }
-.prompt-line .dim { color: #4a5568; }
-.prompt-line .cmd { color: #64ffda; }
-.prompt-line .arg { color: #82b1ff; }
-.prompt-line .out { color: #a6accd; }
+.pane-header {
+  background: rgba(100,255,218,0.06);
+  border-bottom: 1px solid rgba(100,255,218,0.08);
+  padding: 8px 14px;
+  display: flex; align-items: center; gap: 8px;
+}
+.pane-arrow {
+  font-size: 0.85rem; color: #64ffda;
+}
+.pane-label {
+  color: rgba(100,255,218,0.5); font-size: 0.72rem;
+}
+.pane-body { padding: 16px 18px; }
 
-/* Feature cards */
+.pane-line {
+  font-size: 0.78rem; line-height: 1.8; white-space: nowrap;
+}
+.pane-line .dim  { color: #445; }
+.pane-line .host { color: #64ffda; }
+.pane-line .path { color: #82b1ff; }
+.pane-line .cmd  { color: #e0e0e0; }
+.pane-line .feishu { color: #7dd3fc; }
+.pane-line .bot  { color: #c4b5fd; }
+.pane-line .out  { color: #6b7280; }
+.pane-line .hl   { color: #64ffda; font-weight: 700; }
+
+/* ── Feature cards ── */
 .features {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-  gap: 1rem;
-  margin: 2rem 0 0.5rem;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 0.8rem; margin-bottom: 0.3rem;
 }
 
 .feature {
-  position: relative;
-  background: rgba(100, 255, 218, 0.03);
-  border: 1px solid rgba(100, 255, 218, 0.1);
-  border-radius: 10px;
-  padding: 1.3rem 1.3rem 1.1rem;
+  background: rgba(100,255,218,0.025);
+  border: 1px solid rgba(100,255,218,0.08);
+  border-radius: 10px; padding: 1.1rem 1.1rem 1rem;
   transition: border-color 0.3s, background 0.3s;
 }
-
 .feature:hover {
-  border-color: rgba(100, 255, 218, 0.35);
-  background: rgba(100, 255, 218, 0.06);
+  border-color: rgba(100,255,218,0.3);
+  background: rgba(100,255,218,0.05);
+}
+.feature-icon { font-size: 1.1rem; margin-bottom: 0.5rem; display: block; }
+.feature h3 { font-size: 0.82rem; font-weight: 700; color: #64ffda; margin-bottom: 0.3rem; }
+.feature p  { font-size: 0.72rem; color: #8892b0; line-height: 1.55; }
+.feature code { color: #82b1ff; background: rgba(130,177,255,0.1); padding: 1px 5px; border-radius: 3px; }
+
+/* ── Docs entry ── */
+.docs-entry {
+  display: flex; gap: 1rem; justify-content: center;
+  margin-top: 1.8rem; padding-top: 1.4rem;
+  border-top: 1px solid rgba(100,255,218,0.08);
 }
 
-.feature-icon {
-  font-size: 1.3rem;
-  margin-bottom: 0.6rem;
-  display: block;
-}
-
-.feature h3 {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: #64ffda;
-  margin-bottom: 0.35rem;
-}
-
-.feature p {
-  font-size: 0.78rem;
-  color: #8892b0;
-  line-height: 1.5;
-}
-
-/* Lang selector */
-.lang-select {
-  display: flex;
-  gap: 1rem;
-  margin-top: 2rem;
-  padding-top: 1.5rem;
-  border-top: 1px solid rgba(100, 255, 218, 0.1);
-  justify-content: center;
-}
-
-.lang-btn {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 2rem;
-  font-family: inherit;
-  font-size: 0.95rem;
-  font-weight: 700;
-  text-decoration: none;
-  border-radius: 8px;
+.docs-btn {
+  display: inline-flex; align-items: center; gap: 0.5rem;
+  padding: 0.7rem 1.8rem;
+  font-family: inherit; font-size: 0.9rem; font-weight: 700;
+  text-decoration: none; border-radius: 8px;
   transition: all 0.3s;
-  background: rgba(100, 255, 218, 0.06);
+  background: rgba(100,255,218,0.05);
   color: #64ffda;
-  border: 1px solid rgba(100, 255, 218, 0.2);
+  border: 1px solid rgba(100,255,218,0.18);
   cursor: pointer;
 }
-
-.lang-btn:hover {
-  background: rgba(100, 255, 218, 0.15);
+.docs-btn:hover {
+  background: rgba(100,255,218,0.13);
   border-color: #64ffda;
-  box-shadow: 0 0 24px rgba(100, 255, 218, 0.15);
+  box-shadow: 0 0 20px rgba(100,255,218,0.12);
   transform: translateY(-1px);
 }
+.docs-btn .arr { opacity: 0; transform: translateX(-3px); transition: all 0.3s; }
+.docs-btn:hover .arr { opacity: 1; transform: translateX(0); }
 
-.lang-btn .arrow {
-  opacity: 0;
-  transform: translateX(-4px);
-  transition: all 0.3s;
-}
-
-.lang-btn:hover .arrow {
-  opacity: 1;
-  transform: translateX(0);
-}
-
-/* Footer */
+/* ── Footer ── */
 .footer {
-  text-align: center;
-  margin-top: 1.5rem;
-  font-size: 0.7rem;
-  color: rgba(100, 255, 218, 0.2);
+  text-align: center; margin-top: 1.2rem;
+  font-size: 0.65rem; color: rgba(100,255,218,0.15);
 }
-
-.footer a {
-  color: rgba(100, 255, 218, 0.3);
-  text-decoration: none;
-}
-
+.footer a { color: rgba(100,255,218,0.25); text-decoration: none; }
 .footer a:hover { color: #64ffda; }
 
-/* Pulse glow on page edge */
 .glow {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 600px;
-  height: 600px;
-  background: radial-gradient(circle, rgba(100,255,218,0.04) 0%, transparent 70%);
-  pointer-events: none;
-  z-index: 0;
+  position: fixed; top: 50%; left: 50%;
+  transform: translate(-50%,-50%);
+  width: 700px; height: 700px;
+  background: radial-gradient(circle, rgba(100,255,218,0.03) 0%, transparent 70%);
+  pointer-events: none; z-index: 0;
 }
 
-/* Responsive */
-@media (max-width: 600px) {
+/* ── i18n ── */
+[lang-zh] { display: none; }
+
+@media (max-width: 768px) {
   .logo { font-size: 2.5rem; }
-  .terminal-body { padding: 20px 18px 24px; }
+  .terminal-body { padding: 18px 16px 22px; }
+  .terminals { grid-template-columns: 1fr; }
   .features { grid-template-columns: 1fr; }
-  .lang-select { flex-direction: column; }
-}
-
-/* Stats row */
-.stats {
-  display: flex;
-  gap: 2rem;
-  justify-content: center;
-  margin: 1.2rem 0;
-  flex-wrap: wrap;
-}
-
-.stat {
-  text-align: center;
-}
-
-.stat-value {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: #64ffda;
-}
-
-.stat-label {
-  font-size: 0.65rem;
-  color: #4a5568;
-  text-transform: uppercase;
-  letter-spacing: 1px;
-  margin-top: 0.15rem;
+  .docs-entry { flex-direction: column; }
 }
 </style>
 </head>
@@ -284,61 +211,158 @@ body::after {
 <div class="glow"></div>
 <div class="container">
 
-  <main class="terminal">
-    <div class="terminal-bar">
-      <span class="terminal-dot red"></span>
-      <span class="terminal-dot yellow"></span>
-      <span class="terminal-dot green"></span>
-      <span class="terminal-title">alice ~ zsh</span>
-    </div>
-    <div class="terminal-body">
+<main class="terminal">
+  <div class="terminal-bar">
+    <span class="terminal-dot r"></span>
+    <span class="terminal-dot y"></span>
+    <span class="terminal-dot g"></span>
+    <span class="terminal-title">alice ~  ~</span>
+    <span class="lang-toggle">
+      <button id="btn-en" class="active" onclick="setLang('en')">EN</button>
+      <button id="btn-zh" onclick="setLang('zh')">中</button>
+    </span>
+  </div>
+  <div class="terminal-body">
 
+    <!-- ENGLISH -->
+    <span lang-en>
       <h1 class="logo">Alice</h1>
-      <p class="subtitle">Same AI session, anywhere. Terminal &harr; Feishu. No cloud lock-in.</p>
+      <p class="tagline">Same AI session, anywhere. Terminal &harr; Feishu. No cloud lock-in.</p>
 
-      <div class="prompt">
-        <div class="prompt-line"><span class="dim">~ $</span> <span class="cmd">opencode</span> <span class="arg">refactor auth module</span></div>
-        <div class="prompt-line"><span class="dim">~ $</span> <span class="cmd">alice --feishu-websocket</span></div>
-        <div class="prompt-line"><span class="out">&rarr; Connected. Session <span style="color:#64ffda">thread_4f2a</span> ready.</span></div>
-        <div class="prompt-line" style="margin-top:0.4rem"><span class="dim">Feishu @phone $</span> <span class="cmd">/session resume</span> <span class="out">&rarr; Context restored. Continuing.</span></div>
-      </div>
-
-      <div class="stats">
-        <div class="stat"><div class="stat-value">6</div><div class="stat-label">AI Backends</div></div>
-        <div class="stat"><div class="stat-value">0</div><div class="stat-label">Cloud Dependencies</div></div>
-        <div class="stat"><div class="stat-value">&lt;5min</div><div class="stat-label">Setup Time</div></div>
+      <div class="terminals">
+        <div class="pane">
+          <div class="pane-header">
+            <span class="pane-arrow">&#x2192;</span>
+            <span class="pane-label">Desk → Phone</span>
+          </div>
+          <div class="pane-body">
+            <div class="pane-line"><span class="dim">~ $</span> <span class="cmd">opencode "fix the OAuth flow"</span></div>
+            <div class="pane-line"><span class="out">[session </span><span class="hl">019de8de-c0db</span><span class="out">] working...</span></div>
+            <div class="pane-line" style="margin-top:8px"><span class="feishu">Feishu @phone &raquo;</span></div>
+            <div class="pane-line"><span class="bot">@Alice #work</span> <span class="cmd">/session 019de8de-c0db continue</span></div>
+            <div class="pane-line"><span class="out">Alice resumes the session. Same workspace, same context.</span></div>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="pane-header">
+            <span class="pane-arrow">&#x2190;</span>
+            <span class="pane-label">Phone → Desk</span>
+          </div>
+          <div class="pane-body">
+            <div class="pane-line"><span class="feishu">Feishu @phone &raquo;</span></div>
+            <div class="pane-line"><span class="bot">@Alice #work</span> <span class="cmd">refactor the database layer</span></div>
+            <div class="pane-line"><span class="out">Alice starts the agent, replies with status card:</span></div>
+            <div class="pane-line" style="margin-top:8px"><span class="dim">~ $</span> <span class="hl">codex resume 019de8de-c0db</span></div>
+            <div class="pane-line"><span class="out">Picks up exactly where Feishu left off.</span></div>
+          </div>
+        </div>
       </div>
 
       <div class="features">
         <div class="feature">
           <span class="feature-icon">&#x1F4BB;&#x27A1;&#xFE0F;&#x1F4F1;</span>
-          <h3>Terminal &harr; Feishu</h3>
-          <p>Start coding in your IDE, continue from Feishu on your phone. One <code>/session resume</code> and you're back in context. Same workspace, same thread.</p>
+          <h3>Seamless Switch</h3>
+          <p>Start a task in your terminal, continue from Feishu on your phone with <code>/session</code>. Same thread, same workspace. Go back to terminal anytime with <code>codex resume</code>.</p>
         </div>
         <div class="feature">
           <span class="feature-icon">&#x1F916;</span>
           <h3>Any AI, Your Rules</h3>
-          <p>OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi. Mix providers per scene — light model for chat, heavy model for work.</p>
+          <p>OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi. Light model for chat, heavy model for work. Use <code>alice delegate</code> to fan out subtasks.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">&#x26A1;</span>
+          <h3>Goal Mode × DeepSeek</h3>
+          <p>Fire off dozens of autonomous coding tasks for pennies. Get notified on your phone when they finish. No need to stay at your desk.</p>
         </div>
         <div class="feature">
           <span class="feature-icon">&#x1F512;</span>
-          <h3>No Cloud. No Lock-in.</h3>
-          <p>The agent CLI runs on <em>your</em> machine. No API keys, no third-party servers, no vendor lock-in. Your data stays yours.</p>
+          <h3>No Cloud Lock-in</h3>
+          <p>The agent CLI runs on <em>your</em> machine. No API keys stored in the cloud. No vendor lock-in. Your data stays yours.</p>
+        </div>
+      </div>
+    </span>
+
+    <!-- CHINESE -->
+    <span lang-zh>
+      <h1 class="logo">Alice</h1>
+      <p class="tagline">同一个 AI 会话，随时随地。终端 &harr; 飞书。没有云锁定。</p>
+
+      <div class="terminals">
+        <div class="pane">
+          <div class="pane-header">
+            <span class="pane-arrow">&#x2192;</span>
+            <span class="pane-label">桌面 → 手机</span>
+          </div>
+          <div class="pane-body">
+            <div class="pane-line"><span class="dim">~ $</span> <span class="cmd">opencode "修复 OAuth 流程"</span></div>
+            <div class="pane-line"><span class="out">[session </span><span class="hl">019de8de-c0db</span><span class="out">] 运行中...</span></div>
+            <div class="pane-line" style="margin-top:8px"><span class="feishu">手机飞书 &raquo;</span></div>
+            <div class="pane-line"><span class="bot">@Alice #work</span> <span class="cmd">/session 019de8de-c0db 继续</span></div>
+            <div class="pane-line"><span class="out">Alice 恢复了同一个后端会话。工作区、上下文原封不动。</span></div>
+          </div>
+        </div>
+        <div class="pane">
+          <div class="pane-header">
+            <span class="pane-arrow">&#x2190;</span>
+            <span class="pane-label">手机 → 桌面</span>
+          </div>
+          <div class="pane-body">
+            <div class="pane-line"><span class="feishu">手机飞书 &raquo;</span></div>
+            <div class="pane-line"><span class="bot">@Alice #work</span> <span class="cmd">重构数据库层</span></div>
+            <div class="pane-line"><span class="out">Alice 启动 agent，回复状态卡片：</span></div>
+            <div class="pane-line" style="margin-top:8px"><span class="dim">~ $</span> <span class="hl">codex resume 019de8de-c0db</span></div>
+            <div class="pane-line"><span class="out">回到电脑前，无缝接上飞书里的进度。</span></div>
+          </div>
         </div>
       </div>
 
-      <div class="lang-select">
-        <a href="en/" class="lang-btn"><span class="arrow">&#x2192;</span> English Docs <span class="arrow" style="opacity:0.4;font-size:0.7rem">&#x2318;K</span></a>
-        <a href="zh/" class="lang-btn"><span class="arrow">&#x2192;</span> 中文文档 <span class="arrow" style="opacity:0.4;font-size:0.7rem">&#x2318;K</span></a>
+      <div class="features">
+        <div class="feature">
+          <span class="feature-icon">&#x1F4BB;&#x27A1;&#xFE0F;&#x1F4F1;</span>
+          <h3>无缝切换</h3>
+          <p>终端里开始的任务，手机飞书上用 <code>/session</code> 接着跑。同一个 thread，同一个 workspace。随时 <code>codex resume</code> 回到终端。</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">&#x1F916;</span>
+          <h3>任选 AI，我的规则</h3>
+          <p>OpenCode (DeepSeek V4)、Codex、Claude、Gemini、Kimi。轻模型聊天，重模型干活。用 <code>alice delegate</code> 分发子任务。</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">&#x26A1;</span>
+          <h3>Goal 模式 × DeepSeek</h3>
+          <p>几毛钱并行跑几十个自主开发任务。手机收完成通知，不用守着电脑。</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">&#x1F512;</span>
+          <h3>没有云锁定</h3>
+          <p>agent CLI 跑在<em>你自己</em>的机器上。API Key 不上云。没有厂商锁定。你的数据你自己掌控。</p>
+        </div>
       </div>
+    </span>
 
+    <!-- Docs buttons -->
+    <div class="docs-entry">
+      <a href="en/" class="docs-btn"><span class="arr">&#x2192;</span> English Docs</a>
+      <a href="zh/" class="docs-btn"><span class="arr">&#x2192;</span> 中文文档</a>
     </div>
-  </main>
 
-  <footer class="footer">
-    <a href="https://github.com/Alice-space/alice">GitHub</a> &middot; MIT Licensed
-  </footer>
+  </div>
+</main>
+
+<footer class="footer">
+  <a href="https://github.com/Alice-space/alice">GitHub</a> &middot; MIT Licensed
+</footer>
 
 </div>
+
+<script>
+function setLang(lang) {
+  document.querySelectorAll('[lang-en]').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
+  document.querySelectorAll('[lang-zh]').forEach(el => el.style.display = lang === 'zh' ? '' : 'none');
+  document.getElementById('btn-en').classList.toggle('active', lang === 'en');
+  document.getElementById('btn-zh').classList.toggle('active', lang === 'zh');
+  document.documentElement.lang = lang;
+}
+</script>
 </body>
 </html>
