@@ -1,6 +1,8 @@
 # Alice
 
-> **同一个 AI 会话，随时随地。** 终端里写代码，手机上用飞书接着跑，再切回来。没有云锁定 — agent 跑在*你自己*的机器上。
+> **A**I **L**ocal **I**nteractive **C**ross-device **E**ngine
+>
+> 同一个 AI 会话，随时随地。终端 ↔ 飞书，没有云锁定。
 
 Alice 是一个**飞书长连接连接器**，把 CLI 型 LLM agent 变成飞书里的交互式 bot。支持 OpenCode（DeepSeek V4）、Codex、Claude、Gemini、Kimi。
 

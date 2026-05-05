@@ -1,6 +1,8 @@
 # Alice
 
-> **Same AI session, anywhere.** Start coding on your terminal. Continue from Feishu on your phone. Switch back. No cloud lock-in — the agent runs on *your* machine. Works with OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
+> **A**I **L**ocal **I**nteractive **C**ross-device **E**ngine
+>
+> Same AI session, anywhere. Terminal ↔ Feishu. No cloud lock-in. Works with OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
 
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
