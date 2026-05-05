@@ -136,6 +136,7 @@ func isPwdCommand(text string) bool {
 	return strings.EqualFold(strings.TrimSpace(fields[0]), pwdCommandName)
 }
 
+
 func buildGoalScopeFromJob(job Job) automation.Scope {
 	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
 	if chatType == "group" || chatType == "topic_group" {
@@ -151,6 +152,7 @@ func buildGoalScopeFromJob(job Job) automation.Scope {
 	}
 	return automation.Scope{Kind: automation.ScopeKindUser, ID: actorID}
 }
+
 
 func formatDurationShort(d time.Duration) string {
 	if d < 0 {
