@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/automation"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/prompting"
 )
 

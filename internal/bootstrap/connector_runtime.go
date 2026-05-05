@@ -10,10 +10,10 @@ import (
 
 	"github.com/oklog/run"
 
-	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/Alice-space/alice/internal/runtimeapi"
 )

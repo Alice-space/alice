@@ -10,10 +10,10 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	"github.com/oklog/ulid/v2"
 
-	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	feishu "github.com/Alice-space/alice/internal/platform/feishu"
 	"github.com/Alice-space/alice/internal/prompting"

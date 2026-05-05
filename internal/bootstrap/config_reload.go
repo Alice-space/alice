@@ -5,9 +5,9 @@ import (
 	"sort"
 	"time"
 
-	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/Alice-space/alice/internal/runtimecfg"
