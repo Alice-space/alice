@@ -1,9 +1,13 @@
 # Alice
 
+> 5 分钟把 DeepSeek V4 接入飞书群聊。不需要 API Key — 只需要你现有的 OpenCode CLI。
+
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/alice)](https://goreportcard.com/report/github.com/Alice-space/alice)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-面向飞书的长连接连接器，把 CLI 型 LLM agent（Codex、Claude、Gemini、Kimi、OpenCode）接入飞书聊天。
+面向飞书的长连接连接器，把 CLI 型 LLM agent — OpenCode (DeepSeek V4)、Codex、Claude、Gemini、Kimi 接入飞书聊天。
 
 Alice 以本地多 bot runtime 运行 — 通过 WebSocket 接收消息，路由到 `chat` 或 `work` 场景，调用 LLM CLI，返回文本、文件和图片。
 

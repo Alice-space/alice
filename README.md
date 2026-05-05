@@ -1,11 +1,16 @@
 # Alice
 
+> Turn DeepSeek V4 into a Feishu group chat bot in 5 minutes. No API key — just your existing OpenCode CLI.
+
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/alice)](https://goreportcard.com/report/github.com/Alice-space/alice)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Alice-space/alice.svg)](https://pkg.go.dev/github.com/Alice-space/alice)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Feishu long-connection connector for CLI-based LLM agents (Codex, Claude, Gemini, Kimi, OpenCode).
+A Feishu long-connection connector for CLI-based LLM agents — OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
 
-Alice runs as a local multi-bot runtime — receives Feishu messages over WebSocket, routes them into `chat` or `work` scenes, calls the configured LLM CLI, and sends replies, files, and images back.
+Runs as a local multi-bot runtime: receives Feishu messages over WebSocket, routes them into `chat` or `work` scenes, calls the configured LLM CLI, and sends replies, files, and images back. Zero cloud dependency — everything runs on your machine.
 
 ## Documentation
 
