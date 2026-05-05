@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 const (
@@ -190,7 +192,7 @@ func (r Runner) runAttempt(
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}
-	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
+	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 
 	watchedRepos := discoverWatchRepos(cmd.Dir)
 	repoLease := syntheticDiffGuard.Acquire(watchedRepos)
@@ -247,7 +249,7 @@ func (r Runner) runAttempt(
 	go func() {
 		defer close(stdoutEvents)
 		scanner := bufio.NewScanner(stdoutPipe)
-		scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+		scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize)
 		for scanner.Scan() {
 			select {
 			case stdoutEvents <- stdoutEvent{line: scanner.Text()}:

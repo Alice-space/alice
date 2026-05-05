@@ -11,9 +11,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // Runner executes the gemini CLI for a single request.
@@ -86,7 +87,7 @@ func (r Runner) RunWithThreadAndProgress(
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}
-	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
+	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -180,45 +181,6 @@ func (r jsonResponse) usageTotals() (int64, int64, int64) {
 		outputTokens += modelStats.Tokens.Candidates
 	}
 	return inputTokens, cachedInputTokens, outputTokens
-}
-
-func mergeEnv(base []string, overrides map[string]string) []string {
-	if len(overrides) == 0 {
-		return base
-	}
-	env := make([]string, len(base))
-	copy(env, base)
-	indexByKey := make(map[string]int, len(env))
-	for i, item := range env {
-		key := envKey(item)
-		if key == "" {
-			continue
-		}
-		indexByKey[key] = i
-	}
-	keys := make([]string, 0, len(overrides))
-	for key := range overrides {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		value := overrides[key]
-		pair := key + "=" + value
-		if idx, ok := indexByKey[key]; ok {
-			env[idx] = pair
-			continue
-		}
-		env = append(env, pair)
-	}
-	return env
-}
-
-func envKey(item string) string {
-	idx := strings.Index(item, "=")
-	if idx <= 0 {
-		return ""
-	}
-	return item[:idx]
 }
 
 func decorateNodeVersionError(runErr error, detail string) error {

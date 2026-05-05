@@ -1,7 +1,6 @@
 package codex
 
 import (
-	"sort"
 	"strconv"
 	"strings"
 )
@@ -86,46 +85,4 @@ func buildExecArgs(
 func shouldUseDangerousBypass(policy ExecPolicyConfig) bool {
 	return policy.Sandbox == "danger-full-access" &&
 		policy.AskForApproval == defaultApprovalMode
-}
-
-func mergeEnv(base []string, overrides map[string]string) []string {
-	if len(overrides) == 0 {
-		return base
-	}
-
-	env := make([]string, len(base))
-	copy(env, base)
-
-	indexByKey := make(map[string]int, len(env))
-	for i, item := range env {
-		key := envKey(item)
-		if key == "" {
-			continue
-		}
-		indexByKey[key] = i
-	}
-
-	keys := make([]string, 0, len(overrides))
-	for key := range overrides {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-
-	for _, key := range keys {
-		pair := key + "=" + overrides[key]
-		if idx, ok := indexByKey[key]; ok {
-			env[idx] = pair
-			continue
-		}
-		env = append(env, pair)
-	}
-	return env
-}
-
-func envKey(item string) string {
-	idx := strings.Index(item, "=")
-	if idx <= 0 {
-		return ""
-	}
-	return item[:idx]
 }

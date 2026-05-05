@@ -6,22 +6,6 @@ import (
 	"strings"
 )
 
-func extractString(payload map[string]any, keys ...string) string {
-	for _, key := range keys {
-		value, ok := payload[key]
-		if !ok {
-			continue
-		}
-		if text, ok := value.(string); ok {
-			trimmed := strings.TrimSpace(text)
-			if trimmed != "" {
-				return trimmed
-			}
-		}
-	}
-	return ""
-}
-
 func extractInt(payload map[string]any, keys ...string) int {
 	for _, key := range keys {
 		value, ok := payload[key]

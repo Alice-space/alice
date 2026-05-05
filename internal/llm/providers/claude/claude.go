@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/llm/internal/repodiff"
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // Runner executes the claude CLI for a single request.
@@ -69,7 +70,7 @@ func (r Runner) RunWithThreadAndProgress(
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}
-	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
+	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 	diffEmitter := repodiff.NewEmitter(tctx, cmd.Dir, onProgress)
 	defer diffEmitter.Close()
 
@@ -104,7 +105,7 @@ func (r Runner) RunWithThreadAndProgress(
 	var outputTokens int64
 
 	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize)
 	for scanner.Scan() {
 		line := scanner.Text()
 		stdout.WriteString(line)

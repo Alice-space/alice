@@ -13,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 type claudeStreamDriver struct {
@@ -234,7 +236,7 @@ func (d *claudeStreamDriver) writeJSONLine(payload any) error {
 
 func (d *claudeStreamDriver) readClaudeStdout(stdout io.Reader) {
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize10MB)
 	for scanner.Scan() {
 		event, ok := d.parseClaudeLine(scanner.Text())
 		if !ok {

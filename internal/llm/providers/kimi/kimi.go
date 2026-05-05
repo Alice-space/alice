@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/Alice-space/alice/internal/llm/internal/repodiff"
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // Runner executes the kimi CLI for a single request.
@@ -78,7 +79,7 @@ func (r Runner) RunWithThreadAndProgress(
 	if workDir != "" {
 		cmd.Dir = workDir
 	}
-	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
+	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 	diffEmitter := repodiff.NewEmitter(tctx, cmd.Dir, onProgress)
 	defer diffEmitter.Close()
 
@@ -107,7 +108,7 @@ func (r Runner) RunWithThreadAndProgress(
 	activeThreadID := execThreadID
 
 	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize)
 	for scanner.Scan() {
 		line := scanner.Text()
 		stdout.WriteString(line)
@@ -173,37 +174,6 @@ func (r Runner) RunWithThreadAndProgress(
 		finalMessage = strings.TrimSpace(message)
 	}
 	return finalMessage, activeThreadID, nil
-}
-
-func mergeEnv(base []string, overrides map[string]string) []string {
-	if len(overrides) == 0 {
-		return base
-	}
-	env := make([]string, len(base))
-	copy(env, base)
-	indexByKey := make(map[string]int, len(env))
-	for i, item := range env {
-		idx := strings.Index(item, "=")
-		if idx <= 0 {
-			continue
-		}
-		indexByKey[item[:idx]] = i
-	}
-	keys := make([]string, 0, len(overrides))
-	for key := range overrides {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		value := overrides[key]
-		pair := key + "=" + value
-		if idx, ok := indexByKey[key]; ok {
-			env[idx] = pair
-			continue
-		}
-		env = append(env, pair)
-	}
-	return env
 }
 
 func mergeEnvMap(base map[string]string, overrides map[string]string) map[string]string {

@@ -6,12 +6,14 @@ import (
 	"errors"
 	"strconv"
 	"strings"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 func ParseFinalMessage(jsonlOutput string) (string, error) {
 	var lastMessage string
 	scanner := bufio.NewScanner(strings.NewReader(jsonlOutput))
-	scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize)
 
 	for scanner.Scan() {
 		line := strings.TrimSpace(scanner.Text())
@@ -95,8 +97,8 @@ func parseToolCallLine(line string) string {
 		return ""
 	}
 
-	command := extractString(item, "command")
-	status := extractString(item, "status")
+	command := shared.ExtractString(item, "command")
+	status := shared.ExtractString(item, "status")
 	exitCode := extractInt(item, "exit_code")
 	parts := make([]string, 0, 3)
 	if command != "" {
