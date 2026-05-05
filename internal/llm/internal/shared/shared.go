@@ -89,3 +89,11 @@ const DefaultLLMTimeout = 172800 * time.Second
 
 // AuthCheckTimeout is the default timeout for CLI login/auth status checks.
 const AuthCheckTimeout = 15 * time.Second
+
+// RunnerBase holds fields common to all LLM provider runners.
+type RunnerBase struct {
+	Command      string
+	Timeout      time.Duration
+	Env          map[string]string
+	WorkspaceDir string
+}

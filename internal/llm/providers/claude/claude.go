@@ -12,7 +12,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/Alice-space/alice/internal/llm/internal/repodiff"
 	"github.com/Alice-space/alice/internal/llm/internal/shared"
@@ -20,10 +19,7 @@ import (
 
 // Runner executes the claude CLI for a single request.
 type Runner struct {
-	Command      string
-	Timeout      time.Duration
-	Env          map[string]string
-	WorkspaceDir string
+	shared.RunnerBase
 }
 
 // Run is a convenience wrapper that runs without thread resumption or progress

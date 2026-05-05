@@ -25,10 +25,7 @@ import (
 
 // Runner executes the kimi CLI for a single request.
 type Runner struct {
-	Command      string
-	Timeout      time.Duration
-	Env          map[string]string
-	WorkspaceDir string
+	shared.RunnerBase
 }
 
 // Run is a convenience wrapper that runs without thread resumption or progress

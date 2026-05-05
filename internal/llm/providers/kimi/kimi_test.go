@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 func TestRunWithThreadAndProgressEmitsToolUseRawEvent(t *testing.T) {
@@ -22,7 +24,7 @@ printf '%s\n' '{"role":"assistant","content":"DONE"}'
 	}
 
 	var raw []string
-	reply, _, err := Runner{Command: command}.RunWithThreadAndProgress(
+	reply, _, err := Runner{RunnerBase: shared.RunnerBase{Command: command}}.RunWithThreadAndProgress(
 		context.Background(),
 		"",
 		"prompt",
@@ -67,7 +69,7 @@ printf '%s\n' '{"role":"assistant","content":"DONE"}'
 	}
 
 	var progress []string
-	reply, _, err := Runner{Command: command, WorkspaceDir: repo}.RunWithThreadAndProgress(
+	reply, _, err := Runner{RunnerBase: shared.RunnerBase{Command: command, WorkspaceDir: repo}}.RunWithThreadAndProgress(
 		context.Background(),
 		"",
 		"prompt",

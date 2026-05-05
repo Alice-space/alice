@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 	coreclaude "github.com/Alice-space/alice/internal/llm/providers/claude"
 )
 
@@ -14,10 +15,12 @@ type claudeBackend struct {
 
 func newClaudeBackend(cfg ClaudeConfig) *claudeBackend {
 	defaultRunner := coreclaude.Runner{
-		Command:      cfg.Command,
-		Timeout:      cfg.Timeout,
-		Env:          cfg.Env,
-		WorkspaceDir: cfg.WorkspaceDir,
+		RunnerBase: shared.RunnerBase{
+			Command:      cfg.Command,
+			Timeout:      cfg.Timeout,
+			Env:          cfg.Env,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 	}
 	profileRunners := make(map[string]coreclaude.Runner, len(cfg.ProfileOverrides))
 	for name, override := range cfg.ProfileOverrides {

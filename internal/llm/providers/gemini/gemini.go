@@ -12,17 +12,13 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // Runner executes the gemini CLI for a single request.
 type Runner struct {
-	Command      string
-	Timeout      time.Duration
-	Env          map[string]string
-	WorkspaceDir string
+	shared.RunnerBase
 }
 
 type jsonResponse struct {

@@ -13,7 +13,6 @@ import (
 	"os"
 	"os/exec"
 	"strings"
-	"time"
 
 	"github.com/Alice-space/alice/internal/llm/internal/repodiff"
 	"github.com/Alice-space/alice/internal/llm/internal/shared"
@@ -21,12 +20,9 @@ import (
 
 // Runner executes the opencode CLI for a single request.
 type Runner struct {
-	Command        string
-	Timeout        time.Duration
+	shared.RunnerBase
 	DefaultModel   string
 	DefaultVariant string
-	Env            map[string]string
-	WorkspaceDir   string
 }
 
 type stepStart struct {

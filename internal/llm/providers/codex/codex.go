@@ -63,16 +63,14 @@ type repoDiffSnapshot map[string]fileDiffStat
 
 // Runner executes the codex CLI for a single request.
 type Runner struct {
-	Command                string
-	Timeout                time.Duration
+	shared.RunnerBase
+
 	IdleTimeout            time.Duration
 	DefaultIdleTimeout     time.Duration
 	HighIdleTimeout        time.Duration
 	XHighIdleTimeout       time.Duration
 	DefaultModel           string
 	DefaultReasoningEffort string
-	Env                    map[string]string
-	WorkspaceDir           string
 	SyntheticDiffGuard     *syntheticDiffRunGuard
 }
 

@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 	coreopencode "github.com/Alice-space/alice/internal/llm/providers/opencode"
 )
 
@@ -14,12 +15,14 @@ type opencodeBackend struct {
 
 func newOpenCodeBackend(cfg OpenCodeConfig) *opencodeBackend {
 	defaultRunner := coreopencode.Runner{
-		Command:        cfg.Command,
-		Timeout:        cfg.Timeout,
+		RunnerBase: shared.RunnerBase{
+			Command:      cfg.Command,
+			Timeout:      cfg.Timeout,
+			Env:          cfg.Env,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 		DefaultModel:   cfg.Model,
 		DefaultVariant: cfg.Variant,
-		Env:            cfg.Env,
-		WorkspaceDir:   cfg.WorkspaceDir,
 	}
 	profileRunners := make(map[string]coreopencode.Runner, len(cfg.ProfileOverrides))
 	for name, override := range cfg.ProfileOverrides {

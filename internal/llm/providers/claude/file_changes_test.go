@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 func TestRunWithThreadAndProgressEmitsSyntheticFileChanges(t *testing.T) {
@@ -21,7 +23,7 @@ printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"text","text":"
 	}
 
 	var progress []string
-	reply, _, _, _, _, err := Runner{Command: command, WorkspaceDir: repo}.RunWithThreadAndProgress(
+	reply, _, _, _, _, err := Runner{RunnerBase: shared.RunnerBase{Command: command, WorkspaceDir: repo}}.RunWithThreadAndProgress(
 		context.Background(),
 		"",
 		"prompt",
