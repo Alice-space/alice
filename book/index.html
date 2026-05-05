@@ -195,8 +195,7 @@ body::after {
   pointer-events: none; z-index: 0;
 }
 
-/* ── i18n ── */
-[lang-zh] { display: none; }
+
 
 @media (max-width: 768px) {
   .logo { font-size: 2.5rem; }
@@ -359,12 +358,13 @@ body::after {
 
 <script>
 function setLang(lang) {
-  document.querySelectorAll('[lang-en]').forEach(el => el.style.display = lang === 'en' ? '' : 'none');
-  document.querySelectorAll('[lang-zh]').forEach(el => el.style.display = lang === 'zh' ? '' : 'none');
+  document.querySelectorAll('[lang-en]').forEach(el => el.style.display = lang === 'en' ? 'block' : 'none');
+  document.querySelectorAll('[lang-zh]').forEach(el => el.style.display = lang === 'zh' ? 'block' : 'none');
   document.getElementById('btn-en').classList.toggle('active', lang === 'en');
   document.getElementById('btn-zh').classList.toggle('active', lang === 'zh');
   document.documentElement.lang = lang;
 }
+setLang('en');
 </script>
 </body>
 </html>
