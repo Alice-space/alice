@@ -4,7 +4,7 @@
 - `/help`
   显示内建命令，以及普通模式 / 工作模式的当前说明。
 - `/status`
-  显示当前会话 scope 下的 token 统计、活跃自动化任务，以及 backend/session/cwd。
+   显示当前会话下 token 统计、活跃自动化任务、当前目标状态，以及 backend/session/cwd。
 - `/clear`
   仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。
 - `/stop`
@@ -16,9 +16,7 @@
 - `/ls [path]`
   列出工作目录内容。不指定路径时显示当前工作目录，可指定绝对或相对路径。
 - `/pwd`
-  显示当前 agent 工作目录。
-- `/goal`
-  查看当前会话的长期目标及其状态（active/paused/complete/timeout）。
+   显示当前 agent 工作目录。
 {{- if and (not .ChatEnabled) (not .WorkEnabled) }}
 
 ## 模式说明
