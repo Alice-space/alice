@@ -5,6 +5,7 @@ package shared
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 // MergeEnv merges environment variable overrides into a copy of base,
@@ -75,3 +76,7 @@ const (
 	MaxScannerTokenSize2MB  = 2 * 1024 * 1024
 	MaxScannerTokenSize10MB = 10 * 1024 * 1024
 )
+
+// DefaultLLMTimeout is the fallback timeout (48 hours) used by all LLM
+// provider runners when no explicit timeout is configured.
+const DefaultLLMTimeout = 172800 * time.Second

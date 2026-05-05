@@ -103,7 +103,7 @@ func (r Runner) RunWithThreadAndProgress(
 
 	timeout := r.Timeout
 	if timeout <= 0 {
-		timeout = 172800 * time.Second
+		timeout = shared.DefaultLLMTimeout
 	}
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
