@@ -386,6 +386,17 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 			return nil
 		}
 	}
+	if isReadOnlyBuiltinCommand(job.Text) && a.processor != nil {
+		a.processor.ProcessJobState(ctx, *job)
+		logging.Infof(
+			"job processed inline event_id=%s receive_id_type=%s session=%s text=%q",
+			job.EventID,
+			job.ReceiveIDType,
+			job.SessionKey,
+			job.Text,
+		)
+		return nil
+	}
 
 	queued, cancelActive, canceledEventID := a.enqueueJob(job)
 	if !queued {

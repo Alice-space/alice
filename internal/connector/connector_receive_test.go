@@ -478,11 +478,14 @@ func TestApp_OnMessageReceive_BuiltinCommandNotSteeredInActiveSession(t *testing
 	if err := app.onMessageReceive(context.Background(), event); err != nil {
 		t.Fatalf("unexpected event error: %v", err)
 	}
-	if got := len(app.queue); got != 1 {
-		t.Fatalf("expected builtin command to be queued, got queue len %d", got)
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected builtin command to be processed inline, got queue len %d", got)
 	}
 	if got := backend.SteerCalls(); got != 0 {
 		t.Fatalf("expected no steer calls for builtin command, got %d", got)
+	}
+	if len(sender.replyMarkdownTexts) == 0 && len(sender.replyCards) == 0 {
+		t.Fatal("expected builtin command to produce a reply")
 	}
 }
 

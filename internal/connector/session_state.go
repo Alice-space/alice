@@ -476,6 +476,7 @@ func buildWorkSessionLookupCandidates(receiveIDType, receiveID string, threadID,
 	}
 	if parentID != "" {
 		appendCandidate(buildWorkSessionKey(receiveIDType, receiveID, parentID))
+		appendCandidate(base + messageBindingToken + parentID)
 	}
 
 	return candidates
