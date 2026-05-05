@@ -42,7 +42,7 @@ func TestBuildJob_TextMessage(t *testing.T) {
 	if job.EventID != "evt_1" {
 		t.Fatalf("unexpected event id: %s", job.EventID)
 	}
-	if job.SessionKey != "chat_id:oc_chat" {
+	if job.SessionKey != "chat_id:oc_chat|work:om_parent" {
 		t.Fatalf("unexpected session key: %s", job.SessionKey)
 	}
 }
@@ -223,7 +223,7 @@ func TestBuildJob_SessionKeyFallsBackToRootID(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
-	if job.SessionKey != "chat_id:oc_chat|thread:om_root_1" {
+	if job.SessionKey != "chat_id:oc_chat|work:om_root_1" {
 		t.Fatalf("unexpected session key: %s", job.SessionKey)
 	}
 }

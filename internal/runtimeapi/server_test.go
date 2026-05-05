@@ -22,7 +22,7 @@ func TestBuildTaskFromRequest_BasicFields(t *testing.T) {
 			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
 			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|seed:om_1"},
+			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|work:om_1"},
 		},
 	)
 	if err != nil {
@@ -56,13 +56,13 @@ func TestBuildTaskFromRequest_SessionKeyIsSet(t *testing.T) {
 			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
 			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|seed:om_1"},
+			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|work:om_1"},
 		},
 	)
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if task.SessionKey != "chat_id:oc_chat|scene:work|seed:om_1" {
+	if task.SessionKey != "chat_id:oc_chat|work:om_1" {
 		t.Fatalf("unexpected session key: %q", task.SessionKey)
 	}
 }
@@ -81,7 +81,7 @@ func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
 			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
 			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|seed:om_1"},
+			session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|work:om_1"},
 		},
 	)
 	if err != nil {
@@ -135,7 +135,7 @@ func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_GroupChat
 			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_group"},
 			creator: automation.Actor{OpenID: "ou_actor"},
 			session: sessionctx.SessionContext{
-				SessionKey:      "chat_id:oc_group|scene:chat",
+				SessionKey:      "chat_id:oc_group",
 				SourceMessageID: "om_thread_xyz",
 			},
 		},
@@ -143,7 +143,7 @@ func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_GroupChat
 	if err != nil {
 		t.Fatalf("build task failed: %v", err)
 	}
-	if want := "chat_id:oc_group|scene:chat|message:om_thread_xyz"; task.SessionKey != want {
+	if want := "chat_id:oc_group|message:om_thread_xyz"; task.SessionKey != want {
 		t.Fatalf("unexpected session key: got=%q want=%q", task.SessionKey, want)
 	}
 	if task.Route.ReceiveIDType != "source_message_id" {
@@ -265,7 +265,7 @@ func TestApplyTaskPatch_PreservesSessionKey(t *testing.T) {
 		Creator:    automation.Actor{OpenID: "ou_actor"},
 		Schedule:   automation.Schedule{EverySeconds: 3600},
 		Prompt:     "总结当前状态",
-		SessionKey: "chat_id:oc_chat|scene:chat",
+		SessionKey: "chat_id:oc_chat",
 		Status:     automation.TaskStatusActive,
 	}
 
@@ -273,12 +273,12 @@ func TestApplyTaskPatch_PreservesSessionKey(t *testing.T) {
 		scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
 		route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		creator: automation.Actor{OpenID: "ou_actor"},
-		session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|scene:work|seed:om_1|message:om_2"},
+		session: sessionctx.SessionContext{SessionKey: "chat_id:oc_chat|work:om_1"},
 	})
 	if err != nil {
 		t.Fatalf("apply task patch failed: %v", err)
 	}
-	if next.SessionKey != "chat_id:oc_chat|scene:chat" {
+	if next.SessionKey != "chat_id:oc_chat" {
 		t.Fatalf("patch should preserve system session key, got %q", next.SessionKey)
 	}
 	if next.Prompt != "updated prompt" {

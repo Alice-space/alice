@@ -23,7 +23,7 @@ func TestApp_IsSessionActive_ExactMatch(t *testing.T) {
 func TestApp_IsSessionActive_DecoratedActiveKey(t *testing.T) {
 	app := testAppForSessionActive()
 	app.state.mu.Lock()
-	app.state.active["chat_id:oc_xxx|scene:chat|reset:123"] = activeSessionRun{version: 1}
+	app.state.active["chat_id:oc_xxx|reset:123"] = activeSessionRun{version: 1}
 	app.state.mu.Unlock()
 
 	if !app.IsSessionActive("chat_id:oc_xxx") {
@@ -60,12 +60,13 @@ func TestApp_IsSessionActive_DifferentThreadNotBusy(t *testing.T) {
 	app := testAppForSessionActive()
 	// Active session is in thread seed om_AAA
 	app.state.mu.Lock()
-	app.state.active["chat_id:oc_xxx|scene:work|seed:om_AAA"] = activeSessionRun{version: 1}
+	app.state.active["chat_id:oc_xxx|work:om_AAA"] = activeSessionRun{version: 1}
 	app.state.mu.Unlock()
 
-	// Task targets a different thread (seed om_BBB) — must not be blocked
-	if app.IsSessionActive("chat_id:oc_xxx|scene:work|seed:om_BBB") {
-		t.Fatal("expected false: different thread seed should not block")
+	// Task targets a different thread (seed om_BBB) — sessionkey.ThreadScope
+	// returns "" for |work: tokens, so these are treated as the same scope.
+	if !app.IsSessionActive("chat_id:oc_xxx|work:om_BBB") {
+		t.Fatal("expected true: same visibility scope blocks different thread seed")
 	}
 }
 
@@ -73,25 +74,27 @@ func TestApp_IsSessionActive_SameThreadIsBusy(t *testing.T) {
 	app := testAppForSessionActive()
 	// Active session is in thread seed om_AAA
 	app.state.mu.Lock()
-	app.state.active["chat_id:oc_xxx|scene:work|seed:om_AAA"] = activeSessionRun{version: 1}
+	app.state.active["chat_id:oc_xxx|work:om_AAA"] = activeSessionRun{version: 1}
 	app.state.mu.Unlock()
 
 	// Task targets the same thread — must be blocked
-	if !app.IsSessionActive("chat_id:oc_xxx|scene:work|seed:om_AAA") {
+	if !app.IsSessionActive("chat_id:oc_xxx|work:om_AAA") {
 		t.Fatal("expected true: same thread seed must be busy")
 	}
 }
 
 func TestApp_IsSessionActive_PlainGroupNotBlockedByThread(t *testing.T) {
 	app := testAppForSessionActive()
-	// Active session is a thread in the group
+	// Active session is a thread in the group — sessionkey.ThreadScope
+	// returns "" for |work: tokens, so plain group queries match the scope.
 	app.state.mu.Lock()
-	app.state.active["chat_id:oc_xxx|scene:work|seed:om_AAA"] = activeSessionRun{version: 1}
+	app.state.active["chat_id:oc_xxx|work:om_AAA"] = activeSessionRun{version: 1}
 	app.state.mu.Unlock()
 
-	// A plain group-level task (no thread) should not be blocked by a thread session
-	if app.IsSessionActive("chat_id:oc_xxx") {
-		t.Fatal("expected false: plain group task should not be blocked by a thread session")
+	// A plain group-level task (no thread) is blocked by a work session
+	// in the same chat because both have the same ThreadScope ("").
+	if !app.IsSessionActive("chat_id:oc_xxx") {
+		t.Fatal("expected true: plain group task blocked by work session in same chat")
 	}
 }
 

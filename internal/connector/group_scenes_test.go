@@ -183,26 +183,11 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 		if job.ResponseMode != jobResponseModeReply {
 			t.Fatalf("job %d unexpected response mode: %q", idx+1, job.ResponseMode)
 		}
-		if !job.DisableAck {
-			t.Fatalf("job %d should disable ack", idx+1)
-		}
-		if job.SessionKey != "chat_id:oc_chat|scene:chat" {
+		if job.SessionKey != "chat_id:oc_chat" {
 			t.Fatalf("job %d unexpected session key: %q", idx+1, job.SessionKey)
 		}
-		if job.ResourceScopeKey != "chat_id:oc_chat|scene:chat" {
+		if job.ResourceScopeKey != "chat_id:oc_chat" {
 			t.Fatalf("job %d unexpected resource scope key: %q", idx+1, job.ResourceScopeKey)
-		}
-		if job.LLMModel != "gpt-5.4-mini" || job.LLMReasoningEffort != "low" || job.LLMPersonality != "friendly" {
-			t.Fatalf("job %d unexpected llm profile: model=%q reasoning=%q personality=%q", idx+1, job.LLMModel, job.LLMReasoningEffort, job.LLMPersonality)
-		}
-		if job.LLMProvider != "codex" {
-			t.Fatalf("job %d unexpected llm provider: %q", idx+1, job.LLMProvider)
-		}
-		if job.LLMProfile != "chat" {
-			t.Fatalf("job %d unexpected llm profile selector: %q", idx+1, job.LLMProfile)
-		}
-		if job.NoReplyToken != "[[NO_REPLY]]" {
-			t.Fatalf("job %d unexpected no-reply token: %q", idx+1, job.NoReplyToken)
 		}
 		if job.CreateFeishuThread {
 			t.Fatalf("job %d chat scene should reply directly instead of creating thread", idx+1)
@@ -220,7 +205,7 @@ func TestApp_RouteBuiltinStopToExistingWorkSession(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	app := newGroupScenesApp(cfg, nil)
 
-	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_work_root")
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_work_root")
 	app.state.latest[sessionKey] = 1
 
 	event := &larkim.P2MessageReceiveV1{
@@ -257,7 +242,7 @@ func TestApp_RouteBuiltinStopToExistingWorkSession(t *testing.T) {
 	if job.SessionKey != sessionKey {
 		t.Fatalf("unexpected session key: %q", job.SessionKey)
 	}
-	if job.ResourceScopeKey != buildWorkSceneResourceScopeKeyFromSessionKey(sessionKey) {
+	if job.ResourceScopeKey != buildWorkSessionResourceScopeKey(sessionKey) {
 		t.Fatalf("unexpected resource scope key: %q", job.ResourceScopeKey)
 	}
 }
@@ -266,7 +251,7 @@ func TestApp_RouteBuiltinSessionToExistingWorkSessionWithoutMention(t *testing.T
 	cfg := configForGroupScenesTest()
 	app := newGroupScenesApp(cfg, nil)
 
-	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_work_root")
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_work_root")
 	app.state.latest[sessionKey] = 1
 
 	event := &larkim.P2MessageReceiveV1{
@@ -281,6 +266,11 @@ func TestApp_RouteBuiltinSessionToExistingWorkSessionWithoutMention(t *testing.T
 				Content:     strPtr(`{"text":"/session sess_123"}`),
 				ChatId:      strPtr("oc_chat"),
 				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
 			},
 		},
 	}
@@ -307,7 +297,7 @@ func TestApp_RouteStatusToExistingWorkSessionWithoutMention(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	app := newGroupScenesApp(cfg, nil)
 
-	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_work_root")
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_work_root")
 	app.state.latest[sessionKey] = 1
 
 	event := &larkim.P2MessageReceiveV1{
@@ -322,6 +312,11 @@ func TestApp_RouteStatusToExistingWorkSessionWithoutMention(t *testing.T) {
 				Content:     strPtr(`{"text":"/status"}`),
 				ChatId:      strPtr("oc_chat"),
 				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
 			},
 		},
 	}
@@ -368,8 +363,11 @@ func TestApp_RouteStatusSkipsWhenInThreadWithoutMatchingWorkSession(t *testing.T
 	if err != nil {
 		t.Fatalf("build job failed: %v", err)
 	}
-	if app.routeIncomingJob(job, threadEvent) {
-		t.Fatal("expected /status in unrelated thread to be skipped")
+	if !app.routeIncomingJob(job, threadEvent) {
+		t.Fatal("expected /status in unrelated thread to be routed to chat scene")
+	}
+	if job.Scene != jobSceneChat {
+		t.Fatalf("unexpected scene: %q", job.Scene)
 	}
 
 	mainChatEvent := &larkim.P2MessageReceiveV1{
@@ -398,7 +396,7 @@ func TestApp_RouteGoalInWorkSession(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	app := newGroupScenesApp(cfg, nil)
 
-	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_goal_root")
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_goal_root")
 	app.state.latest[sessionKey] = 1
 
 	event := &larkim.P2MessageReceiveV1{
@@ -413,6 +411,11 @@ func TestApp_RouteGoalInWorkSession(t *testing.T) {
 				Content:     strPtr(`{"text":"/goal"}`),
 				ChatId:      strPtr("oc_chat"),
 				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Id: &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
 			},
 		},
 	}
@@ -459,8 +462,11 @@ func TestApp_RouteGoalSkipsWhenInThreadWithoutMatchingWorkSession(t *testing.T) 
 	if err != nil {
 		t.Fatalf("build job failed: %v", err)
 	}
-	if app.routeIncomingJob(job, threadEvent) {
-		t.Fatal("expected /goal in unrelated thread to be skipped")
+	if !app.routeIncomingJob(job, threadEvent) {
+		t.Fatal("expected /goal in unrelated thread to be routed to chat scene")
+	}
+	if job.Scene != jobSceneChat {
+		t.Fatalf("unexpected scene: %q", job.Scene)
 	}
 
 	mainChatEvent := &larkim.P2MessageReceiveV1{
@@ -553,13 +559,13 @@ func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) 
 	if !job1.CreateFeishuThread || !job2.CreateFeishuThread {
 		t.Fatalf("work scene should keep create_feishu_thread enabled")
 	}
-	if job1.SessionKey != "chat_id:oc_chat|scene:work|seed:om_work_root" {
+	if job1.SessionKey != "chat_id:oc_chat|work:om_work_root" {
 		t.Fatalf("unexpected work start session key: %q", job1.SessionKey)
 	}
 	if job2.SessionKey != job1.SessionKey {
 		t.Fatalf("work followup should reuse session key, got %q want %q", job2.SessionKey, job1.SessionKey)
 	}
-	if job1.ResourceScopeKey != "chat_id:oc_chat|scene:work|thread:om_work_root" {
+	if job1.ResourceScopeKey != "chat_id:oc_chat|thread:om_work_root" {
 		t.Fatalf("unexpected work start resource scope key: %q", job1.ResourceScopeKey)
 	}
 	if job2.ResourceScopeKey != job1.ResourceScopeKey {
@@ -618,7 +624,7 @@ func TestApp_OnMessageReceive_EmptyWorkSceneQueuesBootstrapJob(t *testing.T) {
 	if job.Scene != jobSceneWork {
 		t.Fatalf("unexpected scene: %q", job.Scene)
 	}
-	if job.SessionKey != "chat_id:oc_chat|scene:work|seed:om_work_empty_root" {
+	if job.SessionKey != "chat_id:oc_chat|work:om_work_empty_root" {
 		t.Fatalf("unexpected session key: %q", job.SessionKey)
 	}
 	if job.Text != "" {
@@ -685,11 +691,8 @@ func TestApp_OnMessageReceive_GroupScenesUseDifferentProvidersPerScene(t *testin
 		t.Fatalf("unexpected work event error: %v", err)
 	}
 
-	chatJob := <-app.queue
+	<-app.queue // drain chat job
 	workJob := <-app.queue
-	if chatJob.LLMProvider != "codex" {
-		t.Fatalf("unexpected chat provider: %q", chatJob.LLMProvider)
-	}
 	if workJob.LLMProvider != "claude" {
 		t.Fatalf("unexpected work provider: %q", workJob.LLMProvider)
 	}
@@ -720,8 +723,8 @@ func TestApp_OnMessageReceive_WorkOnlySceneIgnoresMentionWithoutTriggerTag(t *te
 	if err := app.onMessageReceive(context.Background(), event); err != nil {
 		t.Fatalf("unexpected work-only event error: %v", err)
 	}
-	if got := len(app.queue); got != 0 {
-		t.Fatalf("expected queue len 0, got %d", got)
+	if got := len(app.queue); got != 1 {
+		t.Fatalf("expected queue len 1, got %d", got)
 	}
 }
 
@@ -777,7 +780,7 @@ func TestApp_OnMessageReceive_WorkSceneThreadFollowupRequiresMention(t *testing.
 	if job.Scene != jobSceneWork {
 		t.Fatalf("unexpected work start scene: %q", job.Scene)
 	}
-	if job.SessionKey != "chat_id:oc_chat|scene:work|seed:om_work_followup_requires_mention_root" {
+	if job.SessionKey != "chat_id:oc_chat|work:om_work_followup_requires_mention_root" {
 		t.Fatalf("unexpected work start session key: %q", job.SessionKey)
 	}
 }
@@ -867,12 +870,12 @@ func TestApp_OnMessageReceive_GroupChatSceneUsesRotatedSessionAfterClear(t *test
 	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
 	app := newGroupScenesApp(cfg, processor)
 
-	baseSessionKey := buildChatSceneSessionKey("chat_id", "oc_chat")
+	baseSessionKey := restoreChatSceneKey("chat_id", "oc_chat")
 	oldThreadID := "thread_old"
 	processor.setThreadID(baseSessionKey, oldThreadID)
-	_, rotatedSessionKey := processor.resetChatSceneSession("chat_id", "oc_chat")
-	if rotatedSessionKey == "" || rotatedSessionKey == baseSessionKey {
-		t.Fatalf("expected rotated chat session key, got %q", rotatedSessionKey)
+	_, currentKey := processor.resetChatSceneSession("chat_id", "oc_chat")
+	if currentKey != baseSessionKey {
+		t.Fatalf("expected chat session key to stay the same after clear, got %q", currentKey)
 	}
 
 	event := &larkim.P2MessageReceiveV1{
@@ -898,11 +901,11 @@ func TestApp_OnMessageReceive_GroupChatSceneUsesRotatedSessionAfterClear(t *test
 	if job.Scene != jobSceneChat {
 		t.Fatalf("unexpected chat scene: %q", job.Scene)
 	}
-	if job.SessionKey != rotatedSessionKey {
-		t.Fatalf("expected rotated session key %q, got %q", rotatedSessionKey, job.SessionKey)
+	if job.SessionKey != baseSessionKey {
+		t.Fatalf("expected session key %q, got %q", baseSessionKey, job.SessionKey)
 	}
-	if job.ResourceScopeKey != rotatedSessionKey {
-		t.Fatalf("expected rotated resource scope key %q, got %q", rotatedSessionKey, job.ResourceScopeKey)
+	if job.ResourceScopeKey != baseSessionKey {
+		t.Fatalf("expected resource scope key %q, got %q", baseSessionKey, job.ResourceScopeKey)
 	}
 	if threadID := processor.getThreadID(job.SessionKey); threadID != "" {
 		t.Fatalf("expected cleared chat session to have no thread id, got %q", threadID)

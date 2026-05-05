@@ -1,7 +1,6 @@
 package connector
 
 import (
-	"fmt"
 	"strings"
 	"time"
 
@@ -13,7 +12,6 @@ type sessionUsageStats = statusview.UsageStats
 
 type sessionState struct {
 	ThreadID               string            `json:"thread_id"`
-	Aliases                []string          `json:"aliases,omitempty"`
 	WorkThreadID           string            `json:"work_thread_id,omitempty"`
 	WorkDir                string            `json:"work_dir,omitempty"`
 	BackendProvider        string            `json:"backend_provider,omitempty"`
@@ -23,6 +21,7 @@ type sessionState struct {
 	BackendVariant         string            `json:"backend_variant,omitempty"`
 	BackendPersonality     string            `json:"backend_personality,omitempty"`
 	ScopeKey               string            `json:"scope_key,omitempty"`
+	ReplyMessageIDs        []string          `json:"reply_message_ids,omitempty"`
 	Usage                  sessionUsageStats `json:"usage,omitempty"`
 	LastMessageAt          time.Time         `json:"last_message_at"`
 }
@@ -33,14 +32,10 @@ type sessionStateSnapshot struct {
 	Sessions map[string]sessionState `json:"sessions"`
 }
 
-const maxSessionAliases = 32
-const chatSceneToken = "|scene:" + jobSceneChat
-const workSceneToken = "|scene:" + jobSceneWork
-const workSceneSeedToken = "|seed:"
-const workSceneSeedKeyToken = workSceneToken + workSceneSeedToken
-const messageAliasToken = "|message:"
-const threadAliasToken = "|thread:"
-const chatSceneResetToken = "|reset:"
+const maxReplyMessageIDs = 64
+const workSessionToken = "|work:"
+const threadBindingToken = "|thread:"
+const messageBindingToken = "|message:"
 
 func (p *Processor) getThreadID(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
@@ -50,11 +45,11 @@ func (p *Processor) getThreadID(sessionKey string) string {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		return ""
 	}
@@ -69,74 +64,25 @@ func (p *Processor) hasActiveSession(sessionKey string) bool {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	state, ok := p.sessions[sessionKey]
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	state, ok := p.sessions[resolved]
 	return ok && (state.ThreadID != "" || !state.LastMessageAt.IsZero())
 }
 
-func (p *Processor) resolveCanonicalSessionKey(sessionKey string) string {
+func (p *Processor) resolveSessionKeyLocked(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {
 		return ""
 	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.resolveCanonicalSessionKeyLocked(sessionKey)
-}
-
-func (p *Processor) rememberSessionAliases(sessionKey string, aliases ...string) {
-	sessionKey = strings.TrimSpace(sessionKey)
-	if sessionKey == "" || len(aliases) == 0 {
-		return
+	if _, ok := p.sessions[sessionKey]; ok {
+		return sessionKey
 	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	if resolved, ok := p.threadBindings[sessionKey]; ok && resolved != "" {
+		if _, exists := p.sessions[resolved]; exists {
+			return resolved
+		}
 	}
-	state, ok := p.sessions[canonicalKey]
-	if !ok {
-		state = sessionState{}
-	}
-	workSeedAlias := buildWorkSceneSeedAlias(canonicalKey)
-
-	changed := false
-	for _, rawAlias := range aliases {
-		alias := strings.TrimSpace(rawAlias)
-		if alias == "" || alias == canonicalKey {
-			continue
-		}
-		existingKey := p.resolveCanonicalSessionKeyLocked(alias)
-		if existingKey != "" && existingKey != canonicalKey {
-			continue
-		}
-		if alias == workSeedAlias {
-			continue
-		}
-		if threadID := extractThreadIDFromAlias(alias); isWorkSceneSessionKey(canonicalKey) && threadID != "" {
-			if state.WorkThreadID == threadID {
-				continue
-			}
-			state.WorkThreadID = threadID
-			changed = true
-			continue
-		}
-		if containsSessionAlias(state.Aliases, alias) {
-			continue
-		}
-		state.Aliases = appendSessionAliasWithLimit(state.Aliases, alias, maxSessionAliases)
-		p.sessionAliases[alias] = canonicalKey
-		changed = true
-	}
-	if !changed && ok {
-		return
-	}
-
-	p.sessions[canonicalKey] = state
-	p.markStateChangedLocked()
+	return ""
 }
 
 func (p *Processor) setThreadID(sessionKey string, threadID string) {
@@ -148,11 +94,11 @@ func (p *Processor) setThreadID(sessionKey string, threadID string) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		state = sessionState{}
 	}
@@ -160,7 +106,7 @@ func (p *Processor) setThreadID(sessionKey string, threadID string) {
 		return
 	}
 	state.ThreadID = threadID
-	p.sessions[canonicalKey] = state
+	p.sessions[resolved] = state
 	p.markStateChangedLocked()
 }
 
@@ -182,17 +128,17 @@ func (p *Processor) recordSessionMetadata(sessionKey string, job Job) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		state = sessionState{}
 	}
 	changed := false
 	if state.ScopeKey == "" {
-		state.ScopeKey = scopeKeyFromSessionKey(canonicalKey)
+		state.ScopeKey = scopeKeyFromSessionKey(resolved)
 		changed = true
 	}
 	if provider != "" && state.BackendProvider != provider {
@@ -222,7 +168,7 @@ func (p *Processor) recordSessionMetadata(sessionKey string, job Job) {
 	if !changed && ok {
 		return
 	}
-	p.sessions[canonicalKey] = state
+	p.sessions[resolved] = state
 	p.markStateChangedLocked()
 }
 
@@ -235,11 +181,11 @@ func (p *Processor) setWorkThreadID(sessionKey string, workThreadID string) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		state = sessionState{}
 	}
@@ -247,8 +193,59 @@ func (p *Processor) setWorkThreadID(sessionKey string, workThreadID string) {
 		return
 	}
 	state.WorkThreadID = workThreadID
-	p.sessions[canonicalKey] = state
+	p.sessions[resolved] = state
+
+	base := scopeKeyFromSessionKey(resolved)
+	p.threadBindings[base+threadBindingToken+workThreadID] = resolved
+
 	p.markStateChangedLocked()
+}
+
+func (p *Processor) bindReplyMessage(sessionKey, messageID string) {
+	sessionKey = strings.TrimSpace(sessionKey)
+	messageID = strings.TrimSpace(messageID)
+	if sessionKey == "" || messageID == "" {
+		return
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
+	}
+	state, ok := p.sessions[resolved]
+	if !ok {
+		state = sessionState{}
+	}
+
+	if containsString(state.ReplyMessageIDs, messageID) {
+		return
+	}
+	state.ReplyMessageIDs = appendLimited(state.ReplyMessageIDs, messageID, maxReplyMessageIDs)
+	p.sessions[resolved] = state
+
+	base := scopeKeyFromSessionKey(resolved)
+	p.threadBindings[base+messageBindingToken+messageID] = resolved
+
+	p.markStateChangedLocked()
+}
+
+func containsString(slice []string, value string) bool {
+	for _, s := range slice {
+		if s == value {
+			return true
+		}
+	}
+	return false
+}
+
+func appendLimited(slice []string, value string, limit int) []string {
+	slice = append(slice, value)
+	if len(slice) > limit {
+		slice = append([]string(nil), slice[len(slice)-limit:]...)
+	}
+	return slice
 }
 
 func (p *Processor) touchSessionMessage(sessionKey string, at time.Time) {
@@ -260,22 +257,22 @@ func (p *Processor) touchSessionMessage(sessionKey string, at time.Time) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		state = sessionState{}
 	}
 	if state.ScopeKey == "" {
-		state.ScopeKey = scopeKeyFromSessionKey(canonicalKey)
+		state.ScopeKey = scopeKeyFromSessionKey(resolved)
 	}
 	if state.LastMessageAt.Equal(at) {
 		return
 	}
 	state.LastMessageAt = at
-	p.sessions[canonicalKey] = state
+	p.sessions[resolved] = state
 	p.markStateChangedLocked()
 }
 
@@ -288,24 +285,24 @@ func (p *Processor) recordSessionUsage(sessionKey string, usage llm.Usage) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		state = sessionState{}
 	}
 	if state.ScopeKey == "" {
-		state.ScopeKey = scopeKeyFromSessionKey(canonicalKey)
+		state.ScopeKey = scopeKeyFromSessionKey(resolved)
 	}
 	state.Usage.AddUsage(usage, p.now())
-	p.sessions[canonicalKey] = state
+	p.sessions[resolved] = state
 	p.markStateChangedLocked()
 }
 
 func (p *Processor) resetChatSceneSession(receiveIDType, receiveID string) (string, string) {
-	baseKey := buildChatSceneSessionKey(receiveIDType, receiveID)
+	baseKey := buildSessionKey(receiveIDType, receiveID)
 	if baseKey == "" {
 		return "", ""
 	}
@@ -313,35 +310,23 @@ func (p *Processor) resetChatSceneSession(receiveIDType, receiveID string) (stri
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	currentKey := p.resolveCanonicalSessionKeyLocked(baseKey)
+	currentKey := p.resolveSessionKeyLocked(baseKey)
 	if currentKey == "" {
 		currentKey = baseKey
 	}
+	oldKey := currentKey
 
-	switch {
-	case currentKey == baseKey:
-		p.removeSessionAliasesFromIndexLocked(currentKey)
-		delete(p.sessions, currentKey)
-	default:
-		state, ok := p.sessions[currentKey]
-		if ok {
-			delete(p.sessionAliases, baseKey)
-			state.Aliases = removeSessionAlias(state.Aliases, baseKey)
-			p.sessions[currentKey] = state
-		}
+	state, ok := p.sessions[currentKey]
+	if !ok {
+		return oldKey, oldKey
 	}
 
-	newKey := fmt.Sprintf("%s%s%d", baseKey, chatSceneResetToken, p.now().UnixNano())
-	if _, exists := p.sessions[newKey]; exists {
-		newKey = fmt.Sprintf("%s%s%d-%d", baseKey, chatSceneResetToken, p.now().UnixNano(), p.stateVersion+1)
-	}
-	p.sessions[newKey] = sessionState{
-		Aliases:  []string{baseKey},
-		ScopeKey: scopeKeyFromSessionKey(newKey),
-	}
-	p.sessionAliases[baseKey] = newKey
+	state.ThreadID = ""
+	state.ReplyMessageIDs = nil
+	p.sessions[currentKey] = state
+
 	p.markStateChangedLocked()
-	return currentKey, newKey
+	return oldKey, oldKey
 }
 
 func (p *Processor) getSessionWorkDir(sessionKey string) string {
@@ -352,11 +337,11 @@ func (p *Processor) getSessionWorkDir(sessionKey string) string {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		return ""
 	}
@@ -372,16 +357,16 @@ func (p *Processor) setSessionWorkDir(sessionKey string, workDir string) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
+	state, ok := p.sessions[resolved]
 	if !ok {
 		state = sessionState{}
 	}
 	state.WorkDir = workDir
-	p.sessions[canonicalKey] = state
+	p.sessions[resolved] = state
 	p.markStateChangedLocked()
 }
 
@@ -393,10 +378,125 @@ func (p *Processor) snapshotSessionState(sessionKey string) (string, sessionStat
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	canonicalKey := p.resolveCanonicalSessionKeyLocked(sessionKey)
-	if canonicalKey == "" {
-		canonicalKey = sessionKey
+	resolved := p.resolveSessionKeyLocked(sessionKey)
+	if resolved == "" {
+		resolved = sessionKey
 	}
-	state, ok := p.sessions[canonicalKey]
-	return canonicalKey, state, ok
+	state, ok := p.sessions[resolved]
+	return resolved, state, ok
+}
+
+func scopeKeyFromSessionKey(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+	if idx := strings.Index(sessionKey, "|"); idx >= 0 {
+		return strings.TrimSpace(sessionKey[:idx])
+	}
+	return sessionKey
+}
+
+func isWorkSessionKey(sessionKey string) bool {
+	return strings.Contains(strings.TrimSpace(sessionKey), workSessionToken)
+}
+
+func buildWorkSessionKey(receiveIDType, receiveID, seedMessageID string) string {
+	base := buildSessionKey(receiveIDType, receiveID)
+	seedMessageID = strings.TrimSpace(seedMessageID)
+	if base == "" || seedMessageID == "" {
+		return ""
+	}
+	return base + workSessionToken + seedMessageID
+}
+
+func detectSceneFromSessionKey(sessionKey string) string {
+	if isWorkSessionKey(sessionKey) {
+		return jobSceneWork
+	}
+	return jobSceneChat
+}
+
+func rebuildThreadBindingsLocked(p *Processor) {
+	p.threadBindings = make(map[string]string, len(p.sessions))
+	for sessionKey, state := range p.sessions {
+		base := scopeKeyFromSessionKey(sessionKey)
+		if state.WorkThreadID != "" {
+			p.threadBindings[base+threadBindingToken+state.WorkThreadID] = sessionKey
+		}
+		for _, msgID := range state.ReplyMessageIDs {
+			if msgID = strings.TrimSpace(msgID); msgID != "" {
+				p.threadBindings[base+messageBindingToken+msgID] = sessionKey
+			}
+		}
+	}
+}
+
+// buildWorkSessionResourceScopeKey builds a resource scope key from a work session key.
+//
+//	chat_id:oc_chat|work:om_seed → chat_id:oc_chat|thread:om_seed
+func buildWorkSessionResourceScopeKey(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+	return strings.Replace(sessionKey, workSessionToken, threadBindingToken, 1)
+}
+
+func restoreChatSceneKey(receiveIDType, receiveID string) string {
+	return buildSessionKey(receiveIDType, receiveID)
+}
+
+// buildWorkSessionLookupCandidates returns all keys that might resolve to an existing work session.
+func buildWorkSessionLookupCandidates(receiveIDType, receiveID string, threadID, rootID, parentID string) []string {
+	base := buildSessionKey(receiveIDType, receiveID)
+	if base == "" {
+		return nil
+	}
+
+	var candidates []string
+	appendCandidate := func(key string) {
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return
+		}
+		for _, c := range candidates {
+			if c == key {
+				return
+			}
+		}
+		candidates = append(candidates, key)
+	}
+
+	if threadID != "" {
+		appendCandidate(base + threadBindingToken + threadID)
+	}
+	if rootID != "" {
+		appendCandidate(buildWorkSessionKey(receiveIDType, receiveID, rootID))
+	}
+	if parentID != "" {
+		appendCandidate(buildWorkSessionKey(receiveIDType, receiveID, parentID))
+	}
+
+	return candidates
+}
+
+func (p *Processor) resolveWorkSessionByThread(baseKey, threadID string) string {
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" || p == nil {
+		return ""
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.threadBindings[baseKey+threadBindingToken+threadID]
+}
+
+func (p *Processor) resolveSessionLookup(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if sessionKey == "" {
+		return ""
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.resolveSessionKeyLocked(sessionKey)
 }

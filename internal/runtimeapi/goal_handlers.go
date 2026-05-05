@@ -164,10 +164,16 @@ func (s *Server) buildGoalFromRequest(req CreateGoalRequest, scopeCtx automation
 		}
 		deadlineIn = d
 	}
+	resumeThreadID := strings.TrimSpace(scopeCtx.session.ResumeThreadID)
+	goalStatus := automation.GoalStatusActive
+	if resumeThreadID == "" {
+		goalStatus = automation.GoalStatusWaitingForSession
+	}
 	goal := automation.GoalTask{
 		ID:         "goal_" + strings.ToLower(ulid.Make().String()),
 		Objective:  objective,
-		Status:     automation.GoalStatusActive,
+		Status:     goalStatus,
+		ThreadID:   resumeThreadID,
 		DeadlineAt: now.Add(deadlineIn),
 		Scope:      scopeCtx.scope,
 		Route:      scopeCtx.route,

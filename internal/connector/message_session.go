@@ -40,7 +40,7 @@ func resourceScopeKeyFromSessionKey(sessionKey string) string {
 		return ""
 	}
 	if idx := strings.Index(sessionKey, "|"); idx >= 0 {
-		sessionKey = strings.TrimSpace(sessionKey[:idx])
+		return strings.TrimSpace(sessionKey[:idx])
 	}
 	return sessionKey
 }
@@ -59,11 +59,8 @@ func buildSessionKeyCandidatesForMessage(receiveIDType, receiveID string, messag
 		return nil
 	}
 
-	candidates := make([]string, 0, 4)
-	isGroupMessage := message != nil && isGroupChatType(deref(message.ChatType))
-	if !isGroupMessage {
-		appendSessionKeyCandidate(&candidates, base)
-	}
+	var candidates []string
+
 	if message != nil {
 		threadID := strings.TrimSpace(deref(message.ThreadId))
 		rootID := strings.TrimSpace(deref(message.RootId))
@@ -71,30 +68,26 @@ func buildSessionKeyCandidatesForMessage(receiveIDType, receiveID string, messag
 		sourceMessageID := strings.TrimSpace(deref(message.MessageId))
 
 		if threadID != "" {
-			appendSessionKeyCandidate(&candidates, base+threadAliasToken+threadID)
-		} else if rootID != "" {
-			appendSessionKeyCandidate(&candidates, base+threadAliasToken+rootID)
+			appendCandidate(&candidates, base+threadBindingToken+threadID)
 		}
-		if parentID != "" {
-			appendSessionKeyCandidate(&candidates, base+messageAliasToken+parentID)
+		if rootID != "" {
+			appendCandidate(&candidates, buildWorkSessionKey(receiveIDType, receiveID, rootID))
 		}
-		if threadID != "" || rootID != "" {
-			if rootID != "" {
-				appendSessionKeyCandidate(&candidates, base+messageAliasToken+rootID)
-			}
+		if parentID != "" && parentID != rootID {
+			appendCandidate(&candidates, buildWorkSessionKey(receiveIDType, receiveID, parentID))
 		}
-		if isGroupMessage && sourceMessageID != "" {
-			appendSessionKeyCandidate(&candidates, base+messageAliasToken+sourceMessageID)
+		if threadID != "" || rootID != "" || parentID != "" {
+		} else if sourceMessageID != "" {
+			appendCandidate(&candidates, buildSessionKey(receiveIDType, receiveID)+messageBindingToken+sourceMessageID)
 		}
 	}
 
-	if len(candidates) == 0 {
-		appendSessionKeyCandidate(&candidates, base)
-	}
+	appendCandidate(&candidates, base)
+
 	return candidates
 }
 
-func appendSessionKeyCandidate(candidates *[]string, candidate string) {
+func appendCandidate(candidates *[]string, candidate string) {
 	candidate = strings.TrimSpace(candidate)
 	if candidate == "" {
 		return

@@ -29,14 +29,13 @@ func CloneLLMProfiles(in map[string]config.LLMProfileConfig) map[string]config.L
 
 func DetectScene(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
-	switch {
-	case strings.Contains(sessionKey, "|scene:"+SceneWork):
+	if strings.Contains(sessionKey, "|"+SceneWork+":") {
 		return SceneWork
-	case strings.Contains(sessionKey, "|scene:"+SceneChat):
-		return SceneChat
-	default:
-		return ""
 	}
+	if strings.Contains(sessionKey, "|thread:") {
+		return SceneWork
+	}
+	return SceneChat
 }
 
 func ResolveSceneLLMProfile(

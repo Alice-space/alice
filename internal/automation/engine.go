@@ -33,6 +33,15 @@ type SessionActivityGate interface {
 	ReleaseSession(sessionKey string)
 }
 
+// SessionThreadProvider is an optional interface that SessionActivityChecker
+// implementors can also implement to expose the current backend thread ID
+// for a session. The goal engine uses this to transition
+// GoalStatusWaitingForSession goals to Active once a session obtains a
+// ThreadID.
+type SessionThreadProvider interface {
+	GetSessionThreadID(sessionKey string) string
+}
+
 type LLMRunner interface {
 	Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error)
 }

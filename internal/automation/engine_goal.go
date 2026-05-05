@@ -18,13 +18,36 @@ func (e *Engine) runGoals(ctx context.Context) {
 	if e.store == nil {
 		return
 	}
-	goals, err := e.store.ListGoals(GoalStatusActive)
+	// List both active and waiting-for-session goals.
+	allGoals, err := e.store.ListGoals("")
 	if err != nil {
 		logging.Warnf("goal tick list failed: %v", err)
 		return
 	}
-	for _, goal := range goals {
+	for _, goal := range allGoals {
 		if goal.Running {
+			continue
+		}
+		switch goal.Status {
+		case GoalStatusActive:
+		case GoalStatusWaitingForSession:
+			sk := goalSessionKey(goal)
+			threadID := e.getSessionThreadID(sk)
+			if threadID == "" {
+				continue
+			}
+			if _, err := e.store.PatchGoal(goal.Scope, func(g *GoalTask) error {
+				g.ThreadID = threadID
+				g.Status = GoalStatusActive
+				return nil
+			}); err != nil {
+				logging.Warnf("goal waiting->active transition failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+				continue
+			}
+			logging.Infof("goal activated after session ready scope=%s:%s thread=%s", goal.Scope.Kind, goal.Scope.ID, threadID)
+			goal.Status = GoalStatusActive
+			goal.ThreadID = threadID
+		default:
 			continue
 		}
 		goal := goal
@@ -36,6 +59,20 @@ func (e *Engine) runGoals(ctx context.Context) {
 			}
 		}()
 	}
+}
+
+func (e *Engine) getSessionThreadID(sessionKey string) string {
+	if e == nil {
+		return ""
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return ""
+	}
+	if provider, ok := checker.(SessionThreadProvider); ok {
+		return provider.GetSessionThreadID(sessionKey)
+	}
+	return ""
 }
 
 func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
@@ -96,9 +133,12 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		}
 		runCtx, runCancel := e.goalRunContext(goalCtx, goal)
 		threadID := goal.ThreadID
-		isFirstRun := threadID == ""
-		prompt := e.buildGoalPrompt(goal, isFirstRun)
-		logging.Infof("goal iteration start scope=%s:%s thread=%s first=%v", goal.Scope.Kind, goal.Scope.ID, threadID, isFirstRun)
+		if threadID == "" {
+			logging.Warnf("goal skipped (no active session) scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
+			return nil
+		}
+		prompt := e.buildGoalPrompt(goal)
+		logging.Infof("goal iteration start scope=%s:%s thread=%s", goal.Scope.Kind, goal.Scope.ID, threadID)
 		result, err := runner.Run(runCtx, llm.RunRequest{
 			ThreadID:   threadID,
 			AgentName:  "goal",
@@ -137,7 +177,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	}
 }
 
-func (e *Engine) buildGoalPrompt(goal GoalTask, isFirstRun bool) string {
+func (e *Engine) buildGoalPrompt(goal GoalTask) string {
 	now := e.nowTime()
 	data := goalPromptData{
 		Objective: goal.Objective,
@@ -149,9 +189,6 @@ func (e *Engine) buildGoalPrompt(goal GoalTask, isFirstRun bool) string {
 	if goal.DeadlineAt.IsZero() {
 		data.Deadline = "未设置"
 		data.Remaining = "未设置"
-	}
-	if isFirstRun {
-		return renderGoalTemplate(goalStartTemplate, data)
 	}
 	return renderGoalTemplate(goalContinueTemplate, data)
 }
@@ -282,14 +319,10 @@ func goalSessionKey(goal GoalTask) string {
 }
 
 func goalScene(goal GoalTask) string {
-	switch sessionKey := goal.SessionKey; {
-	case strings.Contains(sessionKey, "|scene:work"):
+	if strings.Contains(goal.SessionKey, "|work:") {
 		return "work"
-	case strings.Contains(sessionKey, "|scene:chat"):
-		return "chat"
-	default:
-		return "chat"
 	}
+	return "chat"
 }
 
 func formatDurationHMS(d time.Duration) string {

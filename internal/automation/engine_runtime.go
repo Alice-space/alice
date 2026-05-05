@@ -191,12 +191,8 @@ func taskSessionKey(task Task) string {
 }
 
 func taskScene(task Task) string {
-	switch sessionKey := task.SessionKey; {
-	case strings.Contains(sessionKey, "|scene:work"):
+	if strings.Contains(task.SessionKey, "|work:") {
 		return "work"
-	case strings.Contains(sessionKey, "|scene:chat"):
-		return "chat"
-	default:
-		return "chat"
 	}
+	return "chat"
 }

@@ -47,7 +47,7 @@ func TestRuntimeAPI_AutomationPermissionDenied(t *testing.T) {
 		ReceiveID:     "oc_chat",
 		ActorUserID:   "ou_user",
 		ChatType:      "group",
-		SessionKey:    "chat_id:oc_chat|scene:chat",
+		SessionKey:    "chat_id:oc_chat",
 	}, CreateTaskRequest{
 		Prompt:       "hello",
 		EverySeconds: 60,

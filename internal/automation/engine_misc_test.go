@@ -42,7 +42,7 @@ func TestEngine_BuildTaskRunEnv_SourceMessageIDRouteUsesScopeID(t *testing.T) {
 		Creator:    Actor{OpenID: "ou_actor"},
 		Schedule:   Schedule{EverySeconds: 60},
 		Prompt:     "test",
-		SessionKey: "chat_id:oc_chatid|scene:work|seed:om_messageid",
+		SessionKey: "chat_id:oc_chatid|work:om_messageid",
 	}
 	env := engine.buildTaskRunEnv(task)
 	if env == nil {

@@ -57,12 +57,11 @@ func TestApp_OnMessageReceive_WorkSceneRestoresSeedRouteAfterRestartWithMention(
 	if baseKey == "" {
 		t.Fatal("expected base session key")
 	}
-	rootAlias := baseKey + "|message:om_work_seed_root"
-	for i := 0; i < maxSessionAliases+8; i++ {
-		processor.rememberSessionAliases(sessionKey, fmt.Sprintf("%s|message:om_extra_%02d", baseKey, i))
+	for i := 0; i < maxReplyMessageIDs+8; i++ {
+		processor.bindReplyMessage(sessionKey, fmt.Sprintf("om_extra_%02d", i))
 	}
-	if containsSessionAlias(processor.sessions[sessionKey].Aliases, rootAlias) {
-		t.Fatalf("seed alias should not rely on regular alias storage, got aliases=%q", processor.sessions[sessionKey].Aliases)
+	if containsString(processor.sessions[sessionKey].ReplyMessageIDs, "om_work_seed_root") {
+		t.Fatalf("seed message id should not rely on reply message id storage, got ids=%q", processor.sessions[sessionKey].ReplyMessageIDs)
 	}
 
 	if err := processor.FlushSessionState(); err != nil {
@@ -120,11 +119,11 @@ func TestProcessor_LoadSessionState_PreservesWorkThreadID(t *testing.T) {
 		t.Fatalf("init session state failed: %v", err)
 	}
 
-	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_root")
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_root")
 	threadAlias := "chat_id:oc_chat|thread:omt_work_1"
 	processor.setWorkThreadID(sessionKey, "omt_work_1")
-	for i := 0; i < maxSessionAliases+16; i++ {
-		processor.rememberSessionAliases(sessionKey, fmt.Sprintf("chat_id:oc_chat|message:om_extra_%02d", i))
+	for i := 0; i < maxReplyMessageIDs+16; i++ {
+		processor.bindReplyMessage(sessionKey, fmt.Sprintf("om_extra_%02d", i))
 	}
 
 	state := processor.sessions[sessionKey]
@@ -141,7 +140,7 @@ func TestProcessor_LoadSessionState_PreservesWorkThreadID(t *testing.T) {
 		t.Fatalf("reload session state failed: %v", err)
 	}
 
-	if resolved := processorAfterRestart.resolveCanonicalSessionKey(threadAlias); resolved != sessionKey {
+	if resolved := processorAfterRestart.resolveSessionLookup(threadAlias); resolved != sessionKey {
 		t.Fatalf("thread alias should resolve after restart, got %q want %q", resolved, sessionKey)
 	}
 }
@@ -154,12 +153,15 @@ func TestProcessor_LoadSessionState_PreservesRotatedChatSceneSession(t *testing.
 		t.Fatalf("init session state failed: %v", err)
 	}
 
-	baseSessionKey := buildChatSceneSessionKey("chat_id", "oc_chat")
+	baseSessionKey := restoreChatSceneKey("chat_id", "oc_chat")
 	oldThreadID := "thread_old"
 	processor.setThreadID(baseSessionKey, oldThreadID)
-	_, rotatedSessionKey := processor.resetChatSceneSession("chat_id", "oc_chat")
-	if rotatedSessionKey == "" || rotatedSessionKey == baseSessionKey {
-		t.Fatalf("expected rotated chat session key, got %q", rotatedSessionKey)
+	oldKey, currentKey := processor.resetChatSceneSession("chat_id", "oc_chat")
+	if oldKey == "" || currentKey == "" {
+		t.Fatalf("expected chat session keys, got old=%q current=%q", oldKey, currentKey)
+	}
+	if currentKey != baseSessionKey {
+		t.Fatalf("expected session key to stay the same, got %q", currentKey)
 	}
 
 	if err := processor.FlushSessionState(); err != nil {
@@ -171,11 +173,11 @@ func TestProcessor_LoadSessionState_PreservesRotatedChatSceneSession(t *testing.
 		t.Fatalf("reload session state failed: %v", err)
 	}
 
-	if resolved := processorAfterRestart.resolveCanonicalSessionKey(baseSessionKey); resolved != rotatedSessionKey {
-		t.Fatalf("base chat alias should resolve to rotated key after restart, got %q want %q", resolved, rotatedSessionKey)
+	if resolved := processorAfterRestart.resolveSessionLookup(baseSessionKey); resolved != baseSessionKey {
+		t.Fatalf("base chat key should resolve to same key after restart, got %q want %q", resolved, baseSessionKey)
 	}
-	if threadID := processorAfterRestart.getThreadID(rotatedSessionKey); threadID != "" {
-		t.Fatalf("rotated chat session should not reuse old thread id after restart, got %q", threadID)
+	if threadID := processorAfterRestart.getThreadID(baseSessionKey); threadID != "" {
+		t.Fatalf("chat session should not retain old thread id after clear, got %q", threadID)
 	}
 }
 
@@ -188,7 +190,7 @@ func TestProcessor_LoadSessionState_PreservesUsageStats(t *testing.T) {
 		t.Fatalf("init session state failed: %v", err)
 	}
 
-	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_root")
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_root")
 	processor.recordSessionUsage(sessionKey, llm.Usage{
 		InputTokens:       120,
 		CachedInputTokens: 40,

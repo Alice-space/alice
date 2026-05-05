@@ -659,18 +659,6 @@ func (p *Processor) formatCurrentSessionStatusLines(job Job) []string {
 	return lines
 }
 
-func detectSceneFromSessionKey(sessionKey string) string {
-	sessionKey = strings.TrimSpace(sessionKey)
-	switch {
-	case strings.Contains(sessionKey, workSceneToken):
-		return jobSceneWork
-	case strings.Contains(sessionKey, chatSceneToken):
-		return jobSceneChat
-	default:
-		return ""
-	}
-}
-
 func firstNonEmptyString(values ...string) string {
 	for _, value := range values {
 		if trimmed := strings.TrimSpace(value); trimmed != "" {

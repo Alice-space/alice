@@ -116,7 +116,7 @@ func TestValidateGoal_RejectsInvalidStatus(t *testing.T) {
 }
 
 func TestValidateGoal_AcceptsValidStatuses(t *testing.T) {
-	for _, status := range []GoalStatus{GoalStatusActive, GoalStatusPaused, GoalStatusComplete, GoalStatusTimeout} {
+	for _, status := range []GoalStatus{GoalStatusActive, GoalStatusPaused, GoalStatusComplete, GoalStatusTimeout, GoalStatusWaitingForSession} {
 		goal := GoalTask{
 			ID:        "goal_1",
 			Objective: "test",
@@ -418,6 +418,7 @@ func TestEngine_ExecuteGoal_MarksCompleteOnGoalDone(t *testing.T) {
 		ID:        "goal_1",
 		Objective: "test",
 		Status:    GoalStatusActive,
+		ThreadID:  "thread_0",
 		Scope:     scope,
 		Route:     Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
 		Creator:   Actor{UserID: "u1"},
@@ -456,6 +457,7 @@ func TestEngine_ExecuteGoal_MarksTimeout(t *testing.T) {
 		Objective:  "test",
 		Status:     GoalStatusActive,
 		DeadlineAt: base.Add(1 * time.Hour),
+		ThreadID:   "thread_0",
 		Scope:      scope,
 		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
 		Creator:    Actor{UserID: "u1"},
@@ -546,8 +548,8 @@ func TestEngine_ExecuteGoal_PersistsThreadID(t *testing.T) {
 	}
 }
 
-func TestEngine_ExecuteGoal_FirstRunUsesStartTemplate(t *testing.T) {
-	SetGoalTemplates("START|{{.Objective}}", "CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+func TestEngine_ExecuteGoal_SkipsWhenNoThreadID(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
 
 	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
@@ -580,15 +582,23 @@ func TestEngine_ExecuteGoal_FirstRunUsesStartTemplate(t *testing.T) {
 	}
 
 	runner.mu.Lock()
-	prompt := runner.lastReq.UserText
+	calls := runner.calls
 	runner.mu.Unlock()
-	if !contains(prompt, "START|test objective") {
-		t.Fatalf("expected start template, got: %s", prompt)
+	if calls != 0 {
+		t.Fatalf("expected 0 LLM calls when ThreadID is empty, got %d", calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusActive {
+		t.Fatalf("expected goal to remain active, got %s", goal.Status)
 	}
 }
 
-func TestEngine_ExecuteGoal_SecondRunUsesContinueTemplate(t *testing.T) {
-	SetGoalTemplates("START|{{.Objective}}", "CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+func TestEngine_ExecuteGoal_UsesContinueTemplate(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
 
 	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
@@ -632,7 +642,7 @@ func TestEngine_ExecuteGoal_SecondRunUsesContinueTemplate(t *testing.T) {
 }
 
 func TestEngine_ExecuteGoal_EventDrivenContinuation(t *testing.T) {
-	SetGoalTemplates("START|{{.Objective}}", "CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
 
 	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
@@ -656,6 +666,7 @@ func TestEngine_ExecuteGoal_EventDrivenContinuation(t *testing.T) {
 		ID:         "goal_1",
 		Objective:  "event driven test",
 		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
 		DeadlineAt: base.Add(48 * time.Hour),
 		Scope:      scope,
 		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
@@ -690,7 +701,7 @@ func TestEngine_ExecuteGoal_EventDrivenContinuation(t *testing.T) {
 }
 
 func TestEngine_ExecuteGoal_ContinuePromptAfterFirstRun(t *testing.T) {
-	SetGoalTemplates("START|{{.Objective}}", "CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
 
 	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
@@ -713,6 +724,7 @@ func TestEngine_ExecuteGoal_ContinuePromptAfterFirstRun(t *testing.T) {
 		ID:         "goal_1",
 		Objective:  "continue test",
 		Status:     GoalStatusActive,
+		ThreadID:   "t0",
 		DeadlineAt: base.Add(48 * time.Hour),
 		Scope:      scope,
 		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
@@ -769,6 +781,7 @@ func TestEngine_ExecuteGoal_InterruptedByUserMessage(t *testing.T) {
 		ID:         "goal_1",
 		Objective:  "interrupt test",
 		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
 		DeadlineAt: base.Add(48 * time.Hour),
 		Scope:      scope,
 		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
@@ -826,6 +839,7 @@ func TestEngine_ExecuteGoal_SessionBusyRetriedByTick(t *testing.T) {
 		ID:         "goal_1",
 		Objective:  "tick retry test",
 		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
 		DeadlineAt: base.Add(48 * time.Hour),
 		Scope:      scope,
 		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
@@ -894,6 +908,7 @@ func TestEngine_ExecuteGoal_RunningFlagPreventsDuplicateExecution(t *testing.T) 
 		ID:         "goal_1",
 		Objective:  "running flag test",
 		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
 		DeadlineAt: base.Add(48 * time.Hour),
 		Scope:      scope,
 		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
@@ -967,6 +982,7 @@ func TestEngine_ExecuteGoal_PersistsThreadIDOnInterruption(t *testing.T) {
 		ID:         "goal_1",
 		Objective:  "interrupt persist test",
 		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
 		DeadlineAt: base.Add(48 * time.Hour),
 		Scope:      scope,
 		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},

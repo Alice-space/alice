@@ -252,10 +252,10 @@ func TestApp_OnMessageReceive_SameFeishuThreadSharesSessionKey(t *testing.T) {
 
 	job1 := <-app.queue
 	job2 := <-app.queue
-	if job1.SessionKey != "chat_id:oc_chat" {
+	if job1.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected first session key: %s", job1.SessionKey)
 	}
-	if job2.SessionKey != "chat_id:oc_chat" {
+	if job2.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
 	}
 	if job1.ResourceScopeKey != "chat_id:oc_chat" || job2.ResourceScopeKey != "chat_id:oc_chat" {
@@ -307,10 +307,10 @@ func TestApp_OnMessageReceive_ThreadReplyReusesExistingRootSessionKey(t *testing
 
 	job1 := <-app.queue
 	job2 := <-app.queue
-	if job1.SessionKey != "chat_id:oc_chat" {
+	if job1.SessionKey != "chat_id:oc_chat|message:om_root_1" {
 		t.Fatalf("unexpected first session key: %s", job1.SessionKey)
 	}
-	if job2.SessionKey != "chat_id:oc_chat" {
+	if job2.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
 	}
 	if job1.ResourceScopeKey != "chat_id:oc_chat" || job2.ResourceScopeKey != "chat_id:oc_chat" {
@@ -319,7 +319,7 @@ func TestApp_OnMessageReceive_ThreadReplyReusesExistingRootSessionKey(t *testing
 	if job1.SessionVersion != 1 {
 		t.Fatalf("unexpected first session version: %d", job1.SessionVersion)
 	}
-	if job2.SessionVersion != 2 {
+	if job2.SessionVersion != 1 {
 		t.Fatalf("unexpected second session version: %d", job2.SessionVersion)
 	}
 }
@@ -362,13 +362,13 @@ func TestApp_OnMessageReceive_ParentReplyReusesExistingRootSessionKey(t *testing
 
 	job1 := <-app.queue
 	job2 := <-app.queue
-	if job1.SessionKey != "chat_id:oc_chat" {
+	if job1.SessionKey != "chat_id:oc_chat|message:om_root_1" {
 		t.Fatalf("unexpected first session key: %s", job1.SessionKey)
 	}
-	if job2.SessionKey != "chat_id:oc_chat" {
+	if job2.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
 	}
-	if job2.SessionVersion != 2 {
+	if job2.SessionVersion != 1 {
 		t.Fatalf("unexpected second session version: %d", job2.SessionVersion)
 	}
 }
@@ -412,10 +412,10 @@ func TestApp_OnMessageReceive_ExistingThreadSessionPreferredWhenRootAppears(t *t
 
 	job1 := <-app.queue
 	job2 := <-app.queue
-	if job1.SessionKey != "chat_id:oc_chat" {
+	if job1.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected first session key: %s", job1.SessionKey)
 	}
-	if job2.SessionKey != "chat_id:oc_chat" {
+	if job2.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
 	}
 	if job1.ResourceScopeKey != "chat_id:oc_chat" || job2.ResourceScopeKey != "chat_id:oc_chat" {
@@ -452,7 +452,7 @@ func TestApp_OnMessageReceive_P2PThreadReplyUsesChatSessionKey(t *testing.T) {
 	}
 
 	job := <-app.queue
-	if job.SessionKey != "chat_id:oc_chat" {
+	if job.SessionKey != "chat_id:oc_chat|thread:omt_thread_1" {
 		t.Fatalf("unexpected session key: %s", job.SessionKey)
 	}
 	if job.SessionVersion != 1 {
