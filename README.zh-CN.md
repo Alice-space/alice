@@ -1,6 +1,8 @@
 # Alice
 
-> **同一个 AI 会话，随时随地。** 终端里写代码，手机上用飞书接着跑，再切回来。没有云锁定 — agent 跑在*你自己*的机器上。支持 OpenCode（DeepSeek V4）、Codex、Claude、Gemini、Kimi。
+> **A**I **L**ocal **I**nteractive **C**ross-device **E**ngine
+>
+> 同一个 AI 会话，随时随地。终端 ↔ 飞书，没有云锁定。支持 OpenCode（DeepSeek V4）、Codex、Claude、Gemini、Kimi。
 
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
@@ -43,6 +45,8 @@ alice setup
 # 编辑 ~/.alice/config.yaml
 alice --feishu-websocket
 ```
+
+然后在飞书群里发送：`@Alice #work 部署 staging 环境` — Alice 会创建任务 thread，调用 LLM 后端，实时推送进度。随时用 `/session` 从终端恢复这个任务。
 
 ## 开发
 

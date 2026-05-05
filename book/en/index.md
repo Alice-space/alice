@@ -1,6 +1,8 @@
 # Alice
 
-> **Same AI session, anywhere.** Start coding on your terminal. Continue from Feishu on your phone. Switch back. No cloud lock-in — the agent runs on *your* machine.
+> **A**I **L**ocal **I**nteractive **C**ross-device **E**ngine
+>
+> Same AI session, anywhere. Terminal ↔ Feishu. No cloud lock-in.
 
 Alice is a **Feishu long-connection connector** that turns CLI-based LLM agents into interactive bots inside Feishu. Works with OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
 
