@@ -73,6 +73,7 @@ type Runner struct {
 	DefaultReasoningEffort string
 	Env                    map[string]string
 	WorkspaceDir           string
+	SyntheticDiffGuard     *syntheticDiffRunGuard
 }
 
 // Run is a convenience wrapper that runs without thread resumption or progress
@@ -195,8 +196,12 @@ func (r Runner) runAttempt(
 	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 
 	watchedRepos := discoverWatchRepos(cmd.Dir)
-	repoLease := syntheticDiffGuard.Acquire(watchedRepos)
-	defer syntheticDiffGuard.Release(repoLease)
+	diffGuard := r.SyntheticDiffGuard
+	if diffGuard == nil {
+		diffGuard = newSyntheticDiffRunGuard()
+	}
+	repoLease := diffGuard.Acquire(watchedRepos)
+	defer diffGuard.Release(repoLease)
 	repoSnapshots := captureRepoSnapshots(tctx, watchedRepos)
 	activeThreadID := strings.TrimSpace(threadID)
 	finalMessage := ""
@@ -207,7 +212,7 @@ func (r Runner) runAttempt(
 		if onThinking == nil {
 			return
 		}
-		if !syntheticDiffGuard.CanEmit(repoLease) {
+		if !diffGuard.CanEmit(repoLease) {
 			repoSnapshots = captureRepoSnapshots(tctx, watchedRepos)
 			return
 		}

@@ -26,6 +26,7 @@ func newCodexBackend(cfg CodexConfig) *codexBackend {
 		DefaultReasoningEffort: cfg.ReasoningEffort,
 		Env:                    cfg.Env,
 		WorkspaceDir:           cfg.WorkspaceDir,
+		SyntheticDiffGuard:     corecodex.NewSyntheticDiffGuard(),
 	}
 	profileRunners := make(map[string]corecodex.Runner, len(cfg.ProfileOverrides))
 	for name, override := range cfg.ProfileOverrides {

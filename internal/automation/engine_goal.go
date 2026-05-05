@@ -214,7 +214,7 @@ func (e *Engine) buildGoalPrompt(goal GoalTask) string {
 		data.Deadline = "未设置"
 		data.Remaining = "未设置"
 	}
-	return renderGoalTemplate(goalContinueTemplate, data)
+	return renderGoalTemplate(getGoalTemplates().continueTemplate, data)
 }
 
 func (e *Engine) markGoalComplete(goal GoalTask) {
