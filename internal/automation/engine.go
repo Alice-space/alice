@@ -5,7 +5,7 @@ import (
 	"sync"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/messaging"
 	"github.com/go-co-op/gocron/v2"
@@ -34,7 +34,7 @@ type SessionActivityGate interface {
 }
 
 type LLMRunner interface {
-	Run(ctx context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error)
+	Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error)
 }
 
 type SystemTaskFunc func(ctx context.Context)

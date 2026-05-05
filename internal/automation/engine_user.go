@@ -8,7 +8,7 @@ import (
 	"sync"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 )
 
@@ -230,7 +230,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task, route Route) 
 	progress := &taskProgressDispatcher{ctx: ctx, engine: e, task: task, route: route}
 	logging.Infof("automation task llm call id=%s fresh=%v thread=%s", task.ID, task.Fresh, threadID)
 
-	result, err := runner.Run(ctx, agentbridge.RunRequest{
+	result, err := runner.Run(ctx, llm.RunRequest{
 		ThreadID:   threadID,
 		AgentName:  "scheduler",
 		UserText:   prompt,

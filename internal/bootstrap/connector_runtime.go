@@ -10,10 +10,10 @@ import (
 
 	"github.com/oklog/run"
 
-	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/Alice-space/alice/internal/runtimeapi"
 )
@@ -38,7 +38,7 @@ type ConnectorRuntime struct {
 // All profiles are also stored as per-profile runner overrides so that selecting a specific
 // profile by its outer map name applies that profile's command, timeout, prompt_prefix,
 // and provider-specific profile selector.
-func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
+func buildFactoryConfig(cfg config.Config) llm.FactoryConfig {
 	defaultEnv := applyLLMProcessEnvDefaults(cfg.CodexEnv, cfg.CodexHome)
 
 	type providerDefaults struct {
@@ -47,12 +47,12 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 		model           string
 		reasoningEffort string
 		variant         string
-		execPolicy      agentbridge.ExecPolicyConfig
+		execPolicy      llm.ExecPolicyConfig
 	}
 	defaults := map[string]*providerDefaults{}
 
 	// Per-provider per-profile overrides: profileOverrides[provider][outerProfileName] = override.
-	profileOverrides := map[string]map[string]agentbridge.ProfileRunnerConfig{}
+	profileOverrides := map[string]map[string]llm.ProfileRunnerConfig{}
 
 	// Collect sorted profile names for deterministic first-profile selection.
 	profileNames := make([]string, 0, len(cfg.LLMProfiles))
@@ -79,9 +79,9 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 		}
 		// Register per-profile runner override keyed by outer profile name.
 		if _, ok := profileOverrides[provider]; !ok {
-			profileOverrides[provider] = map[string]agentbridge.ProfileRunnerConfig{}
+			profileOverrides[provider] = map[string]llm.ProfileRunnerConfig{}
 		}
-		profileOverrides[provider][name] = agentbridge.ProfileRunnerConfig{
+		profileOverrides[provider][name] = llm.ProfileRunnerConfig{
 			Command:         profile.Command,
 			Timeout:         profile.Timeout,
 			ProviderProfile: profile.Profile,
@@ -99,7 +99,7 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 		}
 	}
 
-	getOverrides := func(provider string) map[string]agentbridge.ProfileRunnerConfig {
+	getOverrides := func(provider string) map[string]llm.ProfileRunnerConfig {
 		if m, ok := profileOverrides[provider]; ok {
 			return m
 		}
@@ -112,9 +112,9 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 	kimi := get(config.LLMProviderKimi, "kimi")
 	opencodeCfg := get(config.LLMProviderOpenCode, "opencode")
 
-	return agentbridge.FactoryConfig{
+	return llm.FactoryConfig{
 		Provider: cfg.LLMProvider,
-		Codex: agentbridge.CodexConfig{
+		Codex: llm.CodexConfig{
 			Command:            codex.command,
 			Timeout:            codex.timeout,
 			DefaultIdleTimeout: cfg.CodexIdleTimeout,
@@ -127,28 +127,28 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 			DefaultExecPolicy:  codex.execPolicy,
 			ProfileOverrides:   getOverrides(config.DefaultLLMProvider),
 		},
-		Claude: agentbridge.ClaudeConfig{
+		Claude: llm.ClaudeConfig{
 			Command:          claude.command,
 			Timeout:          claude.timeout,
 			Env:              defaultEnv,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderClaude),
 		},
-		Gemini: agentbridge.GeminiConfig{
+		Gemini: llm.GeminiConfig{
 			Command:          gemini.command,
 			Timeout:          gemini.timeout,
 			Env:              defaultEnv,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderGemini),
 		},
-		Kimi: agentbridge.KimiConfig{
+		Kimi: llm.KimiConfig{
 			Command:          kimi.command,
 			Timeout:          kimi.timeout,
 			Env:              defaultEnv,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderKimi),
 		},
-		OpenCode: agentbridge.OpenCodeConfig{
+		OpenCode: llm.OpenCodeConfig{
 			Command:          opencodeCfg.command,
 			Timeout:          opencodeCfg.timeout,
 			Model:            opencodeCfg.model,
@@ -160,14 +160,14 @@ func buildFactoryConfig(cfg config.Config) agentbridge.FactoryConfig {
 	}
 }
 
-func buildLLMBackend(cfg config.Config) (agentbridge.Backend, error) {
+func buildLLMBackend(cfg config.Config) (llm.Backend, error) {
 	factoryCfg := buildFactoryConfig(cfg)
 	providers := cfg.ResolvedLLMProviders()
-	backends := make(map[string]agentbridge.Backend, len(providers))
+	backends := make(map[string]llm.Backend, len(providers))
 	for _, provider := range providers {
 		providerCfg := factoryCfg
 		providerCfg.Provider = provider
-		backend, err := agentbridge.NewBackend(providerCfg)
+		backend, err := llm.NewBackend(providerCfg)
 		if err != nil {
 			return nil, err
 		}
@@ -176,8 +176,8 @@ func buildLLMBackend(cfg config.Config) (agentbridge.Backend, error) {
 	return newInteractiveMultiBackend(cfg.LLMProvider, backends)
 }
 
-func buildCodexExecPolicy(policy config.CodexExecPolicyConfig) agentbridge.ExecPolicyConfig {
-	return agentbridge.ExecPolicyConfig{
+func buildCodexExecPolicy(policy config.CodexExecPolicyConfig) llm.ExecPolicyConfig {
+	return llm.ExecPolicyConfig{
 		Sandbox:        strings.TrimSpace(policy.Sandbox),
 		AskForApproval: strings.TrimSpace(policy.AskForApproval),
 		AddDirs:        append([]string(nil), policy.AddDirs...),
@@ -211,11 +211,11 @@ func applyLLMProcessEnvDefaults(raw map[string]string, codexHome string) map[str
 	return out
 }
 
-func NewLLMBackend(cfg config.Config) (agentbridge.Backend, error) {
+func NewLLMBackend(cfg config.Config) (llm.Backend, error) {
 	return buildLLMBackend(cfg)
 }
 
-func BuildConnectorRuntime(cfg config.Config, backend agentbridge.Backend) (*ConnectorRuntime, error) {
+func BuildConnectorRuntime(cfg config.Config, backend llm.Backend) (*ConnectorRuntime, error) {
 	builder, err := newConnectorRuntimeBuilder(cfg, backend)
 	if err != nil {
 		return nil, err

@@ -125,6 +125,7 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	runtime.CodexHighIdleTimeoutSecs = bot.CodexHighIdleTimeoutSecs
 	runtime.CodexXHighIdleTimeoutSecs = bot.CodexXHighIdleTimeoutSecs
 	runtime.ShowShellCommands = bot.ShowShellCommands
+	runtime.DisableIdentityHints = bot.DisableIdentityHints
 	runtime.Permissions = mergeBotPermissions(BotPermissionsConfig{}, bot.Permissions)
 
 	runtime, err = finalizeConfig(runtime, true)

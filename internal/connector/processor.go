@@ -6,37 +6,38 @@ import (
 	"sync"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/prompting"
 )
 
 type Processor struct {
-	llm             agentbridge.Backend
-	sender          Sender
-	replies         *replyDispatcher
-	failureMessage  string
-	thinkingMessage string
-	feedbackMode    string
-	feedbackEmoji   string
-	heartbeatConfig llmHeartbeatConfig
-	runtimeMu       sync.RWMutex
-	mu              sync.Mutex
-	sessions        map[string]sessionState
-	sessionAliases  map[string]string
-	stateFilePath   string
-	stateVersion    uint64
-	flushedVersion  uint64
-	now             func() time.Time
-	runtimeAPIBase  string
-	runtimeAPIToken string
-	runtimeAPIBin   string
-	helpConfig      builtinHelpConfig
-	statusService   *builtinStatusService
-	workspaceDir    string
-	prompts         *prompting.Loader
+	llm                  llm.Backend
+	sender               Sender
+	replies              *replyDispatcher
+	failureMessage       string
+	thinkingMessage      string
+	feedbackMode         string
+	feedbackEmoji        string
+	disableIdentityHints bool
+	heartbeatConfig      llmHeartbeatConfig
+	runtimeMu            sync.RWMutex
+	mu                   sync.Mutex
+	sessions             map[string]sessionState
+	sessionAliases       map[string]string
+	stateFilePath        string
+	stateVersion         uint64
+	flushedVersion       uint64
+	now                  func() time.Time
+	runtimeAPIBase       string
+	runtimeAPIToken      string
+	runtimeAPIBin        string
+	helpConfig           builtinHelpConfig
+	statusService        *builtinStatusService
+	workspaceDir         string
+	prompts              *prompting.Loader
 }
 
 type StatusUsageSource struct {
@@ -62,7 +63,7 @@ const defaultImmediateFeedbackEmoji = "SMILE"
 const finalReplyDoneEmoji = "DONE"
 
 func NewProcessor(
-	backend agentbridge.Backend,
+	backend llm.Backend,
 	sender Sender,
 	failureMessage string,
 	thinkingMessage string,
@@ -159,7 +160,7 @@ func (p *Processor) SetStatusUsageSources(sources []StatusUsageSource) {
 	}
 }
 
-func (p *Processor) SetLLMBackend(backend agentbridge.Backend) {
+func (p *Processor) SetLLMBackend(backend llm.Backend) {
 	if p == nil || backend == nil {
 		return
 	}
@@ -196,6 +197,15 @@ func (p *Processor) SetHeartbeatShowShellCommands(show bool) {
 	p.heartbeatConfig.ShowShellCommands = show
 }
 
+func (p *Processor) SetDisableIdentityHints(disable bool) {
+	if p == nil {
+		return
+	}
+	p.runtimeMu.Lock()
+	defer p.runtimeMu.Unlock()
+	p.disableIdentityHints = disable
+}
+
 func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 	if p == nil {
 		return processorRuntimeSnapshot{}
@@ -219,7 +229,7 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 }
 
 type processorRuntimeSnapshot struct {
-	llm             agentbridge.Backend
+	llm             llm.Backend
 	failureMessage  string
 	thinkingMessage string
 	feedbackMode    string

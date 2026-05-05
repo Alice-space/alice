@@ -3,7 +3,6 @@ module github.com/Alice-space/alice
 go 1.25.0
 
 require (
-	github.com/Alice-space/agentbridge v0.1.5-0.20260503130217-98dc6a79532f
 	github.com/Masterminds/sprig/v3 v3.3.0
 	github.com/cenkalti/backoff/v4 v4.3.0
 	github.com/cespare/xxhash/v2 v2.3.0

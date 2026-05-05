@@ -7,27 +7,27 @@ import (
 	"testing"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 )
 
 func TestInteractiveProviderBackendForwardsAssistantTextAndDropsToolUse(t *testing.T) {
 	for _, provider := range []string{
-		agentbridge.ProviderCodex,
-		agentbridge.ProviderClaude,
-		agentbridge.ProviderOpenCode,
+		llm.ProviderCodex,
+		llm.ProviderClaude,
+		llm.ProviderOpenCode,
 	} {
 		t.Run(provider, func(t *testing.T) {
 			sessionKey := "session-" + provider
 			driver := &interactiveBackendTestDriver{
 				provider: provider,
-				events:   make(chan agentbridge.TurnEvent, 8),
+				events:   make(chan llm.TurnEvent, 8),
 			}
-			session := agentbridge.NewInteractiveSession(driver)
+			session := llm.NewInteractiveSession(driver)
 			defer session.Close()
 
 			backend := &interactiveProviderBackend{
 				provider: provider,
-				sessions: map[string]*agentbridge.InteractiveSession{
+				sessions: map[string]*llm.InteractiveSession{
 					sessionKey: session,
 				},
 				runMu: map[string]*sync.Mutex{},
@@ -35,12 +35,12 @@ func TestInteractiveProviderBackendForwardsAssistantTextAndDropsToolUse(t *testi
 
 			var progress []string
 			var raw []string
-			result, err := backend.runInteractive(context.Background(), sessionKey, agentbridge.RunRequest{
+			result, err := backend.runInteractive(context.Background(), sessionKey, llm.RunRequest{
 				UserText: "hello",
 				OnProgress: func(step string) {
 					progress = append(progress, step)
 				},
-				OnRawEvent: func(event agentbridge.RawEvent) {
+				OnRawEvent: func(event llm.RawEvent) {
 					raw = append(raw, strings.TrimSpace(event.Kind)+":"+strings.TrimSpace(event.Detail))
 				},
 			})
@@ -68,25 +68,25 @@ func TestInteractiveProviderBackendForwardsAssistantTextAndDropsToolUse(t *testi
 func TestInteractiveProviderBackendClosesIdleSession(t *testing.T) {
 	sessionKey := "session-opencode"
 	driver := &interactiveBackendTestDriver{
-		provider: agentbridge.ProviderOpenCode,
-		events:   make(chan agentbridge.TurnEvent, 8),
+		provider: llm.ProviderOpenCode,
+		events:   make(chan llm.TurnEvent, 8),
 	}
-	session := agentbridge.NewInteractiveSession(driver)
+	session := llm.NewInteractiveSession(driver)
 
 	backend := &interactiveProviderBackend{
-		provider: agentbridge.ProviderOpenCode,
+		provider: llm.ProviderOpenCode,
 		idleTTL:  10 * time.Millisecond,
-		sessions: map[string]*agentbridge.InteractiveSession{
+		sessions: map[string]*llm.InteractiveSession{
 			sessionKey: session,
 		},
 		runMu: map[string]*sync.Mutex{},
 	}
 
-	result, err := backend.runInteractive(context.Background(), sessionKey, agentbridge.RunRequest{UserText: "hello"})
+	result, err := backend.runInteractive(context.Background(), sessionKey, llm.RunRequest{UserText: "hello"})
 	if err != nil {
 		t.Fatalf("runInteractive returned error: %v", err)
 	}
-	if result.Reply != agentbridge.ProviderOpenCode+" middle" {
+	if result.Reply != llm.ProviderOpenCode+" middle" {
 		t.Fatalf("reply = %q", result.Reply)
 	}
 
@@ -97,60 +97,60 @@ func TestInteractiveProviderBackendClosesIdleSession(t *testing.T) {
 
 type interactiveBackendTestDriver struct {
 	provider  string
-	events    chan agentbridge.TurnEvent
+	events    chan llm.TurnEvent
 	closeOnce sync.Once
 	closeMu   sync.Mutex
 	closes    int
 }
 
-func (d *interactiveBackendTestDriver) SteerMode() agentbridge.SteerMode {
-	return agentbridge.SteerModeNative
+func (d *interactiveBackendTestDriver) SteerMode() llm.SteerMode {
+	return llm.SteerModeNative
 }
 
-func (d *interactiveBackendTestDriver) StartTurn(_ context.Context, req agentbridge.RunRequest) (agentbridge.TurnRef, error) {
-	turn := agentbridge.TurnRef{ThreadID: "thread-1", TurnID: "turn-1"}
+func (d *interactiveBackendTestDriver) StartTurn(_ context.Context, req llm.RunRequest) (llm.TurnRef, error) {
+	turn := llm.TurnRef{ThreadID: "thread-1", TurnID: "turn-1"}
 	go func() {
-		d.events <- agentbridge.TurnEvent{
+		d.events <- llm.TurnEvent{
 			Provider: d.provider,
 			ThreadID: turn.ThreadID,
 			TurnID:   turn.TurnID,
-			Kind:     agentbridge.TurnEventUserText,
+			Kind:     llm.TurnEventUserText,
 			Text:     "hello",
 		}
-		d.events <- agentbridge.TurnEvent{
+		d.events <- llm.TurnEvent{
 			Provider: d.provider,
 			ThreadID: turn.ThreadID,
 			TurnID:   turn.TurnID,
-			Kind:     agentbridge.TurnEventToolUse,
+			Kind:     llm.TurnEventToolUse,
 			Text:     "tool_use tool=`bash` command=`pwd`",
 		}
-		d.events <- agentbridge.TurnEvent{
+		d.events <- llm.TurnEvent{
 			Provider: d.provider,
 			ThreadID: turn.ThreadID,
 			TurnID:   turn.TurnID,
-			Kind:     agentbridge.TurnEventAssistantText,
+			Kind:     llm.TurnEventAssistantText,
 			Text:     d.provider + " middle",
 		}
-		d.events <- agentbridge.TurnEvent{
+		d.events <- llm.TurnEvent{
 			Provider: d.provider,
 			ThreadID: turn.ThreadID,
 			TurnID:   turn.TurnID,
-			Kind:     agentbridge.TurnEventCompleted,
+			Kind:     llm.TurnEventCompleted,
 		}
 	}()
 	_ = req
 	return turn, nil
 }
 
-func (d *interactiveBackendTestDriver) SteerTurn(context.Context, agentbridge.TurnRef, agentbridge.RunRequest) error {
+func (d *interactiveBackendTestDriver) SteerTurn(context.Context, llm.TurnRef, llm.RunRequest) error {
 	return nil
 }
 
-func (d *interactiveBackendTestDriver) InterruptTurn(context.Context, agentbridge.TurnRef) error {
+func (d *interactiveBackendTestDriver) InterruptTurn(context.Context, llm.TurnRef) error {
 	return nil
 }
 
-func (d *interactiveBackendTestDriver) Events() <-chan agentbridge.TurnEvent {
+func (d *interactiveBackendTestDriver) Events() <-chan llm.TurnEvent {
 	return d.events
 }
 

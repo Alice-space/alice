@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 )
 
 type senderStub struct {
@@ -72,13 +72,13 @@ func (s *deadlineSenderStub) SendCard(ctx context.Context, _, _, _ string) error
 type llmRunnerStub struct {
 	mu       sync.Mutex
 	calls    int
-	lastReq  agentbridge.RunRequest
+	lastReq  llm.RunRequest
 	progress []string
-	result   agentbridge.RunResult
+	result   llm.RunResult
 	err      error
 }
 
-func (s *llmRunnerStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (s *llmRunnerStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	s.mu.Lock()
 	s.calls++
 	s.lastReq = req
@@ -117,7 +117,7 @@ func TestRunUserTask_SkipsWhenSessionBusy(t *testing.T) {
 	engine := NewEngine(store, sender)
 	engine.now = func() time.Time { return base }
 
-	runner := &llmRunnerStub{result: agentbridge.RunResult{Reply: "hello"}}
+	runner := &llmRunnerStub{result: llm.RunResult{Reply: "hello"}}
 	engine.SetLLMRunner(runner)
 
 	created, err := store.CreateTask(Task{
@@ -179,7 +179,7 @@ func TestRunUserTask_SkipsWhenSessionBusy_DecoratedKey(t *testing.T) {
 	sender := &senderStub{}
 	engine := NewEngine(store, sender)
 	engine.now = func() time.Time { return base }
-	engine.SetLLMRunner(&llmRunnerStub{result: agentbridge.RunResult{Reply: "hello"}})
+	engine.SetLLMRunner(&llmRunnerStub{result: llm.RunResult{Reply: "hello"}})
 
 	created, err := store.CreateTask(Task{
 		Title:    "decorated-key test",
@@ -227,7 +227,7 @@ func TestRunUserTask_SkipLog_RateLimit(t *testing.T) {
 	engine := NewEngine(store, sender)
 	clock := base
 	engine.now = func() time.Time { return clock }
-	engine.SetLLMRunner(&llmRunnerStub{result: agentbridge.RunResult{Reply: "hello"}})
+	engine.SetLLMRunner(&llmRunnerStub{result: llm.RunResult{Reply: "hello"}})
 
 	checker := &sessionCheckerStub{activeSessions: map[string]bool{"chat_id:oc_rl": true}}
 	engine.SetSessionActivityChecker(checker)
@@ -321,7 +321,7 @@ func TestRunUserTask_SessionGateAcquiresAndReleases(t *testing.T) {
 	store.now = func() time.Time { return base }
 
 	sender := &senderStub{}
-	runner := &llmRunnerStub{result: agentbridge.RunResult{Reply: "ok"}}
+	runner := &llmRunnerStub{result: llm.RunResult{Reply: "ok"}}
 	gate := &sessionGateStub{}
 
 	engine := NewEngine(store, sender)
@@ -382,7 +382,7 @@ func TestRunUserTask_SessionGateBusySkipsAndUnclaims(t *testing.T) {
 	store.now = func() time.Time { return base }
 
 	sender := &senderStub{}
-	runner := &llmRunnerStub{result: agentbridge.RunResult{Reply: "ok"}}
+	runner := &llmRunnerStub{result: llm.RunResult{Reply: "ok"}}
 	gate := &sessionGateStub{busy: true}
 
 	engine := NewEngine(store, sender)
@@ -494,8 +494,8 @@ type interruptibleRunnerStub struct {
 	called bool
 }
 
-func (r *interruptibleRunnerStub) Run(ctx context.Context, _ agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (r *interruptibleRunnerStub) Run(ctx context.Context, _ llm.RunRequest) (llm.RunResult, error) {
 	r.called = true
 	<-ctx.Done()
-	return agentbridge.RunResult{}, ctx.Err()
+	return llm.RunResult{}, ctx.Err()
 }

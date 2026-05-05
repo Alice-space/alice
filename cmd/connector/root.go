@@ -18,13 +18,13 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/viper"
 
-	agentbridgeclaude "github.com/Alice-space/agentbridge/providers/claude"
-	agentbridgecodex "github.com/Alice-space/agentbridge/providers/codex"
-	agentbridgeopencode "github.com/Alice-space/agentbridge/providers/opencode"
 	aliceassets "github.com/Alice-space/alice"
 	"github.com/Alice-space/alice/internal/bootstrap"
 	"github.com/Alice-space/alice/internal/buildinfo"
 	"github.com/Alice-space/alice/internal/config"
+	llmclaude "github.com/Alice-space/alice/internal/llm/providers/claude"
+	llmcodex "github.com/Alice-space/alice/internal/llm/providers/codex"
+	llmopencode "github.com/Alice-space/alice/internal/llm/providers/opencode"
 	"github.com/Alice-space/alice/internal/logging"
 )
 
@@ -95,6 +95,8 @@ func newRootCmd() *cobra.Command {
 	})
 	root.AddCommand(newRuntimeCmd())
 	root.AddCommand(newSkillsCmd())
+	root.AddCommand(newDelegateCmd())
+	root.AddCommand(newSetupCmd())
 	return root
 }
 
@@ -312,7 +314,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	sort.Strings(authKeys)
 	for _, key := range authKeys {
 		check := codexAuthChecks[key]
-		report, authErr := agentbridgecodex.CheckLogin(check.Command, check.CodexHome, check.Timeout)
+		report, authErr := llmcodex.CheckLogin(check.Command, check.CodexHome, check.Timeout)
 		if authErr != nil {
 			return fmt.Errorf("check Codex login failed for bots %s: %w", check.botList(), authErr)
 		}
@@ -334,7 +336,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	sort.Strings(claudeKeys)
 	for _, key := range claudeKeys {
 		check := claudeAuthChecks[key]
-		report, authErr := agentbridgeclaude.CheckLogin(check.Command, check.Timeout)
+		report, authErr := llmclaude.CheckLogin(check.Command, check.Timeout)
 		if authErr != nil {
 			return fmt.Errorf("check Claude login failed for bots %s: %w", check.botList(), authErr)
 		}
@@ -361,7 +363,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 	sort.Strings(ocKeys)
 	for _, key := range ocKeys {
 		check := opencodeAuthChecks[key]
-		report, authErr := agentbridgeopencode.CheckLogin(check.Command, check.Timeout)
+		report, authErr := llmopencode.CheckLogin(check.Command, check.Timeout)
 		if authErr != nil {
 			return fmt.Errorf("check opencode failed for bots %s: %w", check.botList(), authErr)
 		}

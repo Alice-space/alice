@@ -1,11 +1,11 @@
 package connector
 
 import (
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 )
 
 type ProcessorRuntimeUpdate struct {
-	Backend                agentbridge.Backend
+	Backend                llm.Backend
 	FailureMessage         string
 	ThinkingMessage        string
 	ImmediateFeedbackMode  string

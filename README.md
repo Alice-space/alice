@@ -4,7 +4,7 @@
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
 [![Release On Tag](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml)
 
-A Feishu long-connection connector for CLI-based LLM agents such as Codex, Claude, Gemini, and Kimi.
+A Feishu long-connection connector for CLI-based LLM agents such as Codex, Claude, Gemini, Kimi, and OpenCode.
 
 Alice runs as a local multi-bot runtime:
 
@@ -13,6 +13,7 @@ Alice runs as a local multi-bot runtime:
 - calls the configured LLM CLI backend
 - sends progress, replies, files, and images back to Feishu
 - exposes a local runtime API used by bundled skills
+- provides an `alice delegate` subcommand so OpenCode agents (including DeepSeek) can delegate subtasks to Codex, Claude, and other backends
 
 For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 
@@ -25,8 +26,8 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 - Long-running LLM status cards with backend-activity and aggregated file-change signals
 - Automation watchdog alerts for overdue or stuck scheduled tasks
 - Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
-- Embedded prompts, skills, config example, and `SOUL.md` example
-- Release installer for `systemd --user` deployments
+- Embedded prompts, skills, config example, `SOUL.md` example, and OpenCode delegate plugin
+- `alice setup` one-command init: config + skills + systemd unit + OpenCode plugin
 
 ## Requirements
 
@@ -36,6 +37,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
   - `claude`
   - `gemini`
   - `kimi`
+  - `opencode`
 - A Feishu app with:
   - bot capability
   - `im.message.receive_v1` subscription
@@ -50,6 +52,7 @@ For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
 
 ```bash
 npm install -g @alice_space/alice
+alice setup
 ```
 
 **Via installer script:**
@@ -62,10 +65,11 @@ Then:
 
 1. Edit `${ALICE_HOME:-~/.alice}/config.yaml`
 2. Set `bots.*.feishu_app_id` and `bots.*.feishu_app_secret`
-3. Restart the service:
+3. Start the service:
 
 ```bash
-systemctl --user restart alice.service
+systemctl --user start alice.service   # Linux (alice setup writes the unit)
+alice --feishu-websocket               # macOS / manual start
 ```
 
 ### Run From Source
@@ -101,6 +105,21 @@ Alice's operating model and `chat` / `work` scene behavior are documented in:
 - [Usage Guide](./docs/usage.md)
 - [使用说明](./docs/usage.zh-CN.md)
 
+### Delegating tasks to other LLM backends
+
+The `alice delegate` subcommand runs a one-shot prompt against any configured LLM CLI:
+
+```bash
+alice delegate --provider codex --prompt "Refactor the auth module"
+alice delegate --provider claude --prompt "Review this PR diff" < diff.patch
+```
+
+### OpenCode plugin
+
+`alice setup` writes the file `~/.config/opencode/plugins/alice-delegate.js`.
+Once present, OpenCode agents (including DeepSeek) gain two tools — `codex` and `claude` — that delegate subtasks through the `alice delegate` command.
+No additional config is needed; OpenCode loads plugins from that directory automatically.
+
 Additional docs:
 
 - [Documentation Index](./docs/README.md)
@@ -108,6 +127,8 @@ Additional docs:
 - [架构文档](./docs/architecture.zh-CN.md)
 
 Connector startup mode is now explicit: use `--feishu-websocket` for the real Feishu connector, or `--runtime-only` for local runtime/API-only execution. For isolated debug or temporary rerun runtimes, use `alice-headless --runtime-only`; headless binaries no longer allow Feishu websocket startup.
+
+The LLM backend abstraction lives in `internal/llm/` (the former `agentbridge` library is now co-located in this repository).
 
 ## `SOUL.md`
 
@@ -134,6 +155,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 # uninstall
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 ```
+
+When installing via npm, use `alice setup` after `npm install -g @alice_space/alice` to create the ALICE_HOME directory structure, write the initial config, sync bundled skills, register the systemd user unit (Linux), and install the OpenCode delegate plugin. The installer script is still available for users who prefer a single-curl workflow or need the release download / checksum verification path.
 
 ## Development
 
