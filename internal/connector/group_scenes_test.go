@@ -723,8 +723,8 @@ func TestApp_OnMessageReceive_WorkOnlySceneIgnoresMentionWithoutTriggerTag(t *te
 	if err := app.onMessageReceive(context.Background(), event); err != nil {
 		t.Fatalf("unexpected work-only event error: %v", err)
 	}
-	if got := len(app.queue); got != 1 {
-		t.Fatalf("expected queue len 1, got %d", got)
+	if got := len(app.queue); got != 0 {
+		t.Fatalf("expected queue len 0 (message without #work tag in work-only mode), got %d", got)
 	}
 }
 
@@ -980,5 +980,48 @@ func TestApp_OnMessageReceive_WorkSceneParentOnlyFollowupReusesSessionWithMentio
 	}
 	if job2.SessionVersion != 2 {
 		t.Fatalf("unexpected followup session version: %d", job2.SessionVersion)
+	}
+}
+
+func TestApp_OnMessageReceive_WorkTagOnlyRoutedToMentionedBot(t *testing.T) {
+	cfg := configForWorkOnlyGroupScenesTest()
+	app1 := newGroupScenesApp(cfg, nil)
+	app1.SetBotOpenID("ou_bot1")
+	app2 := newGroupScenesApp(cfg, nil)
+	app2.SetBotOpenID("ou_bot2")
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_tag_multi_bot"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_tag_multi"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot1\">Bot1</at> #work 处理这个任务"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{Id: &larkim.UserId{OpenId: strPtr("ou_bot1")}},
+				},
+			},
+		},
+	}
+
+	job1, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app1.routeIncomingJob(job1, event) {
+		t.Fatal("expected bot1 to route work-tagged message")
+	}
+	if job1.Scene != jobSceneWork {
+		t.Fatalf("expected work scene for bot1, got %q", job1.Scene)
+	}
+
+	job2, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if app2.routeIncomingJob(job2, event) {
+		t.Fatal("expected bot2 to NOT route work-tagged message targeting bot1")
 	}
 }

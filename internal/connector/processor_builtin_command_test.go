@@ -651,3 +651,30 @@ func TestIsBuiltinCommandText_IncludesGoal(t *testing.T) {
 		t.Fatal("expected /goal to be a builtin command")
 	}
 }
+
+func TestProcessGoalCommand_RejectsNonWorkScene(t *testing.T) {
+	stub := &codexStub{resp: "ok"}
+	sender := &senderStub{}
+	processor := NewProcessor(stub, sender, "failed", "thinking")
+	processor.SetSceneIdentityHints(false, true)
+
+	job := Job{
+		Text:            "/goal",
+		Scene:           jobSceneChat,
+		ReceiveIDType:   "chat_id",
+		ReceiveID:       "oc_chat",
+		SourceMessageID: "om_test",
+		EventID:         "evt_goal_chat",
+	}
+	ctx := context.Background()
+	state := processor.ProcessJobState(ctx, job)
+	if state != JobProcessCompleted {
+		t.Fatalf("expected job to complete, got %s", state)
+	}
+	if len(sender.replyMarkdownTexts) != 1 {
+		t.Fatalf("expected 1 reply, got %d", len(sender.replyMarkdownTexts))
+	}
+	if !strings.Contains(sender.replyMarkdownTexts[0], "work") {
+		t.Fatalf("expected work-only rejection message, got %q", sender.replyMarkdownTexts[0])
+	}
+}

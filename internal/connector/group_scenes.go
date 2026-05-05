@@ -88,6 +88,7 @@ type sessionKeyBuilder struct {
 	job         *Job
 
 	matchedWorkTag bool
+	triggerMatched bool
 	existingWork   string
 	activeWork     string
 }
@@ -117,6 +118,9 @@ func (b *sessionKeyBuilder) evaluate(event *larkim.P2MessageReceiveV1, message *
 		return
 	}
 
+	triggerMatched := isGroupMessageTriggered(event, b.triggerMode, "", b.botOpenID, "")
+	b.triggerMatched = triggerMatched || isBuiltinCommandText(b.job.Text)
+
 	if b.workEnabled && message != nil {
 		candidates := buildWorkSessionLookupCandidates(
 			b.job.ReceiveIDType, b.job.ReceiveID,
@@ -139,9 +143,11 @@ func (b *sessionKeyBuilder) evaluate(event *larkim.P2MessageReceiveV1, message *
 		}
 	}
 
-	triggerMatched := isGroupMessageTriggered(event, b.triggerMode, "", b.botOpenID, "")
 	if b.workEnabled && triggerMatched && hasSceneTriggerTag(b.job.Text, b.workTag) {
 		b.matchedWorkTag = true
+		return
+	}
+	if b.workEnabled && hasSceneTriggerTag(b.job.Text, b.workTag) {
 		return
 	}
 }
@@ -169,10 +175,7 @@ func (a *App) routeWithSessionKeyBuilder(job *Job, event *larkim.P2MessageReceiv
 
 	sessionKey, scene := builder.resolveScene()
 	if sessionKey == "" {
-		if message != nil {
-			a.resolveJobSessionKey(job, message)
-		}
-		return true
+		return false
 	}
 
 	switch scene {
@@ -187,8 +190,7 @@ func (a *App) routeWithSessionKeyBuilder(job *Job, event *larkim.P2MessageReceiv
 			return true
 		}
 		if builder.existingWork != "" {
-			triggerMatched := isGroupMessageTriggered(event, builder.triggerMode, "", builder.botOpenID, "")
-			if !triggerMatched && len(job.Attachments) == 0 {
+			if !builder.triggerMatched && len(job.Attachments) == 0 {
 				return false
 			}
 			a.applyWorkSceneToJob(job, sessionKey)

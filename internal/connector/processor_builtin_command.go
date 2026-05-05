@@ -146,6 +146,16 @@ func isGoalCommand(text string) bool {
 }
 
 func (p *Processor) processGoalCommand(ctx context.Context, job Job) JobProcessState {
+	if strings.TrimSpace(job.Scene) != jobSceneWork {
+		reply := "目标功能仅在 work 模式下可用。\n请使用 `@bot #work /goal` 在 work thread 中创建和管理目标。"
+		replyJob := job
+		replyJob.Scene = jobSceneChat
+		replyJob.CreateFeishuThread = false
+		if err := p.replies.respond(ctx, replyJob, reply); err != nil {
+			logging.Errorf("send builtin goal scope reply failed event_id=%s: %v", job.EventID, err)
+		}
+		return JobProcessCompleted
+	}
 	reply := p.buildGoalStatusMarkdown(job)
 	replyJob := job
 	if strings.TrimSpace(replyJob.Scene) != jobSceneWork {

@@ -169,6 +169,10 @@ func (s *Server) buildGoalFromRequest(req CreateGoalRequest, scopeCtx automation
 	if resumeThreadID == "" {
 		goalStatus = automation.GoalStatusWaitingForSession
 	}
+	sessionKey := scopeSessionKey(scopeCtx.session)
+	if !strings.Contains(sessionKey, "|work:") {
+		return automation.GoalTask{}, errors.New("goal creation is only supported in work sessions; use @bot #work to start a work thread first")
+	}
 	goal := automation.GoalTask{
 		ID:         "goal_" + strings.ToLower(ulid.Make().String()),
 		Objective:  objective,
