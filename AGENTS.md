@@ -91,6 +91,21 @@ When behavior/config/interface changes, update in the same change set:
 
 Implementation and docs must describe the same behavior.
 
+### 5.1 Book Documentation (Mandatory)
+
+**Any new feature, configuration key, CLI command, or behavior change MUST include corresponding documentation in `book/src/` — both English and Chinese (`zh-CN/`).**
+
+When adding a new feature, the minimum doc update:
+
+- If it's a user-facing feature → add to `how-to/` (both EN + zh-CN)
+- If it introduces a new concept → add to `explanation/` (both EN + zh-CN)
+- If it adds/changes config keys → update `reference/configuration.md` (both EN + zh-CN)
+- If it adds/changes CLI commands → update `reference/cli.md` (both EN + zh-CN)
+- If it adds/changes runtime API → update `reference/runtime-api.md` (both EN + zh-CN)
+- If it changes architecture → update `development/architecture.md` (both EN + zh-CN)
+
+The book is the canonical documentation. `README.md` / `README.zh-CN.md` serve as landing pages that link into the book. Features without book docs are considered incomplete — mark the PR as draft or add the docs before merging.
+
 ## 6. Commit and Push Workflow
 
 - Stage only intended files.
