@@ -86,3 +86,6 @@ const (
 // DefaultLLMTimeout is the fallback timeout (48 hours) used by all LLM
 // provider runners when no explicit timeout is configured.
 const DefaultLLMTimeout = 172800 * time.Second
+
+// AuthCheckTimeout is the default timeout for CLI login/auth status checks.
+const AuthCheckTimeout = 15 * time.Second

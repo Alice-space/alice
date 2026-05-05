@@ -6,6 +6,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 func buildRunArgs(threadID, prompt, model, variant string) []string {
@@ -37,7 +39,7 @@ func CheckLogin(command string, timeout time.Duration) (LoginReport, error) {
 		command = "opencode"
 	}
 	if timeout <= 0 {
-		timeout = 15 * time.Second
+		timeout = shared.AuthCheckTimeout
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()

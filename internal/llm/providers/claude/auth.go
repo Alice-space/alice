@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // LoginStatusReport holds the result of a Claude CLI login status check.
@@ -27,7 +29,7 @@ func CheckLogin(command string, timeout time.Duration) (LoginStatusReport, error
 		return LoginStatusReport{}, fmt.Errorf("claude command is empty")
 	}
 	if timeout <= 0 {
-		timeout = 15 * time.Second
+		timeout = shared.AuthCheckTimeout
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)

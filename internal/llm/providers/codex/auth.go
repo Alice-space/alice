@@ -8,6 +8,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // LoginStatusReport holds the result of a Codex CLI login status check.
@@ -31,7 +33,7 @@ func CheckLogin(command, codexHome string, timeout time.Duration) (LoginStatusRe
 		return LoginStatusReport{}, fmt.Errorf("codex home is empty")
 	}
 	if timeout <= 0 {
-		timeout = 15 * time.Second
+		timeout = shared.AuthCheckTimeout
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
