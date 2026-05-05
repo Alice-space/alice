@@ -37,11 +37,15 @@ func resolveAutomationScope(session sessionctx.SessionContext) (automationScopeC
 		session: session,
 	}
 	if runtimeCtx.isGroup {
+		scopeID := strings.TrimSpace(session.SessionKey)
+		if scopeID == "" {
+			scopeID = runtimeCtx.receiveID
+		}
 		receiveID := runtimeCtx.receiveID
 		if receiveID == "" {
 			return automationScopeContext{}, errors.New("missing chat_id for group automation scope")
 		}
-		ctx.scope = automation.Scope{Kind: automation.ScopeKindChat, ID: receiveID}
+		ctx.scope = automation.Scope{Kind: automation.ScopeKindChat, ID: scopeID}
 		ctx.route = automation.Route{ReceiveIDType: "chat_id", ReceiveID: receiveID}
 		return ctx, nil
 	}

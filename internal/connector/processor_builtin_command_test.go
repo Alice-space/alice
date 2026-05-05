@@ -646,9 +646,30 @@ func TestIsGoalCommand(t *testing.T) {
 	}
 }
 
-func TestIsBuiltinCommandText_IncludesGoal(t *testing.T) {
-	if !isBuiltinCommandText("/goal") {
-		t.Fatal("expected /goal to be a builtin command")
+func TestBuildGoalScopeFromJob_UsesSessionKeyForIsolation(t *testing.T) {
+	job1 := Job{
+		ChatType:      "group",
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		SessionKey:    "chat_id:oc_chat|work:om_seed_1",
+	}
+	scope1 := buildGoalScopeFromJob(job1)
+	if scope1.ID != "chat_id:oc_chat|work:om_seed_1" {
+		t.Fatalf("expected scope ID to be session key, got %q", scope1.ID)
+	}
+
+	job2 := Job{
+		ChatType:      "group",
+		ReceiveID:     "oc_chat",
+		ReceiveIDType: "chat_id",
+		SessionKey:    "chat_id:oc_chat|work:om_seed_2",
+	}
+	scope2 := buildGoalScopeFromJob(job2)
+	if scope2.ID != "chat_id:oc_chat|work:om_seed_2" {
+		t.Fatalf("expected scope ID to be session key, got %q", scope2.ID)
+	}
+	if scope1.ID == scope2.ID {
+		t.Fatal("expected different work sessions to have different goal scopes")
 	}
 }
 

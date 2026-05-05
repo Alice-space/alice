@@ -209,7 +209,7 @@ func (p *Processor) buildGoalStatusMarkdown(job Job) string {
 func buildGoalScopeFromJob(job Job) automation.Scope {
 	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
 	if chatType == "group" || chatType == "topic_group" {
-		return automation.Scope{Kind: automation.ScopeKindChat, ID: strings.TrimSpace(job.ReceiveID)}
+		return automation.Scope{Kind: automation.ScopeKindChat, ID: sessionKeyForJob(job)}
 	}
 	actorID := strings.TrimSpace(job.SenderUserID)
 	if actorID == "" {
@@ -221,7 +221,11 @@ func buildGoalScopeFromJob(job Job) automation.Scope {
 func getScopeLabel(job Job) string {
 	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
 	if chatType == "group" || chatType == "topic_group" {
-		return "chat:" + strings.TrimSpace(job.ReceiveID)
+		sk := sessionKeyForJob(job)
+		if isWorkSessionKey(sk) {
+			return "work:" + sk
+		}
+		return "chat:" + sk
 	}
 	actorID := strings.TrimSpace(job.SenderUserID)
 	if actorID == "" {
