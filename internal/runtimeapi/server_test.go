@@ -448,3 +448,20 @@ func TestGoalCreate_RejectsNonWorkSession(t *testing.T) {
 		t.Fatalf("expected 'work sessions' in error message, got: %v", err)
 	}
 }
+
+func TestResolveAutomationScope_StripsMessageSuffixFromScopeID(t *testing.T) {
+	session := sessionctx.SessionContext{
+		ReceiveIDType: "chat_id",
+		ReceiveID:     "oc_chat",
+		ActorUserID:   "ou_user",
+		ChatType:      "group",
+		SessionKey:    "chat_id:oc_chat|work:om_seed|message:om_reply",
+	}
+	scopeCtx, err := resolveAutomationScope(session)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if scopeCtx.scope.ID != "chat_id:oc_chat|work:om_seed" {
+		t.Fatalf("expected scope ID without message suffix, got %q", scopeCtx.scope.ID)
+	}
+}

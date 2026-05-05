@@ -38,6 +38,9 @@ func resolveAutomationScope(session sessionctx.SessionContext) (automationScopeC
 	}
 	if runtimeCtx.isGroup {
 		scopeID := strings.TrimSpace(session.SessionKey)
+		if scopeID != "" {
+			scopeID = sessionkey.WithoutMessage(scopeID)
+		}
 		if scopeID == "" {
 			scopeID = runtimeCtx.receiveID
 		}
