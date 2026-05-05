@@ -14,6 +14,30 @@ import (
 
 const defaultGoalTimeout = 48 * time.Hour
 
+func (e *Engine) runGoals(ctx context.Context) {
+	if e.store == nil {
+		return
+	}
+	goals, err := e.store.ListGoals(GoalStatusActive)
+	if err != nil {
+		logging.Warnf("goal tick list failed: %v", err)
+		return
+	}
+	for _, goal := range goals {
+		if goal.Running {
+			continue
+		}
+		goal := goal
+		e.taskSem <- struct{}{}
+		go func() {
+			defer func() { <-e.taskSem }()
+			if err := e.ExecuteGoal(ctx, goal.Scope); err != nil {
+				logging.Infof("goal tick exec scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+			}
+		}()
+	}
+}
+
 func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	if e == nil || e.store == nil {
 		return errors.New("engine or store is nil")
@@ -35,56 +59,82 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		return nil
 	}
 	sk := goalSessionKey(goal)
+	goalCtx, goalCancel := context.WithCancelCause(ctx)
+	defer goalCancel(nil)
 	if checker := e.sessionCheckerValue(); checker != nil {
 		if gate, ok := checker.(SessionActivityGate); ok {
-			_, cancel := context.WithCancelCause(ctx)
-			if !gate.TryAcquireSession(sk, cancel) {
-				logging.Infof("goal skipped (session busy) scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
+			if !gate.TryAcquireSession(sk, goalCancel) {
+				e.logGoalSessionBusy(goal, sk)
 				return nil
 			}
 			defer gate.ReleaseSession(sk)
 		} else if checker.IsSessionActive(sk) {
-			logging.Infof("goal skipped (session busy) scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
+			e.logGoalSessionBusy(goal, sk)
 			return nil
 		}
 	}
-	runCtx, cancel := e.goalRunContext(ctx, goal)
-	defer cancel(nil)
-	threadID := goal.ThreadID
-	isFirstRun := threadID == ""
-	prompt := e.buildGoalPrompt(goal, isFirstRun)
-	logging.Infof("goal iteration start scope=%s:%s thread=%s first=%v", goal.Scope.Kind, goal.Scope.ID, threadID, isFirstRun)
-	result, err := runner.Run(runCtx, llm.RunRequest{
-		ThreadID:   threadID,
-		AgentName:  "goal",
-		UserText:   prompt,
-		Scene:      goalScene(goal),
-		Env:        e.buildGoalRunEnv(goal),
-		OnProgress: e.goalProgressDispatcher(runCtx, goal),
-	})
-	if err != nil {
-		if runCtx.Err() != nil {
+	e.setGoalRunning(scope, true)
+	defer e.setGoalRunning(scope, false)
+	for {
+		goal, err = e.store.GetGoal(scope)
+		if err != nil {
+			return err
+		}
+		if goal.Status != GoalStatusActive {
+			return nil
+		}
+		now = e.nowTime()
+		if !goal.DeadlineAt.IsZero() && now.After(goal.DeadlineAt) {
+			e.markGoalTimeout(goal)
+			return nil
+		}
+		select {
+		case <-goalCtx.Done():
 			logging.Infof("goal interrupted scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
 			return nil
+		default:
 		}
-		logging.Errorf("goal run failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
-		return err
-	}
-	logging.Infof("goal iteration done scope=%s:%s done=%v next_thread=%s", goal.Scope.Kind, goal.Scope.ID, result.GoalDone, strings.TrimSpace(result.NextThreadID))
-	nextThreadID := strings.TrimSpace(result.NextThreadID)
-	if nextThreadID != "" && nextThreadID != goal.ThreadID {
-		if _, err := e.store.PatchGoal(scope, func(g *GoalTask) error {
-			g.ThreadID = nextThreadID
+		runCtx, runCancel := e.goalRunContext(goalCtx, goal)
+		threadID := goal.ThreadID
+		isFirstRun := threadID == ""
+		prompt := e.buildGoalPrompt(goal, isFirstRun)
+		logging.Infof("goal iteration start scope=%s:%s thread=%s first=%v", goal.Scope.Kind, goal.Scope.ID, threadID, isFirstRun)
+		result, err := runner.Run(runCtx, llm.RunRequest{
+			ThreadID:   threadID,
+			AgentName:  "goal",
+			UserText:   prompt,
+			Scene:      goalScene(goal),
+			Env:        e.buildGoalRunEnv(goal),
+			OnProgress: e.goalProgressDispatcher(runCtx, goal),
+		})
+		runCancel(nil)
+		if err != nil {
+			if goalCtx.Err() != nil {
+				logging.Infof("goal interrupted scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
+				return nil
+			}
+			if runCtx.Err() != nil {
+				logging.Infof("goal iteration timeout scope=%s:%s, continuing", goal.Scope.Kind, goal.Scope.ID)
+				continue
+			}
+			logging.Errorf("goal run failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+			return err
+		}
+		logging.Infof("goal iteration done scope=%s:%s done=%v next_thread=%s", goal.Scope.Kind, goal.Scope.ID, result.GoalDone, strings.TrimSpace(result.NextThreadID))
+		nextThreadID := strings.TrimSpace(result.NextThreadID)
+		if nextThreadID != "" && nextThreadID != threadID {
+			if _, patchErr := e.store.PatchGoal(scope, func(g *GoalTask) error {
+				g.ThreadID = nextThreadID
+				return nil
+			}); patchErr != nil {
+				logging.Warnf("goal persist thread_id failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, patchErr)
+			}
+		}
+		if result.GoalDone {
+			e.markGoalComplete(goal)
 			return nil
-		}); err != nil {
-			logging.Warnf("goal persist thread_id failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
 		}
 	}
-	if result.GoalDone {
-		e.markGoalComplete(goal)
-		return nil
-	}
-	return nil
 }
 
 func (e *Engine) buildGoalPrompt(goal GoalTask, isFirstRun bool) string {
@@ -256,4 +306,26 @@ func formatDurationHMS(d time.Duration) string {
 		return fmt.Sprintf("%dm%ds", minutes, seconds)
 	}
 	return fmt.Sprintf("%ds", seconds)
+}
+
+func (e *Engine) logGoalSessionBusy(goal GoalTask, sk string) {
+	const skipLogInterval = time.Minute
+	now := e.nowTime()
+	key := "goal_" + goal.ID
+	if last, ok := e.lastSkipLog.Load(key); !ok || now.Sub(last.(time.Time)) >= skipLogInterval {
+		logging.Infof("goal skipped (session busy) scope=%s:%s session=%s", goal.Scope.Kind, goal.Scope.ID, sk)
+		e.lastSkipLog.Store(key, now)
+	}
+}
+
+func (e *Engine) setGoalRunning(scope Scope, running bool) {
+	if e.store == nil {
+		return
+	}
+	if _, err := e.store.PatchGoal(scope, func(g *GoalTask) error {
+		g.Running = running
+		return nil
+	}); err != nil && !errors.Is(err, ErrGoalNotFound) {
+		logging.Warnf("goal set running=%v failed scope=%s:%s err=%v", running, scope.Kind, scope.ID, err)
+	}
 }

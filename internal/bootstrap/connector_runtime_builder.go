@@ -175,6 +175,9 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 	if err := b.automationStore.ResetRunningTasks(); err != nil {
 		return err
 	}
+	if err := b.automationStore.ResetRunningGoals(); err != nil {
+		return err
+	}
 	automationEngine := automation.NewEngine(b.automationStore, b.sender)
 	automationEngine.SetUserTaskTimeout(b.cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(b.backend)

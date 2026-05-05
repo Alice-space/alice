@@ -113,6 +113,7 @@ func (e *Engine) Run(ctx context.Context) {
 		case <-ticker.C:
 			now := e.nowTime()
 			e.runUserTasks(ctx, now)
+			e.runGoals(ctx)
 		}
 	}
 }
