@@ -363,11 +363,8 @@ func TestApp_RouteStatusSkipsWhenInThreadWithoutMatchingWorkSession(t *testing.T
 	if err != nil {
 		t.Fatalf("build job failed: %v", err)
 	}
-	if !app.routeIncomingJob(job, threadEvent) {
-		t.Fatal("expected /status in unrelated thread to be routed to chat scene")
-	}
-	if job.Scene != jobSceneChat {
-		t.Fatalf("unexpected scene: %q", job.Scene)
+	if app.routeIncomingJob(job, threadEvent) {
+		t.Fatal("expected /status in unrelated thread to NOT be routed")
 	}
 
 	mainChatEvent := &larkim.P2MessageReceiveV1{
@@ -462,11 +459,8 @@ func TestApp_RouteGoalSkipsWhenInThreadWithoutMatchingWorkSession(t *testing.T) 
 	if err != nil {
 		t.Fatalf("build job failed: %v", err)
 	}
-	if !app.routeIncomingJob(job, threadEvent) {
-		t.Fatal("expected /goal in unrelated thread to be routed to chat scene")
-	}
-	if job.Scene != jobSceneChat {
-		t.Fatalf("unexpected scene: %q", job.Scene)
+	if app.routeIncomingJob(job, threadEvent) {
+		t.Fatal("expected /goal in unrelated thread to NOT be routed")
 	}
 
 	mainChatEvent := &larkim.P2MessageReceiveV1{
@@ -1023,5 +1017,88 @@ func TestApp_OnMessageReceive_WorkTagOnlyRoutedToMentionedBot(t *testing.T) {
 	}
 	if app2.routeIncomingJob(job2, event) {
 		t.Fatal("expected bot2 to NOT route work-tagged message targeting bot1")
+	}
+}
+
+func TestApp_OnMessageReceive_SlashCommandInThreadOnlyRoutedToSessionOwner(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app1 := newGroupScenesApp(cfg, nil)
+	app1.SetBotOpenID("ou_bot1")
+	sessionKey := buildWorkSessionKey("chat_id", "oc_chat", "om_work_root")
+	app1.state.latest[sessionKey] = 1
+
+	app2 := newGroupScenesApp(cfg, nil)
+	app2.SetBotOpenID("ou_bot2")
+
+	slashInThread := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_slash_in_thread"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_slash_thread"),
+				ThreadId:    strPtr("omt_work"),
+				RootId:      strPtr("om_work_root"),
+				ParentId:    strPtr("om_work_root"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/goal"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job1, err := BuildJob(slashInThread)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app1.routeIncomingJob(job1, slashInThread) {
+		t.Fatal("expected bot1 (session owner) to route /goal in its work thread")
+	}
+	if job1.Scene != jobSceneWork {
+		t.Fatalf("expected work scene for bot1, got %q", job1.Scene)
+	}
+
+	job2, err := BuildJob(slashInThread)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if app2.routeIncomingJob(job2, slashInThread) {
+		t.Fatal("expected bot2 (non-owner) to NOT route /goal in bot1's work thread")
+	}
+}
+
+func TestApp_OnMessageReceive_SlashCommandInMainChatRoutedForAll(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app1 := newGroupScenesApp(cfg, nil)
+	app1.SetBotOpenID("ou_bot1")
+	app2 := newGroupScenesApp(cfg, nil)
+	app2.SetBotOpenID("ou_bot2")
+
+	slashInMain := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_slash_main"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_slash_main"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/help"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job1, err := BuildJob(slashInMain)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app1.routeIncomingJob(job1, slashInMain) {
+		t.Fatal("expected bot1 to route /help in main chat")
+	}
+
+	job2, err := BuildJob(slashInMain)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app2.routeIncomingJob(job2, slashInMain) {
+		t.Fatal("expected bot2 to route /help in main chat")
 	}
 }

@@ -87,10 +87,11 @@ type sessionKeyBuilder struct {
 	app         *App
 	job         *Job
 
-	matchedWorkTag bool
-	triggerMatched bool
-	existingWork   string
-	activeWork     string
+	matchedWorkTag  bool
+	triggerMatched  bool
+	existingWork    string
+	activeWork      string
+	threadNoSession bool
 }
 
 func newSessionKeyBuilder(scope, triggerMode, triggerPrefix, botOpenID string,
@@ -137,6 +138,11 @@ func (b *sessionKeyBuilder) evaluate(event *larkim.P2MessageReceiveV1, message *
 			}
 		}
 
+		if b.existingWork == "" && hasThreadContext(message) && isBuiltinCommandText(b.job.Text) {
+			b.threadNoSession = true
+			return
+		}
+
 		if activeKey := b.app.findActiveWorkSessionKey(b.job.ReceiveIDType, b.job.ReceiveID); activeKey != "" {
 			b.activeWork = activeKey
 			return
@@ -153,6 +159,9 @@ func (b *sessionKeyBuilder) evaluate(event *larkim.P2MessageReceiveV1, message *
 }
 
 func (b *sessionKeyBuilder) resolveScene() (sessionKey string, scene string) {
+	if b.threadNoSession {
+		return "", ""
+	}
 	if b.existingWork != "" {
 		return b.existingWork, jobSceneWork
 	}

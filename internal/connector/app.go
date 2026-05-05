@@ -358,7 +358,7 @@ func (a *App) onMessageReceive(ctx context.Context, event *larkim.P2MessageRecei
 	if strings.TrimSpace(job.SessionKey) == "" {
 		job.SessionKey = sessionKey
 	}
-	if sessionKey != "" && a.hasActiveRun(sessionKey) && a.processor != nil {
+	if sessionKey != "" && a.hasActiveRun(sessionKey) && a.processor != nil && !isBuiltinCommandText(job.Text) {
 		steered, steerErr := a.processor.TrySteerJob(ctx, *job)
 		if steerErr != nil {
 			logging.Warnf(
