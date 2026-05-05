@@ -34,7 +34,7 @@ jobs:
         run: mdbook build book/zh --dest-dir ../../out/zh
 
       - name: Copy landing page
-        run: cp book/landing.html book/lang-switcher.js out/
+        run: cp book/index.html book/lang-switcher.js out/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3

@@ -1,10 +1,6 @@
 # Alice
 
-> 5 分钟把 DeepSeek V4 接入飞书群聊。不需要 API Key — 只需要你现有的 OpenCode CLI。
-
-> **Goal 模式 × DeepSeek 低价** = 几毛钱并行跑几十个开发任务。
-> **手机上的飞书** = 随时随地发起任务、收到完成通知。不用一直坐在电脑前。
-> **原生 CLI，非云 API** = 终端里开始的任务，手机上用飞书接着跑。一条 `/session resume` 上下文全在 — 不存在厂商锁定，也没有云依赖。
+> **同一个 AI 会话，随时随地。** 终端里写代码，手机上用飞书接着跑，再切回来。没有云锁定 — agent 跑在*你自己*的机器上。支持 OpenCode（DeepSeek V4）、Codex、Claude、Gemini、Kimi。
 
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
@@ -12,6 +8,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](./README.md)
+
+- **随时随地访问你的 agent。**
+  电脑前用终端，路上用飞书。同一个会话、同一份上下文 — 一条 `/session resume` 就切过去。
+- **任选 AI。**
+  OpenCode / DeepSeek V4、Codex、Claude、Gemini、Kimi。不同场景可以混用。
+- **零云依赖。**
+  agent CLI 跑在你的机器上。不需要 API Key，没有厂商锁定。
+- **Goal 模式 × DeepSeek = 低价。**
+  几毛钱并行跑几十个任务，手机上收通知。
 
 面向飞书的长连接连接器，把 CLI 型 LLM agent — OpenCode (DeepSeek V4)、Codex、Claude、Gemini、Kimi 接入飞书聊天。
 

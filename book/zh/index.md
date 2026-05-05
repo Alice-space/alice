@@ -1,12 +1,16 @@
 # Alice
 
-Alice 是一个**飞书长连接连接器**，把 CLI 型 LLM agent（Codex、Claude、Gemini、Kimi、OpenCode）变成飞书工作空间里的交互式 bot。
+> **同一个 AI 会话，随时随地。** 终端里写代码，手机上用飞书接着跑，再切回来。没有云锁定 — agent 跑在*你自己*的机器上。
+
+Alice 是一个**飞书长连接连接器**，把 CLI 型 LLM agent 变成飞书里的交互式 bot。支持 OpenCode（DeepSeek V4）、Codex、Claude、Gemini、Kimi。
+
+## 核心思路
+
+你的终端 agent 和飞书 bot 是**同一个会话**。在 IDE 里开始重构，手机上查进度，飞书里发下一条指令。Alice 把你的本地 CLI agent 桥接到飞书 WebSocket，让你不被任何设备束缚。
 
 ## Alice 解决什么问题？
 
-你已经安装了 LLM agent CLI（`codex`、`claude`、`opencode`），在终端里用得很好。但你的团队在飞书上协作。你希望把同样的 agent 放进群聊和私聊里，而不必从零开始开发一个 bot。
-
-Alice 填补了这个空白。它以本地服务的方式运行：
+你已经装了 LLM agent CLI，终端里用得很好。但是：
 
 - 通过 WebSocket 连接飞书，实时接收消息
 - 把收到的消息路由到 `chat`（闲聊）或 `work`（任务执行）场景
