@@ -938,6 +938,87 @@ func TestEngine_ExecuteGoal_RunningFlagPreventsDuplicateExecution(t *testing.T) 
 	}
 }
 
+func TestEngine_ExecuteGoal_PersistsThreadIDOnInterruption(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	gate := &sessionGateStub{}
+	engine.SetSessionActivityChecker(gate)
+
+	iterStarted := make(chan struct{}, 2)
+	iterUnblock := make(chan struct{})
+	runner := &blockingGoalRunner{
+		results: []llm.RunResult{
+			{Reply: "working...", NextThreadID: "ses_interrupted"},
+			{Reply: "resumed! done", NextThreadID: "ses_interrupted", GoalDone: true},
+		},
+		started: iterStarted,
+		unblock: iterUnblock,
+	}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat1"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_1",
+		Objective:  "interrupt persist test",
+		Status:     GoalStatusActive,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "chat1"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = engine.ExecuteGoal(context.Background(), scope)
+	}()
+
+	<-iterStarted
+
+	gate.mu.Lock()
+	if gate.cancel != nil {
+		gate.cancel(context.Canceled)
+	}
+	gate.mu.Unlock()
+
+	close(iterUnblock)
+	<-done
+
+	g, _ := store.GetGoal(scope)
+	if g.ThreadID != "ses_interrupted" {
+		t.Fatalf("expected ThreadID=ses_interrupted after interruption, got %q", g.ThreadID)
+	}
+	if g.Status != GoalStatusActive {
+		t.Fatalf("expected goal to remain active after interruption, got %s", g.Status)
+	}
+
+	engine.SetSessionActivityChecker(&sessionGateStub{})
+	engine.SetLLMRunner(&llmRunnerStub{
+		result: llm.RunResult{Reply: "resumed", NextThreadID: "ses_resumed", GoalDone: true},
+	})
+	err = engine.ExecuteGoal(context.Background(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal retry: %v", err)
+	}
+
+	g2, _ := store.GetGoal(scope)
+	if g2.Status != GoalStatusComplete {
+		t.Fatalf("expected complete, got %s", g2.Status)
+	}
+	if g2.ThreadID != "ses_resumed" {
+		t.Fatalf("expected ThreadID=ses_resumed, got %q", g2.ThreadID)
+	}
+}
+
 func TestStore_ResetRunningGoals(t *testing.T) {
 	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
 	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))

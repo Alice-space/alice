@@ -521,15 +521,16 @@ func (r *blockingGoalRunner) Run(ctx context.Context, req llm.RunRequest) (llm.R
 	idx := r.calls
 	r.calls++
 	r.started <- struct{}{}
+	var result llm.RunResult
+	if idx < len(r.results) {
+		result = r.results[idx]
+	}
 	if r.unblock != nil {
 		select {
 		case <-ctx.Done():
-			return llm.RunResult{}, ctx.Err()
+			return result, ctx.Err()
 		case <-r.unblock:
 		}
 	}
-	if idx < len(r.results) {
-		return r.results[idx], nil
-	}
-	return llm.RunResult{}, nil
+	return result, nil
 }

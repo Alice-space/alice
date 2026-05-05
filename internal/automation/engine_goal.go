@@ -108,6 +108,15 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 			OnProgress: e.goalProgressDispatcher(runCtx, goal),
 		})
 		runCancel(nil)
+		nextThreadID := strings.TrimSpace(result.NextThreadID)
+		if nextThreadID != "" && nextThreadID != threadID {
+			if _, patchErr := e.store.PatchGoal(scope, func(g *GoalTask) error {
+				g.ThreadID = nextThreadID
+				return nil
+			}); patchErr != nil {
+				logging.Warnf("goal persist thread_id failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, patchErr)
+			}
+		}
 		if err != nil {
 			if goalCtx.Err() != nil {
 				logging.Infof("goal interrupted scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
@@ -121,15 +130,6 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 			return err
 		}
 		logging.Infof("goal iteration done scope=%s:%s done=%v next_thread=%s", goal.Scope.Kind, goal.Scope.ID, result.GoalDone, strings.TrimSpace(result.NextThreadID))
-		nextThreadID := strings.TrimSpace(result.NextThreadID)
-		if nextThreadID != "" && nextThreadID != threadID {
-			if _, patchErr := e.store.PatchGoal(scope, func(g *GoalTask) error {
-				g.ThreadID = nextThreadID
-				return nil
-			}); patchErr != nil {
-				logging.Warnf("goal persist thread_id failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, patchErr)
-			}
-		}
 		if result.GoalDone {
 			e.markGoalComplete(goal)
 			return nil
