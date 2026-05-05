@@ -326,7 +326,7 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 	if _, err := automationStore.CreateTask(automation.Task{
 		ID:       "task_active",
 		Title:    "heartbeat",
-		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "chat_id:oc_chat|thread:omt_2"},
 		Route:    automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:  automation.Actor{OpenID: "ou_actor"},
 		Schedule: automation.Schedule{EverySeconds: 600},
@@ -338,7 +338,7 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 	if _, err := automationStore.CreateTask(automation.Task{
 		ID:       "task_paused",
 		Title:    "daily report",
-		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"},
+		Scope:    automation.Scope{Kind: automation.ScopeKindChat, ID: "chat_id:oc_chat|thread:omt_2"},
 		Route:    automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
 		Creator:  automation.Actor{OpenID: "ou_actor"},
 		Schedule: automation.Schedule{EverySeconds: 3600},

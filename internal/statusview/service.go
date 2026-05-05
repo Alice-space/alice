@@ -99,11 +99,17 @@ func VisibilityKey(req Request) string {
 func AutomationScope(req Request) (automation.Scope, error) {
 	chatType := strings.ToLower(strings.TrimSpace(req.ChatType))
 	if chatType == "group" || chatType == "topic_group" {
-		receiveID := strings.TrimSpace(req.ReceiveID)
-		if receiveID == "" {
-			return automation.Scope{}, fmt.Errorf("missing chat_id for group scope")
+		scopeID := strings.TrimSpace(req.SessionKey)
+		if scopeID != "" {
+			scopeID = sessionkey.WithoutMessage(scopeID)
 		}
-		return automation.Scope{Kind: automation.ScopeKindChat, ID: receiveID}, nil
+		if scopeID == "" {
+			scopeID = strings.TrimSpace(req.ReceiveID)
+		}
+		if scopeID == "" {
+			return automation.Scope{}, fmt.Errorf("missing scope id for group")
+		}
+		return automation.Scope{Kind: automation.ScopeKindChat, ID: scopeID}, nil
 	}
 	actorID := strings.TrimSpace(req.SenderUserID)
 	if actorID == "" {

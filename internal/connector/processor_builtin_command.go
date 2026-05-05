@@ -230,7 +230,7 @@ func buildGoalScopeFromJob(job Job) automation.Scope {
 func getScopeLabel(job Job) string {
 	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
 	if chatType == "group" || chatType == "topic_group" {
-		sk := sessionKeyForJob(job)
+		sk := sessionkey.WithoutMessage(sessionKeyForJob(job))
 		if isWorkSessionKey(sk) {
 			return "work:" + sk
 		}
