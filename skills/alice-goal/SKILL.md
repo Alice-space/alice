@@ -1,27 +1,22 @@
 ---
 name: alice-goal
-description: 在当前会话中设定并持续执行一个长期目标。执行过程中自动续跑，直到目标完成、超时或被暂停。
+description: 在当前 work session 中设定并持续执行长期目标
 ---
 
-# Alice 目标执行器
+# Alice Goal
 
-使用 `scripts/alice-goal.sh` 管理当前会话的长期目标。
+在当前 work session 中设定并自动迭代执行的长期目标。
 
-## 常用命令
-- 查看当前目标： `scripts/alice-goal.sh get`
-- 创建新目标： `scripts/alice-goal.sh create '{"objective":"为项目补充单元测试"}'`
-- 创建带截止时间： `scripts/alice-goal.sh create '{"objective":"...","deadline_in":"48h"}'`
-- 暂停： `scripts/alice-goal.sh pause`
-- 恢复： `scripts/alice-goal.sh resume`
-- 标记完成： `scripts/alice-goal.sh complete`
-- 清除： `scripts/alice-goal.sh clear`
+## 命令
 
-## 目标字段
-| 字段 | 类型 | 必须 | 说明 |
-|------|------|------|------|
-| `objective` | string | 是 | 目标描述 |
-| `deadline_in` | string | 否 | 截止时间，如 "48h" "1h30m"，默认48h |
+- `scripts/alice-goal.sh get` - 查看当前目标
+- `scripts/alice-goal.sh create '{"objective":"为项目补充单元测试","deadline_in":"48h"}'` - 创建目标（deadline_in 可选，默认 48h）
+- `scripts/alice-goal.sh pause` - 暂停
+- `scripts/alice-goal.sh resume` - 恢复
+- `scripts/alice-goal.sh complete` - 确认完成后调用（仅当全部 subgoal 都已达成时）
+- `scripts/alice-goal.sh clear` - 删除目标
 
-## 使用建议
-1. 目标创建后自动开始执行。
-2. 只有确实完成时才调用 complete。到达截止时间后系统自动超时收尾。
+## 规则
+
+1. 目标在创建后自动开始执行。只有确认所有要求都已满足时才调用 complete。
+2. 截止时间到期后系统自动超时收尾。
