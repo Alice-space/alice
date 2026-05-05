@@ -24,7 +24,6 @@ const sessionCommandName = "/session"
 const cdCommandName = "/cd"
 const lsCommandName = "/ls"
 const pwdCommandName = "/pwd"
-const goalCommandName = "/goal"
 const builtinHelpCardTitle = "Alice 帮助"
 const builtinStatusCardTitle = "Alice 当前状态"
 const builtinWorkThreadCardTitle = "Alice Work Thread"
@@ -56,17 +55,13 @@ func (p *Processor) processBuiltinCommand(ctx context.Context, job Job) (bool, J
 	if isPwdCommand(job.Text) {
 		return true, p.processPwdCommand(ctx, job)
 	}
-	if isGoalCommand(job.Text) {
-		return true, p.processGoalCommand(ctx, job)
-	}
 	return false, JobProcessCompleted
 }
 
 func isBuiltinCommandText(text string) bool {
 	return isHelpCommand(text) || isStatusCommand(text) || isClearCommand(text) ||
 		isStopCommand(text) || isSessionCommand(text) ||
-		isCdCommand(text) || isLsCommand(text) || isPwdCommand(text) ||
-		isGoalCommand(text)
+		isCdCommand(text) || isLsCommand(text) || isPwdCommand(text)
 }
 
 func isContextualBuiltinCommand(text string) bool {
@@ -75,7 +70,7 @@ func isContextualBuiltinCommand(text string) bool {
 }
 
 func isReadOnlyBuiltinCommand(text string) bool {
-	return isHelpCommand(text) || isStatusCommand(text) || isGoalCommand(text) || isPwdCommand(text)
+	return isHelpCommand(text) || isStatusCommand(text) || isPwdCommand(text)
 }
 
 func isHelpCommand(text string) bool {
@@ -142,75 +137,6 @@ func isPwdCommand(text string) bool {
 	return strings.EqualFold(strings.TrimSpace(fields[0]), pwdCommandName)
 }
 
-func isGoalCommand(text string) bool {
-	fields := strings.Fields(strings.TrimSpace(text))
-	if len(fields) == 0 {
-		return false
-	}
-	return strings.EqualFold(strings.TrimSpace(fields[0]), goalCommandName)
-}
-
-func (p *Processor) processGoalCommand(ctx context.Context, job Job) JobProcessState {
-	if strings.TrimSpace(job.Scene) != jobSceneWork {
-		reply := "目标功能仅在 work 模式下可用。\n请使用 `@bot #work /goal` 在 work thread 中创建和管理目标。"
-		replyJob := job
-		replyJob.Scene = jobSceneChat
-		replyJob.CreateFeishuThread = false
-		if err := p.replies.respond(ctx, replyJob, reply); err != nil {
-			logging.Errorf("send builtin goal scope reply failed event_id=%s: %v", job.EventID, err)
-		}
-		return JobProcessCompleted
-	}
-	reply := p.buildGoalStatusMarkdown(job)
-	replyJob := job
-	if strings.TrimSpace(replyJob.Scene) != jobSceneWork {
-		replyJob.Scene = jobSceneChat
-		replyJob.CreateFeishuThread = false
-	}
-	if err := p.replies.respond(ctx, replyJob, reply); err != nil {
-		logging.Errorf("send builtin goal reply failed event_id=%s: %v", job.EventID, err)
-	}
-	return JobProcessCompleted
-}
-
-func (p *Processor) buildGoalStatusMarkdown(job Job) string {
-	snapshot := p.runtimeSnapshot()
-	if snapshot.statusService == nil {
-		return "目标状态查询暂不可用。"
-	}
-	scope := buildGoalScopeFromJob(job)
-	goal, err := snapshot.statusService.GetGoal(scope)
-	if err != nil {
-		return "当前会话没有设置目标。\n\n用 `/goal <目标描述>` 来创建一个长期目标，Alice 会自动持续执行直到完成。"
-	}
-	statusText := map[automation.GoalStatus]string{
-		automation.GoalStatusActive:   "执行中",
-		automation.GoalStatusPaused:   "已暂停",
-		automation.GoalStatusComplete: "已完成",
-		automation.GoalStatusTimeout:  "已超时",
-	}[goal.Status]
-	if statusText == "" {
-		statusText = string(goal.Status)
-	}
-	elapsed := time.Since(goal.CreatedAt)
-	remaining := time.Until(goal.DeadlineAt)
-	lines := []string{
-		"**目标**",
-		"",
-		fmt.Sprintf("- scope: `%s`", getScopeLabel(job)),
-		"状态: " + statusText,
-		"目标: " + goal.Objective,
-		"已用时间: " + formatDurationShort(elapsed),
-	}
-	if !goal.DeadlineAt.IsZero() {
-		lines = append(lines, "截止时间: "+goal.DeadlineAt.Format("2006-01-02 15:04"))
-		if remaining > 0 {
-			lines = append(lines, "剩余时间: "+formatDurationShort(remaining))
-		}
-	}
-	return strings.Join(lines, "  \n")
-}
-
 func buildGoalScopeFromJob(job Job) automation.Scope {
 	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
 	if chatType == "group" || chatType == "topic_group" {
@@ -225,22 +151,6 @@ func buildGoalScopeFromJob(job Job) automation.Scope {
 		actorID = strings.TrimSpace(job.SenderOpenID)
 	}
 	return automation.Scope{Kind: automation.ScopeKindUser, ID: actorID}
-}
-
-func getScopeLabel(job Job) string {
-	chatType := strings.ToLower(strings.TrimSpace(job.ChatType))
-	if chatType == "group" || chatType == "topic_group" {
-		sk := sessionkey.WithoutMessage(sessionKeyForJob(job))
-		if isWorkSessionKey(sk) {
-			return "work:" + sk
-		}
-		return "chat:" + sk
-	}
-	actorID := strings.TrimSpace(job.SenderUserID)
-	if actorID == "" {
-		actorID = strings.TrimSpace(job.SenderOpenID)
-	}
-	return "user:" + actorID
 }
 
 func formatDurationShort(d time.Duration) string {
@@ -618,6 +528,36 @@ func (p *Processor) buildBuiltinStatusMarkdown(job Job) string {
 		for _, task := range result.Tasks {
 			lines = append(lines, formatBuiltinStatusTaskLine(task))
 		}
+	}
+
+	lines = append(lines, "", "### 当前目标", "")
+	goalScope := buildGoalScopeFromJob(job)
+	if goal, err := snapshot.statusService.GetGoal(goalScope); err == nil {
+		statusText := "未知"
+		switch goal.Status {
+		case automation.GoalStatusActive:
+			statusText = "执行中"
+		case automation.GoalStatusPaused:
+			statusText = "已暂停"
+		case automation.GoalStatusComplete:
+			statusText = "已完成"
+		case automation.GoalStatusTimeout:
+			statusText = "已超时"
+		case automation.GoalStatusWaitingForSession:
+			statusText = "等待 session"
+		}
+		lines = append(lines, fmt.Sprintf("- 状态: %s", statusText))
+		lines = append(lines, fmt.Sprintf("- 目标: %s", goal.Objective))
+		lines = append(lines, fmt.Sprintf("- 已用时间: %s", formatDurationShort(time.Since(goal.CreatedAt))))
+		if !goal.DeadlineAt.IsZero() {
+			remaining := time.Until(goal.DeadlineAt)
+			lines = append(lines, fmt.Sprintf("- 截止时间: %s", goal.DeadlineAt.Format("2006-01-02 15:04")))
+			if remaining > 0 {
+				lines = append(lines, fmt.Sprintf("- 剩余时间: %s", formatDurationShort(remaining)))
+			}
+		}
+	} else {
+		lines = append(lines, "- 未设置目标")
 	}
 	return strings.Join(lines, "\n")
 }

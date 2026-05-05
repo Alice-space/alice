@@ -468,7 +468,7 @@ func TestApp_OnMessageReceive_BuiltinCommandNotSteeredInActiveSession(t *testing
 			Message: &larkim.EventMessage{
 				MessageId:   strPtr("om_builtin"),
 				MessageType: strPtr("text"),
-				Content:     strPtr(`{"text":"/goal"}`),
+				Content:     strPtr(`{"text":"/pwd"}`),
 				ChatId:      strPtr("oc_chat"),
 				ChatType:    strPtr("p2p"),
 			},
