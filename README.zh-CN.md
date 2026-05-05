@@ -4,9 +4,9 @@
 >
 > 同一个 AI 会话，随时随地。终端 ↔ 飞书，没有云锁定。支持 OpenCode（DeepSeek V4）、Codex、Claude、Gemini、Kimi。
 
-[![Dev CI](https://github.com/Alice-space/ALICE/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/ALICE/actions/workflows/ci.yml)
-[![Main Release](https://github.com/Alice-space/ALICE/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/ALICE/actions/workflows/main-release.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/ALICE)](https://goreportcard.com/report/github.com/Alice-space/ALICE)
+[![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
+[![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/alice)](https://goreportcard.com/report/github.com/Alice-space/alice)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [English](./README.md)
@@ -26,16 +26,16 @@ Alice 以本地多 bot runtime 运行 — 通过 WebSocket 接收消息，路由
 
 ## 文档
 
-完整文档在 **[alice-space.github.io/alice](https://alice-space.github.io/ALICE/zh/)**。
+完整文档在 **[alice-space.github.io/alice](https://alice-space.github.io/alice/zh/)**。
 
 | | |
 |--|--|
-| [教程](https://alice-space.github.io/ALICE/zh/tutorials/quick-start.html) | 5 分钟跑起来 |
-| [操作指南](https://alice-space.github.io/ALICE/zh/how-to/install.html) | 按目标查找的操作步骤 |
-| [配置参考](https://alice-space.github.io/ALICE/zh/reference/configuration.html) | 所有配置项详解 |
-| [架构文档](https://alice-space.github.io/ALICE/zh/development/architecture.html) | 代码级架构 |
+| [教程](https://alice-space.github.io/alice/zh/tutorials/quick-start.html) | 5 分钟跑起来 |
+| [操作指南](https://alice-space.github.io/alice/zh/how-to/install.html) | 按目标查找的操作步骤 |
+| [配置参考](https://alice-space.github.io/alice/zh/reference/configuration.html) | 所有配置项详解 |
+| [架构文档](https://alice-space.github.io/alice/zh/development/architecture.html) | 代码级架构 |
 
-[English »](https://alice-space.github.io/ALICE/en/)
+[English »](https://alice-space.github.io/alice/en/)
 
 ## 快速开始
 

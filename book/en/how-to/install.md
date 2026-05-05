@@ -42,7 +42,7 @@ After installation, run `alice setup` to initialize the config and skills direct
 ## Build from Source
 
 ```bash
-git clone https://github.com/Alice-space/ALICE.git
+git clone https://github.com/Alice-space/alice.git
 cd alice
 go build -o bin/alice ./cmd/connector
 ```

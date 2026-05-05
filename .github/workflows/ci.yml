@@ -69,7 +69,7 @@ jobs:
 
           CGO_ENABLED=0 GOOS="${GOOS}" GOARCH="${GOARCH}" \
             go build -trimpath \
-              -ldflags "-s -w -X github.com/Alice-space/ALICE/internal/config.defaultAliceHomeName=.alice-dev -X github.com/Alice-space/ALICE/internal/buildinfo.Version=${VERSION}" \
+              -ldflags "-s -w -X github.com/Alice-space/alice/internal/config.defaultAliceHomeName=.alice-dev -X github.com/Alice-space/alice/internal/buildinfo.Version=${VERSION}" \
               -o "${OUT_PATH}" ./cmd/connector
 
           tar -C "${DIST_DIR}" -czf "${DIST_DIR}/${FILE_BASE}.tar.gz" "${BIN_FILE}"

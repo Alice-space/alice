@@ -4,10 +4,10 @@
 >
 > Same AI session, anywhere. Terminal ↔ Feishu. No cloud lock-in. Works with OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
 
-[![Dev CI](https://github.com/Alice-space/ALICE/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/ALICE/actions/workflows/ci.yml)
-[![Main Release](https://github.com/Alice-space/ALICE/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/ALICE/actions/workflows/main-release.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/ALICE)](https://goreportcard.com/report/github.com/Alice-space/ALICE)
-[![Go Reference](https://pkg.go.dev/badge/github.com/Alice-space/ALICE.svg)](https://pkg.go.dev/github.com/Alice-space/ALICE)
+[![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
+[![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/alice)](https://goreportcard.com/report/github.com/Alice-space/alice)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Alice-space/alice.svg)](https://pkg.go.dev/github.com/Alice-space/alice)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [中文](./README.zh-CN.md)
@@ -27,16 +27,16 @@ Runs as a local multi-bot runtime: receives Feishu messages over WebSocket, rout
 
 ## Documentation
 
-Full documentation is at **[alice-space.github.io/alice](https://alice-space.github.io/ALICE/)**.
+Full documentation is at **[alice-space.github.io/alice](https://alice-space.github.io/alice/)**.
 
 | | |
 |--|--|
-| [Tutorials](https://alice-space.github.io/ALICE/en/tutorials/quick-start.html) | Get Alice running in 5 minutes |
-| [How-To Guides](https://alice-space.github.io/ALICE/en/how-to/install.html) | Task-focused recipes |
-| [Configuration Reference](https://alice-space.github.io/ALICE/en/reference/configuration.html) | Every config key documented |
-| [Architecture](https://alice-space.github.io/ALICE/en/development/architecture.html) | Code-level architecture |
+| [Tutorials](https://alice-space.github.io/alice/en/tutorials/quick-start.html) | Get Alice running in 5 minutes |
+| [How-To Guides](https://alice-space.github.io/alice/en/how-to/install.html) | Task-focused recipes |
+| [Configuration Reference](https://alice-space.github.io/alice/en/reference/configuration.html) | Every config key documented |
+| [Architecture](https://alice-space.github.io/alice/en/development/architecture.html) | Code-level architecture |
 
-[中文文档 »](https://alice-space.github.io/ALICE/zh/)
+[中文文档 »](https://alice-space.github.io/alice/zh/)
 
 ## Quick Start
 

@@ -29,7 +29,7 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 
 **From source:**
 ```bash
-git clone https://github.com/Alice-space/ALICE.git
+git clone https://github.com/Alice-space/alice.git
 cd alice
 go build -o bin/alice ./cmd/connector
 ```

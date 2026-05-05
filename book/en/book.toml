@@ -7,10 +7,10 @@ title = "Alice Docs"
 
 [output.html]
 mathjax-support = false
-git-repository-url = "https://github.com/Alice-space/ALICE"
+git-repository-url = "https://github.com/Alice-space/alice"
 git-repository-icon = "fa-github"
-edit-url-template = "https://github.com/Alice-space/ALICE/edit/dev/book/en/{path}"
-site-url = "/ALICE/en/"
+edit-url-template = "https://github.com/Alice-space/alice/edit/dev/book/en/{path}"
+site-url = "/alice/en/"
 additional-js = ["../lang-switcher.js"]
 
 [output.html.search]
