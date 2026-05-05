@@ -54,12 +54,13 @@ type LLMProfileConfig struct {
 }
 
 type GroupSceneConfig struct {
-	Enabled            bool   `mapstructure:"enabled"`
-	TriggerTag         string `mapstructure:"trigger_tag"`
-	SessionScope       string `mapstructure:"session_scope"`
-	LLMProfile         string `mapstructure:"llm_profile"`
-	NoReplyToken       string `mapstructure:"no_reply_token"`
-	CreateFeishuThread bool   `mapstructure:"create_feishu_thread"`
+	Enabled              bool   `mapstructure:"enabled"`
+	TriggerTag           string `mapstructure:"trigger_tag"`
+	SessionScope         string `mapstructure:"session_scope"`
+	LLMProfile           string `mapstructure:"llm_profile"`
+	NoReplyToken         string `mapstructure:"no_reply_token"`
+	CreateFeishuThread   bool   `mapstructure:"create_feishu_thread"`
+	DisableIdentityHints *bool  `mapstructure:"disable_identity_hints"`
 }
 
 type GroupScenesConfig struct {

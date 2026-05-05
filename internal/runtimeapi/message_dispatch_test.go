@@ -152,7 +152,7 @@ func TestDispatchImage_ChatSceneRepliesDirectly(t *testing.T) {
 		ReceiveID:       "oc_chat",
 		ChatType:        "group",
 		SourceMessageID: "om_src",
-		SessionKey:      "chat_id:oc_chat|scene:chat",
+		SessionKey:      "chat_id:oc_chat",
 	}, "img_123")
 	if err != nil {
 		t.Fatalf("dispatchImage failed: %v", err)
@@ -181,7 +181,7 @@ func TestDispatchText_ChatSceneRepliesDirectly(t *testing.T) {
 		ReceiveID:       "oc_chat",
 		ChatType:        "group",
 		SourceMessageID: "om_src",
-		SessionKey:      "chat_id:oc_chat|scene:chat",
+		SessionKey:      "chat_id:oc_chat",
 	}, "caption")
 	if err != nil {
 		t.Fatalf("dispatchText failed: %v", err)
@@ -207,7 +207,7 @@ func TestDispatchFile_ChatSceneRepliesDirectly(t *testing.T) {
 		ReceiveID:       "oc_chat",
 		ChatType:        "group",
 		SourceMessageID: "om_src",
-		SessionKey:      "chat_id:oc_chat|scene:chat",
+		SessionKey:      "chat_id:oc_chat",
 	}, "file_123")
 	if err != nil {
 		t.Fatalf("dispatchFile failed: %v", err)
@@ -234,7 +234,7 @@ func TestDispatchImage_WorkSceneKeepsThreadReply(t *testing.T) {
 		ReceiveID:       "oc_chat",
 		ChatType:        "group",
 		SourceMessageID: "om_src",
-		SessionKey:      "chat_id:oc_chat|scene:work|thread:omt_1",
+		SessionKey:      "chat_id:oc_chat|thread:omt_1",
 	}, "img_123")
 	if err != nil {
 		t.Fatalf("dispatchImage failed: %v", err)

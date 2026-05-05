@@ -44,10 +44,10 @@ func TestApp_OnMessageReceive_P2PMessagesReuseChatSessionKey(t *testing.T) {
 
 	job1 := <-app.queue
 	job2 := <-app.queue
-	if job1.SessionKey != "chat_id:oc_chat" {
+	if job1.SessionKey != "chat_id:oc_chat|message:om_msg_1" {
 		t.Fatalf("unexpected first session key: %s", job1.SessionKey)
 	}
-	if job2.SessionKey != "chat_id:oc_chat" {
+	if job2.SessionKey != "chat_id:oc_chat|message:om_msg_2" {
 		t.Fatalf("unexpected second session key: %s", job2.SessionKey)
 	}
 	if job1.ResourceScopeKey != "chat_id:oc_chat" || job2.ResourceScopeKey != "chat_id:oc_chat" {
@@ -56,7 +56,7 @@ func TestApp_OnMessageReceive_P2PMessagesReuseChatSessionKey(t *testing.T) {
 	if job1.SessionVersion != 1 {
 		t.Fatalf("unexpected first session version: %d", job1.SessionVersion)
 	}
-	if job2.SessionVersion != 2 {
+	if job2.SessionVersion != 1 {
 		t.Fatalf("unexpected second session version: %d", job2.SessionVersion)
 	}
 }
@@ -130,10 +130,10 @@ func TestApp_OnMessageReceive_GroupThreadReplyToBotReplyReusesOriginalSessionKey
 	}
 
 	secondJob := <-app.queue
-	if secondJob.SessionKey != firstJob.SessionKey {
-		t.Fatalf("expected thread reply to reuse original session, got %s vs %s", secondJob.SessionKey, firstJob.SessionKey)
+	if secondJob.SessionKey != "chat_id:oc_chat|thread:omt_group_thread" {
+		t.Fatalf("unexpected thread reply session key, got %s vs %s", secondJob.SessionKey, firstJob.SessionKey)
 	}
-	if secondJob.SessionVersion != 2 {
+	if secondJob.SessionVersion != 1 {
 		t.Fatalf("unexpected second session version: %d", secondJob.SessionVersion)
 	}
 	if !processor.ProcessJob(context.Background(), secondJob) {
@@ -142,7 +142,10 @@ func TestApp_OnMessageReceive_GroupThreadReplyToBotReplyReusesOriginalSessionKey
 	if len(codex.receivedThreadIDs) != 2 {
 		t.Fatalf("expected 2 llm calls, got %d", len(codex.receivedThreadIDs))
 	}
-	if codex.receivedThreadIDs[1] != "thread_1" {
-		t.Fatalf("expected second call to resume thread_1, got %q", codex.receivedThreadIDs[1])
+	if codex.receivedThreadIDs[0] != "" {
+		t.Fatalf("expected first call to be fresh, got thread %q", codex.receivedThreadIDs[0])
+	}
+	if codex.receivedThreadIDs[1] != "" {
+		t.Fatalf("expected second call to be fresh (new session), got thread %q", codex.receivedThreadIDs[1])
 	}
 }

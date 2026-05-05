@@ -88,6 +88,10 @@ func normalizeGroupScenes(in GroupScenesConfig) GroupScenesConfig {
 	if in.Chat.SessionScope == "" {
 		in.Chat.SessionScope = GroupSceneSessionPerChat
 	}
+	if in.Chat.DisableIdentityHints == nil {
+		defaultFalse := false
+		in.Chat.DisableIdentityHints = &defaultFalse
+	}
 
 	in.Work.TriggerTag = strings.TrimSpace(in.Work.TriggerTag)
 	in.Work.SessionScope = strings.ToLower(strings.TrimSpace(in.Work.SessionScope))
@@ -95,6 +99,10 @@ func normalizeGroupScenes(in GroupScenesConfig) GroupScenesConfig {
 	in.Work.NoReplyToken = strings.TrimSpace(in.Work.NoReplyToken)
 	if in.Work.SessionScope == "" {
 		in.Work.SessionScope = GroupSceneSessionPerThread
+	}
+	if in.Work.DisableIdentityHints == nil {
+		defaultTrue := true
+		in.Work.DisableIdentityHints = &defaultTrue
 	}
 	return in
 }
@@ -107,6 +115,10 @@ func normalizePrivateScenes(in GroupScenesConfig) GroupScenesConfig {
 	if in.Chat.SessionScope == "" {
 		in.Chat.SessionScope = GroupSceneSessionPerUser
 	}
+	if in.Chat.DisableIdentityHints == nil {
+		defaultFalse := false
+		in.Chat.DisableIdentityHints = &defaultFalse
+	}
 
 	in.Work.TriggerTag = strings.TrimSpace(in.Work.TriggerTag)
 	in.Work.SessionScope = strings.ToLower(strings.TrimSpace(in.Work.SessionScope))
@@ -114,6 +126,10 @@ func normalizePrivateScenes(in GroupScenesConfig) GroupScenesConfig {
 	in.Work.NoReplyToken = strings.TrimSpace(in.Work.NoReplyToken)
 	if in.Work.SessionScope == "" {
 		in.Work.SessionScope = GroupSceneSessionPerMessage
+	}
+	if in.Work.DisableIdentityHints == nil {
+		defaultTrue := true
+		in.Work.DisableIdentityHints = &defaultTrue
 	}
 	return in
 }

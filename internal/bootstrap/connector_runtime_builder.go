@@ -144,7 +144,9 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 	processor.SetImmediateFeedback(b.cfg.ImmediateFeedbackMode, b.cfg.ImmediateFeedbackReaction)
 	processor.SetWorkspaceDir(strings.TrimSpace(b.cfg.WorkspaceDir))
 	processor.SetHeartbeatShowShellCommands(b.cfg.ShowShellCommands == nil || *b.cfg.ShowShellCommands)
-	processor.SetDisableIdentityHints(b.cfg.DisableIdentityHints != nil && *b.cfg.DisableIdentityHints)
+	chatDisable := b.cfg.GroupScenes.Chat.DisableIdentityHints != nil && *b.cfg.GroupScenes.Chat.DisableIdentityHints
+	workDisable := b.cfg.GroupScenes.Work.DisableIdentityHints != nil && *b.cfg.GroupScenes.Work.DisableIdentityHints
+	processor.SetSceneIdentityHints(chatDisable, workDisable)
 	processor.SetRuntimeAPI(
 		runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
 		b.resolveRuntimeAPIToken(),
@@ -187,7 +189,6 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 		runtimeapi.EnvBin:     ResolveRuntimeBinary(b.cfg.WorkspaceDir),
 	})
 	automation.SetGoalTemplates(
-		b.loadEmbeddedGoalTemplate("goal_start.tmpl"),
 		b.loadEmbeddedGoalTemplate("goal_continue.tmpl"),
 		b.loadEmbeddedGoalTemplate("goal_timeout.tmpl"),
 	)

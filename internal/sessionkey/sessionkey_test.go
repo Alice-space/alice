@@ -12,7 +12,7 @@ func TestBuild(t *testing.T) {
 }
 
 func TestVisibilityKey(t *testing.T) {
-	if got := VisibilityKey("chat_id:oc_chat|scene:work|thread:omt_1"); got != "chat_id:oc_chat" {
+	if got := VisibilityKey("chat_id:oc_chat|thread:omt_1"); got != "chat_id:oc_chat" {
 		t.Fatalf("unexpected visibility key: %q", got)
 	}
 }
@@ -23,9 +23,10 @@ func TestThreadScope(t *testing.T) {
 		want  string
 	}{
 		{"chat_id:oc_chat", ""},
-		{"chat_id:oc_chat|scene:work|seed:om_AAA", "|seed:om_AAA"},
-		{"chat_id:oc_chat|scene:work|thread:omt_1", "|thread:omt_1"},
-		// seed takes precedence over thread
+		// work key has no seed/thread token recognized by ThreadScope
+		{"chat_id:oc_chat|work:om_AAA", ""},
+		{"chat_id:oc_chat|thread:omt_1", "|thread:omt_1"},
+		// seed token (when present) takes precedence over thread
 		{"chat_id:oc_chat|seed:om_AAA|thread:omt_1", "|seed:om_AAA"},
 		{"", ""},
 	}
@@ -37,7 +38,7 @@ func TestThreadScope(t *testing.T) {
 }
 
 func TestWithoutMessage(t *testing.T) {
-	if got := WithoutMessage("chat_id:oc_chat|scene:work|thread:omt_1|message:om_2"); got != "chat_id:oc_chat|scene:work|thread:omt_1" {
+	if got := WithoutMessage("chat_id:oc_chat|thread:omt_1|message:om_2"); got != "chat_id:oc_chat|thread:omt_1" {
 		t.Fatalf("unexpected scoped session key: %q", got)
 	}
 }

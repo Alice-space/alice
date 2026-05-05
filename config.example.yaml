@@ -212,6 +212,11 @@ bots:
         no_reply_token: "[[NO_REPLY]]"
         # Whether to create a Feishu thread for the reply.
         create_feishu_thread: false
+        # Whether to disable identity hints in chat mode LLM prompts.
+        # When false (default), messages include identity context like `Name`说：
+        # and @mention rules. Set to true to send raw message text.
+        # Default: false
+        disable_identity_hints: false
       # Work mode: triggered by @bot + #work tag (customizable below).
       # Messages in the same thread continue in work context.
       # Empty "@Alice #work" creates a work thread without calling the LLM.
@@ -227,6 +232,10 @@ bots:
         # Whether to create a Feishu thread for the first reply.
         create_feishu_thread: true
         no_reply_token: ""
+        # Whether to disable identity hints in work mode LLM prompts.
+        # When true, messages are sent as raw text without identity formatting.
+        # Default: true (focused work context)
+        disable_identity_hints: true
 
     # ── Private message scene router ──────────────────────────────────────
     # Controls how private (direct) messages are routed to chat or work mode.
@@ -299,13 +308,6 @@ bots:
     # displayed while the LLM is running.
     # Default: true
     show_shell_commands: true
-
-    # Whether to disable identity hints in the prompt sent to the LLM.
-    # When false (default), messages include identity context like `Name`说：
-    # and @提及规则 mention rule hints. Set to true to send raw message text
-    # without identity formatting.
-    # Default: false
-    disable_identity_hints: false
 
 # ── Logging ────────────────────────────────────────────────────────────────
 # Log level: debug | info | warn | error

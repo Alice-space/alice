@@ -27,9 +27,6 @@ func (a *App) resolveJobSessionKey(job *Job, message *larkim.EventMessage) {
 	if resolved == "" {
 		return
 	}
-	if a.processor != nil {
-		a.processor.rememberSessionAliases(resolved, candidates...)
-	}
 
 	original := strings.TrimSpace(job.SessionKey)
 	if original == resolved {
@@ -84,7 +81,7 @@ func (a *App) findExistingSessionKey(candidates []string) string {
 
 	if a.processor != nil {
 		for _, candidate := range normalized {
-			if resolved := strings.TrimSpace(a.processor.resolveCanonicalSessionKey(candidate)); resolved != "" {
+			if resolved := strings.TrimSpace(a.processor.resolveSessionLookup(candidate)); resolved != "" {
 				return resolved
 			}
 		}
@@ -272,7 +269,7 @@ func (a *App) findActiveWorkSessionKey(receiveIDType, receiveID string) string {
 	a.state.mu.Lock()
 	defer a.state.mu.Unlock()
 	for sessionKey := range a.state.active {
-		if strings.HasPrefix(strings.TrimSpace(sessionKey), baseKey) && isWorkSceneSessionKey(sessionKey) {
+		if strings.HasPrefix(strings.TrimSpace(sessionKey), baseKey) && isWorkSessionKey(sessionKey) {
 			return sessionKey
 		}
 	}

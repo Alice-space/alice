@@ -261,12 +261,11 @@ func (p *Processor) rememberReplySessionMessage(job Job, messageID string) {
 	if messageID == "" {
 		return
 	}
-	baseKey := buildSessionKey(job.ReceiveIDType, job.ReceiveID)
 	sessionKey := sessionKeyForJob(job)
-	if baseKey == "" || sessionKey == "" {
+	if sessionKey == "" {
 		return
 	}
-	p.rememberSessionAliases(sessionKey, baseKey+messageAliasToken+messageID)
+	p.bindReplyMessage(sessionKey, messageID)
 }
 
 func (p *Processor) markFinalReplyDone(ctx context.Context, job Job, messageID string) {

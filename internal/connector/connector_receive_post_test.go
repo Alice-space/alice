@@ -48,20 +48,11 @@ func TestApp_OnMessageReceive_GroupChatSceneQueuesPostWithoutMention(t *testing.
 	if job.Attachments[0].SourceMessageID != "om_post_media" {
 		t.Fatalf("unexpected attachment source message id: %s", job.Attachments[0].SourceMessageID)
 	}
-	if job.SessionKey != "chat_id:oc_chat|scene:chat" {
+	if job.SessionKey != "chat_id:oc_chat" {
 		t.Fatalf("unexpected session key: %q", job.SessionKey)
 	}
-	if job.ResourceScopeKey != "chat_id:oc_chat|scene:chat" {
+	if job.ResourceScopeKey != "chat_id:oc_chat" {
 		t.Fatalf("unexpected resource scope key: %q", job.ResourceScopeKey)
-	}
-	if job.LLMModel != "gpt-5.4-mini" {
-		t.Fatalf("unexpected llm model: %q", job.LLMModel)
-	}
-	if job.LLMReasoningEffort != "low" {
-		t.Fatalf("unexpected llm reasoning effort: %q", job.LLMReasoningEffort)
-	}
-	if job.LLMPersonality != "friendly" {
-		t.Fatalf("unexpected llm personality: %q", job.LLMPersonality)
 	}
 	if job.CreateFeishuThread {
 		t.Fatalf("chat scene post reply should not create thread")

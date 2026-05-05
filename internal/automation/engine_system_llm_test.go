@@ -174,7 +174,7 @@ func TestEngine_RunUserTask_RunLLM_WorkScene(t *testing.T) {
 		Creator:    Actor{UserID: "ou_actor"},
 		Schedule:   Schedule{EverySeconds: 60},
 		Prompt:     "请总结当前状态",
-		SessionKey: "chat_id:oc_chat|scene:work|seed:om_alpha",
+		SessionKey: "chat_id:oc_chat|work:om_alpha",
 	})
 	if err != nil {
 		t.Fatalf("create task failed: %v", err)
@@ -202,7 +202,7 @@ func TestEngine_RunUserTask_RunLLM_WorkScene(t *testing.T) {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm scene: %q", runner.lastReq.Scene)
 	}
-	if got := runner.lastReq.Env["ALICE_SESSION_KEY"]; got != "chat_id:oc_chat|scene:work|seed:om_alpha" {
+	if got := runner.lastReq.Env["ALICE_SESSION_KEY"]; got != "chat_id:oc_chat|work:om_alpha" {
 		runner.mu.Unlock()
 		t.Fatalf("unexpected llm session key env: %q", got)
 	}

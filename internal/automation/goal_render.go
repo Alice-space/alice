@@ -9,13 +9,11 @@ import (
 )
 
 var (
-	goalStartTemplate    = ""
 	goalContinueTemplate = ""
 	goalTimeoutTemplate  = ""
 )
 
-func SetGoalTemplates(start, cont, timeout string) {
-	goalStartTemplate = strings.TrimSpace(start)
+func SetGoalTemplates(cont, timeout string) {
 	goalContinueTemplate = strings.TrimSpace(cont)
 	goalTimeoutTemplate = strings.TrimSpace(timeout)
 }

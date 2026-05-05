@@ -116,7 +116,7 @@ func TestProcessor_ClearCommand_RotatesGroupChatSceneSession(t *testing.T) {
 	processor := NewProcessor(llmStub, sender, "failed", "thinking")
 	processor.SetBuiltinHelpConfig(configForGroupScenesTest())
 
-	baseSessionKey := buildChatSceneSessionKey("chat_id", "oc_chat")
+	baseSessionKey := restoreChatSceneKey("chat_id", "oc_chat")
 	processor.setThreadID(baseSessionKey, "thread_old")
 
 	state := processor.ProcessJobState(context.Background(), Job{
@@ -143,12 +143,12 @@ func TestProcessor_ClearCommand_RotatesGroupChatSceneSession(t *testing.T) {
 		t.Fatalf("unexpected clear reply: %q", sender.replyMarkdownTexts[0])
 	}
 
-	resolved := processor.resolveCanonicalSessionKey(baseSessionKey)
-	if resolved == "" || resolved == baseSessionKey {
-		t.Fatalf("expected base session key to rotate, got %q", resolved)
+	resolved := processor.resolveSessionLookup(baseSessionKey)
+	if resolved != baseSessionKey {
+		t.Fatalf("expected session key to stay the same after clear, got %q", resolved)
 	}
-	if threadID := processor.getThreadID(resolved); threadID != "" {
-		t.Fatalf("expected rotated session to start without thread id, got %q", threadID)
+	if threadID := processor.getThreadID(baseSessionKey); threadID != "" {
+		t.Fatalf("expected cleared session to start without thread id, got %q", threadID)
 	}
 }
 
@@ -193,7 +193,7 @@ func TestProcessor_WorkThreadBootstrap_EmptyWorkDoesNotCallLLM(t *testing.T) {
 		ReceiveIDType:      "chat_id",
 		ChatType:           "group",
 		SourceMessageID:    "om_work_root",
-		SessionKey:         "chat_id:oc_chat|scene:work|seed:om_work_root",
+		SessionKey:         "chat_id:oc_chat|work:om_work_root",
 		Scene:              jobSceneWork,
 		ResponseMode:       jobResponseModeReply,
 		CreateFeishuThread: true,
@@ -227,7 +227,7 @@ func TestProcessor_WorkThreadBootstrap_EmptyWorkDoesNotCallLLM(t *testing.T) {
 			t.Fatalf("expected bootstrap reply to contain %q, got %q", want, reply)
 		}
 	}
-	if !processor.hasActiveSession("chat_id:oc_chat|scene:work|seed:om_work_root") {
+	if !processor.hasActiveSession("chat_id:oc_chat|work:om_work_root") {
 		t.Fatal("expected empty work bootstrap to create a session state")
 	}
 }
@@ -238,7 +238,7 @@ func TestProcessor_SessionCommand_BindsBackendSessionAndRepliesInWorkThread(t *t
 	processor := NewProcessor(llmStub, sender, "failed", "thinking")
 	processor.SetWorkspaceDir("/repo")
 
-	sessionKey := "chat_id:oc_chat|scene:work|seed:om_work_root"
+	sessionKey := "chat_id:oc_chat|work:om_work_root"
 	state := processor.ProcessJobState(context.Background(), Job{
 		ReceiveID:          "oc_chat",
 		ReceiveIDType:      "chat_id",
@@ -283,7 +283,7 @@ func TestProcessor_SessionCommandWithInstruction_ResumesBoundBackendSession(t *t
 	sender := &senderStub{}
 	processor := NewProcessor(llmStub, sender, "failed", "thinking")
 
-	sessionKey := "chat_id:oc_chat|scene:work|seed:om_work_root"
+	sessionKey := "chat_id:oc_chat|work:om_work_root"
 	state := processor.ProcessJobState(context.Background(), Job{
 		ReceiveID:          "oc_chat",
 		ReceiveIDType:      "chat_id",
@@ -348,7 +348,7 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 		t.Fatalf("create paused task failed: %v", err)
 	}
 
-	processor.recordSessionUsage(buildChatSceneSessionKey("chat_id", "oc_chat"), llm.Usage{
+	processor.recordSessionUsage(restoreChatSceneKey("chat_id", "oc_chat"), llm.Usage{
 		InputTokens:       120,
 		CachedInputTokens: 60,
 		OutputTokens:      15,
@@ -358,7 +358,7 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 		BotID:   "mea",
 		BotName: "Mea",
 		Sessions: map[string]sessionState{
-			buildChatSceneSessionKey("chat_id", "oc_chat"): {
+			restoreChatSceneKey("chat_id", "oc_chat"): {
 				ScopeKey: "chat_id:oc_chat",
 				Usage: sessionUsageStats{
 					InputTokens:       80,
@@ -441,7 +441,7 @@ func TestProcessor_StatusCommand_ShowsCurrentWorkSessionDetails(t *testing.T) {
 	automationStore := automation.NewStore(filepath.Join(t.TempDir(), "automation.db"))
 	processor.SetStatusStores(automationStore)
 
-	sessionKey := "chat_id:oc_chat|scene:work|seed:om_work_root"
+	sessionKey := "chat_id:oc_chat|work:om_work_root"
 	processor.setThreadID(sessionKey, "sess_123")
 	processor.setWorkThreadID(sessionKey, "omt_work")
 	processor.recordSessionMetadata(sessionKey, Job{
@@ -479,7 +479,7 @@ func TestProcessor_StatusCommand_ShowsCurrentWorkSessionDetails(t *testing.T) {
 	for _, want := range []string{
 		"### 当前 Session",
 		"scene: `work`",
-		"Alice session key: `chat_id:oc_chat|scene:work|seed:om_work_root`",
+		"Alice session key: `chat_id:oc_chat|work:om_work_root`",
 		"Feishu thread id: `omt_work`",
 		"backend: `codex`",
 		"backend session id: `sess_123`",

@@ -14,30 +14,31 @@ import (
 )
 
 type Processor struct {
-	llm                  llm.Backend
-	sender               Sender
-	replies              *replyDispatcher
-	failureMessage       string
-	thinkingMessage      string
-	feedbackMode         string
-	feedbackEmoji        string
-	disableIdentityHints bool
-	heartbeatConfig      llmHeartbeatConfig
-	runtimeMu            sync.RWMutex
-	mu                   sync.Mutex
-	sessions             map[string]sessionState
-	sessionAliases       map[string]string
-	stateFilePath        string
-	stateVersion         uint64
-	flushedVersion       uint64
-	now                  func() time.Time
-	runtimeAPIBase       string
-	runtimeAPIToken      string
-	runtimeAPIBin        string
-	helpConfig           builtinHelpConfig
-	statusService        *builtinStatusService
-	workspaceDir         string
-	prompts              *prompting.Loader
+	llm                        llm.Backend
+	sender                     Sender
+	replies                    *replyDispatcher
+	failureMessage             string
+	thinkingMessage            string
+	feedbackMode               string
+	feedbackEmoji              string
+	disableIdentityHintsInChat bool
+	disableIdentityHintsInWork bool
+	heartbeatConfig            llmHeartbeatConfig
+	runtimeMu                  sync.RWMutex
+	mu                         sync.Mutex
+	sessions                   map[string]sessionState
+	threadBindings             map[string]string
+	stateFilePath              string
+	stateVersion               uint64
+	flushedVersion             uint64
+	now                        func() time.Time
+	runtimeAPIBase             string
+	runtimeAPIToken            string
+	runtimeAPIBin              string
+	helpConfig                 builtinHelpConfig
+	statusService              *builtinStatusService
+	workspaceDir               string
+	prompts                    *prompting.Loader
 }
 
 type StatusUsageSource struct {
@@ -78,7 +79,7 @@ func NewProcessor(
 		feedbackEmoji:   defaultImmediateFeedbackEmoji,
 		heartbeatConfig: defaultLLMHeartbeatConfig(),
 		sessions:        make(map[string]sessionState),
-		sessionAliases:  make(map[string]string),
+		threadBindings:  make(map[string]string),
 		now:             time.Now,
 		helpConfig:      defaultBuiltinHelpConfig(),
 		prompts:         prompting.DefaultLoader(),
@@ -197,13 +198,14 @@ func (p *Processor) SetHeartbeatShowShellCommands(show bool) {
 	p.heartbeatConfig.ShowShellCommands = show
 }
 
-func (p *Processor) SetDisableIdentityHints(disable bool) {
+func (p *Processor) SetSceneIdentityHints(chatDisable, workDisable bool) {
 	if p == nil {
 		return
 	}
 	p.runtimeMu.Lock()
 	defer p.runtimeMu.Unlock()
-	p.disableIdentityHints = disable
+	p.disableIdentityHintsInChat = chatDisable
+	p.disableIdentityHintsInWork = workDisable
 }
 
 func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
@@ -213,34 +215,45 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 	p.runtimeMu.RLock()
 	defer p.runtimeMu.RUnlock()
 	return processorRuntimeSnapshot{
-		llm:             p.llm,
-		failureMessage:  p.failureMessage,
-		thinkingMessage: p.thinkingMessage,
-		feedbackMode:    p.feedbackMode,
-		feedbackEmoji:   p.feedbackEmoji,
-		heartbeatConfig: p.heartbeatConfig,
-		runtimeAPIBase:  p.runtimeAPIBase,
-		runtimeAPIToken: p.runtimeAPIToken,
-		runtimeAPIBin:   p.runtimeAPIBin,
-		helpConfig:      p.helpConfig,
-		statusService:   p.statusService,
-		workspaceDir:    p.workspaceDir,
+		llm:                        p.llm,
+		failureMessage:             p.failureMessage,
+		thinkingMessage:            p.thinkingMessage,
+		feedbackMode:               p.feedbackMode,
+		feedbackEmoji:              p.feedbackEmoji,
+		heartbeatConfig:            p.heartbeatConfig,
+		runtimeAPIBase:             p.runtimeAPIBase,
+		runtimeAPIToken:            p.runtimeAPIToken,
+		runtimeAPIBin:              p.runtimeAPIBin,
+		helpConfig:                 p.helpConfig,
+		statusService:              p.statusService,
+		workspaceDir:               p.workspaceDir,
+		disableIdentityHintsInChat: p.disableIdentityHintsInChat,
+		disableIdentityHintsInWork: p.disableIdentityHintsInWork,
 	}
 }
 
 type processorRuntimeSnapshot struct {
-	llm             llm.Backend
-	failureMessage  string
-	thinkingMessage string
-	feedbackMode    string
-	feedbackEmoji   string
-	heartbeatConfig llmHeartbeatConfig
-	runtimeAPIBase  string
-	runtimeAPIToken string
-	runtimeAPIBin   string
-	helpConfig      builtinHelpConfig
-	statusService   *builtinStatusService
-	workspaceDir    string
+	llm                        llm.Backend
+	failureMessage             string
+	thinkingMessage            string
+	feedbackMode               string
+	feedbackEmoji              string
+	heartbeatConfig            llmHeartbeatConfig
+	runtimeAPIBase             string
+	runtimeAPIToken            string
+	runtimeAPIBin              string
+	helpConfig                 builtinHelpConfig
+	statusService              *builtinStatusService
+	workspaceDir               string
+	disableIdentityHintsInChat bool
+	disableIdentityHintsInWork bool
+}
+
+func (s processorRuntimeSnapshot) disableIdentityHintsFor(scene string) bool {
+	if scene == jobSceneWork {
+		return s.disableIdentityHintsInWork
+	}
+	return s.disableIdentityHintsInChat
 }
 
 func defaultBuiltinHelpConfig() builtinHelpConfig {

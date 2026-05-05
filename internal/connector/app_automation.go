@@ -148,3 +148,12 @@ func (a *App) ReleaseSession(sessionKey string) {
 	a.markRuntimeStateChangedLocked()
 	logging.Infof("automation session released session=%s", sessionKey)
 }
+
+// GetSessionThreadID returns the current backend LLM thread ID for the given
+// session key. Returns an empty string if the session has no thread yet.
+func (a *App) GetSessionThreadID(sessionKey string) string {
+	if a == nil || a.processor == nil {
+		return ""
+	}
+	return a.processor.getThreadID(sessionKey)
+}

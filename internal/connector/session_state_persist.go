@@ -55,19 +55,22 @@ func (p *Processor) LoadSessionState(path string) error {
 		state.BackendVariant = strings.ToLower(strings.TrimSpace(state.BackendVariant))
 		state.BackendPersonality = strings.ToLower(strings.TrimSpace(state.BackendPersonality))
 		state.ScopeKey = strings.TrimSpace(state.ScopeKey)
-		state.Aliases = normalizeSessionAliases(state.Aliases, key)
-		if isWorkSceneSessionKey(key) {
-			state.Aliases, state.WorkThreadID = migrateWorkThreadID(state.Aliases, state.WorkThreadID)
-		}
 		if state.ScopeKey == "" {
 			state.ScopeKey = scopeKeyFromSessionKey(key)
 		}
+		msgIDs := make([]string, 0, len(state.ReplyMessageIDs))
+		for _, mid := range state.ReplyMessageIDs {
+			if trimmed := strings.TrimSpace(mid); trimmed != "" {
+				msgIDs = append(msgIDs, trimmed)
+			}
+		}
+		state.ReplyMessageIDs = msgIDs
 		loaded[key] = state
 	}
 
 	p.mu.Lock()
 	p.sessions = loaded
-	p.rebuildSessionAliasIndexLocked()
+	rebuildThreadBindingsLocked(p)
 	p.stateVersion = 0
 	p.flushedVersion = 0
 	p.mu.Unlock()

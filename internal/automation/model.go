@@ -32,10 +32,11 @@ const (
 type GoalStatus string
 
 const (
-	GoalStatusActive   GoalStatus = "active"
-	GoalStatusPaused   GoalStatus = "paused"
-	GoalStatusComplete GoalStatus = "complete"
-	GoalStatusTimeout  GoalStatus = "timeout"
+	GoalStatusActive            GoalStatus = "active"
+	GoalStatusPaused            GoalStatus = "paused"
+	GoalStatusComplete          GoalStatus = "complete"
+	GoalStatusTimeout           GoalStatus = "timeout"
+	GoalStatusWaitingForSession GoalStatus = "waiting_for_session"
 )
 
 func (s GoalStatus) IsTerminal() bool {
@@ -100,7 +101,7 @@ func ValidateGoal(goal GoalTask) error {
 		return errors.New("creator id is empty")
 	}
 	switch goal.Status {
-	case GoalStatusActive, GoalStatusPaused, GoalStatusComplete, GoalStatusTimeout:
+	case GoalStatusActive, GoalStatusPaused, GoalStatusComplete, GoalStatusTimeout, GoalStatusWaitingForSession:
 	default:
 		return fmt.Errorf("invalid goal status %q", goal.Status)
 	}
