@@ -55,4 +55,4 @@ See the [Quick Start tutorial](tutorials/quick-start.md) for detailed steps.
 
 ---
 
-[中文版](zh-CN/index.md) · [GitHub](https://github.com/Alice-space/alice)
+[中文版](../zh/) · [GitHub](https://github.com/Alice-space/alice)

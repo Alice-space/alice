@@ -1,186 +1,48 @@
 # Alice
 
+> Turn DeepSeek V4 into a Feishu group chat bot in 5 minutes. No API key — just your existing OpenCode CLI.
+
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
-[![Release On Tag](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml)
+[![Go Report Card](https://goreportcard.com/badge/github.com/Alice-space/alice)](https://goreportcard.com/report/github.com/Alice-space/alice)
+[![Go Reference](https://pkg.go.dev/badge/github.com/Alice-space/alice.svg)](https://pkg.go.dev/github.com/Alice-space/alice)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-A Feishu long-connection connector for CLI-based LLM agents such as Codex, Claude, Gemini, Kimi, and OpenCode.
+A Feishu long-connection connector for CLI-based LLM agents — OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
 
-Alice runs as a local multi-bot runtime:
+Runs as a local multi-bot runtime: receives Feishu messages over WebSocket, routes them into `chat` or `work` scenes, calls the configured LLM CLI, and sends replies, files, and images back. Zero cloud dependency — everything runs on your machine.
 
-- receives Feishu messages over WebSocket
-- routes messages into `chat` or `work` scenes
-- calls the configured LLM CLI backend
-- sends progress, replies, files, and images back to Feishu
-- exposes a local runtime API used by bundled skills
-- provides an `alice delegate` subcommand so OpenCode agents (including DeepSeek) can delegate subtasks to Codex, Claude, and other backends
+## Documentation
 
-For Chinese documentation, see [README.zh-CN.md](./README.zh-CN.md).
+Full documentation is at **[alice-space.github.io/alice](https://alice-space.github.io/alice/)**.
 
-## Features
+| | |
+|--|--|
+| [Tutorials](https://alice-space.github.io/alice/en/tutorials/quick-start.html) | Get Alice running in 5 minutes |
+| [How-To Guides](https://alice-space.github.io/alice/en/how-to/install.html) | Task-focused recipes |
+| [Configuration Reference](https://alice-space.github.io/alice/en/reference/configuration.html) | Every config key documented |
+| [Architecture](https://alice-space.github.io/alice/en/development/architecture.html) | Code-level architecture |
 
-- Multi-bot runtime from a single `config.yaml`
-- Per-bot isolated `workspace`, `SOUL.md` (in `alice_home`), and prompts, with shared `CODEX_HOME` by default
-- Scene-aware routing for casual chat and explicit work threads
-- Runtime HTTP API for bundled skills and automation
-- Long-running LLM status cards with backend-activity and aggregated file-change signals
-- Automation watchdog alerts for overdue or stuck scheduled tasks
-- Bundled skills are materialized under `${ALICE_HOME:-~/.alice}/skills`, linked into `~/.agents/skills`, and exposed to Claude via `~/.claude/skills`
-- Embedded prompts, skills, config example, `SOUL.md` example, and OpenCode delegate plugin
-- `alice setup` one-command init: config + skills + systemd unit + OpenCode plugin
-
-## Requirements
-
-- Go 1.25+ for source builds
-- One installed and authenticated backend CLI:
-  - `codex`
-  - `claude`
-  - `gemini`
-  - `kimi`
-  - `opencode`
-- A Feishu app with:
-  - bot capability
-  - `im.message.receive_v1` subscription
-  - required message permissions
-  - long connection mode enabled
+[中文文档 »](https://alice-space.github.io/alice/zh/)
 
 ## Quick Start
-
-### Install From Release
-
-**Via npm (recommended):**
 
 ```bash
 npm install -g @alice_space/alice
 alice setup
-```
-
-**Via installer script:**
-
-```bash
-curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install
-```
-
-Then:
-
-1. Edit `${ALICE_HOME:-~/.alice}/config.yaml`
-2. Set `bots.*.feishu_app_id` and `bots.*.feishu_app_secret`
-3. Start the service:
-
-```bash
-systemctl --user start alice.service   # Linux (alice setup writes the unit)
-alice --feishu-websocket               # macOS / manual start
-```
-
-### Run From Source
-
-```bash
-cp config.example.yaml ~/.alice/config.yaml
 # edit ~/.alice/config.yaml
-
-go mod tidy
-go test ./...
-go run ./cmd/connector --feishu-websocket
+alice --feishu-websocket
 ```
-
-## Configuration
-
-Alice uses a pure multi-bot config model.
-
-Important concepts:
-
-- `bots.<id>`: one runtime bot
-- `llm_profiles`: named model presets
-- `group_scenes.chat`: conversational scene for group chats
-- `group_scenes.work`: explicit task scene for work threads
-- `trigger_mode`: legacy fallback when both scenes are disabled
-- `workspace_dir` / `prompt_dir`: per-bot runtime directories
-- `codex_home`: optional per-bot override for the shared `CODEX_HOME` (default: `~/.codex`)
-Start from [config.example.yaml](./config.example.yaml).
-
-## Usage
-
-Alice's operating model and `chat` / `work` scene behavior are documented in:
-
-- [Usage Guide](./docs/usage.md)
-- [使用说明](./docs/usage.zh-CN.md)
-
-### Delegating tasks to other LLM backends
-
-The `alice delegate` subcommand runs a one-shot prompt against any configured LLM CLI:
-
-```bash
-alice delegate --provider codex --prompt "Refactor the auth module"
-alice delegate --provider claude --prompt "Review this PR diff" < diff.patch
-```
-
-### OpenCode plugin
-
-`alice setup` writes the file `~/.config/opencode/plugins/alice-delegate.js`.
-Once present, OpenCode agents (including DeepSeek) gain two tools — `codex` and `claude` — that delegate subtasks through the `alice delegate` command.
-No additional config is needed; OpenCode loads plugins from that directory automatically.
-
-Additional docs:
-
-- [Documentation Index](./docs/README.md)
-- [Architecture](./docs/architecture.md)
-- [架构文档](./docs/architecture.zh-CN.md)
-
-Connector startup mode is now explicit: use `--feishu-websocket` for the real Feishu connector, or `--runtime-only` for local runtime/API-only execution. For isolated debug or temporary rerun runtimes, use `alice-headless --runtime-only`; headless binaries no longer allow Feishu websocket startup.
-
-The LLM backend abstraction lives in `internal/llm/` (the former `agentbridge` library is now co-located in this repository).
-
-## `SOUL.md`
-
-Each bot can define persona and machine-readable metadata in its configured `soul_path`.
-The default is `<alice_home>/SOUL.md`; a relative `soul_path` is resolved relative to `<alice_home>`.
-
-Current frontmatter keys accepted by Alice:
-
-- `image_refs`
-- `output_contract`
-
-The embedded example is [prompts/SOUL.md.example](./prompts/SOUL.md.example).
-
-## Installer
-
-The installer script lives at [scripts/alice-installer.sh](./scripts/alice-installer.sh).
-
-Common commands:
-
-```bash
-# install or update the latest stable release
-curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- install
-
-# uninstall
-curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
-```
-
-When installing via npm, use `alice setup` after `npm install -g @alice_space/alice` to create the ALICE_HOME directory structure, write the initial config, sync bundled skills, register the systemd user unit (Linux), and install the OpenCode delegate plugin. The installer script is still available for users who prefer a single-curl workflow or need the release download / checksum verification path.
 
 ## Development
 
 ```bash
-make check
+make check   # fmt, vet, test, race
 make build
 make run
 ```
 
-`make check` includes formatting, vet, unit tests, and connector race tests.
-
-Contribution guidelines are in [CONTRIBUTING.md](./CONTRIBUTING.md).
-
-## Release Process
-
-- Day-to-day work happens on `dev`
-- `dev -> main` drives the normal release path
-- Tagged releases are published through GitHub Actions
-
-Workflow files:
-
-- [.github/workflows/ci.yml](./.github/workflows/ci.yml)
-- [.github/workflows/main-release.yml](./.github/workflows/main-release.yml)
-- [.github/workflows/release-on-tag.yml](./.github/workflows/release-on-tag.yml)
+Contribution guide: [CONTRIBUTING.md](./CONTRIBUTING.md)
 
 ## License
 

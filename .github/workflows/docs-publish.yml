@@ -27,13 +27,19 @@ jobs:
         run: |
           curl -fsSL https://github.com/rust-lang/mdBook/releases/download/v0.4.44/mdbook-v0.4.44-x86_64-unknown-linux-gnu.tar.gz | tar xz -C /usr/local/bin
 
-      - name: Build book
-        run: mdbook build book
+      - name: Build English book
+        run: mdbook build book/en --dest-dir ../../out/en
+
+      - name: Build Chinese book
+        run: mdbook build book/zh --dest-dir ../../out/zh
+
+      - name: Copy landing page
+        run: cp book/landing.html book/lang-switcher.js out/
 
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
-          path: book/book
+          path: out
 
   deploy:
     if: github.ref == 'refs/heads/main'

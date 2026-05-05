@@ -1,16 +1,17 @@
 [book]
-authors = ["Alice Contributors"]
-language = "en"
+authors = ["Alice 贡献者"]
+language = "zh"
 multilingual = false
-src = "src"
-title = "Alice Docs"
+src = "."
+title = "Alice 文档"
 
 [output.html]
 mathjax-support = false
 git-repository-url = "https://github.com/Alice-space/alice"
 git-repository-icon = "fa-github"
-edit-url-template = "https://github.com/Alice-space/alice/edit/dev/book/src/{path}"
-site-url = "/alice/"
+edit-url-template = "https://github.com/Alice-space/alice/edit/dev/book/zh/{path}"
+site-url = "/alice/zh/"
+additional-js = ["../lang-switcher.js"]
 
 [output.html.search]
 limit-results = 20

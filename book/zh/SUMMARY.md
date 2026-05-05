@@ -36,6 +36,4 @@
 - [新增 LLM Backend](development/add-backend.md)
 - [发版流程](development/release.md)
 
----
 
-[English](../index.md)

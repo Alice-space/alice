@@ -36,6 +36,4 @@
 - [Adding a New LLM Backend](development/add-backend.md)
 - [Release Process](development/release.md)
 
----
 
-[中文版 (简体中文)](zh-CN/index.md)

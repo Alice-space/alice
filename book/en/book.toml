@@ -1,0 +1,25 @@
+[book]
+authors = ["Alice Contributors"]
+language = "en"
+multilingual = false
+src = "."
+title = "Alice Docs"
+
+[output.html]
+mathjax-support = false
+git-repository-url = "https://github.com/Alice-space/alice"
+git-repository-icon = "fa-github"
+edit-url-template = "https://github.com/Alice-space/alice/edit/dev/book/en/{path}"
+site-url = "/alice/en/"
+additional-js = ["../lang-switcher.js"]
+
+[output.html.search]
+limit-results = 20
+use-boolean-and = true
+
+[output.html.fold]
+enable = true
+level = 1
+
+[rust]
+edition = "2021"
