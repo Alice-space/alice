@@ -1,12 +1,16 @@
 # Alice
 
-Alice is a **Feishu long-connection connector** that turns CLI-based LLM agents (Codex, Claude, Gemini, Kimi, OpenCode) into interactive bots inside your Feishu workspaces.
+> **Same AI session, anywhere.** Start coding on your terminal. Continue from Feishu on your phone. Switch back. No cloud lock-in — the agent runs on *your* machine.
+
+Alice is a **Feishu long-connection connector** that turns CLI-based LLM agents into interactive bots inside Feishu. Works with OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
+
+## The core idea
+
+Your terminal agent and your Feishu bot are the **same session**. Start a refactor in your IDE, check progress from your phone, send the next instruction via Feishu. Alice bridges your local CLI agent to Feishu's WebSocket so you're never locked to one device.
 
 ## What problem does Alice solve?
 
-You have an LLM agent CLI installed — `codex`, `claude`, `opencode` — and it works great in your terminal. But your team lives in Feishu. You want the same agent available in group chats and direct messages, without building a custom bot from scratch.
-
-Alice bridges that gap. It runs as a local service that:
+You have an LLM agent CLI installed — and it works great in your terminal. But:
 
 - Connects to Feishu's WebSocket for real-time message delivery
 - Routes incoming messages into `chat` (casual) or `work` (task-oriented) scenes

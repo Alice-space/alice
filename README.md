@@ -1,10 +1,6 @@
 # Alice
 
-> Turn DeepSeek V4 into a Feishu group chat bot in 5 minutes. No API key — just your existing OpenCode CLI.
-
-> **Goal mode + DeepSeek's low cost** = fire off dozens of coding tasks in parallel for pennies.
-> **Feishu on your phone** = start tasks from anywhere, get notified when done. You don't need to be at your desk.
-> **Native CLI, not cloud API** = start a task in your terminal, continue from Feishu on your phone. One `/session resume` and your context is there — no lock-in, no cloud dependency.
+> **Same AI session, anywhere.** Start coding on your terminal. Continue from Feishu on your phone. Switch back. No cloud lock-in — the agent runs on *your* machine. Works with OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
 
 [![Dev CI](https://github.com/Alice-space/alice/actions/workflows/ci.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/ci.yml)
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
@@ -13,6 +9,11 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
 [中文](./README.zh-CN.md)
+
+- **Access your agent from anywhere.** Terminal at your desk. Feishu on your phone. Same session, same context — just `/session resume`.
+- **Pick your AI.** OpenCode / DeepSeek V4, Codex, Claude, Gemini, Kimi. Mix and match per scene.
+- **Zero cloud dependency.** The agent CLI runs on your machine. No API keys, no vendor lock-in.
+- **Goal mode × DeepSeek** = fire off dozens of tasks for pennies. Get notified on your phone when done.
 
 A Feishu long-connection connector for CLI-based LLM agents — OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi.
 
