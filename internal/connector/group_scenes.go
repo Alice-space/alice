@@ -48,6 +48,24 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 			}
 			return true
 		}
+		if isGoalCommand(job.Text) {
+			if cfg.groupScenes.Work.Enabled {
+				if sessionKey := a.resolveExistingWorkSession(job, event, message); sessionKey != "" {
+					applyWorkSceneToJob(job, cfg, sessionKey)
+					if a.processor != nil && message != nil {
+						a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
+					}
+					return true
+				}
+			}
+			if hasThreadContext(message) {
+				return false
+			}
+			if message != nil {
+				a.resolveJobSessionKey(job, message)
+			}
+			return true
+		}
 		contextual := isContextualBuiltinCommand(job.Text)
 		if !contextual {
 			if message != nil {

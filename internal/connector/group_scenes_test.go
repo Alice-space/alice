@@ -394,6 +394,97 @@ func TestApp_RouteStatusSkipsWhenInThreadWithoutMatchingWorkSession(t *testing.T
 	}
 }
 
+func TestApp_RouteGoalInWorkSession(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+
+	sessionKey := buildWorkSceneSessionKey("chat_id", "oc_chat", "om_goal_root")
+	app.state.latest[sessionKey] = 1
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_goal"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_goal"),
+				ParentId:    strPtr("om_goal_root"),
+				RootId:      strPtr("om_goal_root"),
+				ThreadId:    strPtr("omt_goal"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/goal"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected /goal to be routed")
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("unexpected scene: %q", job.Scene)
+	}
+	if job.SessionKey != sessionKey {
+		t.Fatalf("unexpected session key: %q", job.SessionKey)
+	}
+	if !job.CreateFeishuThread {
+		t.Fatal("/goal command in work scene should keep thread replies enabled")
+	}
+}
+
+func TestApp_RouteGoalSkipsWhenInThreadWithoutMatchingWorkSession(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+
+	threadEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_thread_goal"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_thread_goal"),
+				ParentId:    strPtr("om_unrelated"),
+				RootId:      strPtr("om_unrelated"),
+				ThreadId:    strPtr("omt_unrelated"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/goal"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job, err := BuildJob(threadEvent)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if app.routeIncomingJob(job, threadEvent) {
+		t.Fatal("expected /goal in unrelated thread to be skipped")
+	}
+
+	mainChatEvent := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_main_goal"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_main_goal"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/goal"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job2, err := BuildJob(mainChatEvent)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job2, mainChatEvent) {
+		t.Fatal("expected /goal in main group chat to be routed")
+	}
+}
+
 func TestApp_OnMessageReceive_WorkSceneUsesDedicatedThreadSession(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	processor := NewProcessor(codexStub{resp: "ok"}, nil, "", "")
