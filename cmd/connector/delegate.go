@@ -38,14 +38,26 @@ Supported providers: codex | claude | gemini | kimi | opencode`,
 			}
 
 			promptText := strings.TrimSpace(prompt)
-			stat, _ := os.Stdin.Stat()
-			if (stat.Mode()&os.ModeCharDevice) == 0 || promptText == "" {
-				data, err := io.ReadAll(os.Stdin)
-				if err != nil {
-					return fmt.Errorf("read stdin: %w", err)
+			if promptText == "" {
+				data, readErr := io.ReadAll(cmd.InOrStdin())
+				if readErr != nil {
+					return fmt.Errorf("read stdin: %w", readErr)
 				}
 				if trimmed := strings.TrimSpace(string(data)); trimmed != "" {
 					promptText = trimmed
+				}
+			} else {
+				// If --prompt is set but stdin is non-terminal (pipe/file),
+				// prefer stdin content over --prompt.
+				stat, statErr := os.Stdin.Stat()
+				if statErr == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
+					data, readErr := io.ReadAll(cmd.InOrStdin())
+					if readErr != nil {
+						return fmt.Errorf("read stdin: %w", readErr)
+					}
+					if trimmed := strings.TrimSpace(string(data)); trimmed != "" {
+						promptText = trimmed
+					}
 				}
 			}
 			if promptText == "" {
