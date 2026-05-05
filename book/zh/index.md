@@ -61,4 +61,4 @@ alice --feishu-websocket
 
 ---
 
-[English](../en/) · [GitHub](https://github.com/Alice-space/alice)
+[English](../en/) · [GitHub](https://github.com/Alice-space/ALICE)
