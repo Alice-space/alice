@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 )
 
 func TestEngine_RunSystemTask(t *testing.T) {
@@ -53,7 +53,7 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 
 	sender := &senderStub{}
 	runner := &llmRunnerStub{
-		result: agentbridge.RunResult{Reply: "现在是 2026-02-23T10:01:02Z"},
+		result: llm.RunResult{Reply: "现在是 2026-02-23T10:01:02Z"},
 	}
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
@@ -125,7 +125,7 @@ func TestEngine_RunUserTask_RunLLM_ForwardsProgressMessages(t *testing.T) {
 	sender := &senderStub{}
 	runner := &llmRunnerStub{
 		progress: []string{"first update", "first update", "[file_change] changed.txt", "final answer"},
-		result:   agentbridge.RunResult{Reply: "final answer"},
+		result:   llm.RunResult{Reply: "final answer"},
 	}
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
@@ -182,7 +182,7 @@ func TestEngine_RunUserTask_RunLLM_WorkScene(t *testing.T) {
 
 	sender := &senderStub{}
 	runner := &llmRunnerStub{
-		result: agentbridge.RunResult{Reply: "work 已完成"},
+		result: llm.RunResult{Reply: "work 已完成"},
 	}
 	engine := NewEngine(store, sender)
 	engine.SetLLMRunner(runner)
@@ -243,7 +243,7 @@ func TestEngine_RunUserTask_RunLLM_PersistsStickyThreadID(t *testing.T) {
 
 	sender := &senderStub{}
 	runner := &llmRunnerStub{
-		result: agentbridge.RunResult{
+		result: llm.RunResult{
 			Reply:        "updated",
 			NextThreadID: "thread_new",
 		},
@@ -297,7 +297,7 @@ func TestEngine_RunUserTask_RunLLM_FreshSkipsThread(t *testing.T) {
 
 	sender := &senderStub{}
 	runner := &llmRunnerStub{
-		result: agentbridge.RunResult{
+		result: llm.RunResult{
 			Reply:        "fresh",
 			NextThreadID: "thread_new",
 		},
@@ -328,7 +328,7 @@ func TestEngine_RunUserTask_UsesConfiguredTimeout(t *testing.T) {
 	engine := NewEngine(nil, sender)
 	engine.SetUserTaskTimeout(2 * time.Minute)
 	engine.SetLLMRunner(&llmRunnerStub{
-		result: agentbridge.RunResult{Reply: "hello"},
+		result: llm.RunResult{Reply: "hello"},
 	})
 
 	start := time.Now()

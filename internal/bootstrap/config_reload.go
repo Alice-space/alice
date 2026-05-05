@@ -5,7 +5,7 @@ import (
 	"sort"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
 	"github.com/Alice-space/alice/internal/logging"
@@ -40,7 +40,7 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 
 	llmChanged := llmRuntimeConfigChanged(current, merged)
 
-	var backend agentbridge.Backend
+	var backend llm.Backend
 	var err error
 	if llmChanged {
 		backend, err = buildLLMBackend(merged)

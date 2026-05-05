@@ -5,7 +5,7 @@
 [![Main Release](https://github.com/Alice-space/alice/actions/workflows/main-release.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/main-release.yml)
 [![Release On Tag](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml/badge.svg)](https://github.com/Alice-space/alice/actions/workflows/release-on-tag.yml)
 
-Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Gemini、Kimi 这类 CLI 型 LLM agent 接入飞书聊天。
+Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Gemini、Kimi、OpenCode 这类 CLI 型 LLM agent 接入飞书聊天。
 
 它以本地多 bot runtime 的方式运行：
 
@@ -14,6 +14,7 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 - 调用配置好的 LLM CLI
 - 把进度、文本、文件、图片发回飞书
 - 暴露本地 runtime API，供自带 skill 使用
+- 提供 `alice delegate` 子命令，让 OpenCode agent（包括 DeepSeek）把子任务委托给 Codex、Claude 等后端
 
 ## 功能特性
 
@@ -24,8 +25,8 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 - 长时间运行的 LLM 会显示运行状态卡片，包含后端活动和合并后的代码编辑信号
 - 自动化任务 watchdog 会提醒过期未触发或疑似卡住的定时任务
 - 自带 skill 会释放到 `${ALICE_HOME:-~/.alice}/skills`，再链接到 `~/.agents/skills`，并通过 `~/.claude/skills` 暴露给 Claude
-- 二进制内嵌 prompts、skills、配置示例和 `SOUL.md` 示例
-- 提供适合 `systemd --user` 的安装脚本
+- 二进制内嵌 prompts、skills、配置示例、`SOUL.md` 示例和 OpenCode delegate 插件
+- `alice setup` 一键初始化：配置 + skills + systemd unit + OpenCode 插件
 
 ## 运行要求
 
@@ -35,6 +36,7 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
   - `claude`
   - `gemini`
   - `kimi`
+  - `opencode`
 - 飞书应用需要：
   - 开启机器人能力
   - 订阅 `im.message.receive_v1`
@@ -49,6 +51,7 @@ Alice 是一个面向飞书的长连接连接器，用来把 Codex、Claude、Ge
 
 ```bash
 npm install -g @alice_space/alice
+alice setup
 ```
 
 **通过安装脚本：**
@@ -61,11 +64,11 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 
 1. 编辑 `${ALICE_HOME:-~/.alice}/config.yaml`
 2. 设置 `bots.*.feishu_app_id` 和 `bots.*.feishu_app_secret`
-3. 重启服务：
+3. 启动服务：
 
 ```bash
-systemctl --user restart alice.service
-```
+systemctl --user start alice.service   # Linux（alice setup 已写好 unit）
+alice --feishu-websocket               # macOS / 手动启动
 
 ### 从源码运行
 
@@ -100,6 +103,21 @@ Alice 现在使用纯多 bot 配置模型。
 - [使用说明](./docs/usage.zh-CN.md)
 - [Usage Guide](./docs/usage.md)
 
+### 委托任务给其他 LLM
+
+`alice delegate` 子命令可以把单次 prompt 发给任意已配置的 LLM CLI：
+
+```bash
+alice delegate --provider codex --prompt "重构 auth 模块"
+alice delegate --provider claude --prompt "审查这个 PR diff" < diff.patch
+```
+
+### OpenCode 插件
+
+`alice setup` 会写入 `~/.config/opencode/plugins/alice-delegate.js`。
+该文件存在后，OpenCode agent（包括 DeepSeek）自动获得 `codex` 和 `claude` 两个 tool，
+底层通过 `alice delegate` 命令完成子任务委托。无需额外配置，OpenCode 会自动加载该目录下的插件。
+
 其他文档：
 
 - [文档索引](./docs/README.md)
@@ -107,6 +125,8 @@ Alice 现在使用纯多 bot 配置模型。
 - [Architecture](./docs/architecture.md)
 
 Alice 现在要求显式选择启动模式：真实飞书连接使用 `--feishu-websocket`，只跑本地 runtime/API 使用 `--runtime-only`。如果是隔离调试或临时 rerun runtime，必须使用 `alice-headless --runtime-only`；headless binary 不再允许启动飞书长连接。
+
+LLM 后端抽象代码位于 `internal/llm/`（原 `agentbridge` 库已合并到此仓库）。
 
 ## `SOUL.md`
 
@@ -133,6 +153,8 @@ curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-inst
 # 卸载
 curl -fsSL https://cdn.jsdelivr.net/gh/Alice-space/alice@main/scripts/alice-installer.sh | bash -s -- uninstall
 ```
+
+通过 npm 安装时，`npm install -g @alice_space/alice` 之后执行 `alice setup` 即可创建 ALICE_HOME 目录结构、写入初始配置、同步自带 skills、注册 systemd user unit（Linux）、安装 OpenCode delegate 插件。安装脚本仍然保留，供希望用单条 curl 命令完成安装或需要 release 下载 / checksum 校验的用户使用。
 
 ## 开发
 

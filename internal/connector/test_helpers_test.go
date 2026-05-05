@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/sessionctx"
 )
 
@@ -16,8 +16,8 @@ type codexStub struct {
 	err  error
 }
 
-func (c codexStub) Run(_ context.Context, _ agentbridge.RunRequest) (agentbridge.RunResult, error) {
-	return agentbridge.RunResult{Reply: c.resp}, c.err
+func (c codexStub) Run(_ context.Context, _ llm.RunRequest) (llm.RunResult, error) {
+	return llm.RunResult{Reply: c.resp}, c.err
 }
 
 type codexStreamingStub struct {
@@ -26,13 +26,13 @@ type codexStreamingStub struct {
 	agentMessages []string
 }
 
-func (c codexStreamingStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (c codexStreamingStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	if req.OnProgress != nil {
 		for _, step := range c.agentMessages {
 			req.OnProgress(step)
 		}
 	}
-	return agentbridge.RunResult{Reply: c.resp}, c.err
+	return llm.RunResult{Reply: c.resp}, c.err
 }
 
 type codexCaptureStub struct {
@@ -40,10 +40,10 @@ type codexCaptureStub struct {
 	err       error
 	lastInput string
 	lastEnv   map[string]string
-	lastReq   agentbridge.RunRequest
+	lastReq   llm.RunRequest
 }
 
-func (c *codexCaptureStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (c *codexCaptureStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	c.lastReq = req
 	c.lastInput = req.UserText
 	if len(req.Env) == 0 {
@@ -57,7 +57,7 @@ func (c *codexCaptureStub) Run(_ context.Context, req agentbridge.RunRequest) (a
 			c.lastEnv[key] = value
 		}
 	}
-	return agentbridge.RunResult{Reply: c.resp}, c.err
+	return llm.RunResult{Reply: c.resp}, c.err
 }
 
 type steerCaptureStub struct {
@@ -73,14 +73,14 @@ type steerCaptureStub struct {
 	lastInput      string
 }
 
-func (c *steerCaptureStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
-	return agentbridge.RunResult{
+func (c *steerCaptureStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+	return llm.RunResult{
 		Reply:        c.runResp,
 		NextThreadID: strings.TrimSpace(req.ThreadID),
 	}, c.runErr
 }
 
-func (c *steerCaptureStub) Steer(_ context.Context, req agentbridge.RunRequest) error {
+func (c *steerCaptureStub) Steer(_ context.Context, req llm.RunRequest) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.steerCalls++
@@ -106,11 +106,11 @@ type codexResumableCaptureStub struct {
 	receivedInputs    []string
 }
 
-func (c *codexResumableCaptureStub) Run(_ context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (c *codexResumableCaptureStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	c.receivedThreadIDs = append(c.receivedThreadIDs, req.ThreadID)
 	c.receivedInputs = append(c.receivedInputs, req.UserText)
 	idx := len(c.receivedInputs) - 1
-	return agentbridge.RunResult{
+	return llm.RunResult{
 		Reply:        c.responseForCall(idx),
 		NextThreadID: c.threadForCall(idx),
 	}, nil
@@ -144,17 +144,17 @@ func newBlockingResumableCodexStub() *blockingResumableCodexStub {
 
 func (c *blockingResumableCodexStub) Run(
 	ctx context.Context,
-	req agentbridge.RunRequest,
-) (agentbridge.RunResult, error) {
+	req llm.RunRequest,
+) (llm.RunResult, error) {
 	c.mu.Lock()
 	c.calls++
 	c.mu.Unlock()
 
 	select {
 	case <-ctx.Done():
-		return agentbridge.RunResult{}, ctx.Err()
+		return llm.RunResult{}, ctx.Err()
 	case <-c.release:
-		return agentbridge.RunResult{
+		return llm.RunResult{
 			Reply:        "- summary",
 			NextThreadID: req.ThreadID,
 		}, nil
@@ -196,8 +196,8 @@ func newInterruptibleResumableCodexStub() *interruptibleResumableCodexStub {
 
 func (c *interruptibleResumableCodexStub) Run(
 	ctx context.Context,
-	req agentbridge.RunRequest,
-) (agentbridge.RunResult, error) {
+	req llm.RunRequest,
+) (llm.RunResult, error) {
 	c.mu.Lock()
 	callIndex := c.callCount
 	c.callCount++
@@ -214,13 +214,13 @@ func (c *interruptibleResumableCodexStub) Run(
 		select {
 		case <-ctx.Done():
 			close(c.firstCallDone)
-			return agentbridge.RunResult{NextThreadID: "thread_after_interrupt"}, ctx.Err()
+			return llm.RunResult{NextThreadID: "thread_after_interrupt"}, ctx.Err()
 		case <-c.firstCallDone:
-			return agentbridge.RunResult{Reply: "unexpected release"}, nil
+			return llm.RunResult{Reply: "unexpected release"}, nil
 		}
 	}
 
-	return agentbridge.RunResult{
+	return llm.RunResult{
 		Reply:        "latest answer",
 		NextThreadID: strings.TrimSpace(req.ThreadID),
 	}, nil

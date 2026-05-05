@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/prompting"
 )
@@ -18,9 +18,9 @@ type llmCallCountingStub struct {
 	calls int
 }
 
-func (s *llmCallCountingStub) Run(_ context.Context, _ agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (s *llmCallCountingStub) Run(_ context.Context, _ llm.RunRequest) (llm.RunResult, error) {
 	s.calls++
-	return agentbridge.RunResult{Reply: "unexpected"}, nil
+	return llm.RunResult{Reply: "unexpected"}, nil
 }
 
 func TestProcessor_HelpCommand_ListsBuiltinCommands(t *testing.T) {
@@ -348,7 +348,7 @@ func TestProcessor_StatusCommand_ListsActiveAutomationTasks(t *testing.T) {
 		t.Fatalf("create paused task failed: %v", err)
 	}
 
-	processor.recordSessionUsage(buildChatSceneSessionKey("chat_id", "oc_chat"), agentbridge.Usage{
+	processor.recordSessionUsage(buildChatSceneSessionKey("chat_id", "oc_chat"), llm.Usage{
 		InputTokens:       120,
 		CachedInputTokens: 60,
 		OutputTokens:      15,

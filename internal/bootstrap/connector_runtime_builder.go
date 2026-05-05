@@ -10,7 +10,7 @@ import (
 	lark "github.com/larksuite/oapi-sdk-go/v3"
 	"github.com/oklog/ulid/v2"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/connector"
@@ -31,7 +31,7 @@ type connectorRuntimePaths struct {
 
 type connectorRuntimeBuilder struct {
 	cfg       config.Config
-	backend   agentbridge.Backend
+	backend   llm.Backend
 	paths     connectorRuntimePaths
 	sender    *feishu.FeishuSender
 	processor *connector.Processor
@@ -45,7 +45,7 @@ type connectorRuntimeBuilder struct {
 	apiToken         string
 }
 
-func newConnectorRuntimeBuilder(cfg config.Config, backend agentbridge.Backend) (*connectorRuntimeBuilder, error) {
+func newConnectorRuntimeBuilder(cfg config.Config, backend llm.Backend) (*connectorRuntimeBuilder, error) {
 	if backend == nil {
 		return nil, errors.New("llm backend is nil")
 	}

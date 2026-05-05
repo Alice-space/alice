@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 )
 
 type heartbeatBlockingBackend struct {
@@ -21,9 +21,9 @@ func newHeartbeatBlockingBackend() *heartbeatBlockingBackend {
 	}
 }
 
-func (b *heartbeatBlockingBackend) Run(ctx context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (b *heartbeatBlockingBackend) Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	if req.OnRawEvent != nil {
-		req.OnRawEvent(agentbridge.RawEvent{Kind: "tool_use", Detail: "tool_use tool=`bash` command=`pwd`"})
+		req.OnRawEvent(llm.RawEvent{Kind: "tool_use", Detail: "tool_use tool=`bash` command=`pwd`"})
 	}
 	if req.OnProgress != nil {
 		req.OnProgress("[file_change] internal/connector/processor.go已更改，+23-34")
@@ -31,9 +31,9 @@ func (b *heartbeatBlockingBackend) Run(ctx context.Context, req agentbridge.RunR
 	close(b.started)
 	select {
 	case <-ctx.Done():
-		return agentbridge.RunResult{}, ctx.Err()
+		return llm.RunResult{}, ctx.Err()
 	case <-b.release:
-		return agentbridge.RunResult{Reply: "最终答复"}, nil
+		return llm.RunResult{Reply: "最终答复"}, nil
 	}
 }
 

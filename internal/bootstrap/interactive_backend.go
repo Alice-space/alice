@@ -7,24 +7,24 @@ import (
 	"sync"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/sessionctx"
 )
 
 type steerBackend interface {
-	agentbridge.Backend
-	Steer(ctx context.Context, req agentbridge.RunRequest) error
+	llm.Backend
+	Steer(ctx context.Context, req llm.RunRequest) error
 }
 
 type interactiveMultiBackend struct {
 	defaultProvider string
-	backends        map[string]agentbridge.Backend
+	backends        map[string]llm.Backend
 }
 
-func newInteractiveMultiBackend(defaultProvider string, backends map[string]agentbridge.Backend) (*interactiveMultiBackend, error) {
+func newInteractiveMultiBackend(defaultProvider string, backends map[string]llm.Backend) (*interactiveMultiBackend, error) {
 	normalizedDefault := normalizeBackendProvider(defaultProvider)
-	out := make(map[string]agentbridge.Backend, len(backends))
+	out := make(map[string]llm.Backend, len(backends))
 	for rawProvider, backend := range backends {
 		if backend == nil {
 			continue
@@ -34,7 +34,7 @@ func newInteractiveMultiBackend(defaultProvider string, backends map[string]agen
 			provider = normalizedDefault
 		}
 		if provider == "" {
-			provider = agentbridge.ProviderCodex
+			provider = llm.ProviderCodex
 		}
 		out[provider] = backend
 	}
@@ -42,8 +42,8 @@ func newInteractiveMultiBackend(defaultProvider string, backends map[string]agen
 		return nil, fmt.Errorf("multi backend requires at least one backend")
 	}
 	if normalizedDefault == "" {
-		if _, ok := out[agentbridge.ProviderCodex]; ok {
-			normalizedDefault = agentbridge.ProviderCodex
+		if _, ok := out[llm.ProviderCodex]; ok {
+			normalizedDefault = llm.ProviderCodex
 		} else if len(out) == 1 {
 			for provider := range out {
 				normalizedDefault = provider
@@ -56,29 +56,29 @@ func newInteractiveMultiBackend(defaultProvider string, backends map[string]agen
 	return &interactiveMultiBackend{defaultProvider: normalizedDefault, backends: out}, nil
 }
 
-func (m *interactiveMultiBackend) Run(ctx context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (m *interactiveMultiBackend) Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	backend, provider, err := m.resolve(req.Provider)
 	if err != nil {
-		return agentbridge.RunResult{}, err
+		return llm.RunResult{}, err
 	}
 	req.Provider = provider
 	return backend.Run(ctx, req)
 }
 
-func (m *interactiveMultiBackend) Steer(ctx context.Context, req agentbridge.RunRequest) error {
+func (m *interactiveMultiBackend) Steer(ctx context.Context, req llm.RunRequest) error {
 	backend, provider, err := m.resolve(req.Provider)
 	if err != nil {
 		return err
 	}
 	steer, ok := backend.(steerBackend)
 	if !ok {
-		return agentbridge.ErrSteerUnsupported
+		return llm.ErrSteerUnsupported
 	}
 	req.Provider = provider
 	return steer.Steer(ctx, req)
 }
 
-func (m *interactiveMultiBackend) resolve(rawProvider string) (agentbridge.Backend, string, error) {
+func (m *interactiveMultiBackend) resolve(rawProvider string) (llm.Backend, string, error) {
 	if m == nil {
 		return nil, "", fmt.Errorf("multi backend is nil")
 	}
@@ -87,7 +87,7 @@ func (m *interactiveMultiBackend) resolve(rawProvider string) (agentbridge.Backe
 		provider = m.defaultProvider
 	}
 	if provider == "" {
-		provider = agentbridge.ProviderCodex
+		provider = llm.ProviderCodex
 	}
 	backend, ok := m.backends[provider]
 	if !ok {
@@ -98,13 +98,13 @@ func (m *interactiveMultiBackend) resolve(rawProvider string) (agentbridge.Backe
 
 type interactiveProviderBackend struct {
 	provider string
-	cfg      agentbridge.FactoryConfig
-	fallback agentbridge.Backend
+	cfg      llm.FactoryConfig
+	fallback llm.Backend
 	timeout  time.Duration
 	idleTTL  time.Duration
 
 	mu             sync.Mutex
-	sessions       map[string]*agentbridge.InteractiveSession
+	sessions       map[string]*llm.InteractiveSession
 	runMu          map[string]*sync.Mutex
 	idleTimers     map[string]*time.Timer
 	idleGeneration map[string]uint64
@@ -114,21 +114,21 @@ type interactiveProviderBackend struct {
 // long-lived provider process per Feishu session from accumulating indefinitely.
 const defaultInteractiveSessionIdleTTL = 30 * time.Second
 
-func newInteractiveProviderBackend(provider string, cfg agentbridge.FactoryConfig, fallback agentbridge.Backend) *interactiveProviderBackend {
+func newInteractiveProviderBackend(provider string, cfg llm.FactoryConfig, fallback llm.Backend) *interactiveProviderBackend {
 	return &interactiveProviderBackend{
 		provider:       normalizeBackendProvider(provider),
 		cfg:            cfg,
 		fallback:       fallback,
 		timeout:        providerTimeout(cfg),
 		idleTTL:        defaultInteractiveSessionIdleTTL,
-		sessions:       make(map[string]*agentbridge.InteractiveSession),
+		sessions:       make(map[string]*llm.InteractiveSession),
 		runMu:          make(map[string]*sync.Mutex),
 		idleTimers:     make(map[string]*time.Timer),
 		idleGeneration: make(map[string]uint64),
 	}
 }
 
-func (b *interactiveProviderBackend) Run(ctx context.Context, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (b *interactiveProviderBackend) Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	sessionKey := runRequestSessionKey(req)
 	if sessionKey == "" {
 		return b.fallback.Run(ctx, req)
@@ -137,28 +137,28 @@ func (b *interactiveProviderBackend) Run(ctx context.Context, req agentbridge.Ru
 	return b.runInteractive(ctx, sessionKey, req)
 }
 
-func (b *interactiveProviderBackend) Steer(ctx context.Context, req agentbridge.RunRequest) error {
+func (b *interactiveProviderBackend) Steer(ctx context.Context, req llm.RunRequest) error {
 	sessionKey := runRequestSessionKey(req)
 	if sessionKey == "" {
-		return agentbridge.ErrNoActiveTurn
+		return llm.ErrNoActiveTurn
 	}
 	req.Provider = b.provider
 	session := b.session(sessionKey)
 	if session == nil {
-		return agentbridge.ErrNoActiveTurn
+		return llm.ErrNoActiveTurn
 	}
 	_, err := session.Steer(ctx, req)
 	return err
 }
 
-func (b *interactiveProviderBackend) runInteractive(ctx context.Context, sessionKey string, req agentbridge.RunRequest) (agentbridge.RunResult, error) {
+func (b *interactiveProviderBackend) runInteractive(ctx context.Context, sessionKey string, req llm.RunRequest) (llm.RunResult, error) {
 	runMu := b.sessionRunMutex(sessionKey)
 	runMu.Lock()
 	defer runMu.Unlock()
 
 	session, err := b.ensureSession(sessionKey)
 	if err != nil {
-		return agentbridge.RunResult{}, err
+		return llm.RunResult{}, err
 	}
 
 	runCtx := ctx
@@ -170,21 +170,21 @@ func (b *interactiveProviderBackend) runInteractive(ctx context.Context, session
 
 	submitted, err := session.Submit(runCtx, req)
 	if err != nil {
-		return agentbridge.RunResult{}, err
+		return llm.RunResult{}, err
 	}
 
 	reply := ""
 	nextThreadID := strings.TrimSpace(submitted.ThreadID)
-	var usage agentbridge.Usage
+	var usage llm.Usage
 	for {
 		select {
 		case <-runCtx.Done():
 			b.interruptAndDropSession(sessionKey, session)
-			return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, runCtx.Err()
+			return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, runCtx.Err()
 		case event, ok := <-session.Events():
 			if !ok {
 				b.dropSession(sessionKey, session)
-				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, context.Canceled
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, context.Canceled
 			}
 			if event.TurnID != "" && submitted.TurnID != "" && event.TurnID != submitted.TurnID {
 				continue
@@ -196,7 +196,7 @@ func (b *interactiveProviderBackend) runInteractive(ctx context.Context, session
 				usage = event.Usage
 			}
 			switch event.Kind {
-			case agentbridge.TurnEventAssistantText:
+			case llm.TurnEventAssistantText:
 				text := strings.TrimSpace(event.Text)
 				if text != "" {
 					reply = text
@@ -204,35 +204,35 @@ func (b *interactiveProviderBackend) runInteractive(ctx context.Context, session
 						req.OnProgress(text)
 					}
 				}
-			case agentbridge.TurnEventFileChange:
+			case llm.TurnEventFileChange:
 				if req.OnProgress != nil && strings.TrimSpace(event.Text) != "" {
 					req.OnProgress("[file_change] " + strings.TrimSpace(event.Text))
 				}
-			case agentbridge.TurnEventUserText, agentbridge.TurnEventReasoning, agentbridge.TurnEventToolUse:
+			case llm.TurnEventUserText, llm.TurnEventReasoning, llm.TurnEventToolUse:
 				// User echoes, reasoning, and tool-use events are backend
 				// context, not Feishu progress messages.
 				emitInteractiveRawEvent(req.OnRawEvent, event)
-			case agentbridge.TurnEventCompleted:
+			case llm.TurnEventCompleted:
 				emitInteractiveRawEvent(req.OnRawEvent, event)
 				b.scheduleSessionIdleClose(sessionKey, session)
-				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, nil
-			case agentbridge.TurnEventInterrupted:
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, nil
+			case llm.TurnEventInterrupted:
 				emitInteractiveRawEvent(req.OnRawEvent, event)
 				b.dropSession(sessionKey, session)
-				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, context.Canceled
-			case agentbridge.TurnEventError:
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, context.Canceled
+			case llm.TurnEventError:
 				emitInteractiveRawEvent(req.OnRawEvent, event)
 				b.dropSession(sessionKey, session)
 				if event.Err != nil {
-					return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, event.Err
+					return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, event.Err
 				}
-				return agentbridge.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, fmt.Errorf("%s turn failed", b.provider)
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, fmt.Errorf("%s turn failed", b.provider)
 			}
 		}
 	}
 }
 
-func emitInteractiveRawEvent(fn agentbridge.RawEventFunc, event agentbridge.TurnEvent) {
+func emitInteractiveRawEvent(fn llm.RawEventFunc, event llm.TurnEvent) {
 	if fn == nil {
 		return
 	}
@@ -240,26 +240,26 @@ func emitInteractiveRawEvent(fn agentbridge.RawEventFunc, event agentbridge.Turn
 	if kind == "" {
 		return
 	}
-	fn(agentbridge.RawEvent{
+	fn(llm.RawEvent{
 		Kind:   kind,
 		Line:   strings.TrimSpace(event.Raw),
 		Detail: strings.TrimSpace(event.Text),
 	})
 }
 
-func interactiveRawEventKind(kind agentbridge.TurnEventKind) string {
+func interactiveRawEventKind(kind llm.TurnEventKind) string {
 	switch kind {
-	case agentbridge.TurnEventUserText:
+	case llm.TurnEventUserText:
 		return "user_text"
-	case agentbridge.TurnEventReasoning:
+	case llm.TurnEventReasoning:
 		return "reasoning"
-	case agentbridge.TurnEventToolUse:
+	case llm.TurnEventToolUse:
 		return "tool_use"
-	case agentbridge.TurnEventCompleted:
+	case llm.TurnEventCompleted:
 		return "turn_completed"
-	case agentbridge.TurnEventInterrupted:
+	case llm.TurnEventInterrupted:
 		return "turn_interrupted"
-	case agentbridge.TurnEventError:
+	case llm.TurnEventError:
 		return "error"
 	default:
 		return ""
@@ -281,27 +281,27 @@ func (b *interactiveProviderBackend) sessionRunMutex(sessionKey string) *sync.Mu
 	return mu
 }
 
-func (b *interactiveProviderBackend) session(sessionKey string) *agentbridge.InteractiveSession {
+func (b *interactiveProviderBackend) session(sessionKey string) *llm.InteractiveSession {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return b.sessions[strings.TrimSpace(sessionKey)]
 }
 
-func (b *interactiveProviderBackend) ensureSession(sessionKey string) (*agentbridge.InteractiveSession, error) {
+func (b *interactiveProviderBackend) ensureSession(sessionKey string) (*llm.InteractiveSession, error) {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {
-		return nil, agentbridge.ErrNoActiveTurn
+		return nil, llm.ErrNoActiveTurn
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if b.sessions == nil {
-		b.sessions = make(map[string]*agentbridge.InteractiveSession)
+		b.sessions = make(map[string]*llm.InteractiveSession)
 	}
 	if session := b.sessions[sessionKey]; session != nil {
 		b.cancelSessionIdleCloseLocked(sessionKey)
 		return session, nil
 	}
-	session, err := agentbridge.NewInteractiveProviderSession(b.cfg)
+	session, err := llm.NewInteractiveProviderSession(b.cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -309,7 +309,7 @@ func (b *interactiveProviderBackend) ensureSession(sessionKey string) (*agentbri
 	return session, nil
 }
 
-func (b *interactiveProviderBackend) scheduleSessionIdleClose(sessionKey string, session *agentbridge.InteractiveSession) {
+func (b *interactiveProviderBackend) scheduleSessionIdleClose(sessionKey string, session *llm.InteractiveSession) {
 	if b == nil || session == nil {
 		return
 	}
@@ -334,7 +334,7 @@ func (b *interactiveProviderBackend) scheduleSessionIdleClose(sessionKey string,
 	b.mu.Unlock()
 }
 
-func (b *interactiveProviderBackend) closeIdleSession(sessionKey string, session *agentbridge.InteractiveSession, generation uint64) {
+func (b *interactiveProviderBackend) closeIdleSession(sessionKey string, session *llm.InteractiveSession, generation uint64) {
 	runMu := b.sessionRunMutex(sessionKey)
 	runMu.Lock()
 	defer runMu.Unlock()
@@ -356,7 +356,7 @@ func (b *interactiveProviderBackend) closeIdleSession(sessionKey string, session
 	_ = session.Close()
 }
 
-func (b *interactiveProviderBackend) interruptAndDropSession(sessionKey string, session *agentbridge.InteractiveSession) {
+func (b *interactiveProviderBackend) interruptAndDropSession(sessionKey string, session *llm.InteractiveSession) {
 	if session != nil {
 		interruptCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		_ = session.Interrupt(interruptCtx)
@@ -365,7 +365,7 @@ func (b *interactiveProviderBackend) interruptAndDropSession(sessionKey string, 
 	b.dropSession(sessionKey, session)
 }
 
-func (b *interactiveProviderBackend) dropSession(sessionKey string, session *agentbridge.InteractiveSession) {
+func (b *interactiveProviderBackend) dropSession(sessionKey string, session *llm.InteractiveSession) {
 	if session == nil {
 		return
 	}
@@ -402,24 +402,24 @@ func (b *interactiveProviderBackend) cancelSessionIdleCloseLocked(sessionKey str
 	b.idleGeneration[sessionKey]++
 }
 
-func runRequestSessionKey(req agentbridge.RunRequest) string {
+func runRequestSessionKey(req llm.RunRequest) string {
 	if req.Env == nil {
 		return ""
 	}
 	return strings.TrimSpace(req.Env[sessionctx.EnvSessionKey])
 }
 
-func providerTimeout(cfg agentbridge.FactoryConfig) time.Duration {
+func providerTimeout(cfg llm.FactoryConfig) time.Duration {
 	switch normalizeBackendProvider(cfg.Provider) {
-	case agentbridge.ProviderClaude:
+	case llm.ProviderClaude:
 		return cfg.Claude.Timeout
-	case agentbridge.ProviderGemini:
+	case llm.ProviderGemini:
 		return cfg.Gemini.Timeout
-	case agentbridge.ProviderKimi:
+	case llm.ProviderKimi:
 		return cfg.Kimi.Timeout
-	case agentbridge.ProviderOpenCode:
+	case llm.ProviderOpenCode:
 		return cfg.OpenCode.Timeout
-	case agentbridge.ProviderCodex, "":
+	case llm.ProviderCodex, "":
 		return cfg.Codex.Timeout
 	default:
 		return 0

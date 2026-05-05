@@ -9,7 +9,7 @@ import (
 	"sync"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 )
 
@@ -58,7 +58,7 @@ func (c llmHeartbeatConfig) normalized() llmHeartbeatConfig {
 type llmRunObserver interface {
 	RecordVisibleOutput(message string)
 	RecordFileChange(message string)
-	RecordBackendEvent(agentbridge.RawEvent)
+	RecordBackendEvent(llm.RawEvent)
 	RecordShellCommand(kind, detail string)
 }
 
@@ -152,7 +152,7 @@ func (h *llmHeartbeat) RecordFileChange(message string) {
 	h.mu.Unlock()
 }
 
-func (h *llmHeartbeat) RecordBackendEvent(event agentbridge.RawEvent) {
+func (h *llmHeartbeat) RecordBackendEvent(event llm.RawEvent) {
 	if h == nil {
 		return
 	}

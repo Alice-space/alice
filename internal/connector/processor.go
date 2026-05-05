@@ -6,7 +6,7 @@ import (
 	"sync"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/automation"
 	"github.com/Alice-space/alice/internal/config"
 	"github.com/Alice-space/alice/internal/logging"
@@ -14,7 +14,7 @@ import (
 )
 
 type Processor struct {
-	llm                  agentbridge.Backend
+	llm                  llm.Backend
 	sender               Sender
 	replies              *replyDispatcher
 	failureMessage       string
@@ -63,7 +63,7 @@ const defaultImmediateFeedbackEmoji = "SMILE"
 const finalReplyDoneEmoji = "DONE"
 
 func NewProcessor(
-	backend agentbridge.Backend,
+	backend llm.Backend,
 	sender Sender,
 	failureMessage string,
 	thinkingMessage string,
@@ -160,7 +160,7 @@ func (p *Processor) SetStatusUsageSources(sources []StatusUsageSource) {
 	}
 }
 
-func (p *Processor) SetLLMBackend(backend agentbridge.Backend) {
+func (p *Processor) SetLLMBackend(backend llm.Backend) {
 	if p == nil || backend == nil {
 		return
 	}
@@ -229,7 +229,7 @@ func (p *Processor) runtimeSnapshot() processorRuntimeSnapshot {
 }
 
 type processorRuntimeSnapshot struct {
-	llm             agentbridge.Backend
+	llm             llm.Backend
 	failureMessage  string
 	thinkingMessage string
 	feedbackMode    string

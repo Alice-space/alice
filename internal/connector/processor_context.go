@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	agentbridge "github.com/Alice-space/agentbridge"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/runtimeapi"
 	"github.com/Alice-space/alice/internal/sessionctx"
@@ -49,7 +49,7 @@ type llmRunOptions struct {
 }
 
 type llmSteerBackend interface {
-	Steer(ctx context.Context, req agentbridge.RunRequest) error
+	Steer(ctx context.Context, req llm.RunRequest) error
 }
 
 func (p *Processor) TrySteerJob(ctx context.Context, job Job) (bool, error) {
@@ -79,7 +79,7 @@ func (p *Processor) TrySteerJob(ctx context.Context, job Job) (bool, error) {
 	promptText := p.buildUserTextWithReplyContext(ctx, job, currentThreadID)
 	options := p.jobLLMRunOptions(job)
 	env := p.buildLLMRunEnv(job)
-	err := steer.Steer(ctx, agentbridge.RunRequest{
+	err := steer.Steer(ctx, llm.RunRequest{
 		ThreadID:        strings.TrimSpace(currentThreadID),
 		AgentName:       "assistant",
 		UserText:        promptText,
@@ -93,9 +93,9 @@ func (p *Processor) TrySteerJob(ctx context.Context, job Job) (bool, error) {
 		WorkspaceDir:    strings.TrimSpace(options.WorkDir),
 		Env:             env,
 	})
-	if errors.Is(err, agentbridge.ErrNoActiveTurn) ||
-		errors.Is(err, agentbridge.ErrInteractiveClosed) ||
-		errors.Is(err, agentbridge.ErrSteerUnsupported) {
+	if errors.Is(err, llm.ErrNoActiveTurn) ||
+		errors.Is(err, llm.ErrInteractiveClosed) ||
+		errors.Is(err, llm.ErrSteerUnsupported) {
 		return false, nil
 	}
 	if err != nil {
@@ -117,10 +117,10 @@ func (p *Processor) runLLM(
 	env map[string]string,
 	onAgentMessage func(message string),
 	observer llmRunObserver,
-) (string, string, agentbridge.Usage, error) {
+) (string, string, llm.Usage, error) {
 	snapshot := p.runtimeSnapshot()
 	if snapshot.llm == nil {
-		return "", strings.TrimSpace(threadID), agentbridge.Usage{}, fmt.Errorf("llm backend is nil")
+		return "", strings.TrimSpace(threadID), llm.Usage{}, fmt.Errorf("llm backend is nil")
 	}
 	assembledText := assemblePrompt(options.PromptPrefix, options.Personality, options.NoReplyToken, userText, strings.TrimSpace(threadID) != "")
 	provider := strings.TrimSpace(options.Provider)
@@ -173,7 +173,7 @@ func (p *Processor) runLLM(
 			observer.RecordVisibleOutput(normalized)
 		}
 	}
-	logRawEvent := func(event agentbridge.RawEvent) {
+	logRawEvent := func(event llm.RawEvent) {
 		if observer != nil {
 			observer.RecordBackendEvent(event)
 		}
@@ -203,7 +203,7 @@ func (p *Processor) runLLM(
 			)
 		}
 	}
-	result, err := snapshot.llm.Run(ctx, agentbridge.RunRequest{
+	result, err := snapshot.llm.Run(ctx, llm.RunRequest{
 		ThreadID:        strings.TrimSpace(threadID),
 		AgentName:       "assistant",
 		UserText:        assembledText,
