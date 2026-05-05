@@ -3,28 +3,342 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Alice Docs</title>
+<title>Alice — Same AI Session, Anywhere</title>
 <style>
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700&display=swap');
+
 * { margin: 0; padding: 0; box-sizing: border-box; }
-body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  background: #1e1e2e; color: #cdd6f4; display: flex; align-items: center;
-  justify-content: center; min-height: 100vh; }
-main { text-align: center; }
-h1 { font-size: 3rem; margin-bottom: 0.3rem; color: #f5c2e7; }
-p  { font-size: 1.1rem; margin-bottom: 2rem; color: #a6adc8; }
-a  { display: inline-block; padding: 0.9rem 2.5rem; margin: 0 0.8rem;
-  font-size: 1.1rem; text-decoration: none; border-radius: 8px;
-  background: #313244; color: #cdd6f4; border: 1px solid #45475a;
-  transition: background 0.2s; }
-a:hover { background: #45475a; }
+
+body {
+  font-family: 'JetBrains Mono', monospace;
+  background: #0a0a0f;
+  color: #e0e0e0;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+/* Grid background */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    linear-gradient(rgba(100, 255, 218, 0.03) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(100, 255, 218, 0.03) 1px, transparent 1px);
+  background-size: 60px 60px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Scanline overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.08) 2px, rgba(0,0,0,0.08) 4px);
+  pointer-events: none;
+  z-index: 999;
+}
+
+.container {
+  position: relative;
+  z-index: 1;
+  max-width: 900px;
+  margin: 0 auto;
+  padding: 3rem 1.5rem;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+/* Terminal window */
+.terminal {
+  background: rgba(10, 10, 20, 0.85);
+  border: 1px solid rgba(100, 255, 218, 0.2);
+  border-radius: 12px;
+  padding: 0;
+  overflow: hidden;
+  box-shadow: 0 0 60px rgba(100, 255, 218, 0.08), 0 0 120px rgba(100, 255, 218, 0.03);
+}
+
+.terminal-bar {
+  background: rgba(100, 255, 218, 0.05);
+  border-bottom: 1px solid rgba(100, 255, 218, 0.15);
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.terminal-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 1px solid;
+}
+.terminal-dot.red   { background: rgba(255,95,95,0.3);  border-color: rgba(255,95,95,0.6); }
+.terminal-dot.yellow{ background: rgba(255,213,79,0.3); border-color: rgba(255,213,79,0.6); }
+.terminal-dot.green { background: rgba(100,255,218,0.3);border-color: rgba(100,255,218,0.6); }
+
+.terminal-title {
+  margin-left: 12px;
+  font-size: 0.75rem;
+  color: rgba(100, 255, 218, 0.4);
+}
+
+.terminal-body {
+  padding: 30px 32px 36px;
+}
+
+/* Logo / Title */
+.logo {
+  font-size: 4rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #64ffda 0%, #00e5ff 50%, #82b1ff 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  letter-spacing: 2px;
+  line-height: 1.1;
+  margin-bottom: 0.3rem;
+}
+
+.subtitle {
+  font-size: 1.1rem;
+  color: rgba(100, 255, 218, 0.7);
+  margin-bottom: 2rem;
+  font-weight: 400;
+}
+
+/* Terminal prompt */
+.prompt {
+  background: rgba(100, 255, 218, 0.04);
+  border-left: 2px solid #64ffda;
+  padding: 1.2rem 1.5rem;
+  margin: 1.5rem 0;
+  border-radius: 0 8px 8px 0;
+}
+
+.prompt-line {
+  font-size: 0.95rem;
+  color: #7c8db5;
+  margin: 0.3rem 0;
+}
+.prompt-line .dim { color: #4a5568; }
+.prompt-line .cmd { color: #64ffda; }
+.prompt-line .arg { color: #82b1ff; }
+.prompt-line .out { color: #a6accd; }
+
+/* Feature cards */
+.features {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1rem;
+  margin: 2rem 0 0.5rem;
+}
+
+.feature {
+  position: relative;
+  background: rgba(100, 255, 218, 0.03);
+  border: 1px solid rgba(100, 255, 218, 0.1);
+  border-radius: 10px;
+  padding: 1.3rem 1.3rem 1.1rem;
+  transition: border-color 0.3s, background 0.3s;
+}
+
+.feature:hover {
+  border-color: rgba(100, 255, 218, 0.35);
+  background: rgba(100, 255, 218, 0.06);
+}
+
+.feature-icon {
+  font-size: 1.3rem;
+  margin-bottom: 0.6rem;
+  display: block;
+}
+
+.feature h3 {
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #64ffda;
+  margin-bottom: 0.35rem;
+}
+
+.feature p {
+  font-size: 0.78rem;
+  color: #8892b0;
+  line-height: 1.5;
+}
+
+/* Lang selector */
+.lang-select {
+  display: flex;
+  gap: 1rem;
+  margin-top: 2rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid rgba(100, 255, 218, 0.1);
+  justify-content: center;
+}
+
+.lang-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.75rem 2rem;
+  font-family: inherit;
+  font-size: 0.95rem;
+  font-weight: 700;
+  text-decoration: none;
+  border-radius: 8px;
+  transition: all 0.3s;
+  background: rgba(100, 255, 218, 0.06);
+  color: #64ffda;
+  border: 1px solid rgba(100, 255, 218, 0.2);
+  cursor: pointer;
+}
+
+.lang-btn:hover {
+  background: rgba(100, 255, 218, 0.15);
+  border-color: #64ffda;
+  box-shadow: 0 0 24px rgba(100, 255, 218, 0.15);
+  transform: translateY(-1px);
+}
+
+.lang-btn .arrow {
+  opacity: 0;
+  transform: translateX(-4px);
+  transition: all 0.3s;
+}
+
+.lang-btn:hover .arrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Footer */
+.footer {
+  text-align: center;
+  margin-top: 1.5rem;
+  font-size: 0.7rem;
+  color: rgba(100, 255, 218, 0.2);
+}
+
+.footer a {
+  color: rgba(100, 255, 218, 0.3);
+  text-decoration: none;
+}
+
+.footer a:hover { color: #64ffda; }
+
+/* Pulse glow on page edge */
+.glow {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 600px;
+  height: 600px;
+  background: radial-gradient(circle, rgba(100,255,218,0.04) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Responsive */
+@media (max-width: 600px) {
+  .logo { font-size: 2.5rem; }
+  .terminal-body { padding: 20px 18px 24px; }
+  .features { grid-template-columns: 1fr; }
+  .lang-select { flex-direction: column; }
+}
+
+/* Stats row */
+.stats {
+  display: flex;
+  gap: 2rem;
+  justify-content: center;
+  margin: 1.2rem 0;
+  flex-wrap: wrap;
+}
+
+.stat {
+  text-align: center;
+}
+
+.stat-value {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #64ffda;
+}
+
+.stat-label {
+  font-size: 0.65rem;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-top: 0.15rem;
+}
 </style>
 </head>
 <body>
-<main>
-<h1>Alice</h1>
-<p>Same AI session, anywhere. Terminal &harr; Feishu, seamless switch.</p>
-<a href="en/">English</a>
-<a href="zh/">中文</a>
-</main>
+<div class="glow"></div>
+<div class="container">
+
+  <main class="terminal">
+    <div class="terminal-bar">
+      <span class="terminal-dot red"></span>
+      <span class="terminal-dot yellow"></span>
+      <span class="terminal-dot green"></span>
+      <span class="terminal-title">alice ~ zsh</span>
+    </div>
+    <div class="terminal-body">
+
+      <h1 class="logo">Alice</h1>
+      <p class="subtitle">Same AI session, anywhere. Terminal &harr; Feishu. No cloud lock-in.</p>
+
+      <div class="prompt">
+        <div class="prompt-line"><span class="dim">~ $</span> <span class="cmd">opencode</span> <span class="arg">refactor auth module</span></div>
+        <div class="prompt-line"><span class="dim">~ $</span> <span class="cmd">alice --feishu-websocket</span></div>
+        <div class="prompt-line"><span class="out">&rarr; Connected. Session <span style="color:#64ffda">thread_4f2a</span> ready.</span></div>
+        <div class="prompt-line" style="margin-top:0.4rem"><span class="dim">Feishu @phone $</span> <span class="cmd">/session resume</span> <span class="out">&rarr; Context restored. Continuing.</span></div>
+      </div>
+
+      <div class="stats">
+        <div class="stat"><div class="stat-value">6</div><div class="stat-label">AI Backends</div></div>
+        <div class="stat"><div class="stat-value">0</div><div class="stat-label">Cloud Dependencies</div></div>
+        <div class="stat"><div class="stat-value">&lt;5min</div><div class="stat-label">Setup Time</div></div>
+      </div>
+
+      <div class="features">
+        <div class="feature">
+          <span class="feature-icon">&#x1F4BB;&#x27A1;&#xFE0F;&#x1F4F1;</span>
+          <h3>Terminal &harr; Feishu</h3>
+          <p>Start coding in your IDE, continue from Feishu on your phone. One <code>/session resume</code> and you're back in context. Same workspace, same thread.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">&#x1F916;</span>
+          <h3>Any AI, Your Rules</h3>
+          <p>OpenCode (DeepSeek V4), Codex, Claude, Gemini, Kimi. Mix providers per scene — light model for chat, heavy model for work.</p>
+        </div>
+        <div class="feature">
+          <span class="feature-icon">&#x1F512;</span>
+          <h3>No Cloud. No Lock-in.</h3>
+          <p>The agent CLI runs on <em>your</em> machine. No API keys, no third-party servers, no vendor lock-in. Your data stays yours.</p>
+        </div>
+      </div>
+
+      <div class="lang-select">
+        <a href="en/" class="lang-btn"><span class="arrow">&#x2192;</span> English Docs <span class="arrow" style="opacity:0.4;font-size:0.7rem">&#x2318;K</span></a>
+        <a href="zh/" class="lang-btn"><span class="arrow">&#x2192;</span> 中文文档 <span class="arrow" style="opacity:0.4;font-size:0.7rem">&#x2318;K</span></a>
+      </div>
+
+    </div>
+  </main>
+
+  <footer class="footer">
+    <a href="https://github.com/Alice-space/alice">GitHub</a> &middot; MIT Licensed
+  </footer>
+
+</div>
 </body>
 </html>
