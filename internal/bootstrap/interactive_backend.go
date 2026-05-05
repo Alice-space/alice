@@ -358,7 +358,7 @@ func (b *interactiveProviderBackend) closeIdleSession(sessionKey string, session
 
 func (b *interactiveProviderBackend) interruptAndDropSession(sessionKey string, session *llm.InteractiveSession) {
 	if session != nil {
-		interruptCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		interruptCtx, cancel := context.WithTimeout(context.TODO(), 5*time.Second)
 		_ = session.Interrupt(interruptCtx)
 		cancel()
 	}

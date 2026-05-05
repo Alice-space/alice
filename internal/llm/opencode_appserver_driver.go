@@ -365,7 +365,7 @@ func (d *openCodeAppServerDriver) ensureEventStream() {
 		return
 	}
 	baseURL := d.baseURL
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.TODO())
 	d.eventCancel = cancel
 	d.mu.Unlock()
 

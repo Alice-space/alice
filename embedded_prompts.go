@@ -3,6 +3,7 @@ package alice
 import (
 	"embed"
 	"io/fs"
+	"log"
 )
 
 // PromptFS exposes the bundled prompt templates from the repository's prompts directory.
@@ -10,25 +11,34 @@ import (
 //go:embed all:prompts all:skills all:opencode-plugin config.example.yaml
 var embeddedFiles embed.FS
 
-var PromptFS = mustSub(embeddedFiles, "prompts")
-var SkillsFS = mustSub(embeddedFiles, "skills")
-var ConfigExampleYAML = mustReadFile(embeddedFiles, "config.example.yaml")
-var SoulExampleMarkdown = mustReadFile(embeddedFiles, "prompts/SOUL.md.example")
-var OpenCodePluginJS = mustReadFile(embeddedFiles, "opencode-plugin/delegate.js")
-var SystemdUnitTmpl = mustReadFile(embeddedFiles, "opencode-plugin/alice.service.tmpl")
+var PromptFS fs.FS
+var SkillsFS fs.FS
+var ConfigExampleYAML []byte
+var SoulExampleMarkdown []byte
+var OpenCodePluginJS []byte
+var SystemdUnitTmpl []byte
 
-func mustSub(root fs.FS, dir string) fs.FS {
-	sub, err := fs.Sub(root, dir)
+func init() {
+	PromptFS = initSub("prompts")
+	SkillsFS = initSub("skills")
+	ConfigExampleYAML = initReadFile("config.example.yaml")
+	SoulExampleMarkdown = initReadFile("prompts/SOUL.md.example")
+	OpenCodePluginJS = initReadFile("opencode-plugin/delegate.js")
+	SystemdUnitTmpl = initReadFile("opencode-plugin/alice.service.tmpl")
+}
+
+func initSub(dir string) fs.FS {
+	sub, err := fs.Sub(embeddedFiles, dir)
 	if err != nil {
-		panic(err)
+		log.Fatalf("embedded: fs.Sub(%s): %v", dir, err)
 	}
 	return sub
 }
 
-func mustReadFile(root fs.FS, name string) []byte {
-	content, err := fs.ReadFile(root, name)
+func initReadFile(name string) []byte {
+	content, err := fs.ReadFile(embeddedFiles, name)
 	if err != nil {
-		panic(err)
+		log.Fatalf("embedded: fs.ReadFile(%s): %v", name, err)
 	}
 	return content
 }
