@@ -192,7 +192,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 					logging.Errorf("goal pause on fast loop failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, patchErr)
 				}
 				e.resetFastRunCount(scope)
-				e.sendGoalNotification(goal, "⚠️ 目标已自动暂停\n检测到连续 5 次快速循环（每次 < 3 分钟），可能存在死循环。\n目标: "+goal.Objective)
+				e.sendGoalNotification(goalCtx, goal, "⚠️ 目标已自动暂停\n检测到连续 5 次快速循环（每次 < 3 分钟），可能存在死循环。\n目标: "+goal.Objective)
 				return nil
 			}
 		} else {
