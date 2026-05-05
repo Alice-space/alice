@@ -7,6 +7,23 @@ import (
 	"time"
 )
 
+var (
+	ErrGoalIDEmpty     = errors.New("goal id is empty")
+	ErrObjectiveEmpty  = errors.New("objective is empty")
+	ErrScopeIDEmpty    = errors.New("scope id is empty")
+	ErrRouteIncomplete = errors.New("route is incomplete")
+	ErrCreatorIDEmpty  = errors.New("creator id is empty")
+
+	ErrTaskIDEmpty        = errors.New("task id is empty")
+	ErrPromptEmpty        = errors.New("prompt is empty")
+	ErrScheduleRequired   = errors.New("schedule requires every_seconds or cron_expr")
+	ErrMaxRunsNegative    = errors.New("max_runs must be >= 0")
+	ErrRunCountNegative   = errors.New("run_count must be >= 0")
+	ErrRunCountExceedsMax = errors.New("run_count exceeds max_runs")
+	ErrMaxRunsReached     = errors.New("active task already reached max_runs")
+	ErrEverySecondsMin    = errors.New("every_seconds must be >= 60")
+)
+
 type ScopeKind string
 
 const (
@@ -83,22 +100,22 @@ func NormalizeGoal(goal GoalTask) GoalTask {
 func ValidateGoal(goal GoalTask) error {
 	goal = NormalizeGoal(goal)
 	if goal.ID == "" {
-		return errors.New("goal id is empty")
+		return ErrGoalIDEmpty
 	}
 	if goal.Objective == "" {
-		return errors.New("objective is empty")
+		return ErrObjectiveEmpty
 	}
 	if goal.Scope.Kind != ScopeKindUser && goal.Scope.Kind != ScopeKindChat {
 		return fmt.Errorf("invalid scope kind %q", goal.Scope.Kind)
 	}
 	if goal.Scope.ID == "" {
-		return errors.New("scope id is empty")
+		return ErrScopeIDEmpty
 	}
 	if goal.Route.ReceiveIDType == "" || goal.Route.ReceiveID == "" {
-		return errors.New("route is incomplete")
+		return ErrRouteIncomplete
 	}
 	if goal.Creator.PreferredID() == "" {
-		return errors.New("creator id is empty")
+		return ErrCreatorIDEmpty
 	}
 	switch goal.Status {
 	case GoalStatusActive, GoalStatusPaused, GoalStatusComplete, GoalStatusTimeout, GoalStatusWaitingForSession:
@@ -220,52 +237,52 @@ func scheduleEverySeconds(raw int) int {
 func ValidateTask(task Task) error {
 	task = NormalizeTask(task)
 	if task.ID == "" {
-		return errors.New("task id is empty")
+		return ErrTaskIDEmpty
 	}
 	if task.Scope.Kind != ScopeKindUser && task.Scope.Kind != ScopeKindChat {
 		return fmt.Errorf("invalid scope kind %q", task.Scope.Kind)
 	}
 	if task.Scope.ID == "" {
-		return errors.New("scope id is empty")
+		return ErrScopeIDEmpty
 	}
 	if task.Route.ReceiveIDType == "" || task.Route.ReceiveID == "" {
-		return errors.New("route is incomplete")
+		return ErrRouteIncomplete
 	}
 	if task.Creator.PreferredID() == "" {
-		return errors.New("creator id is empty")
+		return ErrCreatorIDEmpty
 	}
 	if task.ManageMode != ManageModeCreatorOnly && task.ManageMode != ManageModeScopeAll {
 		return fmt.Errorf("invalid manage mode %q", task.ManageMode)
 	}
 	task.Prompt = strings.TrimSpace(task.Prompt)
 	if task.Prompt == "" {
-		return errors.New("prompt is empty")
+		return ErrPromptEmpty
 	}
 	if task.Schedule.isInterval() {
 		if task.Schedule.EverySeconds < 60 {
-			return errors.New("every_seconds must be >= 60")
+			return ErrEverySecondsMin
 		}
 	} else if task.Schedule.isCron() {
 		if err := validateCronExpression(task.Schedule.CronExpr); err != nil {
 			return err
 		}
 	} else {
-		return errors.New("schedule requires every_seconds or cron_expr")
+		return ErrScheduleRequired
 	}
 	if task.Status != TaskStatusActive && task.Status != TaskStatusPaused && task.Status != TaskStatusDeleted {
 		return fmt.Errorf("invalid status %q", task.Status)
 	}
 	if task.MaxRuns < 0 {
-		return errors.New("max_runs must be >= 0")
+		return ErrMaxRunsNegative
 	}
 	if task.RunCount < 0 {
-		return errors.New("run_count must be >= 0")
+		return ErrRunCountNegative
 	}
 	if task.MaxRuns > 0 && task.RunCount > task.MaxRuns {
-		return errors.New("run_count exceeds max_runs")
+		return ErrRunCountExceedsMax
 	}
 	if task.Status == TaskStatusActive && task.MaxRuns > 0 && task.RunCount >= task.MaxRuns && !task.Running {
-		return errors.New("active task already reached max_runs")
+		return ErrMaxRunsReached
 	}
 	return nil
 }

@@ -169,7 +169,7 @@ func (r Runner) runAttempt(
 	}
 	prompt := strings.TrimSpace(userText)
 	if prompt == "" {
-		return "", "", Usage{}, errors.New("empty prompt")
+		return "", "", Usage{}, shared.ErrPromptEmpty
 	}
 
 	timeout := r.Timeout

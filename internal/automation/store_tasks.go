@@ -17,7 +17,7 @@ var errSkipDeletedTaskMutation = errors.New("skip deleted task mutation")
 
 func (s *Store) ListTasks(scope Scope, statusFilter string, limit int) ([]Task, error) {
 	if s == nil {
-		return nil, errors.New("store is nil")
+		return nil, ErrStoreNil
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
@@ -80,7 +80,7 @@ func (s *Store) ListTasks(scope Scope, statusFilter string, limit int) ([]Task, 
 
 func (s *Store) GetTask(taskID string) (Task, error) {
 	if s == nil {
-		return Task{}, errors.New("store is nil")
+		return Task{}, ErrStoreNil
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
@@ -104,7 +104,7 @@ func (s *Store) GetTask(taskID string) (Task, error) {
 
 func (s *Store) ResetRunningTasks() error {
 	if s == nil {
-		return errors.New("store is nil")
+		return ErrStoreNil
 	}
 	now := s.nowLocal()
 	return s.updateSnapshot(func(snapshot *Snapshot) (bool, error) {
@@ -126,7 +126,7 @@ func (s *Store) ResetRunningTasks() error {
 
 func (s *Store) CreateTask(task Task) (Task, error) {
 	if s == nil {
-		return Task{}, errors.New("store is nil")
+		return Task{}, ErrStoreNil
 	}
 	task = NormalizeTask(task)
 	now := s.nowLocal()
@@ -162,7 +162,7 @@ func (s *Store) CreateTask(task Task) (Task, error) {
 
 func (s *Store) PatchTask(taskID string, mutate func(task *Task) error) (Task, error) {
 	if s == nil {
-		return Task{}, errors.New("store is nil")
+		return Task{}, ErrStoreNil
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
@@ -209,7 +209,7 @@ func (s *Store) PatchTask(taskID string, mutate func(task *Task) error) (Task, e
 
 func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 	if s == nil {
-		return nil, errors.New("store is nil")
+		return nil, ErrStoreNil
 	}
 	if limit <= 0 {
 		limit = 20
@@ -282,7 +282,7 @@ func (s *Store) ClaimDueTasks(at time.Time, limit int) ([]Task, error) {
 
 func (s *Store) UnclaimTask(taskID string) error {
 	if s == nil {
-		return errors.New("store is nil")
+		return ErrStoreNil
 	}
 	taskID = strings.TrimSpace(taskID)
 	if taskID == "" {
@@ -312,7 +312,7 @@ func (s *Store) UnclaimTask(taskID string) error {
 
 func (s *Store) RecordTaskResult(taskID string, at time.Time, runErr error) error {
 	if s == nil {
-		return errors.New("store is nil")
+		return ErrStoreNil
 	}
 	_, err := s.PatchTask(taskID, func(task *Task) error {
 		if task.Status == TaskStatusDeleted {
@@ -387,7 +387,7 @@ func shouldPurgeDeletedTask(task Task, cutoff time.Time) bool {
 
 func (s *Store) RecordTaskResumeThreadID(taskID, nextThreadID string) error {
 	if s == nil {
-		return errors.New("store is nil")
+		return ErrStoreNil
 	}
 	nextThreadID = strings.TrimSpace(nextThreadID)
 	if nextThreadID == "" {
@@ -411,7 +411,7 @@ func (s *Store) RecordTaskResumeThreadID(taskID, nextThreadID string) error {
 
 func (s *Store) RecordTaskSourceMessageID(taskID, messageID string) error {
 	if s == nil {
-		return errors.New("store is nil")
+		return ErrStoreNil
 	}
 	messageID = strings.TrimSpace(messageID)
 	if messageID == "" {

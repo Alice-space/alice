@@ -89,7 +89,7 @@ func (r Runner) RunWithThreadAndProgress(
 ) (string, string, int64, int64, int64, error) {
 	prompt := strings.TrimSpace(userText)
 	if prompt == "" {
-		return "", "", 0, 0, 0, errors.New("empty prompt")
+		return "", "", 0, 0, 0, shared.ErrPromptEmpty
 	}
 
 	model = strings.TrimSpace(model)

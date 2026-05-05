@@ -61,7 +61,7 @@ func (r Runner) RunWithThreadAndProgress(
 	model = strings.TrimSpace(model)
 	prompt := strings.TrimSpace(userText)
 	if prompt == "" {
-		return "", requestedThreadID, errors.New("empty prompt")
+		return "", requestedThreadID, shared.ErrPromptEmpty
 	}
 
 	timeout := r.Timeout

@@ -3,9 +3,15 @@
 package shared
 
 import (
+	"errors"
 	"sort"
 	"strings"
 	"time"
+)
+
+var (
+	ErrPromptEmpty = errors.New("empty prompt")
+	ErrLLMTimeout  = errors.New("llm timeout")
 )
 
 // MergeEnv merges environment variable overrides into a copy of base,

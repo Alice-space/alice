@@ -21,6 +21,7 @@ const (
 
 var (
 	ErrTaskNotFound = errors.New("automation task not found")
+	ErrStoreNil     = errors.New("store is nil")
 
 	automationMetaBucket  = []byte("meta")
 	automationTasksBucket = []byte("tasks")
