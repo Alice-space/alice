@@ -56,7 +56,7 @@ func TestServiceQuery_GroupScope(t *testing.T) {
 	if got := result.ScopeLabel; got != "chat_id:oc_chat" {
 		t.Fatalf("unexpected scope label: %q", got)
 	}
-	if got := automationStore.scope; got != (automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_chat"}) {
+	if got := automationStore.scope; got != (automation.Scope{Kind: automation.ScopeKindChat, ID: "chat_id:oc_chat|thread:omt_1"}) {
 		t.Fatalf("unexpected automation scope: %#v", got)
 	}
 	if got := usageProvider.scope; got != "chat_id:oc_chat" {
