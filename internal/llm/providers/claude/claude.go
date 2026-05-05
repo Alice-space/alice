@@ -147,7 +147,7 @@ func (r Runner) RunWithThreadAndProgress(
 		_ = cmd.Wait()
 		<-stderrDone
 		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-			return "", activeThreadID, inputTokens, cachedInputTokens, outputTokens, errors.New("claude timeout")
+			return "", activeThreadID, inputTokens, cachedInputTokens, outputTokens, shared.ErrLLMTimeout
 		}
 		if errors.Is(tctx.Err(), context.Canceled) {
 			return "", activeThreadID, inputTokens, cachedInputTokens, outputTokens, context.Canceled
@@ -160,7 +160,7 @@ func (r Runner) RunWithThreadAndProgress(
 	diffEmitter.Emit()
 	stderrText := strings.TrimSpace(stderr.String())
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", activeThreadID, inputTokens, cachedInputTokens, outputTokens, errors.New("claude timeout")
+		return "", activeThreadID, inputTokens, cachedInputTokens, outputTokens, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", activeThreadID, inputTokens, cachedInputTokens, outputTokens, context.Canceled

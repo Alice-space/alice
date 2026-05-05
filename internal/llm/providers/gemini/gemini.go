@@ -119,7 +119,7 @@ func (r Runner) RunWithThreadAndProgress(
 	detail := strings.TrimSpace(stderr.String())
 	inputTokens, cachedInputTokens, outputTokens := response.usageTotals()
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", threadID, inputTokens, cachedInputTokens, outputTokens, errors.New("gemini timeout")
+		return "", threadID, inputTokens, cachedInputTokens, outputTokens, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", threadID, inputTokens, cachedInputTokens, outputTokens, context.Canceled

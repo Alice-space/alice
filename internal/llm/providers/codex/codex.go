@@ -291,7 +291,7 @@ loop:
 			_ = cmd.Wait()
 			<-stderrDone
 			if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-				return "", activeThreadID, usage, errors.New("codex timeout")
+				return "", activeThreadID, usage, shared.ErrLLMTimeout
 			}
 			return "", activeThreadID, usage, context.Canceled
 		case <-idleTimer.C:
@@ -358,7 +358,7 @@ loop:
 		_ = cmd.Wait()
 		<-stderrDone
 		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-			return "", activeThreadID, usage, errors.New("codex timeout")
+			return "", activeThreadID, usage, shared.ErrLLMTimeout
 		}
 		if errors.Is(tctx.Err(), context.Canceled) {
 			return "", activeThreadID, usage, context.Canceled
@@ -370,7 +370,7 @@ loop:
 	<-stderrDone
 	stderrText := strings.TrimSpace(stderr.String())
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", activeThreadID, usage, errors.New("codex timeout")
+		return "", activeThreadID, usage, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", activeThreadID, usage, context.Canceled

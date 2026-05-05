@@ -488,12 +488,17 @@ func TestRunUserTask_SessionGateInterruptedUnclaims(t *testing.T) {
 		engine.runUserTask(context.Background(), claimed[0])
 	}()
 
-	time.Sleep(100 * time.Millisecond)
-	gate.mu.Lock()
-	if gate.cancel != nil {
-		gate.cancel(context.Canceled)
+	// Wait for runUserTask to acquire the session gate, then cancel.
+	for i := 0; i < 50; i++ {
+		gate.mu.Lock()
+		cancel := gate.cancel
+		gate.mu.Unlock()
+		if cancel != nil {
+			cancel(context.Canceled)
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	gate.mu.Unlock()
 
 	<-done
 

@@ -150,7 +150,7 @@ func (r Runner) RunWithThreadAndProgress(
 		activeThreadID = r.discoverThreadID(workDir, sessionEnv)
 	}
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", activeThreadID, errors.New("kimi timeout")
+		return "", activeThreadID, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", activeThreadID, context.Canceled

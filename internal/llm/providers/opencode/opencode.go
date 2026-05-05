@@ -177,7 +177,7 @@ func (r Runner) RunWithThreadAndProgress(
 
 	detail := strings.TrimSpace(stderr.String())
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", nextThreadID, inputTokens, outputTokens, cachedInputTokens, errors.New("opencode timeout")
+		return "", nextThreadID, inputTokens, outputTokens, cachedInputTokens, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", nextThreadID, inputTokens, outputTokens, cachedInputTokens, context.Canceled
