@@ -66,6 +66,47 @@ func resolveAutomationScope(session sessionctx.SessionContext) (automationScopeC
 	return ctx, nil
 }
 
+func resolveAutomationTaskScope(session sessionctx.SessionContext) (automationScopeContext, error) {
+	runtimeCtx, err := resolveRuntimeSessionContext(session)
+	if err != nil {
+		return automationScopeContext{}, err
+	}
+	ctx := automationScopeContext{
+		creator: automation.Actor{
+			UserID: runtimeCtx.actorUserID,
+			OpenID: runtimeCtx.actorOpenID,
+		},
+		actorID: runtimeCtx.actorID,
+		isGroup: runtimeCtx.isGroup,
+		session: session,
+	}
+	if runtimeCtx.isGroup {
+		scopeID := sessionkey.VisibilityKey(session.SessionKey)
+		if scopeID == "" {
+			scopeID = runtimeCtx.receiveID
+		}
+		receiveID := runtimeCtx.receiveID
+		if receiveID == "" {
+			return automationScopeContext{}, errors.New("missing chat_id for group automation scope")
+		}
+		ctx.scope = automation.Scope{Kind: automation.ScopeKindChat, ID: scopeID}
+		ctx.route = automation.Route{ReceiveIDType: "chat_id", ReceiveID: receiveID}
+		return ctx, nil
+	}
+	ctx.scope = automation.Scope{Kind: automation.ScopeKindUser, ID: runtimeCtx.actorID}
+	if runtimeCtx.actorUserID != "" {
+		ctx.route = automation.Route{ReceiveIDType: "user_id", ReceiveID: runtimeCtx.actorUserID}
+	} else if runtimeCtx.actorOpenID != "" {
+		ctx.route = automation.Route{ReceiveIDType: "open_id", ReceiveID: runtimeCtx.actorOpenID}
+	} else {
+		ctx.route = automation.Route{
+			ReceiveIDType: runtimeCtx.receiveIDType,
+			ReceiveID:     runtimeCtx.receiveID,
+		}
+	}
+	return ctx, nil
+}
+
 func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automationScopeContext) (automation.Task, error) {
 	task := automation.Task{
 		Title:   strings.TrimSpace(req.Title),
@@ -97,11 +138,6 @@ func (s *Server) buildTaskFromRequest(req CreateTaskRequest, scopeCtx automation
 	}
 
 	task.SessionKey = scopeSessionKey(scopeCtx.session)
-
-	if sourceMsgID := strings.TrimSpace(scopeCtx.session.SourceMessageID); sourceMsgID != "" {
-		task.SessionKey = task.SessionKey + sessionkey.MessageToken + sourceMsgID
-		task.Route = automation.Route{ReceiveIDType: "source_message_id", ReceiveID: sourceMsgID}
-	}
 
 	if req.Enabled != nil && !*req.Enabled {
 		task.Status = automation.TaskStatusPaused

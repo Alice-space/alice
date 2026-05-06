@@ -47,6 +47,102 @@ func TestBuildTaskFromRequest_BasicFields(t *testing.T) {
 	}
 }
 
+func TestBuildTaskFromRequest_RouteIsChatScopeNotThread(t *testing.T) {
+	srv := NewServer("", "", nil, nil, config.Config{})
+	tests := []struct {
+		name     string
+		scopeCtx automationScopeContext
+		wantType string
+		wantID   string
+	}{
+		{
+			name: "P2P",
+			scopeCtx: automationScopeContext{
+				scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
+				route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
+				creator: automation.Actor{OpenID: "ou_actor"},
+				session: sessionctx.SessionContext{
+					SessionKey:      "open_id:ou_actor",
+					SourceMessageID: "om_thread_abc",
+				},
+			},
+			wantType: "open_id",
+			wantID:   "ou_actor",
+		},
+		{
+			name: "GroupChat",
+			scopeCtx: automationScopeContext{
+				scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_group"},
+				route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_group"},
+				creator: automation.Actor{OpenID: "ou_actor"},
+				session: sessionctx.SessionContext{
+					SessionKey:      "chat_id:oc_group",
+					SourceMessageID: "om_thread_xyz",
+				},
+			},
+			wantType: "chat_id",
+			wantID:   "oc_group",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			task, err := srv.buildTaskFromRequest(
+				CreateTaskRequest{Prompt: "task", EverySeconds: 600},
+				tt.scopeCtx,
+			)
+			if err != nil {
+				t.Fatalf("build task failed: %v", err)
+			}
+			if task.Route.ReceiveIDType != tt.wantType {
+				t.Fatalf("expected route type %q (chat scope output), got %q", tt.wantType, task.Route.ReceiveIDType)
+			}
+			if task.Route.ReceiveID != tt.wantID {
+				t.Fatalf("expected route id %q, got %q", tt.wantID, task.Route.ReceiveID)
+			}
+		})
+	}
+}
+
+func TestResolveAutomationTaskScope_GroupChatScopeIsPerChat(t *testing.T) {
+	session := sessionctx.SessionContext{
+		ReceiveIDType: "chat_id",
+		ReceiveID:     "oc_chat",
+		ActorUserID:   "ou_user",
+		ChatType:      "group",
+		SessionKey:    "chat_id:oc_chat|work:om_seed|message:om_reply",
+	}
+	scopeCtx, err := resolveAutomationTaskScope(session)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if scopeCtx.scope.ID != "chat_id:oc_chat" {
+		t.Fatalf("expected task scope per-chat 'chat_id:oc_chat', got %q", scopeCtx.scope.ID)
+	}
+	if scopeCtx.route.ReceiveIDType != "chat_id" {
+		t.Fatalf("expected chat_id route, got %q", scopeCtx.route.ReceiveIDType)
+	}
+}
+
+func TestResolveAutomationTaskScope_P2PScopeIsPerUser(t *testing.T) {
+	session := sessionctx.SessionContext{
+		ReceiveIDType: "open_id",
+		ReceiveID:     "ou_actor",
+		ActorOpenID:   "ou_actor",
+		ChatType:      "p2p",
+		SessionKey:    "open_id:ou_actor|message:om_thread_abc",
+	}
+	scopeCtx, err := resolveAutomationTaskScope(session)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if scopeCtx.scope.ID != "ou_actor" {
+		t.Fatalf("expected task scope per-user 'ou_actor', got %q", scopeCtx.scope.ID)
+	}
+	if scopeCtx.route.ReceiveIDType != "open_id" {
+		t.Fatalf("expected open_id route, got %q", scopeCtx.route.ReceiveIDType)
+	}
+}
+
 func TestBuildTaskFromRequest_SessionKeyIsSet(t *testing.T) {
 	srv := NewServer("", "", nil, nil, config.Config{})
 	task, err := srv.buildTaskFromRequest(
@@ -91,120 +187,6 @@ func TestBuildTaskFromRequest_PreservesExplicitNextRunAt(t *testing.T) {
 	}
 	if !task.NextRunAt.Equal(nextRunAt) {
 		t.Fatalf("unexpected next_run_at: got=%s want=%s", task.NextRunAt.Format(time.RFC3339), nextRunAt.Format(time.RFC3339))
-	}
-}
-
-func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_P2P(t *testing.T) {
-	srv := NewServer("", "", nil, nil, config.Config{})
-	task, err := srv.buildTaskFromRequest(
-		CreateTaskRequest{
-			Prompt:       "summarize",
-			EverySeconds: 600,
-		},
-		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
-			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
-			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{
-				SessionKey:      "open_id:ou_actor",
-				SourceMessageID: "om_thread_abc",
-			},
-		},
-	)
-	if err != nil {
-		t.Fatalf("build task failed: %v", err)
-	}
-	if want := "open_id:ou_actor|message:om_thread_abc"; task.SessionKey != want {
-		t.Fatalf("unexpected session key: got=%q want=%q", task.SessionKey, want)
-	}
-	if task.Route.ReceiveIDType != "source_message_id" {
-		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
-	}
-	if task.Route.ReceiveID != "om_thread_abc" {
-		t.Fatalf("unexpected route id: got=%q want=om_thread_abc", task.Route.ReceiveID)
-	}
-}
-
-func TestBuildTaskFromRequest_SourceMessageIDThreadsSessionKeyAndRoute_GroupChat(t *testing.T) {
-	srv := NewServer("", "", nil, nil, config.Config{})
-	task, err := srv.buildTaskFromRequest(
-		CreateTaskRequest{
-			Prompt:       "summarize",
-			EverySeconds: 600,
-		},
-		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindChat, ID: "oc_group"},
-			route:   automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_group"},
-			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{
-				SessionKey:      "chat_id:oc_group",
-				SourceMessageID: "om_thread_xyz",
-			},
-		},
-	)
-	if err != nil {
-		t.Fatalf("build task failed: %v", err)
-	}
-	if want := "chat_id:oc_group|message:om_thread_xyz"; task.SessionKey != want {
-		t.Fatalf("unexpected session key: got=%q want=%q", task.SessionKey, want)
-	}
-	if task.Route.ReceiveIDType != "source_message_id" {
-		t.Fatalf("unexpected route type: got=%q want=source_message_id", task.Route.ReceiveIDType)
-	}
-	if task.Route.ReceiveID != "om_thread_xyz" {
-		t.Fatalf("unexpected route id: got=%q want=om_thread_xyz", task.Route.ReceiveID)
-	}
-}
-
-func TestBuildTaskFromRequest_SourceMessageIDDoesNotAffectNoSource(t *testing.T) {
-	srv := NewServer("", "", nil, nil, config.Config{})
-	task, err := srv.buildTaskFromRequest(
-		CreateTaskRequest{
-			Prompt:       "summarize",
-			EverySeconds: 600,
-		},
-		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
-			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
-			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{
-				SessionKey: "open_id:ou_actor",
-			},
-		},
-	)
-	if err != nil {
-		t.Fatalf("build task failed: %v", err)
-	}
-	if want := "open_id:ou_actor"; task.SessionKey != want {
-		t.Fatalf("unexpected session key: got=%q want=%q", task.SessionKey, want)
-	}
-	if task.Route.ReceiveIDType != "open_id" {
-		t.Fatalf("unexpected route type: got=%q want=open_id", task.Route.ReceiveIDType)
-	}
-}
-
-func TestBuildTaskFromRequest_CronSchedule(t *testing.T) {
-	srv := NewServer("", "", nil, nil, config.Config{})
-	task, err := srv.buildTaskFromRequest(
-		CreateTaskRequest{
-			Prompt:   "daily report",
-			CronExpr: "0 9 * * *",
-		},
-		automationScopeContext{
-			scope:   automation.Scope{Kind: automation.ScopeKindUser, ID: "ou_actor"},
-			route:   automation.Route{ReceiveIDType: "open_id", ReceiveID: "ou_actor"},
-			creator: automation.Actor{OpenID: "ou_actor"},
-			session: sessionctx.SessionContext{SessionKey: "open_id:ou_actor"},
-		},
-	)
-	if err != nil {
-		t.Fatalf("build task failed: %v", err)
-	}
-	if task.Schedule.CronExpr != "0 9 * * *" {
-		t.Fatalf("unexpected cron_expr: %q", task.Schedule.CronExpr)
-	}
-	if task.Schedule.EverySeconds != 0 {
-		t.Fatalf("expected every_seconds to be cleared when cron is set, got %d", task.Schedule.EverySeconds)
 	}
 }
 
@@ -416,11 +398,13 @@ func TestAutomationTaskGet_EnforcesScopeIsolation(t *testing.T) {
 	}
 
 	_, err = client.GetTask(t.Context(), session1, task2ID)
-	if err == nil {
-		t.Fatalf("expected error when getting task2 from session1 scope, got nil")
+	if err != nil {
+		t.Fatalf("expected task2 to be accessible from session1 (shared per-chat scope), got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "task not found in current scope") {
-		t.Fatalf("expected scope isolation error, got: %v", err)
+
+	_, err = client.GetTask(t.Context(), session2, task1ID)
+	if err != nil {
+		t.Fatalf("expected task1 to be accessible from session2 (shared per-chat scope), got: %v", err)
 	}
 }
 

@@ -21,7 +21,7 @@ func (s *Server) handleAutomationTaskList(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
 	}
-	scopeCtx, err := resolveAutomationScope(sessionContextFromHeadersNoError(c))
+	scopeCtx, err := resolveAutomationTaskScope(sessionContextFromHeadersNoError(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -48,7 +48,7 @@ func (s *Server) handleAutomationTaskCreate(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
 	}
-	scopeCtx, err := resolveAutomationScope(sessionContextFromHeadersNoError(c))
+	scopeCtx, err := resolveAutomationTaskScope(sessionContextFromHeadersNoError(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -81,7 +81,7 @@ func (s *Server) handleAutomationTaskGet(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
 	}
-	scopeCtx, err := resolveAutomationScope(sessionContextFromHeadersNoError(c))
+	scopeCtx, err := resolveAutomationTaskScope(sessionContextFromHeadersNoError(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -111,7 +111,7 @@ func (s *Server) handleAutomationTaskPatch(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
 	}
-	scopeCtx, err := resolveAutomationScope(sessionContextFromHeadersNoError(c))
+	scopeCtx, err := resolveAutomationTaskScope(sessionContextFromHeadersNoError(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -165,7 +165,7 @@ func (s *Server) handleAutomationTaskDelete(c *gin.Context) {
 		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "automation store is unavailable"})
 		return
 	}
-	scopeCtx, err := resolveAutomationScope(sessionContextFromHeadersNoError(c))
+	scopeCtx, err := resolveAutomationTaskScope(sessionContextFromHeadersNoError(c))
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
