@@ -242,9 +242,7 @@ func (d *openCodeAppServerDriver) ensureSession(ctx context.Context, req RunRequ
 }
 
 func (d *openCodeAppServerDriver) runPrompt(ctx context.Context, turn TurnRef, req RunRequest) {
-	var response openCodePromptResponse
-	err := d.postJSON(ctx, "/session/"+url.PathEscape(turn.ThreadID)+"/message", d.promptBody(req), req, &response)
-	if err != nil {
+	if err := d.postNoContent(ctx, "/session/"+url.PathEscape(turn.ThreadID)+"/prompt_async", d.promptBody(req), req); err != nil {
 		kind := TurnEventError
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			kind = TurnEventInterrupted
@@ -252,31 +250,6 @@ func (d *openCodeAppServerDriver) runPrompt(ctx context.Context, turn TurnRef, r
 		d.markOpenCodeTurnCompleted()
 		d.emit(TurnEvent{Provider: ProviderOpenCode, ThreadID: turn.ThreadID, TurnID: turn.TurnID, Kind: kind, Err: err})
 		return
-	}
-	if text := strings.TrimSpace(response.Text()); text != "" {
-		d.emitOpenCodeAssistantText(turn.ThreadID, turn.TurnID, text, "")
-	}
-	if response.Info.Error != nil {
-		d.markOpenCodeTurnCompleted()
-		d.emit(TurnEvent{
-			Provider: ProviderOpenCode,
-			ThreadID: turn.ThreadID,
-			TurnID:   turn.TurnID,
-			Kind:     TurnEventError,
-			Err:      fmt.Errorf("opencode turn failed: %s", openCodeErrorMessage(response.Info.Error)),
-			Usage:    response.Info.Usage(),
-		})
-		return
-	}
-	if response.Info.Completed() {
-		d.markOpenCodeTurnCompleted()
-		d.emit(TurnEvent{
-			Provider: ProviderOpenCode,
-			ThreadID: turn.ThreadID,
-			TurnID:   turn.TurnID,
-			Kind:     TurnEventCompleted,
-			Usage:    response.Info.Usage(),
-		})
 	}
 }
 
@@ -587,10 +560,6 @@ func (d *openCodeAppServerDriver) openCodePartRole(properties, part map[string]a
 	return role
 }
 
-func (d *openCodeAppServerDriver) openCodeAssistantTextEvent(sessionID, turnID, text, raw string) (TurnEvent, bool) {
-	return d.openCodeTextEvent(sessionID, turnID, TurnEventAssistantText, text, raw)
-}
-
 func (d *openCodeAppServerDriver) openCodeTextEvent(sessionID, turnID string, kind TurnEventKind, text, raw string) (TurnEvent, bool) {
 	text = strings.TrimSpace(text)
 	if text == "" {
@@ -606,14 +575,6 @@ func (d *openCodeAppServerDriver) openCodeTextEvent(sessionID, turnID string, ki
 		d.mu.Unlock()
 	}
 	return TurnEvent{Provider: ProviderOpenCode, ThreadID: sessionID, TurnID: turnID, Kind: kind, Text: text, Raw: raw}, true
-}
-
-func (d *openCodeAppServerDriver) emitOpenCodeAssistantText(sessionID, turnID, text, raw string) {
-	event, ok := d.openCodeAssistantTextEvent(sessionID, turnID, text, raw)
-	if !ok {
-		return
-	}
-	d.emit(event)
 }
 
 func (d *openCodeAppServerDriver) markOpenCodeTurnCompleted() {
@@ -701,27 +662,6 @@ func formatOpenCodeAppServerToolUse(part map[string]any) string {
 		parts = append(parts, "title=`"+title+"`")
 	}
 	return strings.Join(parts, " ")
-}
-
-type openCodePromptResponse struct {
-	Info  openCodeAssistantInfo `json:"info"`
-	Parts []struct {
-		Type string `json:"type"`
-		Text string `json:"text"`
-	} `json:"parts"`
-}
-
-func (r openCodePromptResponse) Text() string {
-	parts := make([]string, 0, len(r.Parts))
-	for _, part := range r.Parts {
-		if part.Type != "text" {
-			continue
-		}
-		if text := strings.TrimSpace(part.Text); text != "" {
-			parts = append(parts, text)
-		}
-	}
-	return strings.Join(parts, "\n")
 }
 
 type openCodeAssistantInfo struct {
