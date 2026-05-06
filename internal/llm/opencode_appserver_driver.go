@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 
 	"github.com/Alice-space/alice/internal/llm/internal/shared"
+	"github.com/Alice-space/alice/internal/logging"
 )
 
 type openCodeAppServerDriver struct {
@@ -417,6 +418,8 @@ func (d *openCodeAppServerDriver) parseOpenCodeEvent(payload string) (TurnEvent,
 		return TurnEvent{}, false
 	}
 
+	logging.Debugf("opencode sse event type=%s session=%s", eventType, stringFromMap(properties, "sessionID"))
+
 	switch eventType {
 	case "message.updated":
 		info, _ := properties["info"].(map[string]any)
@@ -596,6 +599,18 @@ func (d *openCodeAppServerDriver) markOpenCodeTurnCompleted() {
 	d.mu.Lock()
 	d.activeCompleted = true
 	d.mu.Unlock()
+}
+
+func (d *openCodeAppServerDriver) emitOpenCodeAssistantText(sessionID, turnID, text, raw string) {
+	event, ok := d.openCodeAssistantTextEvent(sessionID, turnID, text, raw)
+	if !ok {
+		return
+	}
+	d.emit(event)
+}
+
+func (d *openCodeAppServerDriver) openCodeAssistantTextEvent(sessionID, turnID, text, raw string) (TurnEvent, bool) {
+	return d.openCodeTextEvent(sessionID, turnID, TurnEventAssistantText, text, raw)
 }
 
 func (d *openCodeAppServerDriver) hasOpenCodeAssistantText() bool {
@@ -783,4 +798,25 @@ var knownOpenCodeAgents = map[string]bool{
 
 func isKnownOpenCodeAgent(agent string) bool {
 	return knownOpenCodeAgents[strings.ToLower(strings.TrimSpace(agent))]
+}
+
+type openCodePromptResponse struct {
+	Info  openCodeAssistantInfo `json:"info"`
+	Parts []struct {
+		Type string `json:"type"`
+		Text string `json:"text"`
+	} `json:"parts"`
+}
+
+func (r openCodePromptResponse) Text() string {
+	parts := make([]string, 0, len(r.Parts))
+	for _, part := range r.Parts {
+		if part.Type != "text" {
+			continue
+		}
+		if text := strings.TrimSpace(part.Text); text != "" {
+			parts = append(parts, text)
+		}
+	}
+	return strings.Join(parts, "\n")
 }

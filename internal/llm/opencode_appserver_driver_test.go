@@ -101,7 +101,7 @@ func TestOpenCodeAppServerDriverNativeEnqueue(t *testing.T) {
 }
 
 func TestOpenCodeAppServerDriverInterruptUsesAbort(t *testing.T) {
-	promptAsyncCalled := make(chan struct{})
+	promptCalled := make(chan struct{})
 	abortCalled := make(chan struct{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -111,7 +111,7 @@ func TestOpenCodeAppServerDriverInterruptUsesAbort(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
 		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
-			close(promptAsyncCalled)
+			close(promptCalled)
 			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/abort":
 			close(abortCalled)
@@ -129,11 +129,175 @@ func TestOpenCodeAppServerDriverInterruptUsesAbort(t *testing.T) {
 	if _, err := session.Submit(context.Background(), RunRequest{ThreadID: "session-1", UserText: "first"}); err != nil {
 		t.Fatalf("submit failed: %v", err)
 	}
-	waitClosed(t, promptAsyncCalled, "prompt_async should be called")
+	waitClosed(t, promptCalled, "prompt_async should be called")
 	if err := session.Interrupt(context.Background()); err != nil {
 		t.Fatalf("interrupt failed: %v", err)
 	}
 	waitClosed(t, abortCalled, "abort should be called")
+}
+
+func TestOpenCodeAppServerPromptAsyncStreamsIntermediateEvents(t *testing.T) {
+	requests := make(chan string, 4)
+	eventPayloads := make(chan string, 8)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/event":
+			serveOpenCodeEventStream(w, r, eventPayloads)
+		case r.Method == http.MethodPost && r.URL.Path == "/session":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
+		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
+			requests <- "prompt_async"
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	driver := newOpenCodeAppServerDriver(OpenCodeConfig{ServerURL: server.URL})
+	session := NewInteractiveSession(driver)
+	defer session.Close()
+
+	if _, err := session.Submit(context.Background(), RunRequest{UserText: "stream test"}); err != nil {
+		t.Fatalf("submit failed: %v", err)
+	}
+	waitForRequest(t, requests, "prompt_async")
+
+	sendOpenCodeEvent(t, eventPayloads, map[string]any{
+		"type": "message.part.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"part": map[string]any{
+				"id":        "part-reasoning",
+				"sessionID": "session-1",
+				"messageID": "msg-1",
+				"type":      "reasoning",
+				"text":      "Let me think about this...",
+			},
+		},
+	})
+	reasoning := waitForTurnEvent(t, session.Events(), TurnEventReasoning)
+	if reasoning.Text != "Let me think about this..." {
+		t.Fatalf("reasoning text = %q, want %q", reasoning.Text, "Let me think about this...")
+	}
+
+	sendOpenCodeEvent(t, eventPayloads, map[string]any{
+		"type": "message.part.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"part": map[string]any{
+				"id":        "part-tool",
+				"sessionID": "session-1",
+				"messageID": "msg-1",
+				"type":      "tool",
+				"tool":      "bash",
+				"state": map[string]any{"status": "completed", "input": map[string]any{"command": "echo hi"}},
+			},
+		},
+	})
+	toolUse := waitForTurnEvent(t, session.Events(), TurnEventToolUse)
+	if !strings.Contains(toolUse.Text, "bash") {
+		t.Fatalf("tool_use text = %q, want bash", toolUse.Text)
+	}
+
+	sendOpenCodeEvent(t, eventPayloads, map[string]any{
+		"type": "message.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"info": map[string]any{
+				"id":        "msg-1",
+				"sessionID": "session-1",
+				"role":      "assistant",
+				"time":      map[string]any{"completed": 3},
+				"finish":    "stop",
+				"tokens":    map[string]any{"input": 10, "output": 5, "cache": map[string]any{"read": 2, "write": 0}},
+			},
+		},
+	})
+	waitForTurnEvent(t, session.Events(), TurnEventCompleted)
+}
+
+func TestOpenCodeAppServerReconnectsEventStreamOnNewTurn(t *testing.T) {
+	eventStreams := make(chan chan string, 2)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/event":
+			ch := make(chan string, 4)
+			eventStreams <- ch
+			serveOpenCodeEventStream(w, r, ch)
+		case r.Method == http.MethodPost && r.URL.Path == "/session":
+			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
+		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
+		}
+	}))
+	defer server.Close()
+
+	driver := newOpenCodeAppServerDriver(OpenCodeConfig{ServerURL: server.URL})
+	session := NewInteractiveSession(driver)
+	defer session.Close()
+
+	if _, err := session.Submit(context.Background(), RunRequest{UserText: "first turn"}); err != nil {
+		t.Fatalf("first submit failed: %v", err)
+	}
+	firstStream := waitForChan(t, eventStreams)
+
+	sendOpenCodeEvent(t, firstStream, map[string]any{
+		"type": "message.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"info":      map[string]any{"id": "msg-1", "sessionID": "session-1", "role": "assistant", "time": map[string]any{"completed": 1}, "finish": "stop", "tokens": map[string]any{"input": 1, "output": 1, "cache": map[string]any{"read": 0, "write": 0}}},
+		},
+	})
+	waitForTurnEvent(t, session.Events(), TurnEventCompleted)
+	close(firstStream)
+
+	if _, err := session.Submit(context.Background(), RunRequest{UserText: "second turn"}); err != nil {
+		t.Fatalf("second submit failed: %v", err)
+	}
+	secondStream := waitForChan(t, eventStreams)
+
+	sendOpenCodeEvent(t, secondStream, map[string]any{
+		"type": "message.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"info":      map[string]any{"id": "msg-2", "sessionID": "session-1", "role": "assistant", "time": map[string]any{"completed": 1}, "finish": "stop", "tokens": map[string]any{"input": 2, "output": 3, "cache": map[string]any{"read": 0, "write": 0}}},
+		},
+	})
+	waitForTurnEvent(t, session.Events(), TurnEventCompleted)
+	close(secondStream)
+}
+
+func TestPromptBody_IncludesVariant(t *testing.T) {
+	d := newOpenCodeAppServerDriver(OpenCodeConfig{})
+	body := d.promptBody(RunRequest{
+		UserText: "hello",
+		Model:    "deepseek/deepseek-v4-pro",
+		Variant:  "max",
+	})
+	v, ok := body["variant"].(string)
+	if !ok {
+		t.Fatal("expected variant in prompt body")
+	}
+	if v != "max" {
+		t.Errorf("variant = %q, want %q", v, "max")
+	}
+}
+
+func TestPromptBody_OmitsVariantWhenEmpty(t *testing.T) {
+	d := newOpenCodeAppServerDriver(OpenCodeConfig{})
+	body := d.promptBody(RunRequest{
+		UserText: "hello",
+		Model:    "deepseek/deepseek-v4-pro",
+		Variant:  "",
+	})
+	if _, ok := body["variant"]; ok {
+		t.Error("expected no variant in prompt body when variant is empty")
+	}
 }
 
 func mustJSON(t *testing.T, value any) string {
@@ -231,168 +395,4 @@ func waitForChan(t *testing.T, ch <-chan chan string) chan string {
 		t.Fatalf("timed out waiting on channel")
 		panic("unreachable")
 	}
-}
-
-func TestOpenCodeAppServerPromptAsyncStreamsIntermediateEvents(t *testing.T) {
-	requests := make(chan string, 4)
-	eventPayloads := make(chan string, 8)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/event":
-			serveOpenCodeEventStream(w, r, eventPayloads)
-		case r.Method == http.MethodPost && r.URL.Path == "/session":
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
-		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
-			requests <- "prompt_async"
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	driver := newOpenCodeAppServerDriver(OpenCodeConfig{ServerURL: server.URL})
-	session := NewInteractiveSession(driver)
-	defer session.Close()
-
-	if _, err := session.Submit(context.Background(), RunRequest{UserText: "stream test"}); err != nil {
-		t.Fatalf("submit failed: %v", err)
-	}
-	waitForRequest(t, requests, "prompt_async")
-
-	sendOpenCodeEvent(t, eventPayloads, map[string]any{
-		"type": "message.part.updated",
-		"properties": map[string]any{
-			"sessionID": "session-1",
-			"part": map[string]any{
-				"id":        "part-reasoning",
-				"sessionID": "session-1",
-				"messageID": "msg-1",
-				"type":      "reasoning",
-				"text":      "Let me think about this...",
-			},
-		},
-	})
-	reasoning := waitForTurnEvent(t, session.Events(), TurnEventReasoning)
-	if reasoning.Text != "Let me think about this..." {
-		t.Fatalf("reasoning text = %q, want %q", reasoning.Text, "Let me think about this...")
-	}
-
-	sendOpenCodeEvent(t, eventPayloads, map[string]any{
-		"type": "message.part.updated",
-		"properties": map[string]any{
-			"sessionID": "session-1",
-			"part": map[string]any{
-				"id":        "part-tool",
-				"sessionID": "session-1",
-				"messageID": "msg-1",
-				"type":      "tool",
-				"tool":      "bash",
-				"state":     map[string]any{"status": "completed", "input": map[string]any{"command": "echo hi"}},
-			},
-		},
-	})
-	toolUse := waitForTurnEvent(t, session.Events(), TurnEventToolUse)
-	if !strings.Contains(toolUse.Text, "bash") {
-		t.Fatalf("tool_use text = %q, want bash", toolUse.Text)
-	}
-
-	sendOpenCodeEvent(t, eventPayloads, map[string]any{
-		"type": "message.updated",
-		"properties": map[string]any{
-			"sessionID": "session-1",
-			"info": map[string]any{
-				"id":        "msg-1",
-				"sessionID": "session-1",
-				"role":      "assistant",
-				"time":      map[string]any{"completed": 3},
-				"finish":    "stop",
-				"tokens":    map[string]any{"input": 10, "output": 5, "cache": map[string]any{"read": 2, "write": 0}},
-			},
-		},
-	})
-	waitForTurnEvent(t, session.Events(), TurnEventCompleted)
-}
-
-func TestPromptBody_IncludesVariant(t *testing.T) {
-	d := newOpenCodeAppServerDriver(OpenCodeConfig{})
-	body := d.promptBody(RunRequest{
-		UserText: "hello",
-		Model:    "deepseek/deepseek-v4-pro",
-		Variant:  "max",
-	})
-	v, ok := body["variant"].(string)
-	if !ok {
-		t.Fatal("expected variant in prompt body")
-	}
-	if v != "max" {
-		t.Errorf("variant = %q, want %q", v, "max")
-	}
-}
-
-func TestPromptBody_OmitsVariantWhenEmpty(t *testing.T) {
-	d := newOpenCodeAppServerDriver(OpenCodeConfig{})
-	body := d.promptBody(RunRequest{
-		UserText: "hello",
-		Model:    "deepseek/deepseek-v4-pro",
-		Variant:  "",
-	})
-	if _, ok := body["variant"]; ok {
-		t.Error("expected no variant in prompt body when variant is empty")
-	}
-}
-
-func TestOpenCodeAppServerReconnectsEventStreamOnNewTurn(t *testing.T) {
-	eventStreams := make(chan chan string, 2)
-
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch {
-		case r.Method == http.MethodGet && r.URL.Path == "/event":
-			ch := make(chan string, 4)
-			eventStreams <- ch
-			serveOpenCodeEventStream(w, r, ch)
-		case r.Method == http.MethodPost && r.URL.Path == "/session":
-			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
-		case r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/session/session-1/prompt_async"):
-			w.WriteHeader(http.StatusNoContent)
-		default:
-			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
-		}
-	}))
-	defer server.Close()
-
-	driver := newOpenCodeAppServerDriver(OpenCodeConfig{ServerURL: server.URL})
-	session := NewInteractiveSession(driver)
-	defer session.Close()
-
-	if _, err := session.Submit(context.Background(), RunRequest{UserText: "first turn"}); err != nil {
-		t.Fatalf("first submit failed: %v", err)
-	}
-	firstStream := waitForChan(t, eventStreams)
-
-	sendOpenCodeEvent(t, firstStream, map[string]any{
-		"type": "message.updated",
-		"properties": map[string]any{
-			"sessionID": "session-1",
-			"info":      map[string]any{"id": "msg-1", "sessionID": "session-1", "role": "assistant", "time": map[string]any{"completed": 1}, "finish": "stop", "tokens": map[string]any{"input": 1, "output": 1, "cache": map[string]any{"read": 0, "write": 0}}},
-		},
-	})
-	waitForTurnEvent(t, session.Events(), TurnEventCompleted)
-	close(firstStream)
-
-	if _, err := session.Submit(context.Background(), RunRequest{UserText: "second turn"}); err != nil {
-		t.Fatalf("second submit failed: %v", err)
-	}
-	secondStream := waitForChan(t, eventStreams)
-
-	sendOpenCodeEvent(t, secondStream, map[string]any{
-		"type": "message.updated",
-		"properties": map[string]any{
-			"sessionID": "session-1",
-			"info":      map[string]any{"id": "msg-2", "sessionID": "session-1", "role": "assistant", "time": map[string]any{"completed": 1}, "finish": "stop", "tokens": map[string]any{"input": 2, "output": 3, "cache": map[string]any{"read": 0, "write": 0}}},
-		},
-	})
-	waitForTurnEvent(t, session.Events(), TurnEventCompleted)
-	close(secondStream)
 }
