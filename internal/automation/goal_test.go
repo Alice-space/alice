@@ -1356,6 +1356,131 @@ func TestEngine_ExecuteGoal_PausesOnFastLoop(t *testing.T) {
 	}
 }
 
+func TestEngine_ExecuteGoal_WakesAgentAfterPause(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{
+		results: []llm.RunResult{
+			{Reply: "working on step 1", NextThreadID: "wake_t1"},
+			{Reply: "still working", NextThreadID: "wake_t2"},
+			{Reply: "all done", NextThreadID: "wake_t3", GoalDone: true},
+		},
+	}
+	engine.SetGoalRunHelper(helper)
+	engine.SetLLMRunner(&runLLMPanicStub{})
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_test_wake"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_wake_test",
+		Objective:  "wake up after pause",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_wake_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	if err := engine.ExecuteGoal(t.Context(), scope); err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	if helper.calls != 3 {
+		t.Fatalf("expected 3 GoalRunHelper calls, got %d", helper.calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected complete status, got %s", goal.Status)
+	}
+	if goal.ThreadID != "wake_t3" {
+		t.Fatalf("expected thread wake_t3, got %s", goal.ThreadID)
+	}
+
+	helper.mu.Lock()
+	onProgress := helper.lastReq.OnProgress
+	helper.mu.Unlock()
+	if onProgress == nil {
+		t.Fatal("expected OnProgress to be set on goal run call")
+	}
+
+	sender.mu.Lock()
+	lastBeforeProgress := sender.lastText
+	sender.mu.Unlock()
+	if !strings.Contains(lastBeforeProgress, "目标已完成") {
+		t.Fatalf("expected completion notification, got %q", lastBeforeProgress)
+	}
+
+	sender.mu.Lock()
+	sendBefore := sender.sendTextCalls
+	sender.mu.Unlock()
+	onProgress("agent is making progress on the goal")
+	sender.mu.Lock()
+	sendAfter := sender.sendTextCalls
+	sender.mu.Unlock()
+	if sendAfter <= sendBefore {
+		t.Fatal("expected OnProgress to trigger a sender call")
+	}
+}
+
+func TestEngine_ExecuteGoal_ContinuePromptContainsObjective(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{
+		result: llm.RunResult{Reply: "done", GoalDone: true},
+	}
+	engine.SetGoalRunHelper(helper)
+	engine.SetLLMRunner(&runLLMPanicStub{})
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_test_obj"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_obj_test",
+		Objective:  "learn Go testing thoroughly",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_obj_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	if err := engine.ExecuteGoal(t.Context(), scope); err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	helper.mu.Lock()
+	userText := helper.lastReq.UserText
+	helper.mu.Unlock()
+	if !strings.Contains(userText, "learn Go testing thoroughly") {
+		t.Fatalf("expected userText to contain objective, got: %s", userText)
+	}
+}
+
 type fastLoopRunnerStub struct {
 	runCount int
 }

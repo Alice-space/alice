@@ -154,6 +154,8 @@ func (b *sessionKeyBuilder) evaluate(event *larkim.P2MessageReceiveV1, message *
 		return
 	}
 	if b.workEnabled && hasSceneTriggerTag(b.job.Text, b.workTag) {
+		b.matchedWorkTag = false
+		b.threadNoSession = true
 		return
 	}
 }
