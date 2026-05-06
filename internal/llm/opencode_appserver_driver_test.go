@@ -21,11 +21,14 @@ func TestOpenCodeAppServerDriverNativeEnqueue(t *testing.T) {
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			requests <- "create"
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
-		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/message":
-			requests <- "message"
-			_ = json.NewEncoder(w).Encode(map[string]any{"info": map[string]any{}, "parts": []any{}})
 		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
-			requests <- "steer"
+			var body map[string]any
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			if strings.Contains(mustJSON(t, body), "second") {
+				requests <- "steer"
+			} else {
+				requests <- "prompt_async"
+			}
 			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
@@ -44,7 +47,7 @@ func TestOpenCodeAppServerDriverNativeEnqueue(t *testing.T) {
 	if first.Mode != SubmitStarted {
 		t.Fatalf("first mode = %q, want %q", first.Mode, SubmitStarted)
 	}
-	waitForRequest(t, requests, "message")
+	waitForRequest(t, requests, "prompt_async")
 
 	second, err := session.Submit(context.Background(), RunRequest{UserText: "second"})
 	if err != nil {
@@ -98,8 +101,7 @@ func TestOpenCodeAppServerDriverNativeEnqueue(t *testing.T) {
 }
 
 func TestOpenCodeAppServerDriverInterruptUsesAbort(t *testing.T) {
-	messageStarted := make(chan struct{})
-	releaseMessage := make(chan struct{})
+	promptCalled := make(chan struct{})
 	abortCalled := make(chan struct{})
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -108,10 +110,9 @@ func TestOpenCodeAppServerDriverInterruptUsesAbort(t *testing.T) {
 			serveOpenCodeEventStream(w, r, nil)
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
-		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/message":
-			close(messageStarted)
-			<-releaseMessage
-			_ = json.NewEncoder(w).Encode(map[string]any{"info": map[string]any{}, "parts": []any{}})
+		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
+			close(promptCalled)
+			w.WriteHeader(http.StatusNoContent)
 		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/abort":
 			close(abortCalled)
 			_ = json.NewEncoder(w).Encode(true)
@@ -128,12 +129,11 @@ func TestOpenCodeAppServerDriverInterruptUsesAbort(t *testing.T) {
 	if _, err := session.Submit(context.Background(), RunRequest{ThreadID: "session-1", UserText: "first"}); err != nil {
 		t.Fatalf("submit failed: %v", err)
 	}
-	<-messageStarted
+	waitClosed(t, promptCalled, "prompt_async should be called")
 	if err := session.Interrupt(context.Background()); err != nil {
 		t.Fatalf("interrupt failed: %v", err)
 	}
 	waitClosed(t, abortCalled, "abort should be called")
-	close(releaseMessage)
 }
 
 func TestOpenCodeAppServerPromptAsyncStreamsIntermediateEvents(t *testing.T) {
@@ -146,9 +146,9 @@ func TestOpenCodeAppServerPromptAsyncStreamsIntermediateEvents(t *testing.T) {
 			serveOpenCodeEventStream(w, r, eventPayloads)
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
-		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/message":
-			requests <- "message"
-			_ = json.NewEncoder(w).Encode(map[string]any{"info": map[string]any{}, "parts": []any{}})
+		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
+			requests <- "prompt_async"
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}
@@ -162,7 +162,7 @@ func TestOpenCodeAppServerPromptAsyncStreamsIntermediateEvents(t *testing.T) {
 	if _, err := session.Submit(context.Background(), RunRequest{UserText: "stream test"}); err != nil {
 		t.Fatalf("submit failed: %v", err)
 	}
-	waitForRequest(t, requests, "message")
+	waitForRequest(t, requests, "prompt_async")
 
 	sendOpenCodeEvent(t, eventPayloads, map[string]any{
 		"type": "message.part.updated",
@@ -192,7 +192,7 @@ func TestOpenCodeAppServerPromptAsyncStreamsIntermediateEvents(t *testing.T) {
 				"messageID": "msg-1",
 				"type":      "tool",
 				"tool":      "bash",
-				"state":     map[string]any{"status": "completed", "input": map[string]any{"command": "echo hi"}},
+				"state": map[string]any{"status": "completed", "input": map[string]any{"command": "echo hi"}},
 			},
 		},
 	})
@@ -229,8 +229,8 @@ func TestOpenCodeAppServerReconnectsEventStreamOnNewTurn(t *testing.T) {
 			serveOpenCodeEventStream(w, r, ch)
 		case r.Method == http.MethodPost && r.URL.Path == "/session":
 			_ = json.NewEncoder(w).Encode(map[string]any{"id": "session-1"})
-		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/message":
-			_ = json.NewEncoder(w).Encode(map[string]any{"info": map[string]any{}, "parts": []any{}})
+		case r.Method == http.MethodPost && r.URL.Path == "/session/session-1/prompt_async":
+			w.WriteHeader(http.StatusNoContent)
 		default:
 			t.Fatalf("unexpected request %s %s", r.Method, r.URL.Path)
 		}

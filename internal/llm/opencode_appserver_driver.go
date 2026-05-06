@@ -17,6 +17,7 @@ import (
 	"sync/atomic"
 
 	"github.com/Alice-space/alice/internal/llm/internal/shared"
+	"github.com/Alice-space/alice/internal/logging"
 )
 
 type openCodeAppServerDriver struct {
@@ -243,9 +244,7 @@ func (d *openCodeAppServerDriver) ensureSession(ctx context.Context, req RunRequ
 }
 
 func (d *openCodeAppServerDriver) runPrompt(ctx context.Context, turn TurnRef, req RunRequest) {
-	var response openCodePromptResponse
-	err := d.postJSON(ctx, "/session/"+url.PathEscape(turn.ThreadID)+"/message", d.promptBody(req), req, &response)
-	if err != nil {
+	if err := d.postNoContent(ctx, "/session/"+url.PathEscape(turn.ThreadID)+"/prompt_async", d.promptBody(req), req); err != nil {
 		kind := TurnEventError
 		if errors.Is(ctx.Err(), context.Canceled) || errors.Is(ctx.Err(), context.DeadlineExceeded) {
 			kind = TurnEventInterrupted
@@ -253,31 +252,6 @@ func (d *openCodeAppServerDriver) runPrompt(ctx context.Context, turn TurnRef, r
 		d.markOpenCodeTurnCompleted()
 		d.emit(TurnEvent{Provider: ProviderOpenCode, ThreadID: turn.ThreadID, TurnID: turn.TurnID, Kind: kind, Err: err})
 		return
-	}
-	if text := strings.TrimSpace(response.Text()); text != "" {
-		d.emitOpenCodeAssistantText(turn.ThreadID, turn.TurnID, text, "")
-	}
-	if response.Info.Error != nil {
-		d.markOpenCodeTurnCompleted()
-		d.emit(TurnEvent{
-			Provider: ProviderOpenCode,
-			ThreadID: turn.ThreadID,
-			TurnID:   turn.TurnID,
-			Kind:     TurnEventError,
-			Err:      fmt.Errorf("opencode turn failed: %s", openCodeErrorMessage(response.Info.Error)),
-			Usage:    response.Info.Usage(),
-		})
-		return
-	}
-	if response.Info.Completed() {
-		d.markOpenCodeTurnCompleted()
-		d.emit(TurnEvent{
-			Provider: ProviderOpenCode,
-			ThreadID: turn.ThreadID,
-			TurnID:   turn.TurnID,
-			Kind:     TurnEventCompleted,
-			Usage:    response.Info.Usage(),
-		})
 	}
 }
 
@@ -443,6 +417,8 @@ func (d *openCodeAppServerDriver) parseOpenCodeEvent(payload string) (TurnEvent,
 	if len(properties) == 0 {
 		return TurnEvent{}, false
 	}
+
+	logging.Debugf("opencode sse event type=%s session=%s", eventType, stringFromMap(properties, "sessionID"))
 
 	switch eventType {
 	case "message.updated":
