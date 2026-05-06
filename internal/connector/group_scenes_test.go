@@ -1162,3 +1162,50 @@ func TestApp_SecondWorkTagCreatesNewWorkSession_WhenFirstIsActive(t *testing.T) 
 		t.Fatalf("expected new work session %q (from second message), got %q (should not reuse active work session)", expectedKey, job.SessionKey)
 	}
 }
+
+func TestApp_ThreadMessageRoutesToActiveWorkSession_WhenActive(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+
+	workKey := buildWorkSessionKey("chat_id", "oc_chat", "om_work_root")
+	app.state.mu.Lock()
+	app.state.active[workKey] = activeSessionRun{
+		version: 1,
+		cancel:  func(err error) { _ = err },
+	}
+	app.state.mu.Unlock()
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_thread_reply"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_thread_reply"),
+				ThreadId:    strPtr("omt_work_thread"),
+				RootId:      strPtr("om_work_root"),
+				ParentId:    strPtr("om_work_root"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> please continue"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected thread reply to route to active work session")
+	}
+
+	if job.Scene != jobSceneWork {
+		t.Fatalf("expected work scene for thread reply, got %q", job.Scene)
+	}
+	if job.SessionKey != workKey {
+		t.Fatalf("expected session %q (active work session), got %q", workKey, job.SessionKey)
+	}
+}
