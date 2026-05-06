@@ -224,3 +224,31 @@ func waitClosed(t *testing.T, ch <-chan struct{}, message string) {
 		t.Fatal(message)
 	}
 }
+
+func TestPromptBody_IncludesVariant(t *testing.T) {
+	d := newOpenCodeAppServerDriver(OpenCodeConfig{})
+	body := d.promptBody(RunRequest{
+		UserText: "hello",
+		Model:    "deepseek/deepseek-v4-pro",
+		Variant:  "max",
+	})
+	v, ok := body["variant"].(string)
+	if !ok {
+		t.Fatal("expected variant in prompt body")
+	}
+	if v != "max" {
+		t.Errorf("variant = %q, want %q", v, "max")
+	}
+}
+
+func TestPromptBody_OmitsVariantWhenEmpty(t *testing.T) {
+	d := newOpenCodeAppServerDriver(OpenCodeConfig{})
+	body := d.promptBody(RunRequest{
+		UserText: "hello",
+		Model:    "deepseek/deepseek-v4-pro",
+		Variant:  "",
+	})
+	if _, ok := body["variant"]; ok {
+		t.Error("expected no variant in prompt body when variant is empty")
+	}
+}
