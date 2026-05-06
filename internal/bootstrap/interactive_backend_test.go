@@ -57,6 +57,7 @@ func TestInteractiveProviderBackendForwardsAssistantTextAndDropsToolUse(t *testi
 			wantRaw := []string{
 				"user_text:hello",
 				"tool_use:tool_use tool=`bash` command=`pwd`",
+				"reasoning:thinking about the answer",
 				"turn_completed:",
 			}
 			if strings.Join(raw, "\n") != strings.Join(wantRaw, "\n") {
@@ -124,6 +125,13 @@ func (d *interactiveBackendTestDriver) StartTurn(_ context.Context, req llm.RunR
 			TurnID:   turn.TurnID,
 			Kind:     llm.TurnEventToolUse,
 			Text:     "tool_use tool=`bash` command=`pwd`",
+		}
+		d.events <- llm.TurnEvent{
+			Provider: d.provider,
+			ThreadID: turn.ThreadID,
+			TurnID:   turn.TurnID,
+			Kind:     llm.TurnEventReasoning,
+			Text:     "thinking about the answer",
 		}
 		d.events <- llm.TurnEvent{
 			Provider: d.provider,
