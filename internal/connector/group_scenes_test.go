@@ -1116,3 +1116,49 @@ func TestApp_OnMessageReceive_WorkSessionFollowupViaReplyMessageBinding(t *testi
 		t.Fatalf("expected session key %q, got %q", sessionKey, job.SessionKey)
 	}
 }
+
+func TestApp_SecondWorkTagCreatesNewWorkSession_WhenFirstIsActive(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+
+	firstWorkKey := buildWorkSessionKey("chat_id", "oc_chat", "om_first_work")
+	app.state.mu.Lock()
+	app.state.active[firstWorkKey] = activeSessionRun{
+		version: 1,
+		cancel:  func(err error) { _ = err },
+	}
+	app.state.mu.Unlock()
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_second_work"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_second_work"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"@_user_1 #work task 2"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected second #work to be routed")
+	}
+
+	if job.Scene != jobSceneWork {
+		t.Fatalf("expected work scene, got %q", job.Scene)
+	}
+
+	expectedKey := buildWorkSessionKey("chat_id", "oc_chat", "om_second_work")
+	if job.SessionKey != expectedKey {
+		t.Fatalf("expected new work session %q (from second message), got %q (should not reuse active work session)", expectedKey, job.SessionKey)
+	}
+}

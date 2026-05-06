@@ -143,7 +143,7 @@ func (b *sessionKeyBuilder) evaluate(event *larkim.P2MessageReceiveV1, message *
 			return
 		}
 
-		if activeKey := b.app.findActiveWorkSessionKey(b.job.ReceiveIDType, b.job.ReceiveID); activeKey != "" {
+		if activeKey := b.app.findActiveWorkSessionKey(b.job.ReceiveIDType, b.job.ReceiveID, message); activeKey != "" {
 			b.activeWork = activeKey
 			return
 		}
