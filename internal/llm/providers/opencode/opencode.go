@@ -16,6 +16,7 @@ import (
 
 	"github.com/Alice-space/alice/internal/llm/internal/repodiff"
 	"github.com/Alice-space/alice/internal/llm/internal/shared"
+	"github.com/Alice-space/alice/internal/logging"
 )
 
 // Runner executes the opencode CLI for a single request.
@@ -105,6 +106,7 @@ func (r Runner) RunWithThreadAndProgress(
 	defer cancel()
 
 	cmdArgs := buildRunArgs(threadID, prompt, model, variant)
+	logging.Debugf("opencode run args_len=%d thread=%s", len(fmt.Sprint(cmdArgs)), threadID)
 	cmd := exec.CommandContext(tctx, r.Command, cmdArgs...)
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
