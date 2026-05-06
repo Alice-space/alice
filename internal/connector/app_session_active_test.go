@@ -98,6 +98,89 @@ func TestApp_IsSessionActive_PlainGroupNotBlockedByThread(t *testing.T) {
 	}
 }
 
+func TestApp_TryAcquireSession_DifferentWorkThreadsDoNotBlock(t *testing.T) {
+	app := testAppForSessionActive()
+	cancelA := func(error) {}
+	cancelB := func(error) {}
+
+	// Acquire work thread A
+	if !app.TryAcquireSession("chat_id:oc_xxx|work:om_AAA", cancelA) {
+		t.Fatal("expected true: first work thread should acquire")
+	}
+
+	// Try to acquire different work thread B — must NOT be blocked
+	if !app.TryAcquireSession("chat_id:oc_xxx|work:om_BBB", cancelB) {
+		t.Fatal("expected true: different work threads should not block each other")
+	}
+
+	// Release both
+	app.ReleaseSession("chat_id:oc_xxx|work:om_AAA")
+	app.ReleaseSession("chat_id:oc_xxx|work:om_BBB")
+}
+
+func TestApp_TryAcquireSession_SameWorkThreadBlocks(t *testing.T) {
+	app := testAppForSessionActive()
+
+	// Acquire work thread A
+	if !app.TryAcquireSession("chat_id:oc_xxx|work:om_AAA", func(error) {}) {
+		t.Fatal("expected true: first acquire should succeed")
+	}
+
+	// Try to acquire the SAME work thread — must be blocked
+	if app.TryAcquireSession("chat_id:oc_xxx|work:om_AAA", func(error) {}) {
+		t.Fatal("expected false: same work thread should block")
+	}
+
+	app.ReleaseSession("chat_id:oc_xxx|work:om_AAA")
+}
+
+func TestApp_TryAcquireSession_ThreeIndependentWorkThreads(t *testing.T) {
+	app := testAppForSessionActive()
+
+	// Acquire 3 different work threads — all should succeed
+	for _, token := range []string{"om_A", "om_B", "om_C"} {
+		sk := "chat_id:oc_xxx|work:" + token
+		if !app.TryAcquireSession(sk, func(error) {}) {
+			t.Fatalf("expected true: work thread %s should acquire independently", token)
+		}
+	}
+
+	// All 3 should be active with different ThreadScope
+	for _, token := range []string{"om_A", "om_B", "om_C"} {
+		sk := "chat_id:oc_xxx|work:" + token
+		if !app.IsSessionActive(sk) {
+			t.Fatalf("expected active: work thread %s should show as active", token)
+		}
+	}
+
+	// A plain chat message should NOT see these as busy
+	if app.IsSessionActive("chat_id:oc_xxx") {
+		t.Fatal("expected false: plain chat should not see work threads as busy")
+	}
+
+	// Release all
+	for _, token := range []string{"om_A", "om_B", "om_C"} {
+		app.ReleaseSession("chat_id:oc_xxx|work:" + token)
+	}
+}
+
+func TestApp_TryAcquireSession_PlainChatNotBlockedByWorkThread(t *testing.T) {
+	app := testAppForSessionActive()
+
+	// Work thread is active
+	if !app.TryAcquireSession("chat_id:oc_xxx|work:om_AAA", func(error) {}) {
+		t.Fatal("expected true: work thread should acquire")
+	}
+
+	// Plain chat must NOT be blocked by work thread
+	if !app.TryAcquireSession("chat_id:oc_xxx", func(error) {}) {
+		t.Fatal("expected true: plain chat should not be blocked by work thread")
+	}
+
+	app.ReleaseSession("chat_id:oc_xxx")
+	app.ReleaseSession("chat_id:oc_xxx|work:om_AAA")
+}
+
 func testAppForSessionActive() *App {
 	return &App{state: newRuntimeStore()}
 }

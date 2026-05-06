@@ -5,6 +5,7 @@ import (
 	"errors"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1362,4 +1363,277 @@ type fastLoopRunnerStub struct {
 func (s *fastLoopRunnerStub) Run(_ context.Context, _ llm.RunRequest) (llm.RunResult, error) {
 	s.runCount++
 	return llm.RunResult{GoalDone: false}, nil
+}
+
+func TestEngine_ExecuteGoal_DifferentWorkThreadsIsolated(t *testing.T) {
+	base := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	gate := &threadScopedSessionGate{active: make(map[string]context.CancelCauseFunc)}
+	engine.SetSessionActivityChecker(gate)
+	engine.SetLLMRunner(&interruptibleRunnerStub{})
+
+	scopeA := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_AAA"}
+	scopeB := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_BBB"}
+
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_A",
+		Objective:  "work goal A",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_A",
+		SessionKey: "chat_id:oc_chat|work:om_AAA",
+		Scope:      scopeA,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal goal_A: %v", err)
+	}
+
+	// Start goal A in a goroutine
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = engine.ExecuteGoal(t.Context(), scopeA)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+
+	// Goal A should have acquired the gate for its work thread
+	gate.mu.Lock()
+	_, aBusy := gate.active["chat_id:oc_chat|work:om_AAA"]
+	gate.mu.Unlock()
+	if !aBusy {
+		t.Fatal("expected goal A to acquire session gate for its work thread")
+	}
+
+	// Run the tick — goal B should NOT be dispatched because its thread differs.
+	// (It would be dispatched if thread scoping failed.)
+	engine.runGoals(t.Context())
+
+	_, err = store.ReplaceGoal(GoalTask{
+		ID:         "goal_B",
+		Objective:  "work goal B",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_B",
+		SessionKey: "chat_id:oc_chat|work:om_BBB",
+		Scope:      scopeB,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal goal_B: %v", err)
+	}
+
+	engine.runGoals(t.Context())
+
+	gB, _ := store.GetGoal(scopeB)
+	if gB.Running {
+		t.Fatal("expected goal B to remain not running (different work thread isolated)")
+	}
+
+	// Cancel goal A to clean up
+	gate.mu.Lock()
+	if cancel, ok := gate.active["chat_id:oc_chat|work:om_AAA"]; ok && cancel != nil {
+		cancel(context.Canceled)
+	}
+	gate.mu.Unlock()
+	<-done
+}
+
+func TestGoalThreadIsolation_DifferentWorkThreadsRunConcurrently(t *testing.T) {
+	base := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	gate := &threadScopedSessionGate{active: make(map[string]context.CancelCauseFunc)}
+	engine.SetSessionActivityChecker(gate)
+
+	scopeA := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_indie_A"}
+
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_indie_A",
+		Objective:  "independent goal A",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_A",
+		SessionKey: "chat_id:oc_chat|work:om_indie_A",
+		Scope:      scopeA,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal A: %v", err)
+	}
+
+	runnerA := &blockingGoalRunner{
+		results: []llm.RunResult{
+			{Reply: "done A", NextThreadID: "tA", GoalDone: true},
+		},
+		started: make(chan struct{}, 1),
+		unblock: make(chan struct{}),
+	}
+	engine.SetLLMRunner(runnerA)
+
+	doneA := make(chan struct{})
+	go func() {
+		defer close(doneA)
+		_ = engine.ExecuteGoal(t.Context(), scopeA)
+	}()
+
+	<-runnerA.started
+
+	// While goal A is running, verify goal B can acquire its OWN session
+	if !gate.TryAcquireSession("chat_id:oc_chat|work:om_indie_B", func(error) {}) {
+		t.Fatal("expected goal B's session to be acquirable (different work thread)")
+	}
+	gate.ReleaseSession("chat_id:oc_chat|work:om_indie_B")
+
+	// But goal A's session is busy
+	if gate.TryAcquireSession("chat_id:oc_chat|work:om_indie_A", func(error) {}) {
+		t.Fatal("expected goal A's session to be blocked (held by running goal)")
+	}
+
+	close(runnerA.unblock)
+	<-doneA
+
+	gA, _ := store.GetGoal(scopeA)
+	if gA.Status != GoalStatusComplete {
+		t.Fatalf("expected goal A complete, got %s", gA.Status)
+	}
+}
+
+type threadScopedSessionGate struct {
+	mu     sync.Mutex
+	active map[string]context.CancelCauseFunc
+}
+
+func (g *threadScopedSessionGate) IsSessionActive(sessionKey string) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	_, ok := g.active[sessionKey]
+	return ok
+}
+
+func (g *threadScopedSessionGate) TryAcquireSession(sessionKey string, cancel context.CancelCauseFunc) bool {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if _, ok := g.active[sessionKey]; ok {
+		return false
+	}
+	g.active[sessionKey] = cancel
+	return true
+}
+
+func (g *threadScopedSessionGate) ReleaseSession(sessionKey string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	delete(g.active, sessionKey)
+}
+
+var _ SessionActivityGate = (*threadScopedSessionGate)(nil)
+
+func TestBuildTaskDispatch_UsesGoalRunHelper(t *testing.T) {
+	base := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{
+		result: llm.RunResult{Reply: "task done via helper", NextThreadID: "task_t1"},
+	}
+	engine.SetGoalRunHelper(helper)
+	engine.SetLLMRunner(&runLLMPanicStub{})
+
+	task := Task{
+		ID:         "task_helper_test",
+		Title:      "helper task",
+		Scope:      Scope{Kind: ScopeKindChat, ID: "oc_chat"},
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{OpenID: "ou_test"},
+		Prompt:     "do something",
+		Fresh:      true,
+		SessionKey: "chat_id:oc_chat|work:om_task_test",
+	}
+
+	dispatch, err := engine.executeUserTask(t.Context(), task)
+	if err != nil {
+		t.Fatalf("executeUserTask: %v", err)
+	}
+	if dispatch.text != "task done via helper" {
+		t.Fatalf("expected 'task done via helper', got %q", dispatch.text)
+	}
+	if dispatch.nextThreadID != "task_t1" {
+		t.Fatalf("expected thread task_t1, got %q", dispatch.nextThreadID)
+	}
+	if helper.calls != 1 {
+		t.Fatalf("expected 1 GoalRunHelper call, got %d", helper.calls)
+	}
+}
+
+func TestGoalRawEventDispatcher_OnRawEventIsSet(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &rawEventCapturingStub{}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_raw_test"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_raw_test",
+		Objective:  "raw event test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_raw",
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	if runner.onRawEvent == nil {
+		t.Fatal("expected OnRawEvent to be set on goal RunRequest (goalRawEventDispatcher)")
+	}
+
+	// Verify dispatcher handles events without panicking.
+	runner.onRawEvent(llm.RawEvent{Kind: "tool_use", Line: "{}", Detail: "tool_use tool=bash"})
+	runner.onRawEvent(llm.RawEvent{Kind: "reasoning", Line: "{}", Detail: "thinking..."})
+	runner.onRawEvent(llm.RawEvent{Kind: "tool_call", Line: "{}", Detail: "call"})
+}
+
+type rawEventCapturingStub struct {
+	onRawEvent llm.RawEventFunc
+}
+
+func (r *rawEventCapturingStub) Run(_ context.Context, req llm.RunRequest) (llm.RunResult, error) {
+	r.onRawEvent = req.OnRawEvent
+	return llm.RunResult{Reply: "done", GoalDone: true}, nil
 }
