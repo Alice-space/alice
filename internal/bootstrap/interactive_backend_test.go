@@ -228,3 +228,69 @@ func TestInteractiveProviderBackendRunUsesThreadIDWhenSessionKeyEmpty(t *testing
 		t.Fatalf("unexpected error: %v", err)
 	}
 }
+
+func TestInteractiveProviderBackendGoalWakeupForwardsStreamingEvents(t *testing.T) {
+	for _, provider := range []string{
+		llm.ProviderCodex,
+		llm.ProviderClaude,
+		llm.ProviderKimi,
+		llm.ProviderOpenCode,
+	} {
+		t.Run(provider, func(t *testing.T) {
+			sessionKey := "goal-session-" + provider
+			driver := &interactiveBackendTestDriver{
+				provider: provider,
+				events:   make(chan llm.TurnEvent, 8),
+			}
+			session := llm.NewInteractiveSession(driver)
+			defer session.Close()
+
+			backend := &interactiveProviderBackend{
+				provider: provider,
+				sessions: map[string]*llm.InteractiveSession{
+					sessionKey: session,
+				},
+				runMu: map[string]*sync.Mutex{},
+			}
+
+			var progress []string
+			var rawEvents []string
+
+			result, err := backend.runInteractive(context.Background(), sessionKey, llm.RunRequest{
+				UserText: "continue your previous work",
+				OnProgress: func(step string) {
+					progress = append(progress, step)
+				},
+				OnRawEvent: func(event llm.RawEvent) {
+					rawEvents = append(rawEvents, strings.TrimSpace(event.Kind)+":"+strings.TrimSpace(event.Detail))
+				},
+			})
+			if err != nil {
+				t.Fatalf("runInteractive: %v", err)
+			}
+			if result.Reply != provider+" middle" {
+				t.Fatalf("reply = %q, want %q", result.Reply, provider+" middle")
+			}
+			if len(progress) != 1 {
+				t.Fatalf("progress = %v, want 1 assistant text event forwarded to Feishu", progress)
+			}
+
+			hasReasoning := false
+			hasToolUse := false
+			for _, ev := range rawEvents {
+				if strings.HasPrefix(ev, "reasoning:") {
+					hasReasoning = true
+				}
+				if strings.HasPrefix(ev, "tool_use:") {
+					hasToolUse = true
+				}
+			}
+			if !hasReasoning {
+				t.Error("expected reasoning event in OnRawEvent (SSE reasoning → feishu)")
+			}
+			if !hasToolUse {
+				t.Error("expected tool_use event in OnRawEvent (SSE tool → feishu)")
+			}
+		})
+	}
+}
