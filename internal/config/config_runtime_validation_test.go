@@ -199,32 +199,32 @@ llm_profiles:
 	}
 }
 
-func TestLoadFromFile_LLMProfileGemini(t *testing.T) {
+func TestLoadFromFile_LLMProfileOpenCode(t *testing.T) {
 	_, runtime := loadSingleBotRuntime(t, `
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_profiles:
   main:
-    provider: "  GeMiNi  "
-    command: "  gemini-custom  "
+    provider: "  OpEnCoDe  "
+    command: "  opencode-custom  "
     timeout_secs: 321
-    prompt_prefix: "  你是Gemini助手  "
+    prompt_prefix: "  你是OpenCode助手  "
 `)
 
 	profile, ok := runtime.LLMProfiles["main"]
 	if !ok {
 		t.Fatal("expected llm_profiles.main to exist")
 	}
-	if profile.Provider != LLMProviderGemini {
+	if profile.Provider != LLMProviderOpenCode {
 		t.Fatalf("unexpected provider: %q", profile.Provider)
 	}
-	if profile.Command != "gemini-custom" {
+	if profile.Command != "opencode-custom" {
 		t.Fatalf("unexpected command: %q", profile.Command)
 	}
 	if profile.Timeout != 321*time.Second {
 		t.Fatalf("unexpected timeout: %s", profile.Timeout)
 	}
-	if profile.PromptPrefix != "你是Gemini助手" {
+	if profile.PromptPrefix != "你是OpenCode助手" {
 		t.Fatalf("unexpected prompt_prefix: %q", profile.PromptPrefix)
 	}
 }
@@ -234,17 +234,17 @@ func TestLoadFromFile_LLMProfileTimeoutDefaultsWhenZero(t *testing.T) {
 feishu_app_id: cli_xxx
 feishu_app_secret: sss
 llm_profiles:
-  gemini:
-    provider: gemini
+  kimi:
+    provider: kimi
     timeout_secs: 0
   codex:
     provider: codex
     timeout_secs: 60
 `)
 
-	geminiProfile, ok := runtime.LLMProfiles["gemini"]
+	geminiProfile, ok := runtime.LLMProfiles["kimi"]
 	if !ok {
-		t.Fatal("expected llm_profiles.gemini to exist")
+		t.Fatal("expected llm_profiles.kimi to exist")
 	}
 	if geminiProfile.Timeout != DefaultLLMTimeoutSecs*time.Second {
 		t.Fatalf("unexpected gemini timeout: %s (expected default %s)", geminiProfile.Timeout, time.Duration(DefaultLLMTimeoutSecs)*time.Second)
@@ -266,12 +266,12 @@ feishu_app_secret: sss
 llm_profiles:
   claude:
     provider: claude
-  gemini:
-    provider: gemini
   kimi:
     provider: kimi
   codex:
     provider: codex
+  opencode:
+    provider: opencode
 `)
 
 	cases := []struct {
@@ -279,9 +279,9 @@ llm_profiles:
 		wantCmd string
 	}{
 		{"claude", "claude"},
-		{"gemini", "gemini"},
 		{"kimi", "kimi"},
 		{"codex", "codex"},
+		{"opencode", "opencode"},
 	}
 	for _, tc := range cases {
 		profile, ok := runtime.LLMProfiles[tc.name]

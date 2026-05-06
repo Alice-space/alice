@@ -84,7 +84,7 @@ func TestDelegateStdinTakesPrecedence(t *testing.T) {
 }
 
 func TestDelegateAllProvidersFlagParsing(t *testing.T) {
-	providers := []string{"codex", "claude", "gemini", "kimi", "opencode"}
+	providers := []string{"codex", "claude", "kimi", "opencode"}
 	for _, p := range providers {
 		t.Run(p, func(t *testing.T) {
 			cmd := newDelegateCmd()

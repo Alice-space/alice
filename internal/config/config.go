@@ -12,9 +12,6 @@ const DefaultLLMProvider = "codex"
 // LLMProviderClaude is the Claude provider name constant.
 const LLMProviderClaude = "claude"
 
-// LLMProviderGemini is the Gemini provider name constant.
-const LLMProviderGemini = "gemini"
-
 // LLMProviderKimi is the Kimi provider name constant.
 const LLMProviderKimi = "kimi"
 
