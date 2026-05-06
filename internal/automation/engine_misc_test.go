@@ -58,6 +58,50 @@ func TestEngine_BuildTaskRunEnv_SourceMessageIDRouteUsesScopeID(t *testing.T) {
 	}
 }
 
+func TestEngine_BuildGoalRunEnv_SourceMessageIDRouteExtractsPlainChatID(t *testing.T) {
+	engine := NewEngine(nil, nil)
+	goal := GoalTask{
+		Scope:      Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chatid|work:om_messageid"},
+		Route:      Route{ReceiveIDType: "source_message_id", ReceiveID: "om_messageid"},
+		Creator:    Actor{OpenID: "ou_actor"},
+		Objective:  "test",
+		SessionKey: "chat_id:oc_chatid|work:om_messageid",
+	}
+	env := engine.buildGoalRunEnv(goal)
+	if env == nil {
+		t.Fatal("expected non-nil env")
+	}
+	gotType := env["ALICE_RECEIVE_ID_TYPE"]
+	gotID := env["ALICE_RECEIVE_ID"]
+	if gotType != "chat_id" {
+		t.Errorf("ALICE_RECEIVE_ID_TYPE: got %q, want %q", gotType, "chat_id")
+	}
+	if gotID != "oc_chatid" {
+		t.Errorf("ALICE_RECEIVE_ID: got %q, want %q (must be plain chat_id without prefix or |work suffix)", gotID, "oc_chatid")
+	}
+}
+
+func TestEngine_BuildGoalRunEnv_ChatIDRoutePassedThrough(t *testing.T) {
+	engine := NewEngine(nil, nil)
+	goal := GoalTask{
+		Scope:      Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chatid|work:om_messageid"},
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chatid"},
+		Creator:    Actor{OpenID: "ou_actor"},
+		Objective:  "test",
+		SessionKey: "chat_id:oc_chatid|work:om_messageid",
+	}
+	env := engine.buildGoalRunEnv(goal)
+	if env == nil {
+		t.Fatal("expected non-nil env")
+	}
+	if env["ALICE_RECEIVE_ID_TYPE"] != "chat_id" {
+		t.Errorf("unexpected ALICE_RECEIVE_ID_TYPE: %s", env["ALICE_RECEIVE_ID_TYPE"])
+	}
+	if env["ALICE_RECEIVE_ID"] != "oc_chatid" {
+		t.Errorf("unexpected ALICE_RECEIVE_ID: %s", env["ALICE_RECEIVE_ID"])
+	}
+}
+
 func TestEngine_BuildTaskRunEnv_ChatIDRoutePassedThrough(t *testing.T) {
 	engine := NewEngine(nil, nil)
 	task := Task{

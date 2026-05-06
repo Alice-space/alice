@@ -320,7 +320,7 @@ func (e *Engine) buildGoalRunEnv(goal GoalTask) map[string]string {
 		switch goal.Scope.Kind {
 		case ScopeKindChat:
 			receiveIDType = "chat_id"
-			receiveID = goal.Scope.ID
+			receiveID = extractPlainChatID(goal.Scope.ID)
 		case ScopeKindUser:
 			receiveIDType = "open_id"
 			receiveID = goal.Scope.ID
@@ -432,6 +432,15 @@ func (e *Engine) incrementFastRunCount(scope Scope) int {
 	key := fmt.Sprintf("%s:%s", scope.Kind, scope.ID)
 	e.consecutiveFastRuns[key]++
 	return e.consecutiveFastRuns[key]
+}
+
+func extractPlainChatID(scopeID string) string {
+	scopeID = strings.TrimSpace(scopeID)
+	scopeID = strings.TrimPrefix(scopeID, "chat_id:")
+	if idx := strings.Index(scopeID, "|"); idx >= 0 {
+		scopeID = scopeID[:idx]
+	}
+	return strings.TrimSpace(scopeID)
 }
 
 func (e *Engine) resetFastRunCount(scope Scope) {
