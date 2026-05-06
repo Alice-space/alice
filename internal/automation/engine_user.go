@@ -146,6 +146,22 @@ func (e *Engine) userTaskContext(ctx context.Context, task Task) (context.Contex
 	}
 }
 
+func taskRawEventDispatcher(task Task) llm.RawEventFunc {
+	return func(event llm.RawEvent) {
+		if !logging.IsDebugEnabled() {
+			return
+		}
+		switch event.Kind {
+		case "reasoning":
+			logging.Debugf("task reasoning id=%s detail=%q", task.ID, clipGoalDetail(event.Detail, 500))
+		case "tool_use":
+			logging.Debugf("task tool_use id=%s detail=%q", task.ID, clipGoalDetail(event.Detail, 500))
+		case "tool_call":
+			logging.Debugf("task tool_call id=%s detail=%q", task.ID, clipGoalDetail(event.Detail, 500))
+		}
+	}
+}
+
 var errSessionInterrupted = errors.New("automation: session interrupted by user message")
 
 func effectiveRoute(task Task) Route {
@@ -210,9 +226,10 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task, route Route) 
 	task = NormalizeTask(task)
 	runAt := e.nowTime()
 
+	helper := e.goalRunHelperValue()
 	runner := e.llmRunnerValue()
-	if runner == nil {
-		return taskDispatch{}, errors.New("automation llm runner is nil")
+	if helper == nil && runner == nil {
+		return taskDispatch{}, errors.New("automation llm runner: neither GoalRunHelper nor llm runner is set")
 	}
 
 	prompt, err := renderActionTemplate(task.Prompt, runAt)
@@ -231,14 +248,21 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task, route Route) 
 	progress := &taskProgressDispatcher{ctx: ctx, engine: e, task: task, route: route}
 	logging.Infof("automation task llm call id=%s fresh=%v thread=%s", task.ID, task.Fresh, threadID)
 
-	result, err := runner.Run(ctx, llm.RunRequest{
-		ThreadID:   threadID,
-		AgentName:  "scheduler",
-		UserText:   prompt,
-		Scene:      taskScene(task),
-		Env:        e.buildTaskRunEnv(task),
-		OnProgress: progress.Send,
-	})
+	var result llm.RunResult
+	if helper != nil {
+		result, err = helper.Run(ctx, threadID, prompt, taskScene(task),
+			e.buildTaskRunEnv(task), progress.Send)
+	} else {
+		result, err = runner.Run(ctx, llm.RunRequest{
+			ThreadID:   threadID,
+			AgentName:  "scheduler",
+			UserText:   prompt,
+			Scene:      taskScene(task),
+			Env:        e.buildTaskRunEnv(task),
+			OnProgress: progress.Send,
+			OnRawEvent: taskRawEventDispatcher(task),
+		})
+	}
 	if err != nil {
 		return taskDispatch{}, err
 	}

@@ -57,6 +57,7 @@ type Engine struct {
 	sender              Sender
 	runtimeMu           sync.RWMutex
 	llmRunner           LLMRunner
+	goalRunHelper       GoalRunHelper
 	userTaskHook        UserTaskCompletionHook
 	sessionChecker      SessionActivityChecker
 	runEnv              map[string]string

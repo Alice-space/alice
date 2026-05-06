@@ -6,6 +6,7 @@ const messageToken = "|message:"
 const MessageToken = messageToken
 const threadToken = "|thread:"
 const seedToken = "|seed:"
+const workToken = "|work:"
 
 func Build(receiveIDType, receiveID string) string {
 	receiveIDType = strings.TrimSpace(receiveIDType)
@@ -87,5 +88,21 @@ func ThreadScope(sessionKey string) string {
 	if thread := ExtractThreadID(sessionKey); thread != "" {
 		return threadToken + thread
 	}
+	if work := extractWorkKey(sessionKey); work != "" {
+		return seedToken + work
+	}
 	return ""
+}
+
+func extractWorkKey(sessionKey string) string {
+	sessionKey = strings.TrimSpace(sessionKey)
+	idx := strings.Index(sessionKey, workToken)
+	if idx < 0 {
+		return ""
+	}
+	rest := sessionKey[idx+len(workToken):]
+	if pipe := strings.Index(rest, "|"); pipe >= 0 {
+		rest = rest[:pipe]
+	}
+	return strings.TrimSpace(rest)
 }

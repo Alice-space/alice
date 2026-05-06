@@ -212,6 +212,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 
 	b.app.SetAutomationRunner(automationEngine)
 	automationEngine.SetSessionActivityChecker(b.app)
+	automationEngine.SetGoalRunHelper(connector.NewGoalRunHelper(b.processor))
 	b.automationEngine = automationEngine
 	return nil
 }

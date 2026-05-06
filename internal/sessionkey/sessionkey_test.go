@@ -23,11 +23,13 @@ func TestThreadScope(t *testing.T) {
 		want  string
 	}{
 		{"chat_id:oc_chat", ""},
-		// work key has no seed/thread token recognized by ThreadScope
-		{"chat_id:oc_chat|work:om_AAA", ""},
+		// work key now returns seed-scoped thread to prevent cross-thread blocking
+		{"chat_id:oc_chat|work:om_AAA", "|seed:om_AAA"},
 		{"chat_id:oc_chat|thread:omt_1", "|thread:omt_1"},
 		// seed token (when present) takes precedence over thread
 		{"chat_id:oc_chat|seed:om_AAA|thread:omt_1", "|seed:om_AAA"},
+		// seed takes precedence over work
+		{"chat_id:oc_chat|seed:om_AAA|work:om_BBB", "|seed:om_AAA"},
 		{"", ""},
 	}
 	for _, c := range cases {
