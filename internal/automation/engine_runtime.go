@@ -134,7 +134,7 @@ func (e *Engine) buildTaskRunEnv(task Task) map[string]string {
 		switch task.Scope.Kind {
 		case ScopeKindChat:
 			receiveIDType = "chat_id"
-			receiveID = task.Scope.ID
+			receiveID = extractPlainChatID(task.Scope.ID)
 		case ScopeKindUser:
 			receiveIDType = "open_id"
 			receiveID = task.Scope.ID
