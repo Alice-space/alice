@@ -1532,3 +1532,142 @@ func TestMultiBot_NewWorkToBotA_DoesNotBlockNewWorkToBotB(t *testing.T) {
 		})
 	}
 }
+
+func TestMultiBot_ThreeEmptyWorkSessions_AreIndependent(t *testing.T) {
+	cfg := configForGroupScenesTest()
+
+	expectedKeys := make(map[string]bool)
+	for i, msgID := range []string{"om_empty_1", "om_empty_2", "om_empty_3"} {
+		event := &larkim.P2MessageReceiveV1{
+			EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_empty_" + string(rune('1'+i))}},
+			Event: &larkim.P2MessageReceiveV1Data{
+				Message: &larkim.EventMessage{
+					MessageId:   strPtr(msgID),
+					MessageType: strPtr("text"),
+					Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Bot</at> #work"}`),
+					ChatId:      strPtr("oc_chat"),
+					ChatType:    strPtr("group"),
+					Mentions: []*larkim.MentionEvent{
+						{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}},
+					},
+				},
+			},
+		}
+		app := newGroupScenesApp(cfg, nil)
+		app.SetBotOpenID("ou_bot")
+
+		job, err := BuildJob(event)
+		if err != nil {
+			t.Fatalf("build job %d: %v", i, err)
+		}
+		if !app.routeIncomingJob(job, event) {
+			t.Fatalf("expected msg %d to be routed", i)
+		}
+		if job.Scene != jobSceneWork {
+			t.Fatalf("expected work scene for msg %d, got %q", i, job.Scene)
+		}
+		if job.Text != "" {
+			t.Fatalf("expected empty text after #work strip for msg %d, got %q", i, job.Text)
+		}
+
+		expectedKey := buildWorkSessionKey("chat_id", "oc_chat", msgID)
+		if job.SessionKey != expectedKey {
+			t.Fatalf("msg %d: expected session %q, got %q", i, expectedKey, job.SessionKey)
+		}
+
+		if expectedKeys[expectedKey] {
+			t.Fatalf("msg %d: session key %q should be unique", i, expectedKey)
+		}
+		expectedKeys[expectedKey] = true
+	}
+}
+
+func TestMultiBot_EmptyWorkAndContentWork_AreIndependent(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+	app.SetBotOpenID("ou_bot")
+
+	workKeyContent := buildWorkSessionKey("chat_id", "oc_chat", "om_content")
+	app.state.mu.Lock()
+	app.state.active[workKeyContent] = activeSessionRun{
+		version: 1,
+		cancel:  func(err error) { _ = err },
+	}
+	app.state.mu.Unlock()
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_empty_work_vs_active"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_empty"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Bot</at> #work"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected empty #work to be routed")
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("expected work scene, got %q", job.Scene)
+	}
+
+	expectedKey := buildWorkSessionKey("chat_id", "oc_chat", "om_empty")
+	if job.SessionKey != expectedKey {
+		t.Fatalf("expected session %q (for empty message), got %q (should not reuse active work session)", expectedKey, job.SessionKey)
+	}
+}
+
+func TestMultiBot_ThreadFollowUpReusesExistingSession(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	app := newGroupScenesApp(cfg, nil)
+	app.SetBotOpenID("ou_bot")
+
+	workKey := buildWorkSessionKey("chat_id", "oc_chat", "om_work_root")
+	app.state.mu.Lock()
+	app.state.latest[workKey] = 1
+	app.state.mu.Unlock()
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_thread_followup"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_thread_followup"),
+				ThreadId:    strPtr("omt_work"),
+				RootId:      strPtr("om_work_root"),
+				ParentId:    strPtr("om_work_root"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> please continue"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("expected thread follow-up to route to existing work session")
+	}
+	if job.Scene != jobSceneWork {
+		t.Fatalf("expected work scene, got %q", job.Scene)
+	}
+	if job.SessionKey != workKey {
+		t.Fatalf("expected session %q (existing work session), got %q", workKey, job.SessionKey)
+	}
+}

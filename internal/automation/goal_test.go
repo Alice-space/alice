@@ -1762,3 +1762,182 @@ func (r *rawEventCapturingStub) Run(_ context.Context, req llm.RunRequest) (llm.
 	r.onRawEvent = req.OnRawEvent
 	return llm.RunResult{Reply: "done", GoalDone: true}, nil
 }
+
+func TestEngine_ExecuteGoal_OutputGoesToGoalRoute(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{
+		result: llm.RunResult{Reply: "done", NextThreadID: "t1", GoalDone: true},
+	}
+	engine.SetGoalRunHelper(helper)
+	engine.SetLLMRunner(&runLLMPanicStub{})
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_target|work:om_route_test"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_route_test",
+		Objective:  "route output test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_target"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	if err := engine.ExecuteGoal(t.Context(), scope); err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	helper.mu.Lock()
+	onProgress := helper.lastReq.OnProgress
+	helper.mu.Unlock()
+	if onProgress == nil {
+		t.Fatal("expected OnProgress to be set on goal run call")
+	}
+
+	sender.mu.Lock()
+	sendBefore := sender.sendTextCalls
+	sender.mu.Unlock()
+	onProgress("agent is working...")
+	sender.mu.Lock()
+	sendAfter := sender.sendTextCalls
+	receiveType := sender.lastReceiveType
+	receiveID := sender.lastReceiveID
+	sender.mu.Unlock()
+
+	if sendAfter <= sendBefore {
+		t.Fatal("expected OnProgress to trigger a sender call")
+	}
+	if receiveType != "chat_id" {
+		t.Fatalf("expected lastReceiveType 'chat_id', got %q", receiveType)
+	}
+	if receiveID != "oc_target" {
+		t.Fatalf("expected lastReceiveID 'oc_target', got %q", receiveID)
+	}
+}
+
+func TestEngine_ExecuteGoal_ScopedToWorkThreadNotCrossSession(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 6, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	gate := &threadScopedSessionGate{active: make(map[string]context.CancelCauseFunc)}
+	engine.SetSessionActivityChecker(gate)
+
+	helper := &goalRunHelperStub{
+		result: llm.RunResult{Reply: "done", NextThreadID: "t1", GoalDone: true},
+	}
+	engine.SetGoalRunHelper(helper)
+	engine.SetLLMRunner(&runLLMPanicStub{})
+
+	scopeA := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_A"}
+	scopeB := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_B"}
+
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_A",
+		Objective:  "goal A objective",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_A",
+		SessionKey: "chat_id:oc_chat|work:om_A",
+		Scope:      scopeA,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat_A"},
+		Creator:    Actor{UserID: "u1"},
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal A: %v", err)
+	}
+	_, err = store.ReplaceGoal(GoalTask{
+		ID:         "goal_B",
+		Objective:  "goal B objective",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_B",
+		SessionKey: "chat_id:oc_chat|work:om_B",
+		Scope:      scopeB,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat_B"},
+		Creator:    Actor{UserID: "u1"},
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal B: %v", err)
+	}
+
+	if err := engine.ExecuteGoal(t.Context(), scopeA); err != nil {
+		t.Fatalf("ExecuteGoal A: %v", err)
+	}
+
+	helper.mu.Lock()
+	onProgressA := helper.lastReq.OnProgress
+	helper.mu.Unlock()
+	if onProgressA == nil {
+		t.Fatal("expected OnProgress to be set after goal A run")
+	}
+
+	sender.mu.Lock()
+	sendBefore := sender.sendTextCalls
+	sender.mu.Unlock()
+	onProgressA("progress from A")
+	sender.mu.Lock()
+	sendAfter := sender.sendTextCalls
+	receiveIDafterA := sender.lastReceiveID
+	sender.mu.Unlock()
+
+	if sendAfter <= sendBefore {
+		t.Fatal("expected OnProgress to trigger sender call for goal A")
+	}
+	if receiveIDafterA != "oc_chat_A" {
+		t.Fatalf("expected lastReceiveID 'oc_chat_A' after goal A, got %q", receiveIDafterA)
+	}
+
+	gB, err := store.GetGoal(scopeB)
+	if err != nil {
+		t.Fatalf("GetGoal B: %v", err)
+	}
+	if gB.Status != GoalStatusActive {
+		t.Fatalf("expected goal B to remain active after only running A, got %s", gB.Status)
+	}
+
+	if err := engine.ExecuteGoal(t.Context(), scopeB); err != nil {
+		t.Fatalf("ExecuteGoal B: %v", err)
+	}
+
+	helper.mu.Lock()
+	onProgressB := helper.lastReq.OnProgress
+	helper.mu.Unlock()
+	if onProgressB == nil {
+		t.Fatal("expected OnProgress to be set after goal B run")
+	}
+
+	onProgressB("progress from B")
+	sender.mu.Lock()
+	receiveIDafterB := sender.lastReceiveID
+	sender.mu.Unlock()
+
+	if receiveIDafterB != "oc_chat_B" {
+		t.Fatalf("expected lastReceiveID 'oc_chat_B' after goal B, got %q", receiveIDafterB)
+	}
+
+	helper.mu.Lock()
+	calls := helper.calls
+	helper.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("expected 2 helper calls (one per goal), got %d", calls)
+	}
+}
