@@ -27,6 +27,7 @@ func TestEngine_RunSystemTask(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Millisecond)
 	defer cancel()
 	engine.Run(ctx)
+	time.Sleep(100 * time.Millisecond) // wait for task goroutine to finish
 
 	mu.Lock()
 	defer mu.Unlock()
@@ -63,6 +64,7 @@ func TestEngine_RunUserTask_RunLLM(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	engine.Run(ctx)
+	time.Sleep(100 * time.Millisecond) // wait for task goroutine to finish
 
 	runner.mu.Lock()
 	if runner.calls == 0 {
@@ -192,6 +194,7 @@ func TestEngine_RunUserTask_RunLLM_WorkScene(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	engine.Run(ctx)
+	time.Sleep(100 * time.Millisecond) // wait for task goroutine to finish
 
 	runner.mu.Lock()
 	if runner.calls == 0 {
@@ -256,6 +259,7 @@ func TestEngine_RunUserTask_RunLLM_PersistsStickyThreadID(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	engine.Run(ctx)
+	time.Sleep(100 * time.Millisecond) // wait for task goroutine to finish
 
 	runner.mu.Lock()
 	if runner.calls == 0 {
@@ -310,6 +314,7 @@ func TestEngine_RunUserTask_RunLLM_FreshSkipsThread(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 	engine.Run(ctx)
+	time.Sleep(100 * time.Millisecond) // wait for task goroutine to finish
 
 	runner.mu.Lock()
 	if runner.calls == 0 {
