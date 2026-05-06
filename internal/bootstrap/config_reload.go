@@ -9,7 +9,6 @@ import (
 	"github.com/Alice-space/alice/internal/connector"
 	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
-	"github.com/Alice-space/alice/internal/prompting"
 	"github.com/Alice-space/alice/internal/runtimecfg"
 )
 
@@ -89,14 +88,6 @@ func (r *ConnectorRuntime) ApplyConfigReload(next config.Config) (ConfigReloadRe
 	r.Config = merged
 	report.AppliedFields = fieldSetToSortedSlice(applied)
 	return report, nil
-}
-
-func (r *ConnectorRuntime) promptLoaderForReload(cfg config.Config) *prompting.Loader {
-	if r != nil && r.PromptLoader != nil {
-		return r.PromptLoader
-	}
-	promptDir := ResolvePromptDir(cfg.WorkspaceDir, cfg.PromptDir)
-	return prompting.NewLoader(promptDir)
 }
 
 func diffRestartRequiredFields(current, next config.Config) []string {

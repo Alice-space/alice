@@ -72,7 +72,6 @@ func isContextualBuiltinCommand(text string) bool {
 func isReadOnlyBuiltinCommand(text string) bool {
 	return isHelpCommand(text) || isStatusCommand(text) || isPwdCommand(text)
 }
-
 func isHelpCommand(text string) bool {
 	fields := strings.Fields(strings.TrimSpace(text))
 	if len(fields) == 0 {

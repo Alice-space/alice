@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 	coregemini "github.com/Alice-space/alice/internal/llm/providers/gemini"
 )
 
@@ -14,10 +15,12 @@ type geminiBackend struct {
 
 func newGeminiBackend(cfg GeminiConfig) *geminiBackend {
 	defaultRunner := coregemini.Runner{
-		Command:      cfg.Command,
-		Timeout:      cfg.Timeout,
-		Env:          cfg.Env,
-		WorkspaceDir: cfg.WorkspaceDir,
+		RunnerBase: shared.RunnerBase{
+			Command:      cfg.Command,
+			Timeout:      cfg.Timeout,
+			Env:          cfg.Env,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 	}
 	profileRunners := make(map[string]coregemini.Runner, len(cfg.ProfileOverrides))
 	for name, override := range cfg.ProfileOverrides {

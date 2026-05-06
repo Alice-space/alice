@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 	corekimi "github.com/Alice-space/alice/internal/llm/providers/kimi"
 )
 
@@ -14,10 +15,12 @@ type kimiBackend struct {
 
 func newKimiBackend(cfg KimiConfig) *kimiBackend {
 	defaultRunner := corekimi.Runner{
-		Command:      cfg.Command,
-		Timeout:      cfg.Timeout,
-		Env:          cfg.Env,
-		WorkspaceDir: cfg.WorkspaceDir,
+		RunnerBase: shared.RunnerBase{
+			Command:      cfg.Command,
+			Timeout:      cfg.Timeout,
+			Env:          cfg.Env,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 	}
 	profileRunners := make(map[string]corekimi.Runner, len(cfg.ProfileOverrides))
 	for name, override := range cfg.ProfileOverrides {

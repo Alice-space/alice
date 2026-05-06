@@ -8,6 +8,8 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 func TestRunWithThreadAndProgressEmitsIndependentTextEvents(t *testing.T) {
@@ -26,7 +28,7 @@ printf '%s\n' '{"type":"step_finish","part":{"tokens":{"input":12,"output":6,"ca
 	}
 
 	var progress []string
-	reply, threadID, inputTokens, outputTokens, cacheTokens, err := Runner{Command: command}.RunWithThreadAndProgress(
+	reply, threadID, inputTokens, outputTokens, cacheTokens, err := Runner{RunnerBase: shared.RunnerBase{Command: command}}.RunWithThreadAndProgress(
 		context.Background(),
 		"",
 		"prompt",
@@ -68,7 +70,7 @@ printf '%s\n' '{"type":"text","part":{"text":"DONE"}}'
 	}
 
 	var progress []string
-	reply, _, _, _, _, err := Runner{Command: command, WorkspaceDir: repo}.RunWithThreadAndProgress(
+	reply, _, _, _, _, err := Runner{RunnerBase: shared.RunnerBase{Command: command, WorkspaceDir: repo}}.RunWithThreadAndProgress(
 		context.Background(),
 		"",
 		"prompt",
@@ -118,7 +120,7 @@ printf '%s\n' '{"type":"text","part":{"text":"OK"}}'
 	}
 
 	var raw []string
-	_, _, _, _, _, err := Runner{Command: command}.RunWithThreadAndProgress(
+	_, _, _, _, _, err := Runner{RunnerBase: shared.RunnerBase{Command: command}}.RunWithThreadAndProgress(
 		context.Background(),
 		"",
 		"prompt",

@@ -19,7 +19,9 @@ type syntheticDiffRunGuard struct {
 	versionSeed    uint64
 }
 
-var syntheticDiffGuard = newSyntheticDiffRunGuard()
+func NewSyntheticDiffGuard() *syntheticDiffRunGuard {
+	return newSyntheticDiffRunGuard()
+}
 
 func newSyntheticDiffRunGuard() *syntheticDiffRunGuard {
 	return &syntheticDiffRunGuard{

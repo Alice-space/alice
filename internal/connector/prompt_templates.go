@@ -46,7 +46,3 @@ func renderPromptFile(loader *prompting.Loader, name string, data any) (string, 
 func (p *Processor) renderPromptFile(name string, data any) (string, error) {
 	return renderPromptFile(p.prompts, name, data)
 }
-
-func (a *App) renderPromptFile(name string, data any) (string, error) {
-	return renderPromptFile(a.prompts, name, data)
-}

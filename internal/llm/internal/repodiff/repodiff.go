@@ -35,20 +35,29 @@ type Emitter struct {
 	lease     *Lease
 	snapshots map[string]Snapshot
 	progress  func(string)
+	guard     *RunGuard
 }
 
 func NewEmitter(ctx context.Context, workspaceDir string, progress func(string)) *Emitter {
+	return NewEmitterWithGuard(ctx, workspaceDir, progress, NewRunGuard())
+}
+
+func NewEmitterWithGuard(ctx context.Context, workspaceDir string, progress func(string), guard *RunGuard) *Emitter {
 	if progress == nil {
 		return nil
 	}
+	if guard == nil {
+		guard = NewRunGuard()
+	}
 	repos := DiscoverWatchRepos(workspaceDir)
-	lease := SyntheticGuard.Acquire(repos)
+	lease := guard.Acquire(repos)
 	return &Emitter{
 		ctx:       ctx,
 		repos:     repos,
 		lease:     lease,
 		snapshots: CaptureSnapshots(ctx, repos),
 		progress:  progress,
+		guard:     guard,
 	}
 }
 
@@ -56,7 +65,7 @@ func (e *Emitter) Emit() {
 	if e == nil || e.progress == nil {
 		return
 	}
-	if !SyntheticGuard.CanEmit(e.lease) {
+	if !e.guard.CanEmit(e.lease) {
 		e.snapshots = CaptureSnapshots(e.ctx, e.repos)
 		return
 	}
@@ -75,7 +84,7 @@ func (e *Emitter) Close() {
 	if e == nil {
 		return
 	}
-	SyntheticGuard.Release(e.lease)
+	e.guard.Release(e.lease)
 }
 
 func DiscoverWatchRepos(workspaceDir string) []string {

@@ -78,15 +78,6 @@ func isSupportedIncomingMessageType(messageType string) bool {
 	}
 }
 
-func isMediaMessageType(messageType string) bool {
-	switch strings.ToLower(strings.TrimSpace(messageType)) {
-	case "image", "sticker", "audio", "file", "post":
-		return true
-	default:
-		return false
-	}
-}
-
 func extractIncomingMessageContent(messageType string, content *string, mentions []*larkim.MentionEvent) (string, []Attachment, error) {
 	switch strings.ToLower(strings.TrimSpace(messageType)) {
 	case "text":

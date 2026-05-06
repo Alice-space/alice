@@ -15,6 +15,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 type openCodeAppServerDriver struct {
@@ -363,7 +365,7 @@ func (d *openCodeAppServerDriver) ensureEventStream() {
 		return
 	}
 	baseURL := d.baseURL
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(context.TODO())
 	d.eventCancel = cancel
 	d.mu.Unlock()
 
@@ -389,7 +391,7 @@ func (d *openCodeAppServerDriver) readEventStream(ctx context.Context, endpoint 
 
 func (d *openCodeAppServerDriver) scanEventStream(reader io.Reader) {
 	scanner := bufio.NewScanner(reader)
-	scanner.Buffer(make([]byte, 0, 64*1024), 2*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize2MB)
 	var data []string
 	flush := func() {
 		if len(data) == 0 {

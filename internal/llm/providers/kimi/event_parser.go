@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 type parsedEvent struct {
@@ -22,7 +24,7 @@ type parsedEvent struct {
 func ParseFinalMessage(jsonlOutput string) (string, error) {
 	var lastAssistant string
 	scanner := bufio.NewScanner(strings.NewReader(jsonlOutput))
-	scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize)
 
 	for scanner.Scan() {
 		event := parseEventLine(scanner.Text())
@@ -55,12 +57,12 @@ func parseEventLine(line string) parsedEvent {
 		message = nested
 	}
 
-	sessionID := extractString(payload, "session_id", "sessionId", "thread_id", "threadId")
+	sessionID := shared.ExtractString(payload, "session_id", "sessionId", "thread_id", "threadId")
 	if sessionID == "" {
-		sessionID = extractString(message, "session_id", "sessionId", "thread_id", "threadId")
+		sessionID = shared.ExtractString(message, "session_id", "sessionId", "thread_id", "threadId")
 	}
 
-	role := strings.ToLower(strings.TrimSpace(extractString(message, "role")))
+	role := strings.ToLower(strings.TrimSpace(shared.ExtractString(message, "role")))
 	switch role {
 	case "assistant":
 		return parsedEvent{
@@ -89,10 +91,10 @@ func parseAssistantText(content any) string {
 					parts = append(parts, text)
 				}
 			case map[string]any:
-				itemType := strings.ToLower(strings.TrimSpace(extractString(block, "type")))
+				itemType := strings.ToLower(strings.TrimSpace(shared.ExtractString(block, "type")))
 				switch itemType {
 				case "", "text":
-					text := strings.TrimSpace(extractString(block, "text"))
+					text := strings.TrimSpace(shared.ExtractString(block, "text"))
 					if text != "" {
 						parts = append(parts, text)
 					}
@@ -127,13 +129,13 @@ func parseToolCalls(raw any) string {
 func formatToolCall(call map[string]any) string {
 	parts := make([]string, 0, 4)
 
-	callType := strings.TrimSpace(extractString(call, "type"))
+	callType := strings.TrimSpace(shared.ExtractString(call, "type"))
 	if callType == "" {
 		callType = "tool_call"
 	}
 	parts = append(parts, callType)
 
-	if id := strings.TrimSpace(extractString(call, "id")); id != "" {
+	if id := strings.TrimSpace(shared.ExtractString(call, "id")); id != "" {
 		parts = append(parts, "id=`"+id+"`")
 	}
 
@@ -157,33 +159,15 @@ func extractToolFunction(call map[string]any) (string, string) {
 		function = nested
 	}
 
-	name := strings.TrimSpace(extractString(function, "name"))
+	name := strings.TrimSpace(shared.ExtractString(function, "name"))
 	if name == "" {
-		name = strings.TrimSpace(extractString(call, "name"))
+		name = strings.TrimSpace(shared.ExtractString(call, "name"))
 	}
 
-	arguments := strings.TrimSpace(extractString(function, "arguments", "args"))
+	arguments := strings.TrimSpace(shared.ExtractString(function, "arguments", "args"))
 	if arguments == "" {
-		arguments = strings.TrimSpace(extractString(call, "arguments", "args"))
+		arguments = strings.TrimSpace(shared.ExtractString(call, "arguments", "args"))
 	}
 
 	return name, arguments
-}
-
-func extractString(payload map[string]any, keys ...string) string {
-	for _, key := range keys {
-		value, ok := payload[key]
-		if !ok {
-			continue
-		}
-		text, ok := value.(string)
-		if !ok {
-			continue
-		}
-		trimmed := strings.TrimSpace(text)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }

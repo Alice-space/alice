@@ -292,7 +292,7 @@ func (d *taskProgressDispatcher) Send(message string) {
 	d.mu.Unlock()
 	ctx := d.ctx
 	if ctx == nil {
-		ctx = context.Background()
+		ctx = context.TODO()
 	}
 	messageID, err := d.engine.sendTextWithFallback(ctx, d.task, d.route, normalized)
 	if err != nil {

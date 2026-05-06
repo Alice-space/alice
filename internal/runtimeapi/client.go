@@ -126,10 +126,6 @@ func (c *Client) post(ctx context.Context, session sessionctx.SessionContext, pa
 	return c.do(ctx, session, http.MethodPost, path, body, "application/json", nil)
 }
 
-func (c *Client) put(ctx context.Context, session sessionctx.SessionContext, path string, body any) (map[string]any, error) {
-	return c.do(ctx, session, http.MethodPut, path, body, "application/json", nil)
-}
-
 func (c *Client) delete(
 	ctx context.Context,
 	session sessionctx.SessionContext,

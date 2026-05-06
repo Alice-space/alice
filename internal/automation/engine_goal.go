@@ -97,7 +97,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	}
 	now := e.nowTime()
 	if !goal.DeadlineAt.IsZero() && now.After(goal.DeadlineAt) {
-		e.markGoalTimeout(goal)
+		e.markGoalTimeout(ctx, goal)
 		return nil
 	}
 	sk := goalSessionKey(goal)
@@ -127,7 +127,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		}
 		now = e.nowTime()
 		if !goal.DeadlineAt.IsZero() && now.After(goal.DeadlineAt) {
-			e.markGoalTimeout(goal)
+			e.markGoalTimeout(goalCtx, goal)
 			return nil
 		}
 		select {
@@ -177,7 +177,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		}
 		logging.Infof("goal iteration done scope=%s:%s done=%v next_thread=%s", goal.Scope.Kind, goal.Scope.ID, result.GoalDone, strings.TrimSpace(result.NextThreadID))
 		if result.GoalDone {
-			e.markGoalComplete(goal)
+			e.markGoalComplete(goalCtx, goal)
 			e.resetFastRunCount(scope)
 			return nil
 		}
@@ -192,7 +192,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 					logging.Errorf("goal pause on fast loop failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, patchErr)
 				}
 				e.resetFastRunCount(scope)
-				e.sendGoalNotification(goal, "⚠️ 目标已自动暂停\n检测到连续 5 次快速循环（每次 < 3 分钟），可能存在死循环。\n目标: "+goal.Objective)
+				e.sendGoalNotification(goalCtx, goal, "⚠️ 目标已自动暂停\n检测到连续 5 次快速循环（每次 < 3 分钟），可能存在死循环。\n目标: "+goal.Objective)
 				return nil
 			}
 		} else {
@@ -214,10 +214,10 @@ func (e *Engine) buildGoalPrompt(goal GoalTask) string {
 		data.Deadline = "未设置"
 		data.Remaining = "未设置"
 	}
-	return renderGoalTemplate(goalContinueTemplate, data)
+	return renderGoalTemplate(getGoalTemplates().continueTemplate, data)
 }
 
-func (e *Engine) markGoalComplete(goal GoalTask) {
+func (e *Engine) markGoalComplete(ctx context.Context, goal GoalTask) {
 	if _, err := e.store.PatchGoal(goal.Scope, func(g *GoalTask) error {
 		g.Status = GoalStatusComplete
 		return nil
@@ -229,10 +229,10 @@ func (e *Engine) markGoalComplete(goal GoalTask) {
 	logging.Infof("goal completed scope=%s:%s", goal.Scope.Kind, goal.Scope.ID)
 	elapsed := e.nowTime().Sub(goal.CreatedAt)
 	msg := "✅ 目标已完成\n   耗时: " + formatDurationHMS(elapsed)
-	e.sendGoalNotification(goal, msg)
+	e.sendGoalNotification(ctx, goal, msg)
 }
 
-func (e *Engine) markGoalTimeout(goal GoalTask) {
+func (e *Engine) markGoalTimeout(ctx context.Context, goal GoalTask) {
 	if _, err := e.store.PatchGoal(goal.Scope, func(g *GoalTask) error {
 		g.Status = GoalStatusTimeout
 		return nil
@@ -244,20 +244,24 @@ func (e *Engine) markGoalTimeout(goal GoalTask) {
 	elapsed := e.nowTime().Sub(goal.CreatedAt)
 	msg := "⏰ 目标已超时\n   已用时间: " + formatDurationHMS(elapsed) +
 		"\n   目标: " + goal.Objective
-	e.sendGoalNotification(goal, msg)
+	e.sendGoalNotification(ctx, goal, msg)
 }
 
-func (e *Engine) sendGoalNotification(goal GoalTask, text string) {
+func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) {
 	if e.sender == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if sender, ok := any(e.sender).(taskMessageSender); ok {
-		sender.SendCardMessage(ctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text))
+		if _, err := sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text)); err != nil {
+			logging.Warnf("goal send card notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		}
 		return
 	}
-	e.sender.SendText(ctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text)
+	if err := e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text); err != nil {
+		logging.Warnf("goal send text notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+	}
 }
 
 func (e *Engine) goalRunContext(ctx context.Context, goal GoalTask) (context.Context, context.CancelCauseFunc) {
@@ -288,10 +292,14 @@ func (e *Engine) goalProgressDispatcher(ctx context.Context, goal GoalTask) llm.
 			return
 		}
 		if sender, ok := any(e.sender).(taskMessageSender); ok {
-			sender.SendCardMessage(ctx, route.ReceiveIDType, route.ReceiveID, richTextCardContent(normalized))
+			if _, err := sender.SendCardMessage(ctx, route.ReceiveIDType, route.ReceiveID, richTextCardContent(normalized)); err != nil {
+				logging.Warnf("goal send card progress failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+			}
 			return
 		}
-		e.sender.SendText(ctx, route.ReceiveIDType, route.ReceiveID, normalized)
+		if err := e.sender.SendText(ctx, route.ReceiveIDType, route.ReceiveID, normalized); err != nil {
+			logging.Warnf("goal send text progress failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		}
 	}
 }
 

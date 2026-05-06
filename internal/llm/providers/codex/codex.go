@@ -13,6 +13,8 @@ import (
 	"os/exec"
 	"strings"
 	"time"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 const (
@@ -61,16 +63,15 @@ type repoDiffSnapshot map[string]fileDiffStat
 
 // Runner executes the codex CLI for a single request.
 type Runner struct {
-	Command                string
-	Timeout                time.Duration
+	shared.RunnerBase
+
 	IdleTimeout            time.Duration
 	DefaultIdleTimeout     time.Duration
 	HighIdleTimeout        time.Duration
 	XHighIdleTimeout       time.Duration
 	DefaultModel           string
 	DefaultReasoningEffort string
-	Env                    map[string]string
-	WorkspaceDir           string
+	SyntheticDiffGuard     *syntheticDiffRunGuard
 }
 
 // Run is a convenience wrapper that runs without thread resumption or progress
@@ -166,12 +167,12 @@ func (r Runner) runAttempt(
 	}
 	prompt := strings.TrimSpace(userText)
 	if prompt == "" {
-		return "", "", Usage{}, errors.New("empty prompt")
+		return "", "", Usage{}, shared.ErrPromptEmpty
 	}
 
 	timeout := r.Timeout
 	if timeout <= 0 {
-		timeout = 172800 * time.Second
+		timeout = shared.DefaultLLMTimeout
 	}
 	idleTimeout := r.IdleTimeout
 	if idleTimeout <= 0 {
@@ -190,11 +191,15 @@ func (r Runner) runAttempt(
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}
-	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
+	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 
 	watchedRepos := discoverWatchRepos(cmd.Dir)
-	repoLease := syntheticDiffGuard.Acquire(watchedRepos)
-	defer syntheticDiffGuard.Release(repoLease)
+	diffGuard := r.SyntheticDiffGuard
+	if diffGuard == nil {
+		diffGuard = newSyntheticDiffRunGuard()
+	}
+	repoLease := diffGuard.Acquire(watchedRepos)
+	defer diffGuard.Release(repoLease)
 	repoSnapshots := captureRepoSnapshots(tctx, watchedRepos)
 	activeThreadID := strings.TrimSpace(threadID)
 	finalMessage := ""
@@ -205,7 +210,7 @@ func (r Runner) runAttempt(
 		if onThinking == nil {
 			return
 		}
-		if !syntheticDiffGuard.CanEmit(repoLease) {
+		if !diffGuard.CanEmit(repoLease) {
 			repoSnapshots = captureRepoSnapshots(tctx, watchedRepos)
 			return
 		}
@@ -247,7 +252,7 @@ func (r Runner) runAttempt(
 	go func() {
 		defer close(stdoutEvents)
 		scanner := bufio.NewScanner(stdoutPipe)
-		scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+		scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize)
 		for scanner.Scan() {
 			select {
 			case stdoutEvents <- stdoutEvent{line: scanner.Text()}:
@@ -284,7 +289,7 @@ loop:
 			_ = cmd.Wait()
 			<-stderrDone
 			if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-				return "", activeThreadID, usage, errors.New("codex timeout")
+				return "", activeThreadID, usage, shared.ErrLLMTimeout
 			}
 			return "", activeThreadID, usage, context.Canceled
 		case <-idleTimer.C:
@@ -351,7 +356,7 @@ loop:
 		_ = cmd.Wait()
 		<-stderrDone
 		if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-			return "", activeThreadID, usage, errors.New("codex timeout")
+			return "", activeThreadID, usage, shared.ErrLLMTimeout
 		}
 		if errors.Is(tctx.Err(), context.Canceled) {
 			return "", activeThreadID, usage, context.Canceled
@@ -363,7 +368,7 @@ loop:
 	<-stderrDone
 	stderrText := strings.TrimSpace(stderr.String())
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", activeThreadID, usage, errors.New("codex timeout")
+		return "", activeThreadID, usage, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", activeThreadID, usage, context.Canceled

@@ -9,10 +9,6 @@ import (
 	larkim "github.com/larksuite/oapi-sdk-go/v3/service/im/v1"
 )
 
-func extractText(content *string) (string, error) {
-	return extractTextWithMentions(content, nil)
-}
-
 func extractOptionalTextWithMentions(content *string, mentions []*larkim.MentionEvent) (string, error) {
 	text, err := extractTextWithMentions(content, mentions)
 	if err != nil {

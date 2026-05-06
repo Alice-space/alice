@@ -34,7 +34,7 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 }
 
 func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardContent string) error {
-	return s.SendText(nil, receiveIDType, receiveID, cardContent)
+	return s.SendText(context.TODO(), receiveIDType, receiveID, cardContent)
 }
 
 func (s *senderStub) SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
@@ -122,11 +122,11 @@ type sessionCheckerStub struct {
 }
 
 func (s *sessionCheckerStub) IsSessionActive(sessionKey string) bool {
-	s.mu.Lock()
-	defer s.mu.Unlock()
 	if s == nil || s.activeSessions == nil {
 		return false
 	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.activeSessions[sessionKey]
 }
 
@@ -488,12 +488,17 @@ func TestRunUserTask_SessionGateInterruptedUnclaims(t *testing.T) {
 		engine.runUserTask(context.Background(), claimed[0])
 	}()
 
-	time.Sleep(100 * time.Millisecond)
-	gate.mu.Lock()
-	if gate.cancel != nil {
-		gate.cancel(context.Canceled)
+	// Wait for runUserTask to acquire the session gate, then cancel.
+	for i := 0; i < 50; i++ {
+		gate.mu.Lock()
+		cancel := gate.cancel
+		gate.mu.Unlock()
+		if cancel != nil {
+			cancel(context.Canceled)
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
-	gate.mu.Unlock()
 
 	<-done
 

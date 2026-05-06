@@ -19,8 +19,6 @@ type RunGuard struct {
 	versionSeed    uint64
 }
 
-var SyntheticGuard = NewRunGuard()
-
 func NewRunGuard() *RunGuard {
 	return &RunGuard{
 		active:         make(map[string]int),

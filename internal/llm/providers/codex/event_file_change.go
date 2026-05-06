@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 func parseFileChangeMessage(item map[string]any) string {
@@ -48,9 +50,9 @@ func collectFileChangePaths(item map[string]any) []string {
 		seen[path] = struct{}{}
 	}
 
-	addPath(extractString(item, "path", "file_path", "filename", "file"))
+	addPath(shared.ExtractString(item, "path", "file_path", "filename", "file"))
 	if changed, ok := item["changed_file"].(map[string]any); ok {
-		addPath(extractString(changed, "path", "file_path", "filename", "file"))
+		addPath(shared.ExtractString(changed, "path", "file_path", "filename", "file"))
 	}
 	if changes, ok := item["changes"].([]any); ok {
 		for _, change := range changes {
@@ -58,7 +60,7 @@ func collectFileChangePaths(item map[string]any) []string {
 			if !ok {
 				continue
 			}
-			addPath(extractString(entry, "path", "file_path", "filename", "file"))
+			addPath(shared.ExtractString(entry, "path", "file_path", "filename", "file"))
 		}
 	}
 
@@ -122,12 +124,12 @@ func collectFileChangeEntries(item map[string]any) []fileChangeEntry {
 		entriesByPath[path] = existing
 	}
 
-	mergeEntry(extractString(item, "path", "file_path", "filename", "file"), defaultStatus, defaultStat, defaultHasStats)
+	mergeEntry(shared.ExtractString(item, "path", "file_path", "filename", "file"), defaultStatus, defaultStat, defaultHasStats)
 
 	if changed, ok := item["changed_file"].(map[string]any); ok {
 		status := extractFileChangeStatus(changed)
 		stat, hasStats := extractDiffStat(changed)
-		mergeEntry(extractString(changed, "path", "file_path", "filename", "file"), status, stat, hasStats)
+		mergeEntry(shared.ExtractString(changed, "path", "file_path", "filename", "file"), status, stat, hasStats)
 	}
 
 	if changes, ok := item["changes"].([]any); ok {
@@ -138,7 +140,7 @@ func collectFileChangeEntries(item map[string]any) []fileChangeEntry {
 			}
 			status := extractFileChangeStatus(entry)
 			stat, hasStats := extractDiffStat(entry)
-			mergeEntry(extractString(entry, "path", "file_path", "filename", "file"), status, stat, hasStats)
+			mergeEntry(shared.ExtractString(entry, "path", "file_path", "filename", "file"), status, stat, hasStats)
 		}
 	}
 
@@ -203,7 +205,7 @@ func extractDiffStat(payload map[string]any) (fileDiffStat, bool) {
 }
 
 func extractFileChangeStatus(payload map[string]any) fileChangeStatus {
-	status := extractString(
+	status := shared.ExtractString(
 		payload,
 		"kind",
 		"change_type",

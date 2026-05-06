@@ -3,19 +3,33 @@ package automation
 import (
 	"bytes"
 	"strings"
+	"sync/atomic"
 	"text/template"
 
 	"github.com/Alice-space/alice/internal/logging"
 )
 
-var (
-	goalContinueTemplate = ""
-	goalTimeoutTemplate  = ""
-)
+type goalTemplates struct {
+	continueTemplate string
+	timeoutTemplate  string
+}
+
+var goalTemplatesVal atomic.Value
+
+func init() {
+	goalTemplatesVal.Store(goalTemplates{})
+}
 
 func SetGoalTemplates(cont, timeout string) {
-	goalContinueTemplate = strings.TrimSpace(cont)
-	goalTimeoutTemplate = strings.TrimSpace(timeout)
+	goalTemplatesVal.Store(goalTemplates{
+		continueTemplate: strings.TrimSpace(cont),
+		timeoutTemplate:  strings.TrimSpace(timeout),
+	})
+}
+
+func getGoalTemplates() goalTemplates {
+	v, _ := goalTemplatesVal.Load().(goalTemplates)
+	return v
 }
 
 type goalPromptData struct {

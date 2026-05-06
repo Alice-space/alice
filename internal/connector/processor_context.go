@@ -512,10 +512,6 @@ func (p *Processor) prepareJobForLLM(ctx context.Context, job *Job) {
 	}
 }
 
-func (p *Processor) buildCurrentUserInput(job Job) string {
-	return p.buildCurrentUserInputWithThread(job, "")
-}
-
 func (p *Processor) buildCurrentUserInputWithThread(job Job, threadID string) string {
 	baseText := strings.TrimSpace(job.Text)
 

@@ -17,7 +17,7 @@ var (
 func (s *Store) ListGoals(filterStatus GoalStatus) ([]GoalTask, error) {
 	filterStatus = GoalStatus(strings.ToLower(strings.TrimSpace(string(filterStatus))))
 	if s == nil {
-		return nil, errors.New("store is nil")
+		return nil, ErrStoreNil
 	}
 	db, err := s.dbOrOpen()
 	if err != nil {
@@ -49,11 +49,11 @@ func (s *Store) ListGoals(filterStatus GoalStatus) ([]GoalTask, error) {
 
 func (s *Store) GetGoal(scope Scope) (GoalTask, error) {
 	if s == nil {
-		return GoalTask{}, errors.New("store is nil")
+		return GoalTask{}, ErrStoreNil
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
-		return GoalTask{}, errors.New("scope is empty")
+		return GoalTask{}, ErrScopeEmpty
 	}
 	var goal GoalTask
 	db, err := s.dbOrOpen()
@@ -82,7 +82,7 @@ func (s *Store) GetGoal(scope Scope) (GoalTask, error) {
 
 func (s *Store) ReplaceGoal(goal GoalTask) (GoalTask, error) {
 	if s == nil {
-		return GoalTask{}, errors.New("store is nil")
+		return GoalTask{}, ErrStoreNil
 	}
 	goal = NormalizeGoal(goal)
 	now := s.nowLocal()
@@ -135,11 +135,11 @@ func (s *Store) ReplaceGoal(goal GoalTask) (GoalTask, error) {
 
 func (s *Store) PatchGoal(scope Scope, mutate func(goal *GoalTask) error) (GoalTask, error) {
 	if s == nil {
-		return GoalTask{}, errors.New("store is nil")
+		return GoalTask{}, ErrStoreNil
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
-		return GoalTask{}, errors.New("scope is empty")
+		return GoalTask{}, ErrScopeEmpty
 	}
 	if mutate == nil {
 		return GoalTask{}, errors.New("mutate callback is nil")
@@ -190,11 +190,11 @@ func (s *Store) PatchGoal(scope Scope, mutate func(goal *GoalTask) error) (GoalT
 
 func (s *Store) DeleteGoal(scope Scope) error {
 	if s == nil {
-		return errors.New("store is nil")
+		return ErrStoreNil
 	}
 	scope = normalizeScope(scope)
 	if scope.Kind == "" || scope.ID == "" {
-		return errors.New("scope is empty")
+		return ErrScopeEmpty
 	}
 	db, err := s.dbOrOpen()
 	if err != nil {
@@ -215,7 +215,7 @@ func (s *Store) DeleteGoal(scope Scope) error {
 
 func (s *Store) ResetRunningGoals() error {
 	if s == nil {
-		return errors.New("store is nil")
+		return ErrStoreNil
 	}
 	db, err := s.dbOrOpen()
 	if err != nil {

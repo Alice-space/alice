@@ -12,21 +12,17 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
-	"time"
 
 	"github.com/Alice-space/alice/internal/llm/internal/repodiff"
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // Runner executes the opencode CLI for a single request.
 type Runner struct {
-	Command        string
-	Timeout        time.Duration
+	shared.RunnerBase
 	DefaultModel   string
 	DefaultVariant string
-	Env            map[string]string
-	WorkspaceDir   string
 }
 
 type stepStart struct {
@@ -89,7 +85,7 @@ func (r Runner) RunWithThreadAndProgress(
 ) (string, string, int64, int64, int64, error) {
 	prompt := strings.TrimSpace(userText)
 	if prompt == "" {
-		return "", "", 0, 0, 0, errors.New("empty prompt")
+		return "", "", 0, 0, 0, shared.ErrPromptEmpty
 	}
 
 	model = strings.TrimSpace(model)
@@ -103,7 +99,7 @@ func (r Runner) RunWithThreadAndProgress(
 
 	timeout := r.Timeout
 	if timeout <= 0 {
-		timeout = 172800 * time.Second
+		timeout = shared.DefaultLLMTimeout
 	}
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -113,7 +109,7 @@ func (r Runner) RunWithThreadAndProgress(
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}
-	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
+	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 	diffEmitter := repodiff.NewEmitter(tctx, cmd.Dir, onProgress)
 	defer diffEmitter.Close()
 
@@ -147,7 +143,7 @@ func (r Runner) RunWithThreadAndProgress(
 
 	finalText := ""
 	scanner := bufio.NewScanner(stdoutPipe)
-	scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), 2*1024*1024)
 	for scanner.Scan() {
 		line := scanner.Bytes()
 		if len(line) == 0 {
@@ -177,7 +173,7 @@ func (r Runner) RunWithThreadAndProgress(
 
 	detail := strings.TrimSpace(stderr.String())
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", nextThreadID, inputTokens, outputTokens, cachedInputTokens, errors.New("opencode timeout")
+		return "", nextThreadID, inputTokens, outputTokens, cachedInputTokens, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", nextThreadID, inputTokens, outputTokens, cachedInputTokens, context.Canceled
@@ -211,14 +207,14 @@ func parseOpenCodeRawEvent(line []byte) (string, string) {
 	if err := json.Unmarshal(line, &ev); err != nil {
 		return "", ""
 	}
-	eventType := strings.ToLower(strings.TrimSpace(extractOpenCodeString(ev, "type")))
+	eventType := strings.ToLower(shared.ExtractString(ev, "type"))
 	part, _ := ev["part"].(map[string]any)
 	switch eventType {
 	case "reasoning":
-		return "reasoning", strings.TrimSpace(extractOpenCodeString(part, "text"))
+		return "reasoning", shared.ExtractString(part, "text")
 	case "tool_use":
 		detail := formatOpenCodeToolUse(part)
-		if strings.TrimSpace(detail) == "" {
+		if detail == "" {
 			return "tool_use", "tool_use"
 		}
 		return "tool_use", detail
@@ -235,43 +231,29 @@ func formatOpenCodeToolUse(part map[string]any) string {
 	input, _ := state["input"].(map[string]any)
 	metadata, _ := state["metadata"].(map[string]any)
 	parts := []string{"tool_use"}
-	if tool := strings.TrimSpace(extractOpenCodeString(part, "tool")); tool != "" {
+	if tool := shared.ExtractString(part, "tool"); tool != "" {
 		parts = append(parts, "tool=`"+tool+"`")
 	}
-	if callID := strings.TrimSpace(extractOpenCodeString(part, "callID")); callID != "" {
+	if callID := shared.ExtractString(part, "callID"); callID != "" {
 		parts = append(parts, "call_id=`"+callID+"`")
 	}
-	if status := strings.TrimSpace(extractOpenCodeString(state, "status")); status != "" {
+	if status := shared.ExtractString(state, "status"); status != "" {
 		parts = append(parts, "status=`"+status+"`")
 	}
-	if command := strings.TrimSpace(extractOpenCodeString(input, "command")); command != "" {
+	if command := shared.ExtractString(input, "command"); command != "" {
 		parts = append(parts, "command=`"+command+"`")
 	}
-	desc := strings.TrimSpace(extractOpenCodeString(input, "description"))
+	desc := shared.ExtractString(input, "description")
 	if desc == "" {
-		desc = strings.TrimSpace(extractOpenCodeString(metadata, "description"))
+		desc = shared.ExtractString(metadata, "description")
 	}
 	if desc != "" {
 		parts = append(parts, "description=`"+desc+"`")
 	}
-	if title := strings.TrimSpace(extractOpenCodeString(state, "title")); title != "" {
+	if title := shared.ExtractString(state, "title"); title != "" {
 		parts = append(parts, "title=`"+title+"`")
 	}
 	return strings.Join(parts, " ")
-}
-
-func extractOpenCodeString(m map[string]any, key string) string {
-	if len(m) == 0 {
-		return ""
-	}
-	raw, ok := m[key]
-	if !ok || raw == nil {
-		return ""
-	}
-	if value, ok := raw.(string); ok {
-		return value
-	}
-	return ""
 }
 
 func parseOpenCodeLine(line []byte, inputTokens, outputTokens, cacheTokens *int64, nextThreadID *string, finalText *string) string {
@@ -318,43 +300,4 @@ func parseOpenCodeLine(line []byte, inputTokens, outputTokens, cacheTokens *int6
 	}
 
 	return ""
-}
-
-func mergeEnv(base []string, overrides map[string]string) []string {
-	if len(overrides) == 0 {
-		return base
-	}
-	env := make([]string, len(base))
-	copy(env, base)
-	indexByKey := make(map[string]int, len(env))
-	for i, item := range env {
-		key := envKey(item)
-		if key == "" {
-			continue
-		}
-		indexByKey[key] = i
-	}
-	keys := make([]string, 0, len(overrides))
-	for key := range overrides {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		value := overrides[key]
-		pair := key + "=" + value
-		if idx, ok := indexByKey[key]; ok {
-			env[idx] = pair
-			continue
-		}
-		env = append(env, pair)
-	}
-	return env
-}
-
-func envKey(item string) string {
-	idx := strings.Index(item, "=")
-	if idx <= 0 {
-		return ""
-	}
-	return item[:idx]
 }

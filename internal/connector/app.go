@@ -18,6 +18,8 @@ import (
 	"github.com/Alice-space/alice/internal/runtimecfg"
 )
 
+// App orchestrates message processing, session management, and LLM interaction
+// for a single bot instance.
 type App struct {
 	cfg       config.Config
 	cfgMu     sync.RWMutex
@@ -54,6 +56,7 @@ const (
 	sessionStateFlushInterval = 1 * time.Second
 )
 
+// NewApp creates a new App with the given config and processor.
 func NewApp(cfg config.Config, processor *Processor) *App {
 	app := &App{
 		cfg:       cfg,

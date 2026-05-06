@@ -482,16 +482,6 @@ func buildWorkSessionLookupCandidates(receiveIDType, receiveID string, threadID,
 	return candidates
 }
 
-func (p *Processor) resolveWorkSessionByThread(baseKey, threadID string) string {
-	threadID = strings.TrimSpace(threadID)
-	if threadID == "" || p == nil {
-		return ""
-	}
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	return p.threadBindings[baseKey+threadBindingToken+threadID]
-}
-
 func (p *Processor) resolveSessionLookup(sessionKey string) string {
 	sessionKey = strings.TrimSpace(sessionKey)
 	if sessionKey == "" {

@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"strings"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 type parsedEvent struct {
@@ -26,7 +28,7 @@ func ParseFinalMessage(jsonlOutput string) (string, error) {
 	var lastResult string
 
 	scanner := bufio.NewScanner(strings.NewReader(jsonlOutput))
-	scanner.Buffer(make([]byte, 0, 64*1024), 5*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize)
 
 	for scanner.Scan() {
 		event := parseEventLine(scanner.Text())
@@ -60,12 +62,12 @@ func parseEventLine(line string) parsedEvent {
 		return parsedEvent{}
 	}
 
-	eventType := extractString(event, "type")
-	sessionID := extractString(event, "session_id")
+	eventType := shared.ExtractString(event, "type")
+	sessionID := shared.ExtractString(event, "session_id")
 
 	switch eventType {
 	case "system":
-		subtype := strings.ToLower(extractString(event, "subtype"))
+		subtype := strings.ToLower(shared.ExtractString(event, "subtype"))
 		if subtype == "init" {
 			return parsedEvent{SessionID: sessionID}
 		}
@@ -79,7 +81,7 @@ func parseEventLine(line string) parsedEvent {
 			ToolNames:     extractAssistantToolNames(message),
 		}
 	case "result":
-		resultText := extractString(event, "result")
+		resultText := shared.ExtractString(event, "result")
 		resultErrors := extractStringSlice(event, "errors")
 		resultIsError := extractBool(event["is_error"])
 		usagePayload, _ := event["usage"].(map[string]any)
@@ -115,11 +117,11 @@ func extractAssistantToolUse(message map[string]any) string {
 		if !ok {
 			continue
 		}
-		if strings.ToLower(extractString(block, "type")) != "tool_use" {
+		if strings.ToLower(shared.ExtractString(block, "type")) != "tool_use" {
 			continue
 		}
-		name := extractString(block, "name")
-		id := extractString(block, "id")
+		name := shared.ExtractString(block, "name")
+		id := shared.ExtractString(block, "id")
 		line := "tool_use"
 		if name != "" {
 			line += " name=`" + name + "`"
@@ -146,10 +148,10 @@ func extractAssistantToolNames(message map[string]any) []string {
 		if !ok {
 			continue
 		}
-		if strings.ToLower(extractString(block, "type")) != "tool_use" {
+		if strings.ToLower(shared.ExtractString(block, "type")) != "tool_use" {
 			continue
 		}
-		name := extractString(block, "name")
+		name := shared.ExtractString(block, "name")
 		if name == "" {
 			continue
 		}
@@ -164,7 +166,7 @@ func extractAssistantText(message map[string]any) string {
 	}
 	content, ok := message["content"].([]any)
 	if !ok {
-		return extractString(message, "text")
+		return shared.ExtractString(message, "text")
 	}
 	parts := make([]string, 0, len(content))
 	for _, raw := range content {
@@ -172,34 +174,16 @@ func extractAssistantText(message map[string]any) string {
 		if !ok {
 			continue
 		}
-		if strings.ToLower(extractString(block, "type")) != "text" {
+		if strings.ToLower(shared.ExtractString(block, "type")) != "text" {
 			continue
 		}
-		text := strings.TrimSpace(extractString(block, "text"))
+		text := strings.TrimSpace(shared.ExtractString(block, "text"))
 		if text == "" {
 			continue
 		}
 		parts = append(parts, text)
 	}
 	return strings.TrimSpace(strings.Join(parts, "\n"))
-}
-
-func extractString(payload map[string]any, keys ...string) string {
-	for _, key := range keys {
-		value, ok := payload[key]
-		if !ok {
-			continue
-		}
-		text, ok := value.(string)
-		if !ok {
-			continue
-		}
-		trimmed := strings.TrimSpace(text)
-		if trimmed != "" {
-			return trimmed
-		}
-	}
-	return ""
 }
 
 func extractStringSlice(payload map[string]any, key string) []string {

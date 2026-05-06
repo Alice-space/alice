@@ -2,7 +2,6 @@ package automation
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -30,7 +29,7 @@ type TaskWatchdogAlert struct {
 
 func (s *Store) ScanWatchdogAlerts(at time.Time, overdueGrace, runningGrace time.Duration) ([]TaskWatchdogAlert, error) {
 	if s == nil {
-		return nil, errors.New("store is nil")
+		return nil, ErrStoreNil
 	}
 	if at.IsZero() {
 		at = s.nowLocal()

@@ -11,17 +11,14 @@ import (
 	"io"
 	"os"
 	"os/exec"
-	"sort"
 	"strings"
-	"time"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 // Runner executes the gemini CLI for a single request.
 type Runner struct {
-	Command      string
-	Timeout      time.Duration
-	Env          map[string]string
-	WorkspaceDir string
+	shared.RunnerBase
 }
 
 type jsonResponse struct {
@@ -71,12 +68,12 @@ func (r Runner) RunWithThreadAndProgress(
 	model = strings.TrimSpace(model)
 	prompt := strings.TrimSpace(userText)
 	if prompt == "" {
-		return "", threadID, 0, 0, 0, errors.New("empty prompt")
+		return "", threadID, 0, 0, 0, shared.ErrPromptEmpty
 	}
 
 	timeout := r.Timeout
 	if timeout <= 0 {
-		timeout = 172800 * time.Second
+		timeout = shared.DefaultLLMTimeout
 	}
 	tctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -86,7 +83,7 @@ func (r Runner) RunWithThreadAndProgress(
 	if strings.TrimSpace(r.WorkspaceDir) != "" {
 		cmd.Dir = r.WorkspaceDir
 	}
-	cmd.Env = mergeEnv(mergeEnv(os.Environ(), r.Env), env)
+	cmd.Env = shared.MergeEnv(shared.MergeEnv(os.Environ(), r.Env), env)
 
 	stdoutPipe, err := cmd.StdoutPipe()
 	if err != nil {
@@ -118,7 +115,7 @@ func (r Runner) RunWithThreadAndProgress(
 	detail := strings.TrimSpace(stderr.String())
 	inputTokens, cachedInputTokens, outputTokens := response.usageTotals()
 	if errors.Is(tctx.Err(), context.DeadlineExceeded) {
-		return "", threadID, inputTokens, cachedInputTokens, outputTokens, errors.New("gemini timeout")
+		return "", threadID, inputTokens, cachedInputTokens, outputTokens, shared.ErrLLMTimeout
 	}
 	if errors.Is(tctx.Err(), context.Canceled) {
 		return "", threadID, inputTokens, cachedInputTokens, outputTokens, context.Canceled
@@ -180,45 +177,6 @@ func (r jsonResponse) usageTotals() (int64, int64, int64) {
 		outputTokens += modelStats.Tokens.Candidates
 	}
 	return inputTokens, cachedInputTokens, outputTokens
-}
-
-func mergeEnv(base []string, overrides map[string]string) []string {
-	if len(overrides) == 0 {
-		return base
-	}
-	env := make([]string, len(base))
-	copy(env, base)
-	indexByKey := make(map[string]int, len(env))
-	for i, item := range env {
-		key := envKey(item)
-		if key == "" {
-			continue
-		}
-		indexByKey[key] = i
-	}
-	keys := make([]string, 0, len(overrides))
-	for key := range overrides {
-		keys = append(keys, key)
-	}
-	sort.Strings(keys)
-	for _, key := range keys {
-		value := overrides[key]
-		pair := key + "=" + value
-		if idx, ok := indexByKey[key]; ok {
-			env[idx] = pair
-			continue
-		}
-		env = append(env, pair)
-	}
-	return env
-}
-
-func envKey(item string) string {
-	idx := strings.Index(item, "=")
-	if idx <= 0 {
-		return ""
-	}
-	return item[:idx]
 }
 
 func decorateNodeVersionError(runErr error, detail string) error {

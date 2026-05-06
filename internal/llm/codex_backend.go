@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 	corecodex "github.com/Alice-space/alice/internal/llm/providers/codex"
 )
 
@@ -17,15 +18,18 @@ type codexBackend struct {
 
 func newCodexBackend(cfg CodexConfig) *codexBackend {
 	defaultRunner := corecodex.Runner{
-		Command:                cfg.Command,
-		Timeout:                cfg.Timeout,
+		RunnerBase: shared.RunnerBase{
+			Command:      cfg.Command,
+			Timeout:      cfg.Timeout,
+			Env:          cfg.Env,
+			WorkspaceDir: cfg.WorkspaceDir,
+		},
 		DefaultIdleTimeout:     cfg.DefaultIdleTimeout,
 		HighIdleTimeout:        cfg.HighIdleTimeout,
 		XHighIdleTimeout:       cfg.XHighIdleTimeout,
 		DefaultModel:           cfg.Model,
 		DefaultReasoningEffort: cfg.ReasoningEffort,
-		Env:                    cfg.Env,
-		WorkspaceDir:           cfg.WorkspaceDir,
+		SyntheticDiffGuard:     corecodex.NewSyntheticDiffGuard(),
 	}
 	profileRunners := make(map[string]corecodex.Runner, len(cfg.ProfileOverrides))
 	for name, override := range cfg.ProfileOverrides {

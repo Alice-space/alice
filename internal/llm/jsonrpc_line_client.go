@@ -14,6 +14,8 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+
+	"github.com/Alice-space/alice/internal/llm/internal/shared"
 )
 
 type lineRPCClient struct {
@@ -201,7 +203,7 @@ func (c *lineRPCClient) readStdout(stdout io.Reader) {
 	defer close(c.closed)
 	defer close(c.notifications)
 	scanner := bufio.NewScanner(stdout)
-	scanner.Buffer(make([]byte, 0, 64*1024), 10*1024*1024)
+	scanner.Buffer(make([]byte, 0, shared.DefaultScannerBuf), shared.MaxScannerTokenSize10MB)
 	for scanner.Scan() {
 		line := scanner.Text()
 		var msg map[string]json.RawMessage
