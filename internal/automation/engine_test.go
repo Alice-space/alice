@@ -534,6 +534,46 @@ type blockingGoalRunner struct {
 	unblock chan struct{}
 }
 
+type goalRunHelperStub struct {
+	mu      sync.Mutex
+	calls   int
+	idx     int
+	result  llm.RunResult
+	results []llm.RunResult
+	err     error
+	lastReq struct {
+		ThreadID   string
+		UserText   string
+		Scene      string
+		OnProgress llm.ProgressFunc
+	}
+}
+
+func (s *goalRunHelperStub) Run(_ context.Context, threadID string, userText string,
+	scene string, _ map[string]string, onProgress llm.ProgressFunc) (llm.RunResult, error) {
+
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	idx := s.idx
+	s.idx++
+	s.calls++
+	s.lastReq.ThreadID = threadID
+	s.lastReq.UserText = userText
+	s.lastReq.Scene = scene
+	s.lastReq.OnProgress = onProgress
+
+	var result llm.RunResult
+	var err error
+	if idx < len(s.results) {
+		result = s.results[idx]
+	} else {
+		result = s.result
+		err = s.err
+	}
+	return result, err
+}
+
 func (r *blockingGoalRunner) Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	idx := r.calls
 	r.calls++

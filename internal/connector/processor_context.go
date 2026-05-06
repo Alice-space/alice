@@ -271,6 +271,93 @@ func (p *Processor) runLLM(
 	return result.Reply, nextThreadID, result.Usage, err
 }
 
+// RunGoalMessage runs a goal prompt through the same LLM pipeline used for
+// regular user messages, with full OnRawEvent (reasoning, tool_use, tool_call)
+// debug logging. It returns the complete RunResult including GoalDone so the
+// goal engine can decide whether to continue iteration or mark complete.
+func (p *Processor) RunGoalMessage(
+	ctx context.Context,
+	threadID string,
+	userText string,
+	scene string,
+	env map[string]string,
+	onProgress llm.ProgressFunc,
+) (llm.RunResult, error) {
+	snapshot := p.runtimeSnapshot()
+	if snapshot.llm == nil {
+		return llm.RunResult{}, fmt.Errorf("llm backend is nil")
+	}
+
+	requestThreadID := strings.TrimSpace(threadID)
+	startedAt := time.Now()
+
+	logProgress := func(message string) {
+		normalized := strings.TrimSpace(message)
+		if normalized == "" {
+			return
+		}
+		if strings.HasPrefix(normalized, fileChangeEventPrefix) {
+			fileChange := strings.TrimSpace(strings.TrimPrefix(normalized, fileChangeEventPrefix))
+			logging.Debugf("goal file_change thread_id=%s file_change=%q",
+				requestThreadID, clipText(fileChange, 500))
+			return
+		}
+		logging.Debugf("goal agent_message thread_id=%s agent_message=%q",
+			requestThreadID, clipText(normalized, 500))
+		if onProgress != nil {
+			onProgress(message)
+		}
+	}
+
+	logRawEvent := func(event llm.RawEvent) {
+		if !logging.IsDebugEnabled() {
+			return
+		}
+		switch event.Kind {
+		case "reasoning":
+			logging.Debugf("goal reasoning thread_id=%s detail=%q",
+				requestThreadID, clipText(event.Detail, 500))
+		case "tool_use":
+			logging.Debugf("goal tool_use thread_id=%s detail=%q",
+				requestThreadID, clipText(event.Detail, 500))
+		case "tool_call":
+			logging.Debugf("goal tool_call thread_id=%s detail=%q",
+				requestThreadID, clipText(event.Detail, 500))
+		}
+	}
+
+	result, err := snapshot.llm.Run(ctx, llm.RunRequest{
+		ThreadID:   requestThreadID,
+		AgentName:  "goal",
+		UserText:   userText,
+		Scene:      strings.TrimSpace(scene),
+		Env:        env,
+		OnProgress: logProgress,
+		OnRawEvent: logRawEvent,
+	})
+
+	nextThreadID := strings.TrimSpace(result.NextThreadID)
+	if nextThreadID == "" {
+		nextThreadID = requestThreadID
+	}
+	result.NextThreadID = nextThreadID
+
+	if err != nil {
+		logging.Debugf(
+			"goal run failed thread_id=%s elapsed=%s err=%v",
+			requestThreadID, time.Since(startedAt), err,
+		)
+	} else {
+		logging.Debugf(
+			"goal run completed thread_id=%s elapsed=%s next_thread_id=%s goal_done=%v final_message=%q",
+			requestThreadID, time.Since(startedAt), nextThreadID,
+			result.GoalDone, clipText(strings.TrimSpace(result.Reply), 500),
+		)
+	}
+
+	return result, err
+}
+
 func errorText(err error) string {
 	if err == nil {
 		return ""

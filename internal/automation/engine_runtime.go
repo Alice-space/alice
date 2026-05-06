@@ -17,6 +17,24 @@ func (e *Engine) SetLLMRunner(runner LLMRunner) {
 	e.llmRunner = runner
 }
 
+func (e *Engine) SetGoalRunHelper(helper GoalRunHelper) {
+	if e == nil || helper == nil {
+		return
+	}
+	e.runtimeMu.Lock()
+	defer e.runtimeMu.Unlock()
+	e.goalRunHelper = helper
+}
+
+func (e *Engine) goalRunHelperValue() GoalRunHelper {
+	if e == nil {
+		return nil
+	}
+	e.runtimeMu.RLock()
+	defer e.runtimeMu.RUnlock()
+	return e.goalRunHelper
+}
+
 func (e *Engine) SetUserTaskCompletionHook(hook UserTaskCompletionHook) {
 	if e == nil {
 		return

@@ -84,9 +84,10 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	if e == nil || e.store == nil {
 		return errors.New("engine or store is nil")
 	}
+	goalHelper := e.goalRunHelperValue()
 	runner := e.llmRunnerValue()
-	if runner == nil {
-		return errors.New("goal runner: llm runner is nil")
+	if goalHelper == nil && runner == nil {
+		return errors.New("goal runner: neither GoalRunHelper nor llm runner is set")
 	}
 	goal, err := e.store.GetGoal(scope)
 	if err != nil {
@@ -145,14 +146,22 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		prompt := e.buildGoalPrompt(goal)
 		logging.Infof("goal iteration start scope=%s:%s thread=%s", goal.Scope.Kind, goal.Scope.ID, threadID)
 		iterStart := e.nowTime()
-		result, err := runner.Run(runCtx, llm.RunRequest{
-			ThreadID:   threadID,
-			AgentName:  "goal",
-			UserText:   prompt,
-			Scene:      goalScene(goal),
-			Env:        e.buildGoalRunEnv(goal),
-			OnProgress: e.goalProgressDispatcher(runCtx, goal),
-		})
+		var result llm.RunResult
+		var err error
+		if goalHelper != nil {
+			result, err = goalHelper.Run(runCtx, threadID, prompt, goalScene(goal),
+				e.buildGoalRunEnv(goal), e.goalProgressDispatcher(runCtx, goal))
+		} else {
+			result, err = runner.Run(runCtx, llm.RunRequest{
+				ThreadID:   threadID,
+				AgentName:  "goal",
+				UserText:   prompt,
+				Scene:      goalScene(goal),
+				Env:        e.buildGoalRunEnv(goal),
+				OnProgress: e.goalProgressDispatcher(runCtx, goal),
+				OnRawEvent: goalRawEventDispatcher(goal),
+			})
+		}
 		runCancel(nil)
 		nextThreadID := strings.TrimSpace(result.NextThreadID)
 		if nextThreadID != "" && nextThreadID != threadID {

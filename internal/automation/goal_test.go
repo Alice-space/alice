@@ -1149,6 +1149,114 @@ func searchString(s, substr string) bool {
 	return false
 }
 
+func TestEngine_ExecuteGoal_UsesGoalRunHelper(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{
+		result: llm.RunResult{Reply: "done via helper", NextThreadID: "ths", GoalDone: true},
+	}
+	engine.SetGoalRunHelper(helper)
+	engine.SetLLMRunner(&runLLMPanicStub{})
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_test_helper"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_helper_test",
+		Objective:  "helper test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	if err := engine.ExecuteGoal(t.Context(), scope); err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	if helper.calls != 1 {
+		t.Fatalf("expected 1 GoalRunHelper call, got %d", helper.calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected complete status, got %s", goal.Status)
+	}
+	if goal.ThreadID != "ths" {
+		t.Fatalf("expected thread ths, got %s", goal.ThreadID)
+	}
+}
+
+func TestEngine_ExecuteGoal_GoalRunHelper_MultipleIterations(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{
+		results: []llm.RunResult{
+			{Reply: "step 1", NextThreadID: "t1"},
+			{Reply: "step 2", NextThreadID: "t2"},
+			{Reply: "done", NextThreadID: "t3", GoalDone: true},
+		},
+	}
+	engine.SetGoalRunHelper(helper)
+	engine.SetLLMRunner(&runLLMPanicStub{})
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_test_multi"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_multi_test",
+		Objective:  "multi iter test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	if err := engine.ExecuteGoal(t.Context(), scope); err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	if helper.calls != 3 {
+		t.Fatalf("expected 3 GoalRunHelper calls, got %d", helper.calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected complete status, got %s", goal.Status)
+	}
+	if goal.ThreadID != "t3" {
+		t.Fatalf("expected thread t3, got %s", goal.ThreadID)
+	}
+}
+
 func TestRichTextCardContent_WrapsMarkdownInCardJSON(t *testing.T) {
 	c := richTextCardContent("**hello** world")
 	if !strings.Contains(c, `"schema":"2.0"`) {
