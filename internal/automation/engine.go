@@ -122,11 +122,28 @@ func (e *Engine) Run(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
+			e.waitForTasks()
 			return
 		case <-ticker.C:
 			now := e.nowTime()
 			e.runUserTasks(ctx, now)
 			e.runGoals(ctx)
 		}
+	}
+}
+
+func (e *Engine) waitForTasks() {
+	if e == nil || e.taskSem == nil {
+		return
+	}
+	c := cap(e.taskSem)
+	if c <= 0 {
+		return
+	}
+	for i := 0; i < c; i++ {
+		e.taskSem <- struct{}{}
+	}
+	for i := 0; i < c; i++ {
+		<-e.taskSem
 	}
 }
