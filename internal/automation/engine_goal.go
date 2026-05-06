@@ -254,10 +254,14 @@ func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text s
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if sender, ok := any(e.sender).(taskMessageSender); ok {
-		sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text))
+		if _, err := sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text)); err != nil {
+			logging.Warnf("goal send card notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		}
 		return
 	}
-	e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text)
+	if err := e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text); err != nil {
+		logging.Warnf("goal send text notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+	}
 }
 
 func (e *Engine) goalRunContext(ctx context.Context, goal GoalTask) (context.Context, context.CancelCauseFunc) {
@@ -288,10 +292,14 @@ func (e *Engine) goalProgressDispatcher(ctx context.Context, goal GoalTask) llm.
 			return
 		}
 		if sender, ok := any(e.sender).(taskMessageSender); ok {
-			sender.SendCardMessage(ctx, route.ReceiveIDType, route.ReceiveID, richTextCardContent(normalized))
+			if _, err := sender.SendCardMessage(ctx, route.ReceiveIDType, route.ReceiveID, richTextCardContent(normalized)); err != nil {
+				logging.Warnf("goal send card progress failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+			}
 			return
 		}
-		e.sender.SendText(ctx, route.ReceiveIDType, route.ReceiveID, normalized)
+		if err := e.sender.SendText(ctx, route.ReceiveIDType, route.ReceiveID, normalized); err != nil {
+			logging.Warnf("goal send text progress failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		}
 	}
 }
 
