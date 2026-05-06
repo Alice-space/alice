@@ -3,6 +3,7 @@ package connector
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -662,5 +663,141 @@ func TestBuildGoalScopeFromJob_StripsMessageSuffix(t *testing.T) {
 	scope := buildGoalScopeFromJob(job)
 	if scope.ID != "chat_id:oc_chat|work:om_seed" {
 		t.Fatalf("expected scope ID without message suffix, got %q", scope.ID)
+	}
+}
+
+func TestProcessor_StatusCommand_ShowsActiveGoal(t *testing.T) {
+	llmStub := &llmCallCountingStub{}
+	sender := &senderStub{}
+	processor := NewProcessor(llmStub, sender, "failed", "thinking")
+	processor.SetStatusIdentity("alice", "Alice")
+
+	automationStore := automation.NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	processor.SetStatusStores(automationStore)
+
+	goalScope := automation.Scope{Kind: automation.ScopeKindChat, ID: "chat_id:oc_chat|work:om_goal_seed"}
+	now := time.Now()
+	if _, err := automationStore.ReplaceGoal(automation.GoalTask{
+		ID:         "goal_status_test",
+		Objective:  "fix the zigzag fluctuation",
+		Status:     automation.GoalStatusActive,
+		DeadlineAt: now.Add(48 * time.Hour),
+		Scope:      goalScope,
+		Route:      automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    automation.Actor{OpenID: "ou_actor"},
+		CreatedAt:  now,
+	}); err != nil {
+		t.Fatalf("create goal failed: %v", err)
+	}
+
+	processor.recordSessionUsage(restoreChatSceneKey("chat_id", "oc_chat"), llm.Usage{
+		InputTokens: 100, OutputTokens: 10,
+	})
+
+	state := processor.ProcessJobState(context.Background(), Job{
+		ReceiveID:       "oc_chat",
+		ReceiveIDType:   "chat_id",
+		ChatType:        "group",
+		SenderOpenID:    "ou_actor",
+		SourceMessageID: "om_src",
+		SessionKey:      "chat_id:oc_chat|work:om_goal_seed",
+		Text:            "/status",
+	})
+	if state != JobProcessCompleted {
+		t.Fatalf("expected completed state, got %s", state)
+	}
+
+	card := parseReplyCard(t, sender.replyCards[0])
+	reply := card.Body.Elements[0].Content
+
+	for _, want := range []string{
+		"### 当前目标",
+		"目标: fix the zigzag fluctuation",
+	} {
+		if !strings.Contains(reply, want) {
+			t.Fatalf("expected status reply to contain %q, got %q", want, reply)
+		}
+	}
+	if strings.Contains(reply, "未设置目标") {
+		t.Fatal("expected goal to appear, but got '未设置目标'")
+	}
+}
+
+func TestAutomationAndGoal_ScopeIsolationBetweenWorkThreads(t *testing.T) {
+	store := automation.NewStore(filepath.Join(t.TempDir(), "automation.db"))
+
+	// Goal in work thread A
+	scopeA := automation.Scope{Kind: automation.ScopeKindChat, ID: "chat_id:oc_chat|work:om_A"}
+	if _, err := store.ReplaceGoal(automation.GoalTask{
+		ID:        "goal_A",
+		Objective: "goal in work A",
+		Status:    automation.GoalStatusActive,
+		Scope:     scopeA,
+		Route:     automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:   automation.Actor{OpenID: "ou_actor"},
+	}); err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	// Automation task in work thread B
+	scopeB := automation.Scope{Kind: automation.ScopeKindChat, ID: "chat_id:oc_chat|work:om_B"}
+	if _, err := store.CreateTask(automation.Task{
+		ID:       "task_B",
+		Title:    "task in work B",
+		Scope:    scopeB,
+		Route:    automation.Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:  automation.Actor{OpenID: "ou_actor"},
+		Schedule: automation.Schedule{EverySeconds: 600},
+		Prompt:   "do something",
+	}); err != nil {
+		t.Fatalf("CreateTask: %v", err)
+	}
+
+	// Goal should only be findable in its own scope
+	_, err := store.GetGoal(scopeA)
+	if err != nil {
+		t.Fatalf("GetGoal scopeA: %v", err)
+	}
+	_, err = store.GetGoal(scopeB)
+	if !errors.Is(err, automation.ErrGoalNotFound) {
+		t.Fatalf("expected ErrGoalNotFound for goal in scopeB, got %v", err)
+	}
+
+	// Task should only be findable in its own scope (by taskID)
+	_, err = store.GetTask("task_B")
+	if err != nil {
+		t.Fatalf("GetTask task_B: %v", err)
+	}
+
+	// List tasks in work thread A should not include task_B
+	tasksInA, _ := store.ListTasks(scopeA, "", 10)
+	for _, task := range tasksInA {
+		if task.ID == "task_B" {
+			t.Fatal("expected task_B to NOT appear in scopeA task list")
+		}
+	}
+
+	// List tasks in work thread B should include task_B
+	tasksInB, _ := store.ListTasks(scopeB, "", 10)
+	found := false
+	for _, task := range tasksInB {
+		if task.ID == "task_B" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatal("expected task_B to appear in scopeB task list")
+	}
+
+	// Goals list should only show goal_A in scopeA
+	goals, _ := store.ListGoals("")
+	foundGoalA := false
+	for _, g := range goals {
+		if g.ID == "goal_A" && g.Scope.ID == scopeA.ID {
+			foundGoalA = true
+		}
+	}
+	if !foundGoalA {
+		t.Fatal("expected goal_A in goal list")
 	}
 }
