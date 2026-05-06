@@ -192,7 +192,7 @@ func TestOpenCodeAppServerPromptAsyncStreamsIntermediateEvents(t *testing.T) {
 				"messageID": "msg-1",
 				"type":      "tool",
 				"tool":      "bash",
-				"state": map[string]any{"status": "completed", "input": map[string]any{"command": "echo hi"}},
+				"state":     map[string]any{"status": "completed", "input": map[string]any{"command": "echo hi"}},
 			},
 		},
 	})
