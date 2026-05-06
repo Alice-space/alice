@@ -225,3 +225,32 @@ func TestParseOpenCodeLineCapturesThreadAndTokens(t *testing.T) {
 		t.Fatalf("tokens = input:%d output:%d cache:%d, want input:10 output:7 cache:3", inputTokens, outputTokens, cacheTokens)
 	}
 }
+
+func TestBuildRunArgs_IncludesVariantFlag(t *testing.T) {
+	args := buildRunArgs("thread_1", "hello", "deepseek/deepseek-v4-pro", "max")
+	foundVariant := false
+	foundMaxValue := false
+	for i, arg := range args {
+		if arg == "--variant" && i+1 < len(args) {
+			foundVariant = true
+			if args[i+1] == "max" {
+				foundMaxValue = true
+			}
+		}
+	}
+	if !foundVariant {
+		t.Errorf("expected --variant flag in args, got %v", args)
+	}
+	if !foundMaxValue {
+		t.Errorf("expected --variant max value in args, got %v", args)
+	}
+}
+
+func TestBuildRunArgs_OmitsVariantWhenEmpty(t *testing.T) {
+	args := buildRunArgs("thread_1", "hello", "deepseek/deepseek-v4-pro", "")
+	for _, arg := range args {
+		if arg == "--variant" {
+			t.Errorf("expected no --variant flag when variant is empty, got %v", args)
+		}
+	}
+}
