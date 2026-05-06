@@ -57,6 +57,7 @@ func (d *openCodeAppServerDriver) StartTurn(ctx context.Context, req RunRequest)
 	if err := d.ensureServer(ctx, req); err != nil {
 		return TurnRef{}, err
 	}
+	d.reconnectEventStream()
 	sessionID, err := d.ensureSession(ctx, req)
 	if err != nil {
 		return TurnRef{}, err
@@ -343,6 +344,20 @@ func (d *openCodeAppServerDriver) ensureEventStream() {
 	d.mu.Unlock()
 
 	go d.readEventStream(ctx, strings.TrimRight(baseURL, "/")+"/event")
+}
+
+func (d *openCodeAppServerDriver) reconnectEventStream() {
+	d.mu.Lock()
+	if d.eventCancel != nil {
+		d.eventCancel()
+		d.eventCancel = nil
+	}
+	if d.closed || d.baseURL == "" {
+		d.mu.Unlock()
+		return
+	}
+	d.mu.Unlock()
+	d.ensureEventStream()
 }
 
 func (d *openCodeAppServerDriver) readEventStream(ctx context.Context, endpoint string) {
