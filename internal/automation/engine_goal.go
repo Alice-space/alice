@@ -145,6 +145,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		}
 		prompt := e.buildGoalPrompt(goal)
 		logging.Infof("goal iteration start scope=%s:%s thread=%s", goal.Scope.Kind, goal.Scope.ID, threadID)
+		e.sendGoalIterationStartNotification(goalCtx, goal)
 		iterStart := e.nowTime()
 		var result llm.RunResult
 		var err error
@@ -254,6 +255,17 @@ func (e *Engine) markGoalTimeout(ctx context.Context, goal GoalTask) {
 	msg := "⏰ 目标已超时\n   已用时间: " + formatDurationHMS(elapsed) +
 		"\n   目标: " + goal.Objective
 	e.sendGoalNotification(ctx, goal, msg)
+}
+
+func (e *Engine) sendGoalIterationStartNotification(ctx context.Context, goal GoalTask) {
+	if e.sender == nil {
+		return
+	}
+	obj := goal.Objective
+	if len([]rune(obj)) > 60 {
+		obj = string([]rune(obj)[:60]) + "..."
+	}
+	e.sendGoalNotification(ctx, goal, "🔄 "+obj)
 }
 
 func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) {
