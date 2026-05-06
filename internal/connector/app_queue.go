@@ -255,12 +255,17 @@ func parseLogLevel(level string) larkcore.LogLevel {
 	}
 }
 
-func (a *App) findActiveWorkSessionKey(receiveIDType, receiveID string) string {
+func (a *App) findActiveWorkSessionKey(receiveIDType, receiveID string, message *larkim.EventMessage) string {
 	receiveIDType = strings.TrimSpace(receiveIDType)
 	receiveID = strings.TrimSpace(receiveID)
 	if receiveIDType == "" || receiveID == "" {
 		return ""
 	}
+
+	if !hasThreadContext(message) {
+		return ""
+	}
+
 	baseKey := buildSessionKey(receiveIDType, receiveID)
 	if baseKey == "" {
 		return ""
