@@ -42,12 +42,7 @@ create-release options:
   --timeout SEC          Max wait time for merge/release (default: 1800)
 
 update-self options:
-  --repo-dir PATH        Alice repo root or any path inside it
-  --repo OWNER/REPO      Release repo for installer lookup
-  --channel NAME         Installer channel: release or dev (default: release)
-  --version TAG          Install a pinned version, for example v0.3.5
-  --home PATH            Override ALICE_HOME for installer
-  --service NAME         Override systemd user service name
+  --version TAG          Install a pinned version (npm install @alice_space/alice@TAG)
 
 auth-status:
   Run gh auth status for the current machine.
@@ -436,41 +431,33 @@ run_create_release() {
   printf 'release_url=%s\n' "$release_url"
 }
 
-find_installer_repo_root() {
-  local root
-  root="$(resolve_repo_root "$REPO_DIR")"
-  [[ -f "$root/scripts/alice-installer.sh" ]] || die "missing scripts/alice-installer.sh under ${root}"
-  printf '%s\n' "$root"
+run_update_self() {
+  if command -v npm >/dev/null 2>&1; then
+    local current
+    current="$(alice --version 2>/dev/null || true)"
+    log "current alice: ${current:-unknown}"
+    log "updating via npm install -g @alice_space/alice@latest"
+    npm install -g --silent @alice_space/alice@latest || die "npm update failed"
+    local updated
+    updated="$(alice --version 2>/dev/null || true)"
+    log "updated alice: ${updated:-unknown}"
+
+    if has_systemd_service; then
+      log "restarting alice service"
+      systemctl --user restart alice.service || log "restart failed (service may not be running)"
+    else
+      log "systemd service not found; restart alice manually: alice --feishu-websocket"
+    fi
+    printf 'method=npm\n'
+    printf 'version=%s\n' "${updated:-latest}"
+    return
+  fi
+
+  die "npm not found; cannot update alice"
 }
 
-run_update_self() {
-  local root installer
-
-  require_cmd bash
-  root="$(find_installer_repo_root)"
-  installer="${root}/scripts/alice-installer.sh"
-
-  local -a cmd=(bash "$installer" update --channel "$CHANNEL")
-  if [[ -n "$VERSION" ]]; then
-    cmd+=(--version "$VERSION")
-  fi
-  if [[ -n "$ALICE_HOME_OVERRIDE" ]]; then
-    cmd+=(--home "$ALICE_HOME_OVERRIDE")
-  fi
-  if [[ -n "$REPO" ]]; then
-    cmd+=(--repo "$REPO")
-  fi
-  if [[ -n "$SERVICE_NAME" ]]; then
-    cmd+=(--service "$SERVICE_NAME")
-  fi
-
-  log "running installer update from ${installer}"
-  "${cmd[@]}"
-
-  printf 'repo_dir=%s\n' "$root"
-  printf 'channel=%s\n' "$CHANNEL"
-  printf 'version=%s\n' "${VERSION:-latest}"
-  printf 'alice_home=%s\n' "${ALICE_HOME_OVERRIDE:-${ALICE_HOME:-~/.alice}}"
+has_systemd_service() {
+  systemctl --user list-unit-files alice.service >/dev/null 2>&1
 }
 
 parse_create_release_args() {
