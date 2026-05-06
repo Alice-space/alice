@@ -108,7 +108,6 @@ func buildFactoryConfig(cfg config.Config) llm.FactoryConfig {
 
 	codex := get(config.DefaultLLMProvider, "codex")
 	claude := get(config.LLMProviderClaude, "claude")
-	gemini := get(config.LLMProviderGemini, "gemini")
 	kimi := get(config.LLMProviderKimi, "kimi")
 	opencodeCfg := get(config.LLMProviderOpenCode, "opencode")
 
@@ -133,13 +132,6 @@ func buildFactoryConfig(cfg config.Config) llm.FactoryConfig {
 			Env:              defaultEnv,
 			WorkspaceDir:     cfg.WorkspaceDir,
 			ProfileOverrides: getOverrides(config.LLMProviderClaude),
-		},
-		Gemini: llm.GeminiConfig{
-			Command:          gemini.command,
-			Timeout:          gemini.timeout,
-			Env:              defaultEnv,
-			WorkspaceDir:     cfg.WorkspaceDir,
-			ProfileOverrides: getOverrides(config.LLMProviderGemini),
 		},
 		Kimi: llm.KimiConfig{
 			Command:          kimi.command,
@@ -167,11 +159,7 @@ func buildLLMBackend(cfg config.Config) (llm.Backend, error) {
 	for _, provider := range providers {
 		providerCfg := factoryCfg
 		providerCfg.Provider = provider
-		backend, err := llm.NewBackend(providerCfg)
-		if err != nil {
-			return nil, err
-		}
-		backends[provider] = newInteractiveProviderBackend(provider, providerCfg, backend)
+		backends[provider] = newInteractiveProviderBackend(provider, providerCfg)
 	}
 	return newInteractiveMultiBackend(cfg.LLMProvider, backends)
 }

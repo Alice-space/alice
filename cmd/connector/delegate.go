@@ -24,17 +24,17 @@ func newDelegateCmd() *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "delegate",
-		Short: "Run a one-shot LLM task via configured CLI backend",
-		Long: `Execute a single prompt against a configured LLM provider CLI and print the reply.
+		Short: "Run a one-shot LLM task via streaming backend",
+		Long: `Execute a single prompt against a configured LLM provider and print the reply.
 
 The prompt is taken from --prompt or stdin (stdin takes precedence when both are provided).
 
-Supported providers: codex | claude | gemini | kimi | opencode`,
+Supported providers: codex | claude | kimi | opencode`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			provider = strings.ToLower(strings.TrimSpace(provider))
 			if provider == "" {
-				return fmt.Errorf("--provider is required (codex | claude | gemini | kimi | opencode)")
+				return fmt.Errorf("--provider is required (codex | claude | kimi | opencode)")
 			}
 
 			promptText := strings.TrimSpace(prompt)
@@ -47,8 +47,6 @@ Supported providers: codex | claude | gemini | kimi | opencode`,
 					promptText = trimmed
 				}
 			} else {
-				// If --prompt is set but stdin is non-terminal (pipe/file),
-				// prefer stdin content over --prompt.
 				stat, statErr := os.Stdin.Stat()
 				if statErr == nil && (stat.Mode()&os.ModeCharDevice) == 0 {
 					data, readErr := io.ReadAll(cmd.InOrStdin())
@@ -74,10 +72,6 @@ Supported providers: codex | claude | gemini | kimi | opencode`,
 					Command: "claude", Timeout: timeout,
 					WorkspaceDir: workspaceDir,
 				},
-				Gemini: llm.GeminiConfig{
-					Command: "gemini", Timeout: timeout,
-					WorkspaceDir: workspaceDir,
-				},
 				Kimi: llm.KimiConfig{
 					Command: "kimi", Timeout: timeout,
 					WorkspaceDir: workspaceDir,
@@ -88,19 +82,22 @@ Supported providers: codex | claude | gemini | kimi | opencode`,
 				},
 			}
 
-			backend, err := llm.NewBackend(cfg)
-			if err != nil {
-				return fmt.Errorf("create backend: %w", err)
-			}
-
 			ctx, cancel := context.WithTimeout(cmd.Context(), timeout+5*time.Second)
 			defer cancel()
 
-			result, err := backend.Run(ctx, llm.RunRequest{
+			session, err := llm.NewInteractiveProviderSession(cfg)
+			if err != nil {
+				return fmt.Errorf("create session: %w", err)
+			}
+			defer session.Close()
+
+			req := llm.RunRequest{
 				UserText:     promptText,
 				Model:        model,
 				WorkspaceDir: workspaceDir,
-			})
+			}
+
+			result, err := runDelegateTurn(ctx, session, req)
 			if err != nil {
 				return fmt.Errorf("run: %w", err)
 			}
@@ -110,7 +107,7 @@ Supported providers: codex | claude | gemini | kimi | opencode`,
 		},
 	}
 
-	cmd.Flags().StringVar(&provider, "provider", "", "LLM provider: codex | claude | gemini | kimi | opencode")
+	cmd.Flags().StringVar(&provider, "provider", "", "LLM provider: codex | claude | kimi | opencode")
 	cmd.Flags().StringVar(&prompt, "prompt", "", "Task prompt (or pipe via stdin)")
 	cmd.Flags().StringVar(&model, "model", "", "Model override")
 	cmd.Flags().StringVar(&workspaceDir, "workspace-dir", "", "Working directory")
@@ -118,4 +115,50 @@ Supported providers: codex | claude | gemini | kimi | opencode`,
 	_ = cmd.MarkFlagRequired("provider")
 
 	return cmd
+}
+
+func runDelegateTurn(ctx context.Context, session *llm.InteractiveSession, req llm.RunRequest) (llm.RunResult, error) {
+	submitted, err := session.Submit(ctx, req)
+	if err != nil {
+		return llm.RunResult{}, err
+	}
+
+	reply := ""
+	nextThreadID := strings.TrimSpace(submitted.ThreadID)
+	var usage llm.Usage
+
+	for {
+		select {
+		case <-ctx.Done():
+			return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, ctx.Err()
+		case event, ok := <-session.Events():
+			if !ok {
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, nil
+			}
+			if event.TurnID != "" && submitted.TurnID != "" && event.TurnID != submitted.TurnID {
+				continue
+			}
+			if threadID := strings.TrimSpace(event.ThreadID); threadID != "" {
+				nextThreadID = threadID
+			}
+			if event.Usage.HasUsage() {
+				usage = event.Usage
+			}
+			switch event.Kind {
+			case llm.TurnEventAssistantText:
+				if text := strings.TrimSpace(event.Text); text != "" {
+					reply = text
+				}
+			case llm.TurnEventCompleted:
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, nil
+			case llm.TurnEventInterrupted:
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, context.Canceled
+			case llm.TurnEventError:
+				if event.Err != nil {
+					return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, event.Err
+				}
+				return llm.RunResult{Reply: reply, NextThreadID: nextThreadID, Usage: usage}, fmt.Errorf("turn failed")
+			}
+		}
+	}
 }

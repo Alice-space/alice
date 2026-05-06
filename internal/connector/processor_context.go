@@ -326,6 +326,7 @@ func (p *Processor) RunGoalMessage(
 		}
 	}
 
+	logging.Infof("goal run start thread_id=%s scene=%s prompt_len=%d", requestThreadID, scene, len(userText))
 	result, err := snapshot.llm.Run(ctx, llm.RunRequest{
 		ThreadID:   requestThreadID,
 		AgentName:  "goal",

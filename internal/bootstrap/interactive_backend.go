@@ -99,7 +99,6 @@ func (m *interactiveMultiBackend) resolve(rawProvider string) (llm.Backend, stri
 type interactiveProviderBackend struct {
 	provider string
 	cfg      llm.FactoryConfig
-	fallback llm.Backend
 	timeout  time.Duration
 	idleTTL  time.Duration
 
@@ -114,11 +113,10 @@ type interactiveProviderBackend struct {
 // long-lived provider process per Feishu session from accumulating indefinitely.
 const defaultInteractiveSessionIdleTTL = 30 * time.Second
 
-func newInteractiveProviderBackend(provider string, cfg llm.FactoryConfig, fallback llm.Backend) *interactiveProviderBackend {
+func newInteractiveProviderBackend(provider string, cfg llm.FactoryConfig) *interactiveProviderBackend {
 	return &interactiveProviderBackend{
 		provider:       normalizeBackendProvider(provider),
 		cfg:            cfg,
-		fallback:       fallback,
 		timeout:        providerTimeout(cfg),
 		idleTTL:        defaultInteractiveSessionIdleTTL,
 		sessions:       make(map[string]*llm.InteractiveSession),
@@ -131,7 +129,10 @@ func newInteractiveProviderBackend(provider string, cfg llm.FactoryConfig, fallb
 func (b *interactiveProviderBackend) Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error) {
 	sessionKey := runRequestSessionKey(req)
 	if sessionKey == "" {
-		return b.fallback.Run(ctx, req)
+		sessionKey = req.ThreadID
+	}
+	if sessionKey == "" {
+		return llm.RunResult{}, fmt.Errorf("interactive backend requires session key or thread id")
 	}
 	req.Provider = b.provider
 	return b.runInteractive(ctx, sessionKey, req)
@@ -413,8 +414,6 @@ func providerTimeout(cfg llm.FactoryConfig) time.Duration {
 	switch normalizeBackendProvider(cfg.Provider) {
 	case llm.ProviderClaude:
 		return cfg.Claude.Timeout
-	case llm.ProviderGemini:
-		return cfg.Gemini.Timeout
 	case llm.ProviderKimi:
 		return cfg.Kimi.Timeout
 	case llm.ProviderOpenCode:

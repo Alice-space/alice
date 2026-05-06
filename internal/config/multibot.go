@@ -175,8 +175,6 @@ func finalizeLLMProfiles(in map[string]LLMProfileConfig) map[string]LLMProfileCo
 			switch profile.Provider {
 			case LLMProviderClaude:
 				profile.Command = "claude"
-			case LLMProviderGemini:
-				profile.Command = "gemini"
 			case LLMProviderKimi:
 				profile.Command = "kimi"
 			case LLMProviderOpenCode:

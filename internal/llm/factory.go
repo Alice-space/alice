@@ -9,7 +9,6 @@ import (
 const (
 	ProviderCodex    = "codex"
 	ProviderClaude   = "claude"
-	ProviderGemini   = "gemini"
 	ProviderKimi     = "kimi"
 	ProviderOpenCode = "opencode"
 )
@@ -20,7 +19,6 @@ type FactoryConfig struct {
 	Provider string
 	Codex    CodexConfig
 	Claude   ClaudeConfig
-	Gemini   GeminiConfig
 	Kimi     KimiConfig
 	OpenCode OpenCodeConfig
 }
@@ -56,19 +54,6 @@ type ClaudeConfig struct {
 	Timeout      time.Duration
 	Env          map[string]string
 	WorkspaceDir string
-	// DisableStreamJSON makes NewInteractiveProviderSession fall back to the
-	// one-shot claude runner. It is intended for experimental rollback only.
-	DisableStreamJSON bool
-	// ProfileOverrides maps profile name → per-profile runner overrides.
-	ProfileOverrides map[string]ProfileRunnerConfig
-}
-
-// GeminiConfig configures the gemini CLI backend.
-type GeminiConfig struct {
-	Command      string
-	Timeout      time.Duration
-	Env          map[string]string
-	WorkspaceDir string
 	// ProfileOverrides maps profile name → per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
 }
@@ -94,9 +79,6 @@ type OpenCodeConfig struct {
 	// ServerURL connects to an already-running opencode server instead of
 	// spawning `opencode serve`.
 	ServerURL string
-	// DisableAppServer makes NewInteractiveProviderSession fall back to the
-	// one-shot `opencode run` wrapper. It is intended for experimental rollback.
-	DisableAppServer bool
 	// ProfileOverrides maps profile name → per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
 }
@@ -110,27 +92,9 @@ func (p providerBundle) Backend() Backend {
 }
 
 // NewProvider constructs a Provider for the backend specified by cfg.Provider.
-// An empty Provider defaults to codex.
+// For streaming providers, use NewInteractiveProviderSession or buildLLMBackend.
 func NewProvider(cfg FactoryConfig) (Provider, error) {
-	provider := normalizeProvider(cfg.Provider)
-	if provider == "" {
-		provider = ProviderCodex
-	}
-
-	switch provider {
-	case ProviderCodex:
-		return providerBundle{backend: newCodexBackend(cfg.Codex)}, nil
-	case ProviderClaude:
-		return providerBundle{backend: newClaudeBackend(cfg.Claude)}, nil
-	case ProviderGemini:
-		return providerBundle{backend: newGeminiBackend(cfg.Gemini)}, nil
-	case ProviderKimi:
-		return providerBundle{backend: newKimiBackend(cfg.Kimi)}, nil
-	case ProviderOpenCode:
-		return providerBundle{backend: newOpenCodeBackend(cfg.OpenCode)}, nil
-	default:
-		return nil, fmt.Errorf("unsupported llm_provider %q", provider)
-	}
+	return nil, fmt.Errorf("all llm providers now require streaming backend (use NewInteractiveProviderSession or buildLLMBackend)")
 }
 
 // NewBackend is a convenience wrapper around NewProvider that returns the

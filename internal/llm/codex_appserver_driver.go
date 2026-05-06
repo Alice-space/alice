@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+
+	corecodex "github.com/Alice-space/alice/internal/llm/providers/codex"
 )
 
 type codexAppServerDriver struct {
@@ -304,6 +306,32 @@ func stringSliceFromMap(m map[string]any, key string) []string {
 		if s, ok := item.(string); ok && strings.TrimSpace(s) != "" {
 			out = append(out, strings.TrimSpace(s))
 		}
+	}
+	return out
+}
+
+func toCoreCodexExecPolicy(policy ExecPolicyConfig) corecodex.ExecPolicyConfig {
+	return corecodex.ExecPolicyConfig{
+		Sandbox:        strings.TrimSpace(policy.Sandbox),
+		AskForApproval: strings.TrimSpace(policy.AskForApproval),
+		AddDirs:        append([]string(nil), policy.AddDirs...),
+	}
+}
+
+func mergeCoreCodexExecPolicy(base, override corecodex.ExecPolicyConfig) corecodex.ExecPolicyConfig {
+	out := corecodex.ExecPolicyConfig{
+		Sandbox:        strings.TrimSpace(base.Sandbox),
+		AskForApproval: strings.TrimSpace(base.AskForApproval),
+		AddDirs:        append([]string(nil), base.AddDirs...),
+	}
+	if sandbox := strings.TrimSpace(override.Sandbox); sandbox != "" {
+		out.Sandbox = sandbox
+	}
+	if approval := strings.TrimSpace(override.AskForApproval); approval != "" {
+		out.AskForApproval = approval
+	}
+	if len(override.AddDirs) > 0 {
+		out.AddDirs = append(out.AddDirs, override.AddDirs...)
 	}
 	return out
 }

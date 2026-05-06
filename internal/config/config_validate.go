@@ -37,9 +37,6 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"claude_command",
 		"claude_timeout_secs",
 		"claude_prompt_prefix",
-		"gemini_command",
-		"gemini_timeout_secs",
-		"gemini_prompt_prefix",
 		"kimi_command",
 		"kimi_timeout_secs",
 		"kimi_prompt_prefix",
@@ -82,7 +79,7 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 
 func isSupportedLLMProvider(provider string) bool {
 	switch normalizeLLMProvider(provider) {
-	case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi, LLMProviderOpenCode:
+	case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi, LLMProviderOpenCode:
 		return true
 	default:
 		return false
@@ -242,7 +239,7 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 	}
 	for name, profile := range cfg.LLMProfiles {
 		switch profile.Provider {
-		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi, LLMProviderOpenCode:
+		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi, LLMProviderOpenCode:
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
 		}
@@ -308,7 +305,7 @@ func validateBaseConfig(cfg Config, requireCredentials bool) error {
 func validateSceneConfig(cfg Config) error {
 	for name, profile := range cfg.LLMProfiles {
 		switch profile.Provider {
-		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderGemini, LLMProviderKimi, LLMProviderOpenCode:
+		case "", DefaultLLMProvider, LLMProviderClaude, LLMProviderKimi, LLMProviderOpenCode:
 		default:
 			return fmt.Errorf("llm_profiles.%s.provider %q is unsupported", name, profile.Provider)
 		}
