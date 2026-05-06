@@ -14,6 +14,7 @@ func TestInteractiveProviderBackendForwardsAssistantTextAndDropsToolUse(t *testi
 	for _, provider := range []string{
 		llm.ProviderCodex,
 		llm.ProviderClaude,
+		llm.ProviderKimi,
 		llm.ProviderOpenCode,
 	} {
 		t.Run(provider, func(t *testing.T) {
@@ -180,4 +181,42 @@ func waitForBootstrap(t *testing.T, timeout time.Duration, ok func() bool, messa
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatal(message)
+}
+
+func TestInteractiveProviderBackendRunRejectsEmptySessionKey(t *testing.T) {
+	backend := newInteractiveProviderBackend(llm.ProviderOpenCode, llm.FactoryConfig{
+		OpenCode: llm.OpenCodeConfig{Command: "opencode", Timeout: 30 * time.Second},
+	})
+	_, err := backend.Run(context.Background(), llm.RunRequest{
+		UserText: "hello",
+		Env:      nil,
+	})
+	if err == nil {
+		t.Fatal("expected error for empty session key (no fallback)")
+	}
+	if !strings.Contains(err.Error(), "session key") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestInteractiveProviderBackendRunUsesThreadIDWhenSessionKeyEmpty(t *testing.T) {
+	driver := &interactiveBackendTestDriver{
+		provider: llm.ProviderOpenCode,
+		events:   make(chan llm.TurnEvent, 8),
+	}
+	session := llm.NewInteractiveSession(driver)
+	defer session.Close()
+
+	backend := newInteractiveProviderBackend(llm.ProviderOpenCode, llm.FactoryConfig{})
+	backend.sessions = map[string]*llm.InteractiveSession{"ses_test": session}
+	backend.runMu = map[string]*sync.Mutex{}
+
+	_, err := backend.Run(context.Background(), llm.RunRequest{
+		UserText: "hello",
+		Env:      nil,
+		ThreadID: "ses_test",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
 }
