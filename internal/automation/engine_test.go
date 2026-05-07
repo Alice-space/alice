@@ -33,8 +33,12 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	return s.sendTextErr
 }
 
-func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardContent string) error {
-	return s.SendText(context.TODO(), receiveIDType, receiveID, cardContent)
+func (s *senderStub) SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error {
+	return s.SendText(ctx, receiveIDType, receiveID, cardContent)
+}
+
+func (s *senderStub) AddReaction(ctx context.Context, messageID, emojiType string) error {
+	return nil
 }
 
 func (s *senderStub) SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
@@ -79,6 +83,10 @@ func (s *deadlineSenderStub) SendText(ctx context.Context, _, _, _ string) error
 
 func (s *deadlineSenderStub) SendCard(ctx context.Context, _, _, _ string) error {
 	return s.SendText(ctx, "", "", "")
+}
+
+func (s *deadlineSenderStub) AddReaction(ctx context.Context, messageID, emojiType string) error {
+	return nil
 }
 
 type llmRunnerStub struct {
@@ -542,15 +550,16 @@ type goalRunHelperStub struct {
 	results []llm.RunResult
 	err     error
 	lastReq struct {
-		ThreadID   string
-		UserText   string
-		Scene      string
-		OnProgress llm.ProgressFunc
+		ThreadID     string
+		UserText     string
+		Scene        string
+		WorkspaceDir string
+		OnProgress   llm.ProgressFunc
 	}
 }
 
 func (s *goalRunHelperStub) Run(_ context.Context, threadID string, userText string,
-	scene string, _ map[string]string, onProgress llm.ProgressFunc) (llm.RunResult, error) {
+	scene string, _ map[string]string, workspaceDir string, _ SessionMeta, onProgress llm.ProgressFunc) (llm.RunResult, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -561,6 +570,7 @@ func (s *goalRunHelperStub) Run(_ context.Context, threadID string, userText str
 	s.lastReq.ThreadID = threadID
 	s.lastReq.UserText = userText
 	s.lastReq.Scene = scene
+	s.lastReq.WorkspaceDir = workspaceDir
 	s.lastReq.OnProgress = onProgress
 
 	var result llm.RunResult

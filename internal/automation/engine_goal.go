@@ -80,6 +80,34 @@ func (e *Engine) getSessionThreadID(sessionKey string) string {
 	return ""
 }
 
+func (e *Engine) getSessionWorkDir(sessionKey string) string {
+	if e == nil {
+		return ""
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return ""
+	}
+	if provider, ok := checker.(SessionWorkDirProvider); ok {
+		return provider.GetSessionWorkDir(sessionKey)
+	}
+	return ""
+}
+
+func (e *Engine) getSessionMeta(sessionKey string) SessionMeta {
+	if e == nil {
+		return SessionMeta{}
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return SessionMeta{}
+	}
+	if provider, ok := checker.(SessionMetaProvider); ok {
+		return provider.GetSessionMeta(sessionKey)
+	}
+	return SessionMeta{}
+}
+
 func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	if e == nil || e.store == nil {
 		return errors.New("engine or store is nil")
@@ -151,20 +179,29 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		var err error
 		if goalHelper != nil {
 			result, err = goalHelper.Run(runCtx, threadID, prompt, goalScene(goal),
-				e.buildGoalRunEnv(goal), e.goalProgressDispatcher(runCtx, goal))
+				e.buildGoalRunEnv(goal), e.getSessionWorkDir(goalSessionKey(goal)),
+				e.getSessionMeta(goalSessionKey(goal)),
+				e.goalProgressDispatcher(runCtx, goal))
 		} else {
 			result, err = runner.Run(runCtx, llm.RunRequest{
-				ThreadID:   threadID,
-				AgentName:  "goal",
-				UserText:   prompt,
-				Scene:      goalScene(goal),
-				Env:        e.buildGoalRunEnv(goal),
-				OnProgress: e.goalProgressDispatcher(runCtx, goal),
-				OnRawEvent: goalRawEventDispatcher(goal),
+				ThreadID:        threadID,
+				AgentName:       "goal",
+				UserText:        prompt,
+				Scene:           goalScene(goal),
+				WorkspaceDir:    e.getSessionWorkDir(goalSessionKey(goal)),
+				Env:             e.buildGoalRunEnv(goal),
+				OnProgress:      e.goalProgressDispatcher(runCtx, goal),
+				OnRawEvent:      goalRawEventDispatcher(goal),
+				Model:           e.getSessionMeta(goalSessionKey(goal)).Model,
+				Profile:         e.getSessionMeta(goalSessionKey(goal)).Profile,
+				Variant:         e.getSessionMeta(goalSessionKey(goal)).Variant,
+				ReasoningEffort: e.getSessionMeta(goalSessionKey(goal)).ReasoningEffort,
+				Personality:     e.getSessionMeta(goalSessionKey(goal)).Personality,
 			})
 		}
 		runCancel(nil)
 		nextThreadID := strings.TrimSpace(result.NextThreadID)
+		e.recordGoalUsage(goal, result.Usage)
 		if nextThreadID != "" && nextThreadID != threadID {
 			if _, patchErr := e.store.PatchGoal(scope, func(g *GoalTask) error {
 				g.ThreadID = nextThreadID
@@ -227,6 +264,32 @@ func (e *Engine) buildGoalPrompt(goal GoalTask) string {
 	return renderGoalTemplate(getGoalTemplates().continueTemplate, data)
 }
 
+func (e *Engine) recordGoalUsage(goal GoalTask, usage llm.Usage) {
+	if e == nil || !usage.HasUsage() {
+		return
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return
+	}
+	if recorder, ok := checker.(SessionUsageRecorder); ok {
+		recorder.RecordSessionUsage(goalSessionKey(goal), usage)
+	}
+}
+
+func (e *Engine) recordTaskUsage(task Task, usage llm.Usage) {
+	if e == nil || !usage.HasUsage() {
+		return
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return
+	}
+	if recorder, ok := checker.(SessionUsageRecorder); ok {
+		recorder.RecordSessionUsage(task.SessionKey, usage)
+	}
+}
+
 func (e *Engine) markGoalComplete(ctx context.Context, goal GoalTask) {
 	if _, err := e.store.PatchGoal(goal.Scope, func(g *GoalTask) error {
 		g.Status = GoalStatusComplete
@@ -240,6 +303,7 @@ func (e *Engine) markGoalComplete(ctx context.Context, goal GoalTask) {
 	elapsed := e.nowTime().Sub(goal.CreatedAt)
 	msg := "✅ 目标已完成\n   耗时: " + formatDurationHMS(elapsed)
 	e.sendGoalNotification(ctx, goal, msg)
+	e.addDoneReaction(ctx, goal)
 }
 
 func (e *Engine) markGoalTimeout(ctx context.Context, goal GoalTask) {
@@ -265,28 +329,39 @@ func (e *Engine) sendGoalIterationStartNotification(ctx context.Context, goal Go
 	if len([]rune(obj)) > 60 {
 		obj = string([]rune(obj)[:60]) + "..."
 	}
-	text := "🔄 " + obj
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text); err != nil {
-		logging.Warnf("goal iteration start notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
-	}
+	e.sendGoalNotification(ctx, goal, "🔄 "+obj)
 }
 
-func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) {
+func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) string {
 	if e.sender == nil {
-		return
+		return ""
 	}
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if sender, ok := any(e.sender).(taskMessageSender); ok {
-		if _, err := sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text)); err != nil {
+		if msgID, err := sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text)); err != nil {
 			logging.Warnf("goal send card notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		} else {
+			return msgID
 		}
-		return
+		return ""
 	}
 	if err := e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text); err != nil {
 		logging.Warnf("goal send text notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+	}
+	return ""
+}
+
+func (e *Engine) addDoneReaction(ctx context.Context, goal GoalTask) {
+	if e.sender == nil {
+		return
+	}
+	if goal.Route.ReceiveIDType == "source_message_id" && goal.Route.ReceiveID != "" {
+		tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if err := e.sender.AddReaction(tctx, goal.Route.ReceiveID, "DONE"); err != nil {
+			logging.Warnf("goal DONE reaction failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		}
 	}
 }
 

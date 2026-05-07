@@ -1941,3 +1941,114 @@ func TestEngine_ExecuteGoal_ScopedToWorkThreadNotCrossSession(t *testing.T) {
 		t.Fatalf("expected 2 helper calls (one per goal), got %d", calls)
 	}
 }
+
+func TestExecuteGoal_PassesWorkspaceDirToGoalRunHelper(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{result: llm.RunResult{GoalDone: true}}
+	engine.SetGoalRunHelper(helper)
+	engine.SetSessionActivityChecker(&workspaceDirChecker{workDir: "/custom/project"})
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_wd"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_wd_test",
+		Objective:  "workspace dir test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_wd",
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+		SessionKey: "chat_id:oc_chat|work:om_wd",
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	helper.mu.Lock()
+	gotWD := helper.lastReq.WorkspaceDir
+	helper.mu.Unlock()
+	if gotWD != "/custom/project" {
+		t.Errorf("workspaceDir = %q, want %q", gotWD, "/custom/project")
+	}
+}
+
+func TestExecuteGoal_SendsIterationStartNotification(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 7, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	helper := &goalRunHelperStub{result: llm.RunResult{GoalDone: true}}
+	engine.SetGoalRunHelper(helper)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_notif"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_notif_test",
+		Objective:  "通知测试目标",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_notif",
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+		DeadlineAt: base.Add(48 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	sender.mu.Lock()
+	sendTextCalls := sender.sendTextCalls
+	texts := append([]string{}, sender.texts...)
+	sender.mu.Unlock()
+
+	if sendTextCalls == 0 {
+		t.Fatal("expected at least one SendText call for goal iteration start notification")
+	}
+
+	found := false
+	for _, text := range texts {
+		if strings.Contains(text, "通知测试目标") {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Errorf("no notification text contains objective, texts=%v", texts)
+	}
+}
+
+type workspaceDirChecker struct {
+	workDir string
+}
+
+func (c *workspaceDirChecker) IsSessionActive(sessionKey string) bool {
+	return false
+}
+
+func (c *workspaceDirChecker) GetSessionWorkDir(sessionKey string) string {
+	return c.workDir
+}

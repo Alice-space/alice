@@ -22,8 +22,8 @@ type goalRunHelper struct {
 }
 
 func (h *goalRunHelper) Run(ctx context.Context, threadID string, userText string,
-	scene string, env map[string]string,
-	onProgress llm.ProgressFunc) (llm.RunResult, error) {
+	scene string, env map[string]string, workspaceDir string,
+	meta automation.SessionMeta, onProgress llm.ProgressFunc) (llm.RunResult, error) {
 
-	return h.processor.RunGoalMessage(ctx, threadID, userText, scene, env, onProgress)
+	return h.processor.RunGoalMessage(ctx, threadID, userText, scene, env, workspaceDir, meta, onProgress)
 }

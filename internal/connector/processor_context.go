@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Alice-space/alice/internal/automation"
 	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/runtimeapi"
@@ -281,6 +282,8 @@ func (p *Processor) RunGoalMessage(
 	userText string,
 	scene string,
 	env map[string]string,
+	workspaceDir string,
+	meta automation.SessionMeta,
 	onProgress llm.ProgressFunc,
 ) (llm.RunResult, error) {
 	snapshot := p.runtimeSnapshot()
@@ -328,13 +331,19 @@ func (p *Processor) RunGoalMessage(
 
 	logging.Infof("goal run start thread_id=%s scene=%s prompt_len=%d", requestThreadID, scene, len(userText))
 	result, err := snapshot.llm.Run(ctx, llm.RunRequest{
-		ThreadID:   requestThreadID,
-		AgentName:  "goal",
-		UserText:   userText,
-		Scene:      strings.TrimSpace(scene),
-		Env:        env,
-		OnProgress: logProgress,
-		OnRawEvent: logRawEvent,
+		ThreadID:        requestThreadID,
+		AgentName:       "goal",
+		UserText:        userText,
+		Scene:           strings.TrimSpace(scene),
+		Env:             env,
+		WorkspaceDir:    strings.TrimSpace(workspaceDir),
+		Model:           strings.TrimSpace(meta.Model),
+		Profile:         strings.TrimSpace(meta.Profile),
+		Variant:         strings.TrimSpace(meta.Variant),
+		ReasoningEffort: strings.TrimSpace(meta.ReasoningEffort),
+		Personality:     strings.TrimSpace(meta.Personality),
+		OnProgress:      logProgress,
+		OnRawEvent:      logRawEvent,
 	})
 
 	nextThreadID := strings.TrimSpace(result.NextThreadID)
