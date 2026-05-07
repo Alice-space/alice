@@ -418,7 +418,11 @@ func (d *openCodeAppServerDriver) parseOpenCodeEvent(payload string) (TurnEvent,
 		return TurnEvent{}, false
 	}
 
-	logging.Debugf("opencode sse event type=%s session=%s", eventType, stringFromMap(properties, "sessionID"))
+	if extra := openCodeEventSummary(eventType, properties); extra != "" {
+		logging.Debugf("opencode sse event type=%s session=%s %s", eventType, stringFromMap(properties, "sessionID"), extra)
+	} else {
+		logging.Debugf("opencode sse event type=%s session=%s", eventType, stringFromMap(properties, "sessionID"))
+	}
 
 	switch eventType {
 	case "message.updated":
@@ -491,15 +495,6 @@ func (d *openCodeAppServerDriver) parseOpenCodeEvent(payload string) (TurnEvent,
 			return TurnEvent{Provider: ProviderOpenCode, ThreadID: sessionID, TurnID: turnID, Kind: TurnEventToolUse, Text: formatOpenCodeAppServerToolUse(part), Raw: payload}, true
 		}
 	case "message.part.delta":
-		part, _ := properties["part"].(map[string]any)
-		sessionID := firstNonEmpty(stringFromMap(properties, "sessionID"), stringFromMap(part, "sessionID"))
-		text := stringFromMap(part, "text")
-		if text != "" {
-			if len(text) > 100 {
-				text = text[:100]
-			}
-			logging.Debugf("opencode sse delta session=%s len=%d text=%q", sessionID, len(text), text)
-		}
 		return TurnEvent{}, false
 	case "session.idle":
 		sessionID := stringFromMap(properties, "sessionID")
@@ -519,6 +514,47 @@ func (d *openCodeAppServerDriver) parseOpenCodeEvent(payload string) (TurnEvent,
 		}, true
 	}
 	return TurnEvent{}, false
+}
+
+func openCodeEventSummary(eventType string, properties map[string]any) string {
+	switch eventType {
+	case "message.updated":
+		info, _ := properties["info"].(map[string]any)
+		parts := []string{"role=" + stringFromMap(info, "role")}
+		if finish := stringFromMap(info, "finish"); finish != "" {
+			parts = append(parts, "finish="+finish)
+		}
+		return strings.Join(parts, " ")
+	case "message.part.updated":
+		part, _ := properties["part"].(map[string]any)
+		partType := stringFromMap(part, "type")
+		parts := []string{"part=" + partType}
+		switch partType {
+		case "text", "reasoning":
+			text := stringFromMap(part, "text")
+			if len(text) > 100 {
+				text = text[:100]
+			}
+			if text != "" {
+				parts = append(parts, fmt.Sprintf("text=%q", text))
+			}
+		case "tool":
+			if tool := stringFromMap(part, "tool"); tool != "" {
+				parts = append(parts, "tool="+tool)
+			}
+		}
+		return strings.Join(parts, " ")
+	case "message.part.delta":
+		part, _ := properties["part"].(map[string]any)
+		text := stringFromMap(part, "text")
+		if len(text) > 100 {
+			text = text[:100]
+		}
+		if text != "" {
+			return "text=" + fmt.Sprintf("%q", text)
+		}
+	}
+	return ""
 }
 
 func (d *openCodeAppServerDriver) endpoint(path string, req RunRequest) (string, error) {
