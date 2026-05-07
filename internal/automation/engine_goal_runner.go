@@ -15,7 +15,7 @@ import (
 type GoalRunHelper interface {
 	Run(ctx context.Context, threadID string, userText string,
 		scene string, env map[string]string, workspaceDir string,
-		onProgress llm.ProgressFunc) (llm.RunResult, error)
+		meta SessionMeta, onProgress llm.ProgressFunc) (llm.RunResult, error)
 }
 
 // goalRawEventDispatcher creates a fallback OnRawEvent handler for goals when

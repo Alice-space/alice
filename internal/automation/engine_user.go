@@ -251,17 +251,23 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task, route Route) 
 	var result llm.RunResult
 	if helper != nil {
 		result, err = helper.Run(ctx, threadID, prompt, taskScene(task),
-			e.buildTaskRunEnv(task), e.getSessionWorkDir(taskSessionKey(task)), progress.Send)
+			e.buildTaskRunEnv(task), e.getSessionWorkDir(taskSessionKey(task)),
+			e.getSessionMeta(taskSessionKey(task)), progress.Send)
 	} else {
 		result, err = runner.Run(ctx, llm.RunRequest{
-			ThreadID:     threadID,
-			AgentName:    "scheduler",
-			UserText:     prompt,
-			WorkspaceDir: e.getSessionWorkDir(taskSessionKey(task)),
-			Scene:        taskScene(task),
-			Env:          e.buildTaskRunEnv(task),
-			OnProgress:   progress.Send,
-			OnRawEvent:   taskRawEventDispatcher(task),
+			ThreadID:        threadID,
+			AgentName:       "scheduler",
+			UserText:        prompt,
+			WorkspaceDir:    e.getSessionWorkDir(taskSessionKey(task)),
+			Scene:           taskScene(task),
+			Env:             e.buildTaskRunEnv(task),
+			OnProgress:      progress.Send,
+			OnRawEvent:      taskRawEventDispatcher(task),
+			Model:           e.getSessionMeta(taskSessionKey(task)).Model,
+			Profile:         e.getSessionMeta(taskSessionKey(task)).Profile,
+			Variant:         e.getSessionMeta(taskSessionKey(task)).Variant,
+			ReasoningEffort: e.getSessionMeta(taskSessionKey(task)).ReasoningEffort,
+			Personality:     e.getSessionMeta(taskSessionKey(task)).Personality,
 		})
 	}
 	if err != nil {
@@ -269,6 +275,7 @@ func (e *Engine) buildTaskDispatch(ctx context.Context, task Task, route Route) 
 	}
 
 	logging.Infof("automation task llm done id=%s reply_len=%d next_thread=%s", task.ID, len(result.Reply), strings.TrimSpace(result.NextThreadID))
+	e.recordTaskUsage(task, result.Usage)
 
 	reply := strings.TrimSpace(result.Reply)
 	if reply == "" {

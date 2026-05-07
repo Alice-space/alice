@@ -4,6 +4,8 @@ import (
 	"context"
 	"strings"
 
+	"github.com/Alice-space/alice/internal/automation"
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 	"github.com/Alice-space/alice/internal/sessionkey"
 )
@@ -156,4 +158,37 @@ func (a *App) GetSessionThreadID(sessionKey string) string {
 		return ""
 	}
 	return a.processor.getThreadID(sessionKey)
+}
+
+// GetSessionWorkDir returns the workspace directory for the given session key.
+func (a *App) GetSessionWorkDir(sessionKey string) string {
+	if a == nil || a.processor == nil {
+		return ""
+	}
+	return a.processor.getSessionWorkDir(sessionKey)
+}
+
+// GetSessionMeta returns the LLM configuration for the given session key.
+func (a *App) GetSessionMeta(sessionKey string) automation.SessionMeta {
+	sessionKey = strings.TrimSpace(sessionKey)
+	if a == nil || a.processor == nil || sessionKey == "" {
+		return automation.SessionMeta{}
+	}
+	_, state, _ := a.processor.snapshotSessionState(sessionKey)
+	return automation.SessionMeta{
+		Provider:        state.BackendProvider,
+		Model:           state.BackendModel,
+		Profile:         state.BackendProfile,
+		ReasoningEffort: state.BackendReasoningEffort,
+		Variant:         state.BackendVariant,
+		Personality:     state.BackendPersonality,
+	}
+}
+
+// RecordSessionUsage records LLM token usage for the given session key.
+func (a *App) RecordSessionUsage(sessionKey string, usage llm.Usage) {
+	if a == nil || a.processor == nil {
+		return
+	}
+	a.processor.recordSessionUsage(sessionKey, usage)
 }

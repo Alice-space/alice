@@ -52,6 +52,30 @@ type SessionWorkDirProvider interface {
 	GetSessionWorkDir(sessionKey string) string
 }
 
+// SessionMeta holds per-session LLM configuration recorded by the connector
+// when the user sends their first message. Goals and tasks can read these to
+// match the user's chosen provider, model, profile, variant, etc.
+type SessionMeta struct {
+	Provider        string
+	Model           string
+	Profile         string
+	ReasoningEffort string
+	Variant         string
+	Personality     string
+}
+
+// SessionMetaProvider is an optional interface that SessionActivityChecker
+// implementors can also implement to expose the session's LLM configuration.
+type SessionMetaProvider interface {
+	GetSessionMeta(sessionKey string) SessionMeta
+}
+
+// SessionUsageRecorder is an optional interface for recording LLM token usage
+// to the session state so that goals and tasks contribute to usage tracking.
+type SessionUsageRecorder interface {
+	RecordSessionUsage(sessionKey string, usage llm.Usage)
+}
+
 type SystemTaskFunc func(ctx context.Context)
 type UserTaskCompletionHook func(task Task, err error)
 

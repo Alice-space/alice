@@ -94,6 +94,20 @@ func (e *Engine) getSessionWorkDir(sessionKey string) string {
 	return ""
 }
 
+func (e *Engine) getSessionMeta(sessionKey string) SessionMeta {
+	if e == nil {
+		return SessionMeta{}
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return SessionMeta{}
+	}
+	if provider, ok := checker.(SessionMetaProvider); ok {
+		return provider.GetSessionMeta(sessionKey)
+	}
+	return SessionMeta{}
+}
+
 func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	if e == nil || e.store == nil {
 		return errors.New("engine or store is nil")
@@ -166,21 +180,28 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		if goalHelper != nil {
 			result, err = goalHelper.Run(runCtx, threadID, prompt, goalScene(goal),
 				e.buildGoalRunEnv(goal), e.getSessionWorkDir(goalSessionKey(goal)),
+				e.getSessionMeta(goalSessionKey(goal)),
 				e.goalProgressDispatcher(runCtx, goal))
 		} else {
 			result, err = runner.Run(runCtx, llm.RunRequest{
-				ThreadID:     threadID,
-				AgentName:    "goal",
-				UserText:     prompt,
-				Scene:        goalScene(goal),
-				WorkspaceDir: e.getSessionWorkDir(goalSessionKey(goal)),
-				Env:          e.buildGoalRunEnv(goal),
-				OnProgress:   e.goalProgressDispatcher(runCtx, goal),
-				OnRawEvent:   goalRawEventDispatcher(goal),
+				ThreadID:        threadID,
+				AgentName:       "goal",
+				UserText:        prompt,
+				Scene:           goalScene(goal),
+				WorkspaceDir:    e.getSessionWorkDir(goalSessionKey(goal)),
+				Env:             e.buildGoalRunEnv(goal),
+				OnProgress:      e.goalProgressDispatcher(runCtx, goal),
+				OnRawEvent:      goalRawEventDispatcher(goal),
+				Model:           e.getSessionMeta(goalSessionKey(goal)).Model,
+				Profile:         e.getSessionMeta(goalSessionKey(goal)).Profile,
+				Variant:         e.getSessionMeta(goalSessionKey(goal)).Variant,
+				ReasoningEffort: e.getSessionMeta(goalSessionKey(goal)).ReasoningEffort,
+				Personality:     e.getSessionMeta(goalSessionKey(goal)).Personality,
 			})
 		}
 		runCancel(nil)
 		nextThreadID := strings.TrimSpace(result.NextThreadID)
+		e.recordGoalUsage(goal, result.Usage)
 		if nextThreadID != "" && nextThreadID != threadID {
 			if _, patchErr := e.store.PatchGoal(scope, func(g *GoalTask) error {
 				g.ThreadID = nextThreadID
@@ -241,6 +262,32 @@ func (e *Engine) buildGoalPrompt(goal GoalTask) string {
 		data.Remaining = "未设置"
 	}
 	return renderGoalTemplate(getGoalTemplates().continueTemplate, data)
+}
+
+func (e *Engine) recordGoalUsage(goal GoalTask, usage llm.Usage) {
+	if e == nil || !usage.HasUsage() {
+		return
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return
+	}
+	if recorder, ok := checker.(SessionUsageRecorder); ok {
+		recorder.RecordSessionUsage(goalSessionKey(goal), usage)
+	}
+}
+
+func (e *Engine) recordTaskUsage(task Task, usage llm.Usage) {
+	if e == nil || !usage.HasUsage() {
+		return
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return
+	}
+	if recorder, ok := checker.(SessionUsageRecorder); ok {
+		recorder.RecordSessionUsage(task.SessionKey, usage)
+	}
 }
 
 func (e *Engine) markGoalComplete(ctx context.Context, goal GoalTask) {
