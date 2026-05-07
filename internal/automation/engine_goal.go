@@ -303,6 +303,7 @@ func (e *Engine) markGoalComplete(ctx context.Context, goal GoalTask) {
 	elapsed := e.nowTime().Sub(goal.CreatedAt)
 	msg := "✅ 目标已完成\n   耗时: " + formatDurationHMS(elapsed)
 	e.sendGoalNotification(ctx, goal, msg)
+	e.addDoneReaction(ctx, goal)
 }
 
 func (e *Engine) markGoalTimeout(ctx context.Context, goal GoalTask) {
@@ -328,28 +329,39 @@ func (e *Engine) sendGoalIterationStartNotification(ctx context.Context, goal Go
 	if len([]rune(obj)) > 60 {
 		obj = string([]rune(obj)[:60]) + "..."
 	}
-	text := "🔄 " + obj
-	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-	if err := e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text); err != nil {
-		logging.Warnf("goal iteration start notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
-	}
+	e.sendGoalNotification(ctx, goal, "🔄 "+obj)
 }
 
-func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) {
+func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) string {
 	if e.sender == nil {
-		return
+		return ""
 	}
 	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 	if sender, ok := any(e.sender).(taskMessageSender); ok {
-		if _, err := sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text)); err != nil {
+		if msgID, err := sender.SendCardMessage(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, richTextCardContent(text)); err != nil {
 			logging.Warnf("goal send card notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		} else {
+			return msgID
 		}
-		return
+		return ""
 	}
 	if err := e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text); err != nil {
 		logging.Warnf("goal send text notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+	}
+	return ""
+}
+
+func (e *Engine) addDoneReaction(ctx context.Context, goal GoalTask) {
+	if e.sender == nil {
+		return
+	}
+	if goal.Route.ReceiveIDType == "source_message_id" && goal.Route.ReceiveID != "" {
+		tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+		if err := e.sender.AddReaction(tctx, goal.Route.ReceiveID, "DONE"); err != nil {
+			logging.Warnf("goal DONE reaction failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+		}
 	}
 }
 

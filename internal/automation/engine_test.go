@@ -33,8 +33,12 @@ func (s *senderStub) SendText(_ context.Context, receiveIDType, receiveID, text 
 	return s.sendTextErr
 }
 
-func (s *senderStub) SendCard(_ context.Context, receiveIDType, receiveID, cardContent string) error {
-	return s.SendText(context.TODO(), receiveIDType, receiveID, cardContent)
+func (s *senderStub) SendCard(ctx context.Context, receiveIDType, receiveID, cardContent string) error {
+	return s.SendText(ctx, receiveIDType, receiveID, cardContent)
+}
+
+func (s *senderStub) AddReaction(ctx context.Context, messageID, emojiType string) error {
+	return nil
 }
 
 func (s *senderStub) SendTextMessage(ctx context.Context, receiveIDType, receiveID, text string) (string, error) {
@@ -79,6 +83,10 @@ func (s *deadlineSenderStub) SendText(ctx context.Context, _, _, _ string) error
 
 func (s *deadlineSenderStub) SendCard(ctx context.Context, _, _, _ string) error {
 	return s.SendText(ctx, "", "", "")
+}
+
+func (s *deadlineSenderStub) AddReaction(ctx context.Context, messageID, emojiType string) error {
+	return nil
 }
 
 type llmRunnerStub struct {

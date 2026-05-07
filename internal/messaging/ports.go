@@ -77,6 +77,7 @@ type ReplyFileDirectSender interface {
 type AutomationSender interface {
 	TextSender
 	CardSender
+	ReactionSender
 }
 
 type RuntimeSender interface {
