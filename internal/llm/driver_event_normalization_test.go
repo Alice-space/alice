@@ -2,6 +2,7 @@ package llm
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 )
 
@@ -278,6 +279,81 @@ func TestOpenCodeAppServerEventNormalizesAssistantTextAndToolUse(t *testing.T) {
 	}
 }
 
+func TestOpenCodeAppServerReasoningPartProducesReasoningEvent(t *testing.T) {
+	driver := newOpenCodeAppServerDriver(OpenCodeConfig{})
+	driver.sessionID = "session-1"
+	driver.activeID = "turn-1"
+
+	event, ok := driver.parseOpenCodeEvent(mustJSON(t, map[string]any{
+		"type": "message.part.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"part": map[string]any{
+				"id":        "part-reasoning",
+				"sessionID": "session-1",
+				"messageID": "msg-1",
+				"type":      "reasoning",
+				"text":      "Let me think about this...",
+			},
+		},
+	}))
+	if !ok {
+		t.Fatal("reasoning part event was suppressed")
+	}
+	if event.Kind != TurnEventReasoning || event.Text != "Let me think about this..." {
+		t.Fatalf("reasoning event = %#v, want reasoning with text", event)
+	}
+}
+
+func TestOpenCodeAppServerEmptyReasoningPartSuppressed(t *testing.T) {
+	driver := newOpenCodeAppServerDriver(OpenCodeConfig{})
+	driver.sessionID = "session-1"
+	driver.activeID = "turn-1"
+
+	if event, ok := driver.parseOpenCodeEvent(mustJSON(t, map[string]any{
+		"type": "message.part.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"part": map[string]any{
+				"id":        "part-reasoning-empty",
+				"sessionID": "session-1",
+				"messageID": "msg-1",
+				"type":      "reasoning",
+				"text":      "",
+			},
+		},
+	})); ok {
+		t.Fatalf("empty reasoning part event = %#v, want suppressed", event)
+	}
+}
+
+func TestOpenCodeAppServerErrorProducesErrorEvent(t *testing.T) {
+	driver := newOpenCodeAppServerDriver(OpenCodeConfig{})
+	driver.sessionID = "session-1"
+	driver.activeID = "turn-1"
+
+	errorEvent, ok := driver.parseOpenCodeEvent(mustJSON(t, map[string]any{
+		"type": "message.updated",
+		"properties": map[string]any{
+			"sessionID": "session-1",
+			"info": map[string]any{
+				"id":        "msg-error",
+				"sessionID": "session-1",
+				"role":      "assistant",
+				"time":      map[string]any{"completed": 1},
+				"finish":    "error",
+				"error":     map[string]any{"message": "something went wrong"},
+			},
+		},
+	}))
+	if !ok {
+		t.Fatal("assistant error message event was suppressed")
+	}
+	if errorEvent.Kind != TurnEventError || errorEvent.Err == nil {
+		t.Fatalf("error event = %#v, want error", errorEvent)
+	}
+}
+
 func TestOpenCodeAppServerSessionIdleCompletesActiveTurn(t *testing.T) {
 	driver := newOpenCodeAppServerDriver(OpenCodeConfig{})
 	driver.sessionID = "session-1"
@@ -377,4 +453,137 @@ func testRPCNotification(t *testing.T, method string, params any) rpcNotificatio
 		t.Fatalf("marshal raw notification: %v", err)
 	}
 	return rpcNotification{Method: method, Params: rawParams, Raw: string(raw)}
+}
+
+func TestOpenCodeEventSummaryMessageUpdated(t *testing.T) {
+	tests := []struct {
+		name     string
+		info     map[string]any
+		expected string
+	}{
+		{
+			name:     "role only",
+			info:     map[string]any{"role": "assistant"},
+			expected: "role=assistant",
+		},
+		{
+			name:     "role with finish stop",
+			info:     map[string]any{"role": "assistant", "finish": "stop"},
+			expected: "role=assistant finish=stop",
+		},
+		{
+			name:     "role with finish tool-calls",
+			info:     map[string]any{"role": "assistant", "finish": "tool-calls"},
+			expected: "role=assistant finish=tool-calls",
+		},
+		{
+			name:     "user role",
+			info:     map[string]any{"role": "user"},
+			expected: "role=user",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props := map[string]any{"sessionID": "s1", "info": tt.info}
+			got := openCodeEventSummary("message.updated", props)
+			if got != tt.expected {
+				t.Fatalf("summary = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestOpenCodeEventSummaryMessagePartUpdated(t *testing.T) {
+	tests := []struct {
+		name     string
+		part     map[string]any
+		expected string
+	}{
+		{
+			name:     "text part",
+			part:     map[string]any{"type": "text", "text": "hello world"},
+			expected: `part=text text="hello world"`,
+		},
+		{
+			name:     "reasoning part",
+			part:     map[string]any{"type": "reasoning", "text": "thinking..."},
+			expected: `part=reasoning text="thinking..."`,
+		},
+		{
+			name:     "tool part",
+			part:     map[string]any{"type": "tool", "tool": "bash"},
+			expected: `part=tool tool=bash`,
+		},
+		{
+			name:     "text over 100 chars truncated",
+			part:     map[string]any{"type": "text", "text": strings.Repeat("x", 200)},
+			expected: `part=text text="` + strings.Repeat("x", 100) + `"`,
+		},
+		{
+			name:     "empty text part",
+			part:     map[string]any{"type": "text"},
+			expected: `part=text`,
+		},
+		{
+			name:     "unknown part type",
+			part:     map[string]any{"type": "unknown"},
+			expected: `part=unknown`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props := map[string]any{"sessionID": "s1", "part": tt.part}
+			got := openCodeEventSummary("message.part.updated", props)
+			if got != tt.expected {
+				t.Fatalf("summary = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestOpenCodeEventSummaryMessagePartDelta(t *testing.T) {
+	tests := []struct {
+		name     string
+		part     map[string]any
+		expected string
+	}{
+		{
+			name:     "with text",
+			part:     map[string]any{"text": "hel"},
+			expected: `text="hel"`,
+		},
+		{
+			name:     "empty text",
+			part:     map[string]any{"text": ""},
+			expected: "",
+		},
+		{
+			name:     "missing text key",
+			part:     map[string]any{},
+			expected: "",
+		},
+		{
+			name:     "text over 100 chars truncated",
+			part:     map[string]any{"text": strings.Repeat("y", 150)},
+			expected: `text="` + strings.Repeat("y", 100) + `"`,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			props := map[string]any{"sessionID": "s1", "part": tt.part}
+			got := openCodeEventSummary("message.part.delta", props)
+			if got != tt.expected {
+				t.Fatalf("summary = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
+
+func TestOpenCodeEventSummaryUnknownOrNoExtra(t *testing.T) {
+	if got := openCodeEventSummary("session.idle", map[string]any{"sessionID": "s1"}); got != "" {
+		t.Fatalf("session.idle summary = %q, want empty", got)
+	}
+	if got := openCodeEventSummary("unknown.event", map[string]any{"sessionID": "s1"}); got != "" {
+		t.Fatalf("unknown event summary = %q, want empty", got)
+	}
 }
