@@ -550,7 +550,7 @@ type goalRunHelperStub struct {
 }
 
 func (s *goalRunHelperStub) Run(_ context.Context, threadID string, userText string,
-	scene string, _ map[string]string, onProgress llm.ProgressFunc) (llm.RunResult, error) {
+	scene string, _ map[string]string, _ string, onProgress llm.ProgressFunc) (llm.RunResult, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()

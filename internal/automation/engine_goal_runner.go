@@ -14,7 +14,7 @@ import (
 // and forwarded to Feishu.
 type GoalRunHelper interface {
 	Run(ctx context.Context, threadID string, userText string,
-		scene string, env map[string]string,
+		scene string, env map[string]string, workspaceDir string,
 		onProgress llm.ProgressFunc) (llm.RunResult, error)
 }
 

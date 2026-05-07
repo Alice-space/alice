@@ -281,6 +281,7 @@ func (p *Processor) RunGoalMessage(
 	userText string,
 	scene string,
 	env map[string]string,
+	workspaceDir string,
 	onProgress llm.ProgressFunc,
 ) (llm.RunResult, error) {
 	snapshot := p.runtimeSnapshot()
@@ -328,13 +329,14 @@ func (p *Processor) RunGoalMessage(
 
 	logging.Infof("goal run start thread_id=%s scene=%s prompt_len=%d", requestThreadID, scene, len(userText))
 	result, err := snapshot.llm.Run(ctx, llm.RunRequest{
-		ThreadID:   requestThreadID,
-		AgentName:  "goal",
-		UserText:   userText,
-		Scene:      strings.TrimSpace(scene),
-		Env:        env,
-		OnProgress: logProgress,
-		OnRawEvent: logRawEvent,
+		ThreadID:     requestThreadID,
+		AgentName:    "goal",
+		UserText:     userText,
+		Scene:        strings.TrimSpace(scene),
+		Env:          env,
+		WorkspaceDir: strings.TrimSpace(workspaceDir),
+		OnProgress:   logProgress,
+		OnRawEvent:   logRawEvent,
 	})
 
 	nextThreadID := strings.TrimSpace(result.NextThreadID)

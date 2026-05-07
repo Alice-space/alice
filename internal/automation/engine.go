@@ -46,6 +46,12 @@ type LLMRunner interface {
 	Run(ctx context.Context, req llm.RunRequest) (llm.RunResult, error)
 }
 
+// SessionWorkDirProvider is an optional interface that SessionActivityChecker
+// implementors can also implement to expose the working directory for a session.
+type SessionWorkDirProvider interface {
+	GetSessionWorkDir(sessionKey string) string
+}
+
 type SystemTaskFunc func(ctx context.Context)
 type UserTaskCompletionHook func(task Task, err error)
 

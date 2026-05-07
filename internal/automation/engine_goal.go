@@ -80,6 +80,20 @@ func (e *Engine) getSessionThreadID(sessionKey string) string {
 	return ""
 }
 
+func (e *Engine) getSessionWorkDir(sessionKey string) string {
+	if e == nil {
+		return ""
+	}
+	checker := e.sessionCheckerValue()
+	if checker == nil {
+		return ""
+	}
+	if provider, ok := checker.(SessionWorkDirProvider); ok {
+		return provider.GetSessionWorkDir(sessionKey)
+	}
+	return ""
+}
+
 func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 	if e == nil || e.store == nil {
 		return errors.New("engine or store is nil")
@@ -151,16 +165,18 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		var err error
 		if goalHelper != nil {
 			result, err = goalHelper.Run(runCtx, threadID, prompt, goalScene(goal),
-				e.buildGoalRunEnv(goal), e.goalProgressDispatcher(runCtx, goal))
+				e.buildGoalRunEnv(goal), e.getSessionWorkDir(goalSessionKey(goal)),
+				e.goalProgressDispatcher(runCtx, goal))
 		} else {
 			result, err = runner.Run(runCtx, llm.RunRequest{
-				ThreadID:   threadID,
-				AgentName:  "goal",
-				UserText:   prompt,
-				Scene:      goalScene(goal),
-				Env:        e.buildGoalRunEnv(goal),
-				OnProgress: e.goalProgressDispatcher(runCtx, goal),
-				OnRawEvent: goalRawEventDispatcher(goal),
+				ThreadID:     threadID,
+				AgentName:    "goal",
+				UserText:     prompt,
+				Scene:        goalScene(goal),
+				WorkspaceDir: e.getSessionWorkDir(goalSessionKey(goal)),
+				Env:          e.buildGoalRunEnv(goal),
+				OnProgress:   e.goalProgressDispatcher(runCtx, goal),
+				OnRawEvent:   goalRawEventDispatcher(goal),
 			})
 		}
 		runCancel(nil)
