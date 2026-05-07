@@ -265,7 +265,12 @@ func (e *Engine) sendGoalIterationStartNotification(ctx context.Context, goal Go
 	if len([]rune(obj)) > 60 {
 		obj = string([]rune(obj)[:60]) + "..."
 	}
-	e.sendGoalNotification(ctx, goal, "🔄 "+obj)
+	text := "🔄 " + obj
+	tctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	if err := e.sender.SendText(tctx, goal.Route.ReceiveIDType, goal.Route.ReceiveID, text); err != nil {
+		logging.Warnf("goal iteration start notification failed scope=%s:%s err=%v", goal.Scope.Kind, goal.Scope.ID, err)
+	}
 }
 
 func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) {

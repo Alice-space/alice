@@ -491,8 +491,15 @@ func (d *openCodeAppServerDriver) parseOpenCodeEvent(payload string) (TurnEvent,
 			return TurnEvent{Provider: ProviderOpenCode, ThreadID: sessionID, TurnID: turnID, Kind: TurnEventToolUse, Text: formatOpenCodeAppServerToolUse(part), Raw: payload}, true
 		}
 	case "message.part.delta":
-		// OpenCode streams text chunks as deltas; wait for the completed
-		// message.part.updated text part so callers receive complete messages.
+		part, _ := properties["part"].(map[string]any)
+		sessionID := firstNonEmpty(stringFromMap(properties, "sessionID"), stringFromMap(part, "sessionID"))
+		text := stringFromMap(part, "text")
+		if text != "" {
+			if len(text) > 100 {
+				text = text[:100]
+			}
+			logging.Debugf("opencode sse delta session=%s len=%d text=%q", sessionID, len(text), text)
+		}
 		return TurnEvent{}, false
 	case "session.idle":
 		sessionID := stringFromMap(properties, "sessionID")
