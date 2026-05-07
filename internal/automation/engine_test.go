@@ -542,15 +542,16 @@ type goalRunHelperStub struct {
 	results []llm.RunResult
 	err     error
 	lastReq struct {
-		ThreadID   string
-		UserText   string
-		Scene      string
-		OnProgress llm.ProgressFunc
+		ThreadID     string
+		UserText     string
+		Scene        string
+		WorkspaceDir string
+		OnProgress   llm.ProgressFunc
 	}
 }
 
 func (s *goalRunHelperStub) Run(_ context.Context, threadID string, userText string,
-	scene string, _ map[string]string, _ string, onProgress llm.ProgressFunc) (llm.RunResult, error) {
+	scene string, _ map[string]string, workspaceDir string, onProgress llm.ProgressFunc) (llm.RunResult, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -561,6 +562,7 @@ func (s *goalRunHelperStub) Run(_ context.Context, threadID string, userText str
 	s.lastReq.ThreadID = threadID
 	s.lastReq.UserText = userText
 	s.lastReq.Scene = scene
+	s.lastReq.WorkspaceDir = workspaceDir
 	s.lastReq.OnProgress = onProgress
 
 	var result llm.RunResult
