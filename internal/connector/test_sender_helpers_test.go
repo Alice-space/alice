@@ -58,10 +58,15 @@ type senderStub struct {
 	lastReplyCard        string
 	replyCards           []string
 	replyCardErr         error
-	patchCardCalls       int
-	patchCardTargets     []string
-	patchCards           []string
-	patchCardErr         error
+
+	// replyThreadID is what the WithThread variants return as the thread_id
+	// component, mimicking what Feishu's Reply API surfaces. Tests can set
+	// this to verify thread-binding logic in the connector.
+	replyThreadID    string
+	patchCardCalls   int
+	patchCardTargets []string
+	patchCards       []string
+	patchCardErr     error
 
 	getMessageTextCalls int
 	getMessageTextErr   error
@@ -322,6 +327,65 @@ func (s *senderStub) ReplyCardDirect(_ context.Context, sourceMessageID string, 
 		return "", s.replyCardErr
 	}
 	return "om_reply_card_direct", nil
+}
+
+// *WithThread variants exercise the thread-aware sender path used by the
+// connector to register Feishu thread_ids returned by the Reply API. The
+// stub returns the configured replyThreadID alongside the same messageID
+// the non-thread variants return.
+
+func (s *senderStub) ReplyTextWithThread(ctx context.Context, sourceMessageID, text string) (string, string, error) {
+	messageID, err := s.ReplyText(ctx, sourceMessageID, text)
+	if err != nil {
+		return "", "", err
+	}
+	return messageID, s.snapshotReplyThreadID(), nil
+}
+
+func (s *senderStub) ReplyTextDirectWithThread(ctx context.Context, sourceMessageID, text string) (string, string, error) {
+	messageID, err := s.ReplyTextDirect(ctx, sourceMessageID, text)
+	if err != nil {
+		return "", "", err
+	}
+	return messageID, s.snapshotReplyThreadID(), nil
+}
+
+func (s *senderStub) ReplyRichTextMarkdownWithThread(ctx context.Context, sourceMessageID, markdown string) (string, string, error) {
+	messageID, err := s.ReplyRichTextMarkdown(ctx, sourceMessageID, markdown)
+	if err != nil {
+		return "", "", err
+	}
+	return messageID, s.snapshotReplyThreadID(), nil
+}
+
+func (s *senderStub) ReplyRichTextMarkdownDirectWithThread(ctx context.Context, sourceMessageID, markdown string) (string, string, error) {
+	messageID, err := s.ReplyRichTextMarkdownDirect(ctx, sourceMessageID, markdown)
+	if err != nil {
+		return "", "", err
+	}
+	return messageID, s.snapshotReplyThreadID(), nil
+}
+
+func (s *senderStub) ReplyCardWithThread(ctx context.Context, sourceMessageID, cardContent string) (string, string, error) {
+	messageID, err := s.ReplyCard(ctx, sourceMessageID, cardContent)
+	if err != nil {
+		return "", "", err
+	}
+	return messageID, s.snapshotReplyThreadID(), nil
+}
+
+func (s *senderStub) ReplyCardDirectWithThread(ctx context.Context, sourceMessageID, cardContent string) (string, string, error) {
+	messageID, err := s.ReplyCardDirect(ctx, sourceMessageID, cardContent)
+	if err != nil {
+		return "", "", err
+	}
+	return messageID, s.snapshotReplyThreadID(), nil
+}
+
+func (s *senderStub) snapshotReplyThreadID() string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.replyThreadID
 }
 
 func (s *senderStub) PatchCard(_ context.Context, messageID, cardContent string) error {

@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"strings"
+
+	"github.com/Alice-space/alice/internal/messaging"
 )
 
 // replyDispatcher owns the Feishu reply/send fallback policy so Processor can
@@ -39,31 +41,46 @@ func (d *replyDispatcher) reply(
 	sourceMessageID,
 	markdown string,
 ) (string, error) {
+	messageID, _, err := d.replyWithThread(ctx, job, sourceMessageID, markdown)
+	return messageID, err
+}
+
+// replyWithThread is the same as reply but additionally returns the Feishu
+// thread_id captured from the underlying API response when the sender
+// supports it (Feishu's Reply API surfaces the thread_id of the resulting
+// message). Senders that do not implement the *WithThread interfaces return
+// an empty thread_id; callers must treat that as "unknown".
+func (d *replyDispatcher) replyWithThread(
+	ctx context.Context,
+	job Job,
+	sourceMessageID,
+	markdown string,
+) (string, string, error) {
 	if d == nil || d.sender == nil {
-		return "", errors.New("reply dispatcher sender is nil")
+		return "", "", errors.New("reply dispatcher sender is nil")
 	}
 
 	normalized, forceText := normalizeOutgoingReplyWithMentions(markdown, job)
 	if normalized == "" {
-		return "", nil
+		return "", "", nil
 	}
 	preferThread := jobPrefersThreadReply(job)
 	if forceText {
 		plainText := sanitizeMarkdownForPlainText(normalized)
-		if messageID, textErr := d.replyText(ctx, sourceMessageID, plainText, preferThread); textErr == nil {
-			return messageID, nil
+		if messageID, threadID, textErr := d.replyTextWithThread(ctx, sourceMessageID, plainText, preferThread); textErr == nil {
+			return messageID, threadID, nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
 		if normalized == "" {
-			return "", nil
+			return "", "", nil
 		}
 	}
 	if jobAllowsCards(job) {
-		if messageID, cardErr := d.replyCard(ctx, sourceMessageID, buildReplyCardContent(normalized), preferThread); cardErr == nil {
-			return messageID, nil
+		if messageID, threadID, cardErr := d.replyCardWithThread(ctx, sourceMessageID, buildReplyCardContent(normalized), preferThread); cardErr == nil {
+			return messageID, threadID, nil
 		}
 	}
-	return d.replyMarkdownPost(ctx, job, sourceMessageID, normalized, false, preferThread)
+	return d.replyMarkdownPostWithThread(ctx, job, sourceMessageID, normalized, false, preferThread)
 }
 
 func (d *replyDispatcher) send(
@@ -172,25 +189,37 @@ func (d *replyDispatcher) replyMarkdownPost(
 	forceText bool,
 	preferThread bool,
 ) (string, error) {
+	messageID, _, err := d.replyMarkdownPostWithThread(ctx, job, sourceMessageID, markdown, forceText, preferThread)
+	return messageID, err
+}
+
+func (d *replyDispatcher) replyMarkdownPostWithThread(
+	ctx context.Context,
+	job Job,
+	sourceMessageID,
+	markdown string,
+	forceText bool,
+	preferThread bool,
+) (string, string, error) {
 	if d == nil || d.sender == nil {
-		return "", errors.New("reply dispatcher sender is nil")
+		return "", "", errors.New("reply dispatcher sender is nil")
 	}
 
 	normalized := stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
 	if normalized == "" {
-		return "", nil
+		return "", "", nil
 	}
 	if forceText {
-		return d.replyText(ctx, sourceMessageID, normalized, preferThread)
+		return d.replyTextWithThread(ctx, sourceMessageID, normalized, preferThread)
 	}
-	if messageID, richErr := d.replyRichTextMarkdown(ctx, sourceMessageID, normalized, preferThread); richErr == nil {
-		return messageID, nil
+	if messageID, threadID, richErr := d.replyRichTextMarkdownWithThread(ctx, sourceMessageID, normalized, preferThread); richErr == nil {
+		return messageID, threadID, nil
 	}
-	messageID, textErr := d.replyText(ctx, sourceMessageID, normalized, preferThread)
+	messageID, threadID, textErr := d.replyTextWithThread(ctx, sourceMessageID, normalized, preferThread)
 	if textErr != nil {
-		return "", textErr
+		return "", "", textErr
 	}
-	return messageID, nil
+	return messageID, threadID, nil
 }
 
 func (d *replyDispatcher) replyText(
@@ -199,10 +228,28 @@ func (d *replyDispatcher) replyText(
 	text string,
 	preferThread bool,
 ) (string, error) {
+	messageID, _, err := d.replyTextWithThread(ctx, sourceMessageID, text, preferThread)
+	return messageID, err
+}
+
+func (d *replyDispatcher) replyTextWithThread(
+	ctx context.Context,
+	sourceMessageID string,
+	text string,
+	preferThread bool,
+) (string, string, error) {
 	if preferThread {
-		return d.sender.ReplyText(ctx, sourceMessageID, text)
+		if sender, ok := d.sender.(messaging.ReplyTextWithThreadSender); ok {
+			return sender.ReplyTextWithThread(ctx, sourceMessageID, text)
+		}
+		messageID, err := d.sender.ReplyText(ctx, sourceMessageID, text)
+		return messageID, "", err
 	}
-	return d.sender.ReplyTextDirect(ctx, sourceMessageID, text)
+	if sender, ok := d.sender.(messaging.ReplyTextDirectWithThreadSender); ok {
+		return sender.ReplyTextDirectWithThread(ctx, sourceMessageID, text)
+	}
+	messageID, err := d.sender.ReplyTextDirect(ctx, sourceMessageID, text)
+	return messageID, "", err
 }
 
 func (d *replyDispatcher) replyRichTextMarkdown(
@@ -211,10 +258,28 @@ func (d *replyDispatcher) replyRichTextMarkdown(
 	markdown string,
 	preferThread bool,
 ) (string, error) {
+	messageID, _, err := d.replyRichTextMarkdownWithThread(ctx, sourceMessageID, markdown, preferThread)
+	return messageID, err
+}
+
+func (d *replyDispatcher) replyRichTextMarkdownWithThread(
+	ctx context.Context,
+	sourceMessageID string,
+	markdown string,
+	preferThread bool,
+) (string, string, error) {
 	if preferThread {
-		return d.sender.ReplyRichTextMarkdown(ctx, sourceMessageID, markdown)
+		if sender, ok := d.sender.(messaging.ReplyRichTextMarkdownWithThreadSender); ok {
+			return sender.ReplyRichTextMarkdownWithThread(ctx, sourceMessageID, markdown)
+		}
+		messageID, err := d.sender.ReplyRichTextMarkdown(ctx, sourceMessageID, markdown)
+		return messageID, "", err
 	}
-	return d.sender.ReplyRichTextMarkdownDirect(ctx, sourceMessageID, markdown)
+	if sender, ok := d.sender.(messaging.ReplyRichTextMarkdownDirectWithThreadSender); ok {
+		return sender.ReplyRichTextMarkdownDirectWithThread(ctx, sourceMessageID, markdown)
+	}
+	messageID, err := d.sender.ReplyRichTextMarkdownDirect(ctx, sourceMessageID, markdown)
+	return messageID, "", err
 }
 
 func (d *replyDispatcher) replyCard(
@@ -223,10 +288,28 @@ func (d *replyDispatcher) replyCard(
 	cardContent string,
 	preferThread bool,
 ) (string, error) {
+	messageID, _, err := d.replyCardWithThread(ctx, sourceMessageID, cardContent, preferThread)
+	return messageID, err
+}
+
+func (d *replyDispatcher) replyCardWithThread(
+	ctx context.Context,
+	sourceMessageID string,
+	cardContent string,
+	preferThread bool,
+) (string, string, error) {
 	if preferThread {
-		return d.sender.ReplyCard(ctx, sourceMessageID, cardContent)
+		if sender, ok := d.sender.(messaging.ReplyCardWithThreadSender); ok {
+			return sender.ReplyCardWithThread(ctx, sourceMessageID, cardContent)
+		}
+		messageID, err := d.sender.ReplyCard(ctx, sourceMessageID, cardContent)
+		return messageID, "", err
 	}
-	return d.sender.ReplyCardDirect(ctx, sourceMessageID, cardContent)
+	if sender, ok := d.sender.(messaging.ReplyCardDirectWithThreadSender); ok {
+		return sender.ReplyCardDirectWithThread(ctx, sourceMessageID, cardContent)
+	}
+	messageID, err := d.sender.ReplyCardDirect(ctx, sourceMessageID, cardContent)
+	return messageID, "", err
 }
 
 type sendTextMessageSender interface {

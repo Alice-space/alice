@@ -201,6 +201,80 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 	}
 }
 
+// Regression: when the bot replies in a work scene, Feishu's Reply API
+// returns the thread_id of the resulting message. We register that thread_id
+// against the work session so subsequent /status (and other builtins) inside
+// the bot-created thread can resolve the work session via the thread_id key
+// alone, even when the incoming message lacks a matching root_id/parent_id.
+func TestApp_OnMessageReceive_WorkAckRegistersFeishuThreadID(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	llmStub := &llmCallCountingStub{}
+	sender := &senderStub{}
+	sender.replyThreadID = "omt_feishu_thread"
+	processor := NewProcessor(llmStub, sender, "failed", "thinking")
+	app := newGroupScenesApp(cfg, processor)
+
+	startEvt := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_work_kickoff"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_work_kickoff"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"<at user_id=\"ou_bot\">Alice</at> #work investigate"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{Id: &larkim.UserId{OpenId: strPtr("ou_bot")}},
+				},
+			},
+		},
+	}
+	if err := app.onMessageReceive(context.Background(), startEvt); err != nil {
+		t.Fatalf("kickoff err: %v", err)
+	}
+	job := <-app.queue
+
+	state := processor.ProcessJobState(context.Background(), job)
+	if state != JobProcessCompleted {
+		t.Fatalf("expected work job to complete, got %s", state)
+	}
+
+	wantSessionKey := "chat_id:oc_chat|work:om_work_kickoff"
+	if got := processor.sessions[wantSessionKey].WorkThreadID; got != "omt_feishu_thread" {
+		t.Fatalf("expected work session to record feishu thread_id, got %q", got)
+	}
+
+	// /status sent inside the bot-created thread carrying ONLY the thread_id
+	// (no root_id/parent_id pointing at the seed) should still resolve to
+	// the work session and route as work scene.
+	statusEvt := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_status_in_thread"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_status_in_thread"),
+				ThreadId:    strPtr("omt_feishu_thread"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"/status"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+	statusJob, err := BuildJob(statusEvt)
+	if err != nil {
+		t.Fatalf("build status job: %v", err)
+	}
+	if !app.routeIncomingJob(statusJob, statusEvt) {
+		t.Fatal("/status inside the work thread should resolve via the registered feishu thread_id")
+	}
+	if statusJob.Scene != jobSceneWork {
+		t.Fatalf("expected /status to route as work scene, got %q", statusJob.Scene)
+	}
+	if statusJob.SessionKey != wantSessionKey {
+		t.Fatalf("expected /status to bind to work session, got %q", statusJob.SessionKey)
+	}
+}
+
 func TestApp_RouteIncomingJob_GroupSceneWithoutPrefixSkipsOptOut(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	cfg.TriggerMode = "without_prefix"
