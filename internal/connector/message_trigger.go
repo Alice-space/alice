@@ -99,6 +99,14 @@ func isBuiltinCommandEvent(event *larkim.P2MessageReceiveV1) bool {
 	return isBuiltinCommandText(job.Text)
 }
 
+func jobTextHasTriggerPrefix(text, triggerPrefix string) bool {
+	prefix := strings.TrimSpace(triggerPrefix)
+	if prefix == "" {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(text), prefix)
+}
+
 func trimGroupTriggerPrefix(text, triggerPrefix string) string {
 	trimmedText := strings.TrimSpace(text)
 	prefix := strings.TrimSpace(triggerPrefix)

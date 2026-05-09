@@ -201,6 +201,107 @@ func TestApp_OnMessageReceive_GroupChatSceneSharesSessionAcrossMessages(t *testi
 	}
 }
 
+func TestApp_RouteIncomingJob_GroupSceneWithoutPrefixSkipsOptOut(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	cfg.TriggerMode = "without_prefix"
+	cfg.TriggerPrefix = "!"
+	app := newGroupScenesApp(cfg, nil)
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_without_prefix_optout"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_without_prefix_optout"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"!hi @_bot"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Key:  strPtr("@_bot"),
+						Name: strPtr("Alice"),
+						Id:   &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if app.routeIncomingJob(job, event) {
+		t.Fatal("group message starting with trigger_prefix should be skipped in without_prefix mode even when chat scene is enabled")
+	}
+}
+
+func TestApp_RouteIncomingJob_GroupSceneWithoutPrefixAcceptsNormalMessage(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	cfg.TriggerMode = "without_prefix"
+	cfg.TriggerPrefix = "!"
+	app := newGroupScenesApp(cfg, nil)
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_without_prefix_accept"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_without_prefix_accept"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"帮我总结一下"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if !app.routeIncomingJob(job, event) {
+		t.Fatal("plain group message without trigger_prefix should still be processed in without_prefix mode")
+	}
+	if job.Scene != jobSceneChat {
+		t.Fatalf("expected chat scene, got %q", job.Scene)
+	}
+}
+
+func TestApp_RouteIncomingJob_GroupSceneWithoutPrefixIgnoresPrefixAfterBotMention(t *testing.T) {
+	cfg := configForGroupScenesTest()
+	cfg.TriggerMode = "without_prefix"
+	cfg.TriggerPrefix = "!"
+	app := newGroupScenesApp(cfg, nil)
+
+	event := &larkim.P2MessageReceiveV1{
+		EventV2Base: &larkevent.EventV2Base{Header: &larkevent.EventHeader{EventID: "evt_without_prefix_after_at"}},
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				MessageId:   strPtr("om_without_prefix_after_at"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"@_bot !hi"}`),
+				ChatId:      strPtr("oc_chat"),
+				ChatType:    strPtr("group"),
+				Mentions: []*larkim.MentionEvent{
+					{
+						Key:  strPtr("@_bot"),
+						Name: strPtr("Alice"),
+						Id:   &larkim.UserId{OpenId: strPtr("ou_bot")},
+					},
+				},
+			},
+		},
+	}
+
+	job, err := BuildJob(event)
+	if err != nil {
+		t.Fatalf("build job failed: %v", err)
+	}
+	if app.routeIncomingJob(job, event) {
+		t.Fatal("group message that becomes prefix-leading after bot @ strip should be skipped in without_prefix mode")
+	}
+}
+
 func TestApp_RouteBuiltinStopToExistingWorkSession(t *testing.T) {
 	cfg := configForGroupScenesTest()
 	app := newGroupScenesApp(cfg, nil)

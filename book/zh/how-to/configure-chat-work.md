@@ -135,3 +135,5 @@ bots:
 | `all` | 接受所有消息（无过滤） |
 
 新部署建议优先使用显式的场景路由。
+
+> 注意：启用 group_scenes 时 `without_prefix` 仍然生效。群消息正文（剥离 bot @ 之后）若以 `trigger_prefix` 开头，会在 scene 路由前被直接丢弃，因此即便处于 chat/work scene 模式，也可以把前缀当作单条消息的 opt-out 标记使用。

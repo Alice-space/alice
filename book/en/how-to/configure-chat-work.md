@@ -135,3 +135,5 @@ bots:
 | `all` | Every message is accepted (no filter) |
 
 New deployments should prefer explicit scene routing.
+
+> Note: `without_prefix` is also honored when group scenes are enabled. Group messages whose text (after stripping bot @-mentions) starts with `trigger_prefix` are dropped before scene routing, so you can use the prefix as a per-message opt-out marker even in chat/work scene mode.
