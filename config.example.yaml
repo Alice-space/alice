@@ -55,9 +55,11 @@ bots:
 
     # ── Message trigger ────────────────────────────────────────────────────
     # How group messages enter a session:
-    # - at:     only @bot messages (default)
-    # - prefix: only messages starting with trigger_prefix
-    # - all:    every group message is accepted (no @bot / prefix required)
+    # - at:             only @bot messages (default)
+    # - prefix:         only messages starting with trigger_prefix
+    # - without_prefix: every group message EXCEPT those starting with
+    #                   trigger_prefix (prefix acts as an opt-out marker)
+    # - all:            every group message is accepted (no @bot / prefix required)
     trigger_mode: "at"
     trigger_prefix: ""
 

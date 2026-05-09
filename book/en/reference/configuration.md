@@ -176,7 +176,7 @@ Path to the SOUL.md persona document. Relative paths resolve against `alice_home
 |-------|-------|
 | Type | `string` |
 | Default | `"at"` |
-| Values | `"at"`, `"prefix"`, `"all"` |
+| Values | `"at"`, `"prefix"`, `"without_prefix"`, `"all"` |
 
 Legacy trigger mode. Only used when both `group_scenes.chat.enabled` and `group_scenes.work.enabled` are `false`.
 
@@ -184,6 +184,7 @@ Legacy trigger mode. Only used when both `group_scenes.chat.enabled` and `group_
 |-------|----------|
 | `"at"` | Only @bot messages accepted |
 | `"prefix"` | Only messages starting with `trigger_prefix` |
+| `"without_prefix"` | Every message accepted, EXCEPT those starting with `trigger_prefix` |
 | `"all"` | Every message accepted |
 
 #### `trigger_prefix`
@@ -193,7 +194,7 @@ Legacy trigger mode. Only used when both `group_scenes.chat.enabled` and `group_
 | Type | `string` |
 | Default | `""` |
 
-Prefix string for `trigger_mode: "prefix"`.
+Prefix string for `trigger_mode: "prefix"` (required) and `trigger_mode: "without_prefix"` (required, acts as the opt-out marker).
 
 ---
 

@@ -48,6 +48,8 @@ func isGroupMessageTriggered(
 		return true
 	case config.TriggerModePrefix:
 		return isGroupTriggerPrefixMatched(event, triggerPrefix)
+	case config.TriggerModeWithoutPrefix:
+		return !isGroupTriggerPrefixMatched(event, triggerPrefix)
 	default:
 		return isGroupMentionAccepted(message, botOpenID, botUserID)
 	}
@@ -56,7 +58,7 @@ func isGroupMessageTriggered(
 func normalizedTriggerMode(mode string) string {
 	normalized := strings.ToLower(strings.TrimSpace(mode))
 	switch normalized {
-	case config.TriggerModePrefix, config.TriggerModeAll:
+	case config.TriggerModePrefix, config.TriggerModeAll, config.TriggerModeWithoutPrefix:
 		return normalized
 	default:
 		return config.TriggerModeAt

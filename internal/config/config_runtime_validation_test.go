@@ -117,6 +117,38 @@ immediate_feedback_mode: "wave"
 	}
 }
 
+func TestLoadFromFile_TriggerModeWithoutPrefix(t *testing.T) {
+	_, runtime := loadSingleBotRuntime(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+trigger_mode: "  Without_Prefix  "
+trigger_prefix: "  !silent  "
+`)
+
+	if runtime.TriggerMode != TriggerModeWithoutPrefix {
+		t.Fatalf("unexpected trigger_mode: %q", runtime.TriggerMode)
+	}
+	if runtime.TriggerPrefix != "!silent" {
+		t.Fatalf("unexpected trigger_prefix: %q", runtime.TriggerPrefix)
+	}
+}
+
+func TestLoadFromFile_TriggerModeWithoutPrefixRequiresPrefix(t *testing.T) {
+	path := writeSingleBotConfig(t, `
+feishu_app_id: cli_xxx
+feishu_app_secret: sss
+trigger_mode: "without_prefix"
+`)
+
+	_, err := LoadFromFile(path)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+	if !strings.Contains(err.Error(), "trigger_prefix is required") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
 func TestLoadFromFile_TriggerModePrefixRequiresPrefix(t *testing.T) {
 	path := writeSingleBotConfig(t, `
 feishu_app_id: cli_xxx

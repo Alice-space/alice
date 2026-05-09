@@ -106,7 +106,7 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	}
 
 	switch cfg.TriggerMode {
-	case TriggerModeAt, TriggerModePrefix, TriggerModeAll:
+	case TriggerModeAt, TriggerModePrefix, TriggerModeAll, TriggerModeWithoutPrefix:
 	default:
 		return Config{}, fmt.Errorf("unsupported trigger_mode %q", cfg.TriggerMode)
 	}
@@ -117,6 +117,9 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 	}
 	if cfg.TriggerMode == TriggerModePrefix && cfg.TriggerPrefix == "" {
 		return Config{}, errors.New("trigger_prefix is required when trigger_mode is prefix")
+	}
+	if cfg.TriggerMode == TriggerModeWithoutPrefix && cfg.TriggerPrefix == "" {
+		return Config{}, errors.New("trigger_prefix is required when trigger_mode is without_prefix")
 	}
 
 	for key := range cfg.CodexEnv {

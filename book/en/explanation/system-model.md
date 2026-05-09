@@ -71,12 +71,12 @@ Incoming Message
   │   └─ Yes → Route to chat scene
   │
   └─ Both scenes disabled?
-      └─ Fall back to legacy trigger_mode (at / prefix / all)
+      └─ Fall back to legacy trigger_mode (at / prefix / without_prefix / all)
 ```
 
 ### Scenes vs Legacy Triggers
 
-The legacy `trigger_mode` (at/prefix/all) is a simple gate: it decides whether to accept a message or ignore it. If accepted, there's one LLM pipeline.
+The legacy `trigger_mode` (at/prefix/without_prefix/all) is a simple gate: it decides whether to accept a message or ignore it. If accepted, there's one LLM pipeline.
 
 Scenes go further: they assign different LLM profiles, session scopes, thread behaviors, and SOUL.md treatment per scene. New deployments should always use scenes.
 

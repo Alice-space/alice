@@ -123,14 +123,15 @@ If both `chat` and `work` are disabled, Alice falls back to a legacy trigger sys
 ```yaml
 bots:
   my_bot:
-    trigger_mode: "at"       # at | prefix | all
-    trigger_prefix: ""       # only used when trigger_mode is "prefix"
+    trigger_mode: "at"       # at | prefix | without_prefix | all
+    trigger_prefix: ""       # required for "prefix" and "without_prefix"
 ```
 
 | Mode | Behavior |
 |------|----------|
 | `at` | Only @bot messages are accepted |
 | `prefix` | Only messages starting with `trigger_prefix` |
+| `without_prefix` | Every message is accepted EXCEPT those starting with `trigger_prefix` |
 | `all` | Every message is accepted (no filter) |
 
 New deployments should prefer explicit scene routing.
