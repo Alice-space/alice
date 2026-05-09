@@ -62,7 +62,8 @@ type senderStub struct {
 	// replyThreadID is what the WithThread variants return as the thread_id
 	// component, mimicking what Feishu's Reply API surfaces. Tests can set
 	// this to verify thread-binding logic in the connector.
-	replyThreadID    string
+	replyThreadID string
+
 	patchCardCalls   int
 	patchCardTargets []string
 	patchCards       []string

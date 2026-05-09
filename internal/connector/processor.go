@@ -340,8 +340,11 @@ func (p *Processor) applyLeadingSessionDirective(ctx context.Context, job *Job) 
 	job.Text = strings.TrimSpace(directive.Remainder)
 	if job.Text == "" && len(job.Attachments) == 0 {
 		reply := p.buildWorkThreadStatusMarkdown(*job, "已绑定后端 session。")
-		if err := p.replies.respondCardWithTitle(ctx, *job, builtinWorkThreadCardTitle, reply); err != nil {
+		threadID, err := p.replies.respondCardWithTitleWithThread(ctx, *job, builtinWorkThreadCardTitle, reply)
+		if err != nil {
 			logging.Errorf("send session bootstrap reply failed event_id=%s: %v", job.EventID, err)
+		} else {
+			p.rememberReplyThread(*job, threadID)
 		}
 		return true, JobProcessCompleted
 	}
@@ -359,8 +362,11 @@ func (p *Processor) processWorkThreadBootstrap(ctx context.Context, job Job) Job
 	p.touchSessionMessage(sessionKey, p.now())
 	p.recordSessionMetadata(sessionKey, job)
 	reply := p.buildWorkThreadStatusMarkdown(job, "Work thread 已创建。")
-	if err := p.replies.respondCardWithTitle(ctx, job, builtinWorkThreadCardTitle, reply); err != nil {
+	threadID, err := p.replies.respondCardWithTitleWithThread(ctx, job, builtinWorkThreadCardTitle, reply)
+	if err != nil {
 		logging.Errorf("send work thread bootstrap reply failed event_id=%s: %v", job.EventID, err)
+	} else {
+		p.rememberReplyThread(job, threadID)
 	}
 	return JobProcessCompleted
 }

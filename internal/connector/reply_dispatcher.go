@@ -28,11 +28,20 @@ func (d *replyDispatcher) respond(ctx context.Context, job Job, markdown string)
 }
 
 func (d *replyDispatcher) respondCardWithTitle(ctx context.Context, job Job, title, markdown string) error {
+	_, err := d.respondCardWithTitleWithThread(ctx, job, title, markdown)
+	return err
+}
+
+// respondCardWithTitleWithThread mirrors respondCardWithTitle but also returns
+// the Feishu thread_id of the resulting reply (empty when the message was
+// dispatched via send/sendCardWithTitle, which target chat_id/open_id rather
+// than a source message and therefore do not produce a thread_id).
+func (d *replyDispatcher) respondCardWithTitleWithThread(ctx context.Context, job Job, title, markdown string) (string, error) {
 	if strings.TrimSpace(job.SourceMessageID) != "" {
-		_, err := d.replyCardWithTitle(ctx, job, job.SourceMessageID, title, markdown)
-		return err
+		_, threadID, err := d.replyCardWithTitleWithThread(ctx, job, job.SourceMessageID, title, markdown)
+		return threadID, err
 	}
-	return d.sendCardWithTitle(ctx, job, job.ReceiveIDType, job.ReceiveID, title, markdown)
+	return "", d.sendCardWithTitle(ctx, job, job.ReceiveIDType, job.ReceiveID, title, markdown)
 }
 
 func (d *replyDispatcher) reply(
@@ -123,29 +132,40 @@ func (d *replyDispatcher) replyCardWithTitle(
 	title,
 	markdown string,
 ) (string, error) {
+	messageID, _, err := d.replyCardWithTitleWithThread(ctx, job, sourceMessageID, title, markdown)
+	return messageID, err
+}
+
+func (d *replyDispatcher) replyCardWithTitleWithThread(
+	ctx context.Context,
+	job Job,
+	sourceMessageID,
+	title,
+	markdown string,
+) (string, string, error) {
 	if d == nil || d.sender == nil {
-		return "", errors.New("reply dispatcher sender is nil")
+		return "", "", errors.New("reply dispatcher sender is nil")
 	}
 
 	normalized, forceText := normalizeOutgoingReplyWithMentions(markdown, job)
 	if normalized == "" {
-		return "", nil
+		return "", "", nil
 	}
 	preferThread := jobPrefersThreadReply(job)
 	if forceText {
 		plainText := sanitizeMarkdownForPlainText(normalized)
-		if messageID, textErr := d.replyText(ctx, sourceMessageID, plainText, preferThread); textErr == nil {
-			return messageID, nil
+		if messageID, threadID, textErr := d.replyTextWithThread(ctx, sourceMessageID, plainText, preferThread); textErr == nil {
+			return messageID, threadID, nil
 		}
 		normalized = stripHiddenReplyMetadata(markdown, job.SoulDoc.OutputContract)
 		if normalized == "" {
-			return "", nil
+			return "", "", nil
 		}
 	}
-	if messageID, cardErr := d.replyCard(ctx, sourceMessageID, buildTitledReplyCardContent(title, normalized), preferThread); cardErr == nil {
-		return messageID, nil
+	if messageID, threadID, cardErr := d.replyCardWithThread(ctx, sourceMessageID, buildTitledReplyCardContent(title, normalized), preferThread); cardErr == nil {
+		return messageID, threadID, nil
 	}
-	return d.replyMarkdownPost(ctx, job, sourceMessageID, normalized, false, preferThread)
+	return d.replyMarkdownPostWithThread(ctx, job, sourceMessageID, normalized, false, preferThread)
 }
 
 func (d *replyDispatcher) sendCardWithTitle(
