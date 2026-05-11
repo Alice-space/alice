@@ -153,43 +153,74 @@ func (s *FeishuSender) UrgentApp(ctx context.Context, messageID, userIDType stri
 }
 
 func (s *FeishuSender) ReplyText(ctx context.Context, sourceMessageID, text string) (string, error) {
+	messageID, _, err := s.ReplyTextWithThread(ctx, sourceMessageID, text)
+	return messageID, err
+}
+
+func (s *FeishuSender) ReplyTextWithThread(ctx context.Context, sourceMessageID, text string) (string, string, error) {
 	return s.replyMessagePreferThread(ctx, sourceMessageID, "text", textMessageContent(text), "reply success but response message_id is empty")
 }
 
 func (s *FeishuSender) ReplyTextDirect(ctx context.Context, sourceMessageID, text string) (string, error) {
+	messageID, _, err := s.ReplyTextDirectWithThread(ctx, sourceMessageID, text)
+	return messageID, err
+}
+
+func (s *FeishuSender) ReplyTextDirectWithThread(ctx context.Context, sourceMessageID, text string) (string, string, error) {
 	return s.replyMessage(ctx, sourceMessageID, "text", textMessageContent(text), false, "reply success but response message_id is empty")
 }
 
 func (s *FeishuSender) ReplyRichText(ctx context.Context, sourceMessageID string, lines []string) (string, error) {
-	return s.replyMessagePreferThread(ctx, sourceMessageID, "post", richTextMessageContent(lines), "reply rich text success but response message_id is empty")
+	messageID, _, err := s.replyMessagePreferThread(ctx, sourceMessageID, "post", richTextMessageContent(lines), "reply rich text success but response message_id is empty")
+	return messageID, err
 }
 
 func (s *FeishuSender) ReplyRichTextMarkdown(ctx context.Context, sourceMessageID, markdown string) (string, error) {
+	messageID, _, err := s.ReplyRichTextMarkdownWithThread(ctx, sourceMessageID, markdown)
+	return messageID, err
+}
+
+func (s *FeishuSender) ReplyRichTextMarkdownWithThread(ctx context.Context, sourceMessageID, markdown string) (string, string, error) {
 	return s.replyMessagePreferThread(ctx, sourceMessageID, "post", richTextMarkdownMessageContent(markdown), "reply markdown rich text success but response message_id is empty")
 }
 
 func (s *FeishuSender) ReplyRichTextMarkdownDirect(ctx context.Context, sourceMessageID, markdown string) (string, error) {
+	messageID, _, err := s.ReplyRichTextMarkdownDirectWithThread(ctx, sourceMessageID, markdown)
+	return messageID, err
+}
+
+func (s *FeishuSender) ReplyRichTextMarkdownDirectWithThread(ctx context.Context, sourceMessageID, markdown string) (string, string, error) {
 	return s.replyMessage(ctx, sourceMessageID, "post", richTextMarkdownMessageContent(markdown), false, "reply markdown rich text success but response message_id is empty")
 }
 
 func (s *FeishuSender) ReplyCard(ctx context.Context, sourceMessageID, cardContent string) (string, error) {
+	messageID, _, err := s.ReplyCardWithThread(ctx, sourceMessageID, cardContent)
+	return messageID, err
+}
+
+func (s *FeishuSender) ReplyCardWithThread(ctx context.Context, sourceMessageID, cardContent string) (string, string, error) {
 	return s.replyMessagePreferThread(ctx, sourceMessageID, "interactive", cardContent, "reply card success but response message_id is empty")
 }
 
 func (s *FeishuSender) ReplyCardDirect(ctx context.Context, sourceMessageID, cardContent string) (string, error) {
+	messageID, _, err := s.ReplyCardDirectWithThread(ctx, sourceMessageID, cardContent)
+	return messageID, err
+}
+
+func (s *FeishuSender) ReplyCardDirectWithThread(ctx context.Context, sourceMessageID, cardContent string) (string, string, error) {
 	return s.replyMessage(ctx, sourceMessageID, "interactive", cardContent, false, "reply card success but response message_id is empty")
 }
 
 func (s *FeishuSender) replyMessagePreferThread(
 	ctx context.Context,
 	sourceMessageID, msgType, content, emptyMessageIDErr string,
-) (string, error) {
-	messageID, err := s.replyMessage(ctx, sourceMessageID, msgType, content, true, emptyMessageIDErr)
+) (string, string, error) {
+	messageID, threadID, err := s.replyMessage(ctx, sourceMessageID, msgType, content, true, emptyMessageIDErr)
 	if err == nil {
-		return messageID, nil
+		return messageID, threadID, nil
 	}
 	if !shouldFallbackThreadReply(err) {
-		return "", err
+		return "", "", err
 	}
 	return s.replyMessage(ctx, sourceMessageID, msgType, content, false, emptyMessageIDErr)
 }
@@ -224,7 +255,7 @@ func (s *FeishuSender) replyMessage(
 	sourceMessageID, msgType, content string,
 	replyInThread bool,
 	emptyMessageIDErr string,
-) (string, error) {
+) (string, string, error) {
 	req := larkim.NewReplyMessageReqBuilder().
 		MessageId(sourceMessageID).
 		Body(larkim.NewReplyMessageReqBodyBuilder().
@@ -234,7 +265,7 @@ func (s *FeishuSender) replyMessage(
 			Build()).
 		Build()
 
-	var messageID string
+	var messageID, threadID string
 	err := s.withFeishuRetry(ctx, func() error {
 		resp, err := s.client.Im.V1.Message.Reply(ctx, req)
 		if err != nil {
@@ -250,12 +281,15 @@ func (s *FeishuSender) replyMessage(
 		if messageID == "" {
 			return errors.New(emptyMessageIDErr)
 		}
+		if resp.Data.ThreadId != nil {
+			threadID = strings.TrimSpace(*resp.Data.ThreadId)
+		}
 		return nil
 	})
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
-	return messageID, nil
+	return messageID, threadID, nil
 }
 
 func (s *FeishuSender) createMessage(
@@ -266,7 +300,8 @@ func (s *FeishuSender) createMessage(
 	// engine for thread delivery: receiveID is an om_xxx Feishu message ID and
 	// the message should be posted as a reply in the same thread.
 	if receiveIDType == "source_message_id" {
-		return s.replyMessagePreferThread(ctx, receiveID, msgType, content, emptyMessageIDErr)
+		messageID, _, err := s.replyMessagePreferThread(ctx, receiveID, msgType, content, emptyMessageIDErr)
+		return messageID, err
 	}
 	req := larkim.NewCreateMessageReqBuilder().
 		ReceiveIdType(receiveIDType).

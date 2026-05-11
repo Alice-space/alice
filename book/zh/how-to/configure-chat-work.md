@@ -123,14 +123,17 @@ group_scenes:
 ```yaml
 bots:
   my_bot:
-    trigger_mode: "at"       # at | prefix | all
-    trigger_prefix: ""       # 仅当 trigger_mode 为 "prefix" 时使用
+    trigger_mode: "at"       # at | prefix | without_prefix | all
+    trigger_prefix: ""       # "prefix" 和 "without_prefix" 模式必填
 ```
 
 | 模式 | 行为 |
 |------|----------|
 | `at` | 仅接受 @bot 的消息 |
 | `prefix` | 仅接受以 `trigger_prefix` 开头的消息 |
+| `without_prefix` | 默认接受所有消息，但忽略以 `trigger_prefix` 开头的消息 |
 | `all` | 接受所有消息（无过滤） |
 
 新部署建议优先使用显式的场景路由。
+
+> 注意：启用 group_scenes 时 `without_prefix` 仍然生效。群消息正文（剥离 bot @ 之后）若以 `trigger_prefix` 开头，会在 scene 路由前被直接丢弃，因此即便处于 chat/work scene 模式，也可以把前缀当作单条消息的 opt-out 标记使用。

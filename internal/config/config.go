@@ -27,6 +27,9 @@ const TriggerModePrefix = "prefix"
 // TriggerModeAll sets the trigger mode to all messages.
 const TriggerModeAll = "all"
 
+// TriggerModeWithoutPrefix accepts every message except those starting with trigger_prefix.
+const TriggerModeWithoutPrefix = "without_prefix"
+
 // ImmediateFeedbackModeReply sends a reply as immediate feedback.
 const ImmediateFeedbackModeReply = "reply"
 

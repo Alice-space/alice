@@ -20,6 +20,12 @@ func (a *App) routeIncomingJob(job *Job, event *larkim.P2MessageReceiveV1) bool 
 		message = event.Event.Message
 	}
 	a.normalizeBotMentions(job, message)
+	if isGroupChatType(job.ChatType) &&
+		normalizedTriggerMode(cfg.triggerMode) == config.TriggerModeWithoutPrefix &&
+		!isBuiltinCommandText(job.Text) &&
+		jobTextHasTriggerPrefix(job.Text, cfg.triggerPrefix) {
+		return false
+	}
 	if !isGroupChatType(job.ChatType) {
 		if cfg.privateScenes.Chat.Enabled || cfg.privateScenes.Work.Enabled {
 			return a.routePrivateSceneJob(job, event, message)
@@ -78,14 +84,15 @@ func (a *App) routePrivateSceneJob(job *Job, event *larkim.P2MessageReceiveV1, m
 }
 
 type sessionKeyBuilder struct {
-	scope       string
-	triggerMode string
-	botOpenID   string
-	chatEnabled bool
-	workEnabled bool
-	workTag     string
-	app         *App
-	job         *Job
+	scope         string
+	triggerMode   string
+	triggerPrefix string
+	botOpenID     string
+	chatEnabled   bool
+	workEnabled   bool
+	workTag       string
+	app           *App
+	job           *Job
 
 	matchedWorkTag  bool
 	triggerMatched  bool
@@ -99,14 +106,15 @@ func newSessionKeyBuilder(scope, triggerMode, triggerPrefix, botOpenID string,
 	app *App, job *Job,
 ) *sessionKeyBuilder {
 	b := &sessionKeyBuilder{
-		scope:       scope,
-		triggerMode: triggerMode,
-		botOpenID:   botOpenID,
-		chatEnabled: chatEnabled,
-		workEnabled: workEnabled,
-		workTag:     strings.TrimSpace(workTag),
-		app:         app,
-		job:         job,
+		scope:         scope,
+		triggerMode:   triggerMode,
+		triggerPrefix: triggerPrefix,
+		botOpenID:     botOpenID,
+		chatEnabled:   chatEnabled,
+		workEnabled:   workEnabled,
+		workTag:       strings.TrimSpace(workTag),
+		app:           app,
+		job:           job,
 	}
 	if b.workTag == "" {
 		b.workTag = "#work"
@@ -119,7 +127,7 @@ func (b *sessionKeyBuilder) evaluate(event *larkim.P2MessageReceiveV1, message *
 		return
 	}
 
-	triggerMatched := isGroupMessageTriggered(event, b.triggerMode, "", b.botOpenID, "")
+	triggerMatched := isGroupMessageTriggered(event, b.triggerMode, b.triggerPrefix, b.botOpenID, "")
 	b.triggerMatched = triggerMatched || isBuiltinCommandText(b.job.Text)
 
 	if b.workEnabled && message != nil {
@@ -197,7 +205,7 @@ func (a *App) routeWithSessionKeyBuilder(job *Job, event *larkim.P2MessageReceiv
 	case jobSceneWork:
 		if builder.matchedWorkTag {
 			a.applyWorkSceneToJob(job, sessionKey)
-			normalizeIncomingGroupJobTextForTriggerMode(job, builder.triggerMode, "")
+			normalizeIncomingGroupJobTextForTriggerMode(job, builder.triggerMode, builder.triggerPrefix)
 			job.Text = trimSceneTriggerTag(job.Text, builder.workTag)
 			if a.processor != nil && message != nil {
 				a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
@@ -209,7 +217,7 @@ func (a *App) routeWithSessionKeyBuilder(job *Job, event *larkim.P2MessageReceiv
 				return false
 			}
 			a.applyWorkSceneToJob(job, sessionKey)
-			normalizeIncomingGroupJobTextForTriggerMode(job, builder.triggerMode, "")
+			normalizeIncomingGroupJobTextForTriggerMode(job, builder.triggerMode, builder.triggerPrefix)
 			if a.processor != nil && message != nil {
 				a.processor.setWorkThreadID(sessionKey, strings.TrimSpace(deref(message.ThreadId)))
 			}

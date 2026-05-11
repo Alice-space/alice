@@ -34,6 +34,18 @@ type ReplyTextSender interface {
 	ReplyText(ctx context.Context, sourceMessageID, text string) (string, error)
 }
 
+// ReplyTextWithThreadSender is an optional extension of ReplyTextSender that
+// also returns the Feishu thread_id of the resulting reply. Senders that do
+// not implement this interface still work via ReplyTextSender; the connector
+// falls back and treats the thread_id as unknown.
+type ReplyTextWithThreadSender interface {
+	ReplyTextWithThread(ctx context.Context, sourceMessageID, text string) (messageID, threadID string, err error)
+}
+
+type ReplyTextDirectWithThreadSender interface {
+	ReplyTextDirectWithThread(ctx context.Context, sourceMessageID, text string) (messageID, threadID string, err error)
+}
+
 type ReplyTextDirectSender interface {
 	ReplyTextDirect(ctx context.Context, sourceMessageID, text string) (string, error)
 }
@@ -46,16 +58,32 @@ type ReplyRichTextMarkdownSender interface {
 	ReplyRichTextMarkdown(ctx context.Context, sourceMessageID, markdown string) (string, error)
 }
 
+type ReplyRichTextMarkdownWithThreadSender interface {
+	ReplyRichTextMarkdownWithThread(ctx context.Context, sourceMessageID, markdown string) (messageID, threadID string, err error)
+}
+
 type ReplyRichTextMarkdownDirectSender interface {
 	ReplyRichTextMarkdownDirect(ctx context.Context, sourceMessageID, markdown string) (string, error)
+}
+
+type ReplyRichTextMarkdownDirectWithThreadSender interface {
+	ReplyRichTextMarkdownDirectWithThread(ctx context.Context, sourceMessageID, markdown string) (messageID, threadID string, err error)
 }
 
 type ReplyCardSender interface {
 	ReplyCard(ctx context.Context, sourceMessageID, cardContent string) (string, error)
 }
 
+type ReplyCardWithThreadSender interface {
+	ReplyCardWithThread(ctx context.Context, sourceMessageID, cardContent string) (messageID, threadID string, err error)
+}
+
 type ReplyCardDirectSender interface {
 	ReplyCardDirect(ctx context.Context, sourceMessageID, cardContent string) (string, error)
+}
+
+type ReplyCardDirectWithThreadSender interface {
+	ReplyCardDirectWithThread(ctx context.Context, sourceMessageID, cardContent string) (messageID, threadID string, err error)
 }
 
 type ReplyImageSender interface {

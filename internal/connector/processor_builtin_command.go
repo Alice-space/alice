@@ -457,12 +457,20 @@ func (p *Processor) buildBuiltinHelpMarkdown(helpCfg builtinHelpConfig) string {
 
 func formatWorkModeTrigger(helpCfg builtinHelpConfig) string {
 	trigger := "`@机器人`"
-	if strings.EqualFold(strings.TrimSpace(helpCfg.workTriggerMode), config.TriggerModePrefix) {
-		prefix := strings.TrimSpace(helpCfg.workTriggerPrefix)
+	mode := strings.TrimSpace(helpCfg.workTriggerMode)
+	prefix := strings.TrimSpace(helpCfg.workTriggerPrefix)
+	switch {
+	case strings.EqualFold(mode, config.TriggerModePrefix):
 		if prefix == "" {
 			trigger = "`前缀`"
 		} else {
 			trigger = "`" + prefix + "` 前缀"
+		}
+	case strings.EqualFold(mode, config.TriggerModeWithoutPrefix):
+		if prefix == "" {
+			trigger = "任意消息"
+		} else {
+			trigger = "任意消息（不以 `" + prefix + "` 开头）"
 		}
 	}
 

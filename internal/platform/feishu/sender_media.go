@@ -50,13 +50,14 @@ func (s *FeishuSender) ReplyImage(ctx context.Context, sourceMessageID, imageKey
 	if imageKey == "" {
 		return "", errors.New("image key is empty")
 	}
-	return s.replyMessagePreferThread(
+	messageID, _, err := s.replyMessagePreferThread(
 		ctx,
 		sourceMessageID,
 		"image",
 		imageMessageContent(imageKey),
 		"reply image success but response message_id is empty",
 	)
+	return messageID, err
 }
 
 func (s *FeishuSender) ReplyImageDirect(ctx context.Context, sourceMessageID, imageKey string) (string, error) {
@@ -64,7 +65,7 @@ func (s *FeishuSender) ReplyImageDirect(ctx context.Context, sourceMessageID, im
 	if imageKey == "" {
 		return "", errors.New("image key is empty")
 	}
-	return s.replyMessage(
+	messageID, _, err := s.replyMessage(
 		ctx,
 		sourceMessageID,
 		"image",
@@ -72,6 +73,7 @@ func (s *FeishuSender) ReplyImageDirect(ctx context.Context, sourceMessageID, im
 		false,
 		"reply image success but response message_id is empty",
 	)
+	return messageID, err
 }
 
 func (s *FeishuSender) SendFile(ctx context.Context, receiveIDType, receiveID, fileKey string) error {
@@ -110,13 +112,14 @@ func (s *FeishuSender) ReplyFile(ctx context.Context, sourceMessageID, fileKey s
 	if fileKey == "" {
 		return "", errors.New("file key is empty")
 	}
-	return s.replyMessagePreferThread(
+	messageID, _, err := s.replyMessagePreferThread(
 		ctx,
 		sourceMessageID,
 		"file",
 		fileMessageContent(fileKey),
 		"reply file success but response message_id is empty",
 	)
+	return messageID, err
 }
 
 func (s *FeishuSender) ReplyFileDirect(ctx context.Context, sourceMessageID, fileKey string) (string, error) {
@@ -124,7 +127,7 @@ func (s *FeishuSender) ReplyFileDirect(ctx context.Context, sourceMessageID, fil
 	if fileKey == "" {
 		return "", errors.New("file key is empty")
 	}
-	return s.replyMessage(
+	messageID, _, err := s.replyMessage(
 		ctx,
 		sourceMessageID,
 		"file",
@@ -132,6 +135,7 @@ func (s *FeishuSender) ReplyFileDirect(ctx context.Context, sourceMessageID, fil
 		false,
 		"reply file success but response message_id is empty",
 	)
+	return messageID, err
 }
 
 func (s *FeishuSender) UploadImage(ctx context.Context, localPath string) (string, error) {
