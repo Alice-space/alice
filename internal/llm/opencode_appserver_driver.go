@@ -512,6 +512,30 @@ func (d *openCodeAppServerDriver) parseOpenCodeEvent(payload string) (TurnEvent,
 			Kind:     TurnEventCompleted,
 			Raw:      payload,
 		}, true
+	case "question.asked":
+		sessionID := stringFromMap(properties, "sessionID")
+		if !d.openCodeEventBelongsToActiveTurn(sessionID) {
+			return TurnEvent{}, false
+		}
+		requestID := stringFromMap(properties, "requestID")
+		if requestID == "" {
+			return TurnEvent{}, false
+		}
+		questions := parseOpenCodeQuestions(properties)
+		if len(questions) == 0 {
+			return TurnEvent{}, false
+		}
+		RegisterPendingQuestion(requestID, d.currentBaseURL())
+		return TurnEvent{
+			Provider: ProviderOpenCode,
+			ThreadID: sessionID,
+			TurnID:   d.currentTurnID(),
+			Kind:     TurnEventQuestion,
+			Question: &TurnQuestion{RequestID: requestID, Questions: questions},
+			Raw:      payload,
+		}, true
+	case "question.replied", "question.rejected":
+		return TurnEvent{}, false
 	}
 	return TurnEvent{}, false
 }
@@ -525,6 +549,10 @@ func openCodeEventSummary(eventType string, properties map[string]any) string {
 			parts = append(parts, "finish="+finish)
 		}
 		return strings.Join(parts, " ")
+	case "question.asked":
+		requestID := stringFromMap(properties, "requestID")
+		questions := parseOpenCodeQuestions(properties)
+		return "requestID=" + requestID + " questions=" + fmt.Sprint(len(questions))
 	case "message.part.updated":
 		part, _ := properties["part"].(map[string]any)
 		partType := stringFromMap(part, "type")
@@ -580,6 +608,12 @@ func (d *openCodeAppServerDriver) currentSessionID() string {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 	return d.sessionID
+}
+
+func (d *openCodeAppServerDriver) currentBaseURL() string {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+	return d.baseURL
 }
 
 func (d *openCodeAppServerDriver) currentTurnID() string {
@@ -735,6 +769,22 @@ func formatOpenCodeAppServerToolUse(part map[string]any) string {
 		parts = append(parts, "title=`"+title+"`")
 	}
 	return strings.Join(parts, " ")
+}
+
+func parseOpenCodeQuestions(properties map[string]any) []QuestionInfo {
+	raw, ok := properties["questions"]
+	if !ok || raw == nil {
+		return nil
+	}
+	rawJSON, err := json.Marshal(raw)
+	if err != nil {
+		return nil
+	}
+	var questions []QuestionInfo
+	if err := json.Unmarshal(rawJSON, &questions); err != nil {
+		return nil
+	}
+	return questions
 }
 
 type openCodeAssistantInfo struct {

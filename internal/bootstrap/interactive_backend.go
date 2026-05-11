@@ -2,6 +2,7 @@ package bootstrap
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
@@ -209,7 +210,7 @@ func (b *interactiveProviderBackend) runInteractive(ctx context.Context, session
 				if req.OnProgress != nil && strings.TrimSpace(event.Text) != "" {
 					req.OnProgress("[file_change] " + strings.TrimSpace(event.Text))
 				}
-			case llm.TurnEventUserText, llm.TurnEventReasoning, llm.TurnEventToolUse:
+			case llm.TurnEventUserText, llm.TurnEventReasoning, llm.TurnEventToolUse, llm.TurnEventQuestion:
 				// User echoes, reasoning, and tool-use events are backend
 				// context, not Feishu progress messages.
 				emitInteractiveRawEvent(req.OnRawEvent, event)
@@ -241,10 +242,16 @@ func emitInteractiveRawEvent(fn llm.RawEventFunc, event llm.TurnEvent) {
 	if kind == "" {
 		return
 	}
+	detail := strings.TrimSpace(event.Text)
+	if event.Question != nil {
+		if raw, err := json.Marshal(event.Question); err == nil {
+			detail = string(raw)
+		}
+	}
 	fn(llm.RawEvent{
 		Kind:   kind,
 		Line:   strings.TrimSpace(event.Raw),
-		Detail: strings.TrimSpace(event.Text),
+		Detail: detail,
 	})
 }
 
@@ -256,6 +263,8 @@ func interactiveRawEventKind(kind llm.TurnEventKind) string {
 		return "reasoning"
 	case llm.TurnEventToolUse:
 		return "tool_use"
+	case llm.TurnEventQuestion:
+		return "question"
 	case llm.TurnEventCompleted:
 		return "turn_completed"
 	case llm.TurnEventInterrupted:
