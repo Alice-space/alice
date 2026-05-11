@@ -60,6 +60,7 @@ type llmRunObserver interface {
 	RecordFileChange(message string)
 	RecordBackendEvent(llm.RawEvent)
 	RecordShellCommand(kind, detail string)
+	RecordQuestion(rawJSON string)
 }
 
 type cardPatcher interface {
@@ -187,6 +188,13 @@ func (h *llmHeartbeat) RecordShellCommand(kind, detail string) {
 	h.lastShellCommand = detail
 	h.lastShellCommandKind = kind
 	h.mu.Unlock()
+}
+
+func (h *llmHeartbeat) RecordQuestion(rawJSON string) {
+	if h == nil || h.processor == nil || h.processor.replies == nil {
+		return
+	}
+	h.processor.sendQuestionCard(h.ctx, h.job, rawJSON)
 }
 
 func (h *llmHeartbeat) Stop(ctx context.Context, state string) {

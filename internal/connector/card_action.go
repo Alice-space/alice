@@ -7,22 +7,27 @@ import (
 
 	larkcallback "github.com/larksuite/oapi-sdk-go/v3/event/dispatcher/callback"
 
+	llm "github.com/Alice-space/alice/internal/llm"
 	"github.com/Alice-space/alice/internal/logging"
 )
 
 const (
 	CardActionDecisionApprove = "approve"
 	CardActionDecisionReject  = "reject"
+	CardActionKindQuestion    = "question"
 )
 
 type CardActionRequest struct {
-	Kind          string
-	CampaignID    string
-	PlanRound     int
-	Decision      string
-	ActorOpenID   string
-	ActorUserID   string
-	OpenMessageID string
+	Kind              string
+	CampaignID        string
+	PlanRound         int
+	Decision          string
+	ActorOpenID       string
+	ActorUserID       string
+	OpenMessageID     string
+	QuestionRequestID string
+	QuestionCount     int
+	FormValue         map[string]any
 }
 
 type CardActionResult struct {
@@ -58,6 +63,9 @@ func (a *App) onCardActionTrigger(ctx context.Context, event *larkcallback.CardA
 		logging.Warnf("invalid card action event: %v", err)
 		return cardActionToastResponse("error", "卡片动作无效，请刷新后重试。"), nil
 	}
+	if req.Kind == CardActionKindQuestion {
+		return a.handleQuestionCardAction(ctx, req)
+	}
 	handler := a.cardActionHandlerValue()
 	if handler == nil {
 		return cardActionToastResponse("error", "当前实例未启用卡片动作处理。"), nil
@@ -70,16 +78,40 @@ func (a *App) onCardActionTrigger(ctx context.Context, event *larkcallback.CardA
 	return cardActionToastResponse(result.ToastType, result.Toast), nil
 }
 
+func (a *App) handleQuestionCardAction(ctx context.Context, req CardActionRequest) (*larkcallback.CardActionTriggerResponse, error) {
+	requestID := strings.TrimSpace(req.QuestionRequestID)
+	if requestID == "" {
+		return cardActionToastResponse("error", "请求ID缺失。"), nil
+	}
+	qs, ok := loadQuestionState(requestID)
+	if !ok {
+		return cardActionToastResponse("error", "该问题已过期，请刷新后重试。"), nil
+	}
+	answers, err := parseQuestionAnswers(req.FormValue, qs.Questions)
+	if err != nil {
+		return cardActionToastResponse("warning", err.Error()), nil
+	}
+	if err := llm.ReplyQuestion(ctx, requestID, answers); err != nil {
+		logging.Warnf("reply question failed requestID=%s: %v", requestID, err)
+		return cardActionToastResponse("error", "提交答案失败，请重试。"), nil
+	}
+	pendingQuestionStates.Delete(requestID)
+	a.patchQuestionCardAnswered(ctx, req.OpenMessageID)
+	return cardActionToastResponse("success", "答案已提交。"), nil
+}
+
 func buildCardActionRequest(event *larkcallback.CardActionTriggerEvent) (CardActionRequest, error) {
 	if event == nil || event.Event == nil || event.Event.Action == nil {
 		return CardActionRequest{}, ErrIgnoreMessage
 	}
 	value := event.Event.Action.Value
 	req := CardActionRequest{
-		Kind:       strings.TrimSpace(valueString(value, "alice_action")),
-		CampaignID: strings.TrimSpace(valueString(value, "campaign_id")),
-		PlanRound:  valueInt(value, "plan_round"),
-		Decision:   strings.ToLower(strings.TrimSpace(valueString(value, "decision"))),
+		Kind:              strings.TrimSpace(valueString(value, "alice_action")),
+		CampaignID:        strings.TrimSpace(valueString(value, "campaign_id")),
+		PlanRound:         valueInt(value, "plan_round"),
+		Decision:          strings.ToLower(strings.TrimSpace(valueString(value, "decision"))),
+		QuestionRequestID: strings.TrimSpace(valueString(value, "request_id")),
+		QuestionCount:     valueInt(value, "question_count"),
 	}
 	if event.Event.Context != nil {
 		req.OpenMessageID = strings.TrimSpace(event.Event.Context.OpenMessageID)
@@ -90,7 +122,17 @@ func buildCardActionRequest(event *larkcallback.CardActionTriggerEvent) (CardAct
 			req.ActorUserID = strings.TrimSpace(*event.Event.Operator.UserID)
 		}
 	}
-	if req.Kind == "" || req.CampaignID == "" || req.Decision == "" {
+	if req.Kind == "" {
+		return CardActionRequest{}, ErrIgnoreMessage
+	}
+	if req.Kind == CardActionKindQuestion {
+		if req.QuestionRequestID == "" {
+			return CardActionRequest{}, ErrIgnoreMessage
+		}
+		req.FormValue = event.Event.Action.FormValue
+		return req, nil
+	}
+	if req.CampaignID == "" || req.Decision == "" {
 		return CardActionRequest{}, ErrIgnoreMessage
 	}
 	return req, nil

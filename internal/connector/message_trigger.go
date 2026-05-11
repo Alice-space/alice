@@ -48,6 +48,8 @@ func isGroupMessageTriggered(
 		return true
 	case config.TriggerModePrefix:
 		return isGroupTriggerPrefixMatched(event, triggerPrefix)
+	case config.TriggerModeWithoutPrefix:
+		return !isGroupTriggerPrefixMatched(event, triggerPrefix)
 	default:
 		return isGroupMentionAccepted(message, botOpenID, botUserID)
 	}
@@ -56,7 +58,7 @@ func isGroupMessageTriggered(
 func normalizedTriggerMode(mode string) string {
 	normalized := strings.ToLower(strings.TrimSpace(mode))
 	switch normalized {
-	case config.TriggerModePrefix, config.TriggerModeAll:
+	case config.TriggerModePrefix, config.TriggerModeAll, config.TriggerModeWithoutPrefix:
 		return normalized
 	default:
 		return config.TriggerModeAt
@@ -95,6 +97,14 @@ func isBuiltinCommandEvent(event *larkim.P2MessageReceiveV1) bool {
 		return false
 	}
 	return isBuiltinCommandText(job.Text)
+}
+
+func jobTextHasTriggerPrefix(text, triggerPrefix string) bool {
+	prefix := strings.TrimSpace(triggerPrefix)
+	if prefix == "" {
+		return false
+	}
+	return strings.HasPrefix(strings.TrimSpace(text), prefix)
 }
 
 func trimGroupTriggerPrefix(text, triggerPrefix string) string {

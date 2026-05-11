@@ -71,12 +71,12 @@ Bot 之间共享：
   │   └─ 是 → 路由到 chat 场景
   │
   └─ 两个场景都禁用？
-      └─ 回退到旧版 trigger_mode（at / prefix / all）
+      └─ 回退到旧版 trigger_mode（at / prefix / without_prefix / all）
 ```
 
 ### 场景 vs 旧版触发
 
-旧版 `trigger_mode`（at/prefix/all）是一个简单的闸门：它决定是接受还是忽略消息。如果接受，只有一个 LLM 流水线。
+旧版 `trigger_mode`（at/prefix/without_prefix/all）是一个简单的闸门：它决定是接受还是忽略消息。如果接受，只有一个 LLM 流水线。
 
 场景更进一步：它们为每个场景分配不同的 LLM profile、session 作用域、话题行为和 SOUL.md 处理方式。新部署应始终使用场景。
 

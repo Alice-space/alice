@@ -202,6 +202,14 @@ func (p *Processor) runLLM(
 				"%s tool_use event_id=%s detail=%q",
 				provider, options.EventID, clipText(event.Detail, 500),
 			)
+		case "question":
+			logging.Debugf(
+				"%s question event_id=%s detail=%q",
+				provider, options.EventID, clipText(event.Detail, 500),
+			)
+			if observer != nil {
+				observer.RecordQuestion(event.Detail)
+			}
 		}
 	}
 	result, err := snapshot.llm.Run(ctx, llm.RunRequest{

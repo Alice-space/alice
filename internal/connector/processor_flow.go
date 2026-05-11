@@ -77,12 +77,13 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		if normalized == lastSentAgentMessage {
 			return
 		}
-		messageID, sendErr := p.replies.reply(ctx, job, job.SourceMessageID, normalized)
+		messageID, threadID, sendErr := p.replies.replyWithThread(ctx, job, job.SourceMessageID, normalized)
 		if sendErr != nil {
 			logging.Errorf("send agent message failed event_id=%s: %v", job.EventID, sendErr)
 			return
 		}
 		p.rememberReplySessionMessage(job, messageID)
+		p.rememberReplyThread(job, threadID)
 		lastSentAgentReplyMessageID = messageID
 		lastSentAgentMessage = normalized
 	}
@@ -174,11 +175,12 @@ func (p *Processor) processReplyMessage(ctx context.Context, job Job) JobProcess
 		if strings.TrimSpace(finalReply) == lastSentAgentMessage {
 			finalMessageID = lastSentAgentReplyMessageID
 		} else {
-			messageID, replyErr := p.replies.reply(ctx, job, job.SourceMessageID, finalReply)
+			messageID, threadID, replyErr := p.replies.replyWithThread(ctx, job, job.SourceMessageID, finalReply)
 			if replyErr != nil {
 				logging.Errorf("send final reply failed event_id=%s: %v", job.EventID, replyErr)
 			} else {
 				p.rememberReplySessionMessage(job, messageID)
+				p.rememberReplyThread(job, threadID)
 				finalMessageID = messageID
 			}
 		}
@@ -244,12 +246,13 @@ func (p *Processor) sendImmediateFeedback(ctx context.Context, job Job) bool {
 		}
 	}
 
-	messageID, err := p.replies.reply(ctx, job, job.SourceMessageID, immediateFeedbackReplyText)
+	messageID, threadID, err := p.replies.replyWithThread(ctx, job, job.SourceMessageID, immediateFeedbackReplyText)
 	if err != nil {
 		logging.Warnf("send ack reply failed event_id=%s: %v", job.EventID, err)
 		return false
 	}
 	p.rememberReplySessionMessage(job, messageID)
+	p.rememberReplyThread(job, threadID)
 	return true
 }
 
@@ -266,6 +269,28 @@ func (p *Processor) rememberReplySessionMessage(job Job, messageID string) {
 		return
 	}
 	p.bindReplyMessage(sessionKey, messageID)
+}
+
+// rememberReplyThread registers the Feishu thread_id captured from a bot
+// reply against the job's work session, so subsequent /status, /goal, etc.
+// in the same thread can resolve the work session via the thread_id key
+// even when the incoming message lacks a matching root_id/parent_id.
+func (p *Processor) rememberReplyThread(job Job, threadID string) {
+	if p == nil {
+		return
+	}
+	threadID = strings.TrimSpace(threadID)
+	if threadID == "" {
+		return
+	}
+	if strings.TrimSpace(job.Scene) != jobSceneWork {
+		return
+	}
+	sessionKey := sessionKeyForJob(job)
+	if sessionKey == "" {
+		return
+	}
+	p.setWorkThreadID(sessionKey, threadID)
 }
 
 func (p *Processor) markFinalReplyDone(ctx context.Context, job Job, messageID string) {

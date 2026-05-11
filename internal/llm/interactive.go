@@ -42,7 +42,27 @@ const (
 	TurnEventCompleted     TurnEventKind = "turn_completed"
 	TurnEventInterrupted   TurnEventKind = "turn_interrupted"
 	TurnEventError         TurnEventKind = "error"
+
+	TurnEventQuestion TurnEventKind = "question"
 )
+
+type QuestionInfo struct {
+	Question string           `json:"question"`
+	Header   string           `json:"header"`
+	Options  []QuestionOption `json:"options"`
+	Multiple bool             `json:"multiple"`
+	Custom   bool             `json:"custom"`
+}
+
+type QuestionOption struct {
+	Label       string `json:"label"`
+	Description string `json:"description"`
+}
+
+type TurnQuestion struct {
+	RequestID string         `json:"requestID"`
+	Questions []QuestionInfo `json:"questions"`
+}
 
 // TurnEvent is the provider-neutral event stream used by interactive sessions.
 type TurnEvent struct {
@@ -54,6 +74,7 @@ type TurnEvent struct {
 	Usage    Usage
 	Err      error
 	Raw      string
+	Question *TurnQuestion
 }
 
 // TurnRef identifies an in-flight provider turn.

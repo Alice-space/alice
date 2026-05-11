@@ -131,6 +131,36 @@ func TestShouldProcessIncomingMessage_BuiltinCommandBypassesGroupTrigger(t *test
 	}
 }
 
+func TestShouldProcessIncomingMessage_GroupWithoutPrefixModeRejectsPrefix(t *testing.T) {
+	withPrefix := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				ChatType:    strPtr("group"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"!silent 不要回我"}`),
+				ChatId:      strPtr("oc_chat"),
+			},
+		},
+	}
+	withoutPrefix := &larkim.P2MessageReceiveV1{
+		Event: &larkim.P2MessageReceiveV1Data{
+			Message: &larkim.EventMessage{
+				ChatType:    strPtr("group"),
+				MessageType: strPtr("text"),
+				Content:     strPtr(`{"text":"帮我总结一下"}`),
+				ChatId:      strPtr("oc_chat"),
+			},
+		},
+	}
+
+	if shouldProcessIncomingMessage(withPrefix, "without_prefix", "!silent", "", "") {
+		t.Fatal("group message starting with prefix should be ignored in without_prefix mode")
+	}
+	if !shouldProcessIncomingMessage(withoutPrefix, "without_prefix", "!silent", "", "") {
+		t.Fatal("group message without the prefix should be processed in without_prefix mode")
+	}
+}
+
 func TestShouldProcessIncomingMessage_GroupAllModeAcceptsEverything(t *testing.T) {
 	cases := []struct {
 		name    string
