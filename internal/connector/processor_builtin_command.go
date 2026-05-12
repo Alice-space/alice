@@ -268,16 +268,18 @@ func forceDirectReplyJob(job Job) Job {
 }
 
 func (p *Processor) processClearCommand(ctx context.Context, job Job) JobProcessState {
-	reply := "当前只支持在群聊的 `chat` 模式下使用 `/clear`。"
 	helpCfg := p.runtimeSnapshot().helpConfig
+	var reply string
 	switch {
-	case !isGroupChatType(job.ChatType):
-		reply = "当前不是群聊会话，`/clear` 仅用于群聊 `chat` 模式。"
-	case !helpCfg.chatEnabled:
+	case isGroupChatType(job.ChatType) && !helpCfg.chatEnabled:
 		reply = "当前群未启用 `chat` 模式，`/clear` 不会切换上下文。"
 	default:
 		_, _ = p.resetChatSceneSession(job.ReceiveIDType, job.ReceiveID)
-		reply = "当前群聊的 `chat` 上下文已经清空。后续普通消息会进入新的 Codex session。"
+		if isGroupChatType(job.ChatType) {
+			reply = "当前群聊的 `chat` 上下文已经清空。后续普通消息会进入新的后端 session。"
+		} else {
+			reply = "当前会话的上下文已经清空。下一条消息会进入新的后端 session。"
+		}
 	}
 
 	replyJob := job
