@@ -1,7 +1,6 @@
 package llm
 
 import (
-	"fmt"
 	"strings"
 	"time"
 )
@@ -81,30 +80,6 @@ type OpenCodeConfig struct {
 	ServerURL string
 	// ProfileOverrides maps profile name → per-profile runner overrides.
 	ProfileOverrides map[string]ProfileRunnerConfig
-}
-
-type providerBundle struct {
-	backend Backend
-}
-
-func (p providerBundle) Backend() Backend {
-	return p.backend
-}
-
-// NewProvider constructs a Provider for the backend specified by cfg.Provider.
-// For streaming providers, use NewInteractiveProviderSession or buildLLMBackend.
-func NewProvider(cfg FactoryConfig) (Provider, error) {
-	return nil, fmt.Errorf("all llm providers now require streaming backend (use NewInteractiveProviderSession or buildLLMBackend)")
-}
-
-// NewBackend is a convenience wrapper around NewProvider that returns the
-// Backend directly.
-func NewBackend(cfg FactoryConfig) (Backend, error) {
-	provider, err := NewProvider(cfg)
-	if err != nil {
-		return nil, err
-	}
-	return provider.Backend(), nil
 }
 
 func normalizeProvider(provider string) string {

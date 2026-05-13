@@ -116,8 +116,3 @@ type RunResult struct {
 type Backend interface {
 	Run(ctx context.Context, req RunRequest) (RunResult, error)
 }
-
-// Provider wraps a Backend and is returned by NewProvider.
-type Provider interface {
-	Backend() Backend
-}
