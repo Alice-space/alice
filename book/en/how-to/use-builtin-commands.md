@@ -23,13 +23,19 @@ Shows a status card with:
 
 ## `/clear`
 
-Resets the current `chat` scene session. The next message starts a fresh conversation with no prior context.
+Clears the backend session binding for the current conversation. The next message starts a fresh conversation on a new backend session with no prior context.
 
 ```
 /clear
 ```
 
-> Only affects `chat` scenes. `work` scenes are thread-scoped and reset naturally when the thread ends.
+When to use:
+
+- **Direct messages**: clears the DM's backend session binding.
+- **Group chats with `chat` scene enabled**: clears the chat-scene backend session binding for the group.
+- After switching providers (for example, migrating from codex to opencode): the old backend session id cannot be resumed by the new provider — `/clear` unbinds it so the next message starts a fresh session.
+
+> Does not affect `work` scene threads. Each `work` thread has its own session; to rebind one, use `/session <backend-session-id>` inside that thread.
 
 ## `/stop`
 
