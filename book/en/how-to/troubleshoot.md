@@ -54,11 +54,11 @@ permissions:
 **Check API connectivity:**
 ```bash
 # From the machine running Alice
-curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:7331/healthz
+curl -s --unix-socket ~/.alice/runtime.sock -H "Authorization: Bearer <token>" http://unix/healthz
 # Should return {"status":"ok"}
 ```
 
-The runtime HTTP API binds to the address in `runtime_http_addr` (default `127.0.0.1:7331`). Multi-bot setups auto-increment the port.
+The runtime API listens on a Unix domain socket. The socket path defaults to `$ALICE_HOME/runtime.sock`.
 
 ## Configuration changes don't apply
 

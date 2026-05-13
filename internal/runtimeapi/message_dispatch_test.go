@@ -2,7 +2,6 @@ package runtimeapi
 
 import (
 	"context"
-	"net/http/httptest"
 	"path/filepath"
 	"testing"
 
@@ -83,10 +82,11 @@ func (s *runtimeMessageSenderStub) ReplyFileDirect(context.Context, string, stri
 
 func TestRuntimeAPI_SendImagePathDoesNotRequireResourceRoot(t *testing.T) {
 	sender := &runtimeMessageSenderStub{}
-	server := NewServer("", "test-token", sender, nil, config.Config{})
-	httpServer := httptest.NewServer(server.engine)
-	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "test-token")
+	socketPath := filepath.Join(shortSocketDir(t), "s")
+	server := NewServer(socketPath, "test-token", sender, nil, config.Config{})
+	cancel := startServer(t, server, socketPath)
+	defer cancel()
+	client := newTestClient(t, socketPath, "test-token")
 	path := filepath.Join(t.TempDir(), "image.png")
 
 	result, err := client.SendImage(t.Context(), sessionctx.SessionContext{
@@ -110,10 +110,11 @@ func TestRuntimeAPI_SendImagePathDoesNotRequireResourceRoot(t *testing.T) {
 
 func TestRuntimeAPI_SendFilePathDoesNotRequireResourceRoot(t *testing.T) {
 	sender := &runtimeMessageSenderStub{}
-	server := NewServer("", "test-token", sender, nil, config.Config{})
-	httpServer := httptest.NewServer(server.engine)
-	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "test-token")
+	socketPath := filepath.Join(shortSocketDir(t), "s")
+	server := NewServer(socketPath, "test-token", sender, nil, config.Config{})
+	cancel := startServer(t, server, socketPath)
+	defer cancel()
+	client := newTestClient(t, socketPath, "test-token")
 	path := filepath.Join(t.TempDir(), "report.pdf")
 
 	result, err := client.SendFile(t.Context(), sessionctx.SessionContext{

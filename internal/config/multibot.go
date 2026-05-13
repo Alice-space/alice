@@ -59,13 +59,13 @@ func finalizeConfig(cfg Config, requireCredentials bool) (Config, error) {
 		cfg.ImmediateFeedbackReaction = DefaultImmediateFeedbackReaction
 	}
 	cfg.CodexEnv = applyDefaultCodexEnv(cfg.CodexEnv)
-	if cfg.RuntimeHTTPAddr == "" {
-		cfg.RuntimeHTTPAddr = DefaultRuntimeHTTPAddr
-	}
 	if cfg.AliceHome == "" {
 		cfg.AliceHome = AliceHomeDir()
 	} else {
 		cfg.AliceHome = ResolveAliceHomeDir(cfg.AliceHome)
+	}
+	if cfg.RuntimeSocket == "" {
+		cfg.RuntimeSocket = filepath.Join(cfg.AliceHome, DefaultRuntimeSocket)
 	}
 	if cfg.WorkspaceDir == "" {
 		cfg.WorkspaceDir = WorkspaceDirForAliceHome(cfg.AliceHome)

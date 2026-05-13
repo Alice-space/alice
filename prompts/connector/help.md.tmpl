@@ -6,7 +6,7 @@
 - `/status`
    显示当前会话下 token 统计、活跃自动化任务、当前目标状态，以及 backend/session/cwd。
 - `/clear`
-  仅在群聊 `chat` 模式下可用；切换到新的群聊会话，相当于清空当前上下文。
+  清空当前会话的后端 session 绑定；私聊和群聊 `chat` 模式均可使用。下一条消息会开新的后端 session。
 - `/stop`
   停止当前 session 正在运行的回复，但保留现有 session；后续新指令会在当前 session 上继续。
 - `/session <backend-session-id> [instruction]`

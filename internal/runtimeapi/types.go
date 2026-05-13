@@ -53,13 +53,13 @@ type CreateGoalRequest struct {
 	DeadlineIn string `json:"deadline_in,omitempty"`
 }
 
-func BaseURL(addr string) string {
-	addr = strings.TrimSpace(addr)
-	if addr == "" {
+func BaseURL(socketPath string) string {
+	socketPath = strings.TrimSpace(socketPath)
+	if socketPath == "" {
 		return ""
 	}
-	if strings.Contains(addr, "://") {
-		return addr
+	if strings.Contains(socketPath, "://") {
+		return socketPath
 	}
-	return "http://" + addr
+	return "unix://" + socketPath
 }

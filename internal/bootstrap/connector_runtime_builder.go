@@ -94,7 +94,7 @@ func (b *connectorRuntimeBuilder) Build() (*ConnectorRuntime, error) {
 		Processor:           b.processor,
 		AutomationEngine:    b.automationEngine,
 		RuntimeAPI:          b.apiServer,
-		RuntimeAPIBaseURL:   runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
+		RuntimeAPISocket:    runtimeapi.BaseURL(b.cfg.RuntimeSocket),
 		RuntimeAPIToken:     b.apiToken,
 		AutomationStatePath: b.paths.automationStatePath,
 		SessionStatePath:    b.paths.sessionStatePath,
@@ -148,7 +148,7 @@ func (b *connectorRuntimeBuilder) buildProcessor() error {
 	workDisable := b.cfg.GroupScenes.Work.DisableIdentityHints != nil && *b.cfg.GroupScenes.Work.DisableIdentityHints
 	processor.SetSceneIdentityHints(chatDisable, workDisable)
 	processor.SetRuntimeAPI(
-		runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
+		runtimeapi.BaseURL(b.cfg.RuntimeSocket),
 		b.resolveRuntimeAPIToken(),
 		ResolveRuntimeBinary(b.cfg.WorkspaceDir),
 	)
@@ -184,7 +184,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 	automationEngine.SetUserTaskTimeout(b.cfg.AutomationTaskTimeout)
 	automationEngine.SetLLMRunner(b.backend)
 	automationEngine.SetRunEnv(map[string]string{
-		runtimeapi.EnvBaseURL: runtimeapi.BaseURL(b.cfg.RuntimeHTTPAddr),
+		runtimeapi.EnvBaseURL: runtimeapi.BaseURL(b.cfg.RuntimeSocket),
 		runtimeapi.EnvToken:   b.resolveRuntimeAPIToken(),
 		runtimeapi.EnvBin:     ResolveRuntimeBinary(b.cfg.WorkspaceDir),
 	})
@@ -219,7 +219,7 @@ func (b *connectorRuntimeBuilder) buildAutomationEngine() error {
 
 func (b *connectorRuntimeBuilder) buildRuntimeAPI() {
 	b.apiServer = runtimeapi.NewServer(
-		b.cfg.RuntimeHTTPAddr,
+		b.cfg.RuntimeSocket,
 		b.resolveRuntimeAPIToken(),
 		b.sender,
 		b.automationStore,

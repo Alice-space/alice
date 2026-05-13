@@ -430,7 +430,7 @@ func runConnector(configPath, pidFilePath string, pidFileExplicit bool, runtimeO
 		}
 		logging.Infof("automation engine enabled bot=%s state_file=%s", built.Config.BotID, built.AutomationStatePath)
 		if built.RuntimeAPI != nil {
-			logging.Infof("runtime http api enabled bot=%s addr=%s", built.Config.BotID, built.RuntimeAPIBaseURL)
+			logging.Infof("runtime api enabled bot=%s socket=%s", built.Config.BotID, built.RuntimeAPISocket)
 		}
 	}
 	if runtimeOnly {

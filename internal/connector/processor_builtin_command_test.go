@@ -140,7 +140,7 @@ func TestProcessor_ClearCommand_RotatesGroupChatSceneSession(t *testing.T) {
 	if !strings.Contains(sender.replyMarkdownTexts[0], "已经清空") {
 		t.Fatalf("unexpected clear reply: %q", sender.replyMarkdownTexts[0])
 	}
-	if !strings.Contains(sender.replyMarkdownTexts[0], "新的 Codex session") {
+	if !strings.Contains(sender.replyMarkdownTexts[0], "新的后端 session") {
 		t.Fatalf("unexpected clear reply: %q", sender.replyMarkdownTexts[0])
 	}
 
@@ -150,6 +150,43 @@ func TestProcessor_ClearCommand_RotatesGroupChatSceneSession(t *testing.T) {
 	}
 	if threadID := processor.getThreadID(baseSessionKey); threadID != "" {
 		t.Fatalf("expected cleared session to start without thread id, got %q", threadID)
+	}
+}
+
+func TestProcessor_ClearCommand_ResetsPrivateChatSession(t *testing.T) {
+	llmStub := &llmCallCountingStub{}
+	sender := &senderStub{}
+	processor := NewProcessor(llmStub, sender, "failed", "thinking")
+	processor.SetBuiltinHelpConfig(configForGroupScenesTest())
+
+	baseSessionKey := restoreChatSceneKey("chat_id", "oc_dm")
+	processor.setThreadID(baseSessionKey, "thread_old")
+
+	state := processor.ProcessJobState(context.Background(), Job{
+		ReceiveID:       "oc_dm",
+		ReceiveIDType:   "chat_id",
+		ChatType:        "p2p",
+		SourceMessageID: "om_clear_dm",
+		SessionKey:      "chat_id:oc_dm|message:om_clear_dm",
+		Text:            "/clear",
+	})
+	if state != JobProcessCompleted {
+		t.Fatalf("expected completed state, got %s", state)
+	}
+	if llmStub.calls != 0 {
+		t.Fatalf("expected clear command to bypass llm, got %d llm calls", llmStub.calls)
+	}
+	if sender.replyRichMarkdownCalls != 1 || sender.replyRichMarkdownDirectCalls != 1 {
+		t.Fatalf("expected one direct rich markdown reply, got rich=%d direct=%d", sender.replyRichMarkdownCalls, sender.replyRichMarkdownDirectCalls)
+	}
+	if !strings.Contains(sender.replyMarkdownTexts[0], "已经清空") {
+		t.Fatalf("unexpected clear reply: %q", sender.replyMarkdownTexts[0])
+	}
+	if !strings.Contains(sender.replyMarkdownTexts[0], "新的后端 session") {
+		t.Fatalf("unexpected clear reply: %q", sender.replyMarkdownTexts[0])
+	}
+	if threadID := processor.getThreadID(baseSessionKey); threadID != "" {
+		t.Fatalf("expected cleared private chat session to start without thread id, got %q", threadID)
 	}
 }
 

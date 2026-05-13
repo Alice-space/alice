@@ -41,11 +41,11 @@ func withRuntimeClient(
 }
 
 func loadRuntimeClient() (*runtimeapi.Client, sessionctx.SessionContext, error) {
-	baseURL := strings.TrimSpace(os.Getenv(runtimeapi.EnvBaseURL))
-	if baseURL == "" {
+	addr := strings.TrimSpace(os.Getenv(runtimeapi.EnvBaseURL))
+	if addr == "" {
 		return nil, sessionctx.SessionContext{}, fmt.Errorf("missing %s", runtimeapi.EnvBaseURL)
 	}
-	client := runtimeapi.NewClient(baseURL, os.Getenv(runtimeapi.EnvToken))
+	client := runtimeapi.NewClient(addr, os.Getenv(runtimeapi.EnvToken))
 	if client == nil || !client.IsEnabled() {
 		return nil, sessionctx.SessionContext{}, fmt.Errorf("runtime api client is unavailable")
 	}

@@ -23,7 +23,7 @@ type ConnectorRuntime struct {
 	Processor           *connector.Processor
 	AutomationEngine    *automation.Engine
 	RuntimeAPI          *runtimeapi.Server
-	RuntimeAPIBaseURL   string
+	RuntimeAPISocket    string
 	RuntimeAPIToken     string
 	AutomationStatePath string
 	SessionStatePath    string

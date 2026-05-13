@@ -54,11 +54,11 @@ permissions:
 **检查 API 连通性：**
 ```bash
 # 在运行 Alice 的机器上执行
-curl -s -H "Authorization: Bearer <token>" http://127.0.0.1:7331/healthz
+curl -s --unix-socket ~/.alice/runtime.sock -H "Authorization: Bearer <token>" http://unix/healthz
 # 应返回 {"status":"ok"}
 ```
 
-Runtime HTTP API 绑定在 `runtime_http_addr` 指定的地址（默认 `127.0.0.1:7331`）。多 bot 设置会自动递增端口。
+Runtime API 监听在 Unix 域套接字上，默认路径为 `$ALICE_HOME/runtime.sock`。
 
 ## 配置更改不生效
 

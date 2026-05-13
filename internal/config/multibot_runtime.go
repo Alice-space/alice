@@ -3,7 +3,6 @@ package config
 import (
 	"errors"
 	"fmt"
-	"net"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -28,9 +27,6 @@ func (cfg Config) RuntimeConfigs() ([]Config, error) {
 			return nil, err
 		}
 		runtimes = append(runtimes, runtime)
-	}
-	if err := validateUniqueRuntimeHTTPAddrs(runtimes); err != nil {
-		return nil, err
 	}
 	return runtimes, nil
 }
@@ -69,17 +65,17 @@ func orderBotIDs(bots map[string]BotConfig) []string {
 
 func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int) (Config, error) {
 	runtime := Config{
-		BotID:           strings.TrimSpace(botID),
-		LogLevel:        cfg.LogLevel,
-		LogFile:         cfg.LogFile,
-		LogMaxSizeMB:    cfg.LogMaxSizeMB,
-		LogMaxBackups:   cfg.LogMaxBackups,
-		LogMaxAgeDays:   cfg.LogMaxAgeDays,
-		LogCompress:     cfg.LogCompress,
-		CodexEnv:        map[string]string{},
-		LLMProfiles:     map[string]LLMProfileConfig{},
-		Permissions:     normalizeBotPermissions(BotPermissionsConfig{}),
-		RuntimeHTTPAddr: "",
+		BotID:         strings.TrimSpace(botID),
+		LogLevel:      cfg.LogLevel,
+		LogFile:       cfg.LogFile,
+		LogMaxSizeMB:  cfg.LogMaxSizeMB,
+		LogMaxBackups: cfg.LogMaxBackups,
+		LogMaxAgeDays: cfg.LogMaxAgeDays,
+		LogCompress:   cfg.LogCompress,
+		CodexEnv:      map[string]string{},
+		LLMProfiles:   map[string]LLMProfileConfig{},
+		Permissions:   normalizeBotPermissions(BotPermissionsConfig{}),
+		RuntimeSocket: "",
 	}
 	var err error
 	if bot.Name != "" {
@@ -102,14 +98,11 @@ func (cfg Config) deriveBotRuntimeConfig(botID string, bot BotConfig, index int)
 	if bot.PrivateScenes != nil {
 		runtime.PrivateScenes = *bot.PrivateScenes
 	}
-	runtime.RuntimeHTTPAddr, err = deriveBotRuntimeHTTPAddr(bot, index)
-	if err != nil {
-		return Config{}, fmt.Errorf("bots.%s: derive runtime_http_addr failed: %w", runtime.BotID, err)
-	}
 	runtime.RuntimeHTTPToken = bot.RuntimeHTTPToken
 	runtime.FailureMessage = bot.FailureMessage
 	runtime.ThinkingMessage = bot.ThinkingMessage
 	runtime.AliceHome = deriveBotAliceHome(bot, runtime.BotID)
+	runtime.RuntimeSocket = deriveBotRuntimeSocket(bot, runtime.AliceHome)
 	runtime.WorkspaceDir = deriveBotWorkspaceDir(bot, runtime.AliceHome)
 	runtime.PromptDir = deriveBotPromptDir(bot, runtime.AliceHome)
 	runtime.CodexHome = deriveBotCodexHome(bot, runtime.AliceHome)
@@ -173,38 +166,11 @@ func deriveBotSoulPath(bot BotConfig, aliceHome string) string {
 	return SoulPathForAliceHome(aliceHome)
 }
 
-func deriveBotRuntimeHTTPAddr(bot BotConfig, index int) (string, error) {
-	if bot.RuntimeHTTPAddr != "" {
-		return strings.TrimSpace(bot.RuntimeHTTPAddr), nil
+func deriveBotRuntimeSocket(bot BotConfig, aliceHome string) string {
+	if bot.RuntimeSocket != "" {
+		return strings.TrimSpace(bot.RuntimeSocket)
 	}
-	return incrementHostPort(DefaultRuntimeHTTPAddr, index)
-}
-
-func incrementHostPort(addr string, delta int) (string, error) {
-	host, portStr, err := net.SplitHostPort(strings.TrimSpace(addr))
-	if err != nil {
-		return "", err
-	}
-	basePort := 0
-	if _, err := fmt.Sscanf(portStr, "%d", &basePort); err != nil {
-		return "", err
-	}
-	return net.JoinHostPort(host, fmt.Sprintf("%d", basePort+delta)), nil
-}
-
-func validateUniqueRuntimeHTTPAddrs(runtimes []Config) error {
-	seen := make(map[string]string, len(runtimes))
-	for _, runtime := range runtimes {
-		addr := strings.TrimSpace(runtime.RuntimeHTTPAddr)
-		if addr == "" {
-			continue
-		}
-		if existing, ok := seen[addr]; ok {
-			return fmt.Errorf("runtime_http_addr %q is duplicated between bots %q and %q", addr, existing, runtime.BotID)
-		}
-		seen[addr] = runtime.BotID
-	}
-	return nil
+	return filepath.Join(aliceHome, DefaultRuntimeSocket)
 }
 
 func mergeLLMProfiles(base, override map[string]LLMProfileConfig) map[string]LLMProfileConfig {

@@ -1,7 +1,7 @@
 package runtimeapi
 
 import (
-	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -334,11 +334,13 @@ func TestApplyTaskPatch_CanChangeStatus(t *testing.T) {
 }
 
 func TestAutomationTaskGet_EnforcesScopeIsolation(t *testing.T) {
-	store := automation.NewStore(t.TempDir() + "/automation.db")
-	server := NewServer("", "test-token", nil, store, config.Config{})
-	httpServer := httptest.NewServer(server.engine)
-	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "test-token")
+	socketDir := shortSocketDir(t)
+	socketPath := filepath.Join(socketDir, "s")
+	store := automation.NewStore(filepath.Join(socketDir, "automation.db"))
+	server := NewServer(socketPath, "test-token", nil, store, config.Config{})
+	cancel := startServer(t, server, socketPath)
+	defer cancel()
+	client := newTestClient(t, socketPath, "test-token")
 
 	session1 := sessionctx.SessionContext{
 		ReceiveIDType: "chat_id",
@@ -409,11 +411,13 @@ func TestAutomationTaskGet_EnforcesScopeIsolation(t *testing.T) {
 }
 
 func TestGoalCreate_RejectsNonWorkSession(t *testing.T) {
-	store := automation.NewStore(t.TempDir() + "/automation.db")
-	server := NewServer("", "test-token", nil, store, config.Config{})
-	httpServer := httptest.NewServer(server.engine)
-	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "test-token")
+	socketDir := shortSocketDir(t)
+	socketPath := filepath.Join(socketDir, "s")
+	store := automation.NewStore(filepath.Join(socketDir, "automation.db"))
+	server := NewServer(socketPath, "test-token", nil, store, config.Config{})
+	cancel := startServer(t, server, socketPath)
+	defer cancel()
+	client := newTestClient(t, socketPath, "test-token")
 
 	_, err := client.CreateGoal(t.Context(), sessionctx.SessionContext{
 		ReceiveIDType: "chat_id",

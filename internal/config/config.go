@@ -42,8 +42,8 @@ const DefaultImmediateFeedbackMode = ImmediateFeedbackModeReaction
 // DefaultImmediateFeedbackReaction is the default reaction emoji for immediate feedback.
 const DefaultImmediateFeedbackReaction = "OK"
 
-// DefaultRuntimeHTTPAddr is the default runtime HTTP listen address.
-const DefaultRuntimeHTTPAddr = "127.0.0.1:7331"
+// DefaultRuntimeSocket is the default runtime API Unix socket filename, resolved relative to AliceHome.
+const DefaultRuntimeSocket = "runtime.sock"
 
 // DefaultWorkerConcurrency is the default worker pool size.
 const DefaultWorkerConcurrency = 3
@@ -143,7 +143,7 @@ type BotConfig struct {
 	LLMProfiles                      map[string]LLMProfileConfig `mapstructure:"llm_profiles"`
 	GroupScenes                      *GroupScenesConfig          `mapstructure:"group_scenes"`
 	PrivateScenes                    *GroupScenesConfig          `mapstructure:"private_scenes"`
-	RuntimeHTTPAddr                  string                      `mapstructure:"runtime_http_addr"`
+	RuntimeSocket                    string                      `mapstructure:"runtime_socket"`
 	RuntimeHTTPToken                 string                      `mapstructure:"runtime_http_token"`
 	FailureMessage                   string                      `mapstructure:"failure_message"`
 	ThinkingMessage                  string                      `mapstructure:"thinking_message"`
@@ -188,7 +188,7 @@ type Config struct {
 	CodexEnv  map[string]string `mapstructure:"env"`
 	CodexHome string            `mapstructure:"codex_home"`
 
-	RuntimeHTTPAddr  string `mapstructure:"runtime_http_addr"`
+	RuntimeSocket    string `mapstructure:"runtime_socket"`
 	RuntimeHTTPToken string `mapstructure:"runtime_http_token"`
 	FailureMessage   string `mapstructure:"failure_message"`
 	ThinkingMessage  string `mapstructure:"thinking_message"`
