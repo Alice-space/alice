@@ -3,6 +3,7 @@ package runtimeapi
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
 	"strings"
 
@@ -15,14 +16,25 @@ type Client struct {
 	http *resty.Client
 }
 
-func NewClient(baseURL, token string) *Client {
-	baseURL = strings.TrimRight(strings.TrimSpace(baseURL), "/")
-	if baseURL == "" {
+func NewClient(socketPath, token string) *Client {
+	socketPath = strings.TrimSpace(socketPath)
+	if socketPath == "" {
 		return nil
 	}
+	// Strip unix:// prefix if present.
+	socketPath = strings.TrimPrefix(socketPath, "unix://")
+
+	transport := &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socketPath)
+		},
+	}
 	httpClient := resty.New().
-		SetBaseURL(baseURL).
+		SetTransport(transport).
+		SetBaseURL("http://unix"). // placeholder host; DialContext overrides it
 		SetHeader("Accept", "application/json")
+
 	if token = strings.TrimSpace(token); token != "" {
 		httpClient.SetAuthToken(token)
 	}

@@ -273,7 +273,7 @@ Important keys:
 - `group_scenes.chat`, `group_scenes.work`
 - `private_scenes.chat`, `private_scenes.work`
 - `permissions`
-- `runtime_http_addr`
+- `runtime_socket`
 - `workspace_dir`, `prompt_dir`, `codex_home`
 
 Behavior worth calling out:

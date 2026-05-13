@@ -13,7 +13,7 @@ func TestDiffRestartRequiredFields(t *testing.T) {
 		FeishuAppID:                   "cli_a",
 		FeishuAppSecret:               "sec_a",
 		FeishuBaseURL:                 "https://open.feishu.cn",
-		RuntimeHTTPAddr:               "127.0.0.1:7331",
+		RuntimeSocket:                 "/tmp/alice-test.sock",
 		RuntimeHTTPToken:              "token_a",
 		WorkspaceDir:                  "/workspace/a",
 		PromptDir:                     "prompts",
@@ -25,7 +25,7 @@ func TestDiffRestartRequiredFields(t *testing.T) {
 	next := current
 	next.TriggerMode = "prefix"
 	next.TriggerPrefix = "!alice"
-	next.RuntimeHTTPAddr = "127.0.0.1:7332"
+	next.RuntimeSocket = "/tmp/alice-test-2.sock"
 	next.QueueCapacity = 512
 	next.WorkerConcurrency = 3
 	next.AuthStatusTimeoutSecs = 20
@@ -36,7 +36,7 @@ func TestDiffRestartRequiredFields(t *testing.T) {
 		"auth_status_timeout_secs",
 		"queue_capacity",
 		"runtime_api_shutdown_timeout_secs",
-		"runtime_http_addr",
+		"runtime_socket",
 		"worker_concurrency",
 	}
 	if !reflect.DeepEqual(got, want) {

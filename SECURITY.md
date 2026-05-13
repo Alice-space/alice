@@ -22,5 +22,5 @@ Security concerns include but are not limited to:
 
 - Never commit `config.yaml` containing real credentials
 - Use `log_level: debug` only temporarily for troubleshooting — debug logs may contain rendered prompts
-- Keep `runtime_http_addr` bound to `127.0.0.1` unless you know what you're doing
+- The runtime API listens on a Unix domain socket by default — no network exposure
 - Rotate your `runtime_http_token` periodically if exposed

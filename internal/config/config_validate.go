@@ -40,7 +40,7 @@ func validatePureMultiBotRootConfig(v *viper.Viper) error {
 		"kimi_command",
 		"kimi_timeout_secs",
 		"kimi_prompt_prefix",
-		"runtime_http_addr",
+		"runtime_socket",
 		"runtime_http_token",
 		"failure_message",
 		"thinking_message",

@@ -1,7 +1,7 @@
 package runtimeapi
 
 import (
-	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -12,14 +12,15 @@ import (
 
 func TestRuntimeAPI_MessagePermissionDenied(t *testing.T) {
 	enabled := false
-	server := NewServer("", "test-token", nil, nil, config.Config{
+	socketPath := filepath.Join(shortSocketDir(t), "s")
+	server := NewServer(socketPath, "test-token", nil, nil, config.Config{
 		Permissions: config.BotPermissionsConfig{
 			RuntimeMessage: &enabled,
 		},
 	})
-	httpServer := httptest.NewServer(server.engine)
-	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "test-token")
+	cancel := startServer(t, server, socketPath)
+	defer cancel()
+	client := newTestClient(t, socketPath, "test-token")
 
 	_, err := client.SendImage(t.Context(), sessionctx.SessionContext{
 		ReceiveIDType: "chat_id",
@@ -33,14 +34,16 @@ func TestRuntimeAPI_MessagePermissionDenied(t *testing.T) {
 
 func TestRuntimeAPI_AutomationPermissionDenied(t *testing.T) {
 	enabled := false
-	server := NewServer("", "test-token", nil, automation.NewStore(t.TempDir()+"/automation.db"), config.Config{
+	socketDir := shortSocketDir(t)
+	socketPath := filepath.Join(socketDir, "s")
+	server := NewServer(socketPath, "test-token", nil, automation.NewStore(filepath.Join(socketDir, "automation.db")), config.Config{
 		Permissions: config.BotPermissionsConfig{
 			RuntimeAutomation: &enabled,
 		},
 	})
-	httpServer := httptest.NewServer(server.engine)
-	defer httpServer.Close()
-	client := NewClient(httpServer.URL, "test-token")
+	cancel := startServer(t, server, socketPath)
+	defer cancel()
+	client := newTestClient(t, socketPath, "test-token")
 
 	_, err := client.CreateTask(t.Context(), sessionctx.SessionContext{
 		ReceiveIDType: "chat_id",

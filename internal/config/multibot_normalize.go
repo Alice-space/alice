@@ -29,7 +29,7 @@ func normalizeBots(in map[string]BotConfig) map[string]BotConfig {
 			normalized := normalizePrivateScenes(*bot.PrivateScenes)
 			bot.PrivateScenes = &normalized
 		}
-		bot.RuntimeHTTPAddr = strings.TrimSpace(bot.RuntimeHTTPAddr)
+		bot.RuntimeSocket = strings.TrimSpace(bot.RuntimeSocket)
 		bot.RuntimeHTTPToken = strings.TrimSpace(bot.RuntimeHTTPToken)
 		bot.FailureMessage = strings.TrimSpace(bot.FailureMessage)
 		bot.ThinkingMessage = strings.TrimSpace(bot.ThinkingMessage)

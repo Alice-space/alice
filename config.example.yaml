@@ -261,11 +261,13 @@ bots:
         no_reply_token: ""
         create_feishu_thread: true
 
-    # ── Runtime HTTP API ───────────────────────────────────────────────────
-    # Alice exposes a local HTTP API for bundled skills and automation tasks.
-    # Listen address for the runtime HTTP API.
-    # Default: 127.0.0.1:7331. Multi-bot auto-increments the port (7332, 7333, ...).
-    runtime_http_addr: ""
+    # ── Runtime API ────────────────────────────────────────────────────────
+    # Alice exposes a local API over a Unix domain socket for bundled skills
+    # and automation tasks.
+    # Socket path (relative to alice_home, or absolute). Each bot gets its own
+    # socket under its own alice_home, so no port conflicts.
+    # Default: runtime.sock (resolved as $ALICE_HOME/runtime.sock).
+    runtime_socket: ""
     # Bearer token for API authentication. Auto-generated if empty.
     # Set explicitly for cross-process calls or manual debugging.
     # Example: runtime_http_token: "my-static-token"

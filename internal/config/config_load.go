@@ -57,7 +57,7 @@ func setBotDefaults(v *viper.Viper) {
 	}
 }
 
-func setCommonConfigDefaults(v *viper.Viper, prefix string, includeRuntimeHTTPAddr bool) {
+func setCommonConfigDefaults(v *viper.Viper, prefix string, includeRuntimeSocket bool) {
 	if v == nil {
 		return
 	}
@@ -67,8 +67,8 @@ func setCommonConfigDefaults(v *viper.Viper, prefix string, includeRuntimeHTTPAd
 	v.SetDefault(configKey(prefix, "trigger_prefix"), "")
 	v.SetDefault(configKey(prefix, "immediate_feedback_mode"), DefaultImmediateFeedbackMode)
 	v.SetDefault(configKey(prefix, "immediate_feedback_reaction"), DefaultImmediateFeedbackReaction)
-	if includeRuntimeHTTPAddr {
-		v.SetDefault(configKey(prefix, "runtime_http_addr"), DefaultRuntimeHTTPAddr)
+	if includeRuntimeSocket {
+		v.SetDefault(configKey(prefix, "runtime_socket"), DefaultRuntimeSocket)
 	}
 	v.SetDefault(configKey(prefix, "runtime_http_token"), "")
 	v.SetDefault(configKey(prefix, "failure_message"), "暂时不可用，请稍后重试。")

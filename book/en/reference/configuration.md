@@ -512,16 +512,16 @@ Additional session scope: `"per_message"` — each DM with `#work` creates a fre
 
 ---
 
-### Runtime HTTP API
+### Runtime API
 
-#### `runtime_http_addr`
+#### `runtime_socket`
 
 | Field | Value |
 |-------|-------|
 | Type | `string` |
-| Default | `"127.0.0.1:7331"` |
+| Default | `"runtime.sock"` |
 
-Listen address for the runtime HTTP API. Multi-bot setups auto-increment the port (`7332`, `7333`, ...).
+Unix domain socket path for the runtime API, resolved relative to `alice_home`. Each bot has its own socket under its own `alice_home`, so no port conflicts.
 
 #### `runtime_http_token`
 

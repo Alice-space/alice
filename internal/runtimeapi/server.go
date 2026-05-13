@@ -3,7 +3,9 @@ package runtimeapi
 import (
 	"context"
 	"errors"
+	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"sync"
@@ -29,7 +31,7 @@ const runtimeAPIMaxListLimit = 200
 const runtimeAPIAuthRateLimit = 120
 
 type Server struct {
-	addr            string
+	socketPath      string
 	token           string
 	shutdownTimeout time.Duration
 	sender          Sender
@@ -54,7 +56,7 @@ type GoalExecutor interface {
 }
 
 func NewServer(
-	addr, token string,
+	socketPath, token string,
 	sender Sender,
 	automationStore *automation.Store,
 	cfg config.Config,
@@ -65,7 +67,7 @@ func NewServer(
 	engine.Use(gin.Recovery())
 
 	srv := &Server{
-		addr:            strings.TrimSpace(addr),
+		socketPath:      strings.TrimSpace(socketPath),
 		token:           strings.TrimSpace(token),
 		shutdownTimeout: runtimeAPIShutdownTimeout(cfg),
 		sender:          sender,
@@ -111,15 +113,26 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 	go s.authLimiter.RunCleanup(ctx, time.Minute)
 
+	// Remove stale socket file from a previous unclean shutdown.
+	_ = os.Remove(s.socketPath)
+
+	ln, err := net.Listen("unix", s.socketPath)
+	if err != nil {
+		return err
+	}
+	if err := os.Chmod(s.socketPath, 0700); err != nil {
+		ln.Close()
+		return err
+	}
+
 	s.httpSrv = &http.Server{
-		Addr:              s.addr,
 		Handler:           s.engine,
 		ReadHeaderTimeout: 10 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}
 	errCh := make(chan error, 1)
 	go func() {
-		err := s.httpSrv.ListenAndServe()
+		err := s.httpSrv.Serve(ln)
 		if errors.Is(err, http.ErrServerClosed) {
 			err = nil
 		}
@@ -130,7 +143,11 @@ func (s *Server) Run(ctx context.Context) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), s.shutdownTimeout)
 		defer cancel()
-		return s.httpSrv.Shutdown(shutdownCtx)
+		if shutErr := s.httpSrv.Shutdown(shutdownCtx); shutErr != nil {
+			return shutErr
+		}
+		_ = os.Remove(s.socketPath)
+		return nil
 	case err := <-errCh:
 		return err
 	}

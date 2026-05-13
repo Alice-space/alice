@@ -49,8 +49,9 @@ bots:
 	if chat.CodexHome != filepath.Join(base, ".codex") {
 		t.Fatalf("unexpected chat codex_home: %q", chat.CodexHome)
 	}
-	if chat.RuntimeHTTPAddr != "127.0.0.1:7331" {
-		t.Fatalf("unexpected chat runtime_http_addr: %q", chat.RuntimeHTTPAddr)
+	wantChatSocket := filepath.Join(chat.AliceHome, DefaultRuntimeSocket)
+	if chat.RuntimeSocket != wantChatSocket {
+		t.Fatalf("unexpected chat runtime_socket: %q (want %q)", chat.RuntimeSocket, wantChatSocket)
 	}
 
 	work, err := cfg.RuntimeConfigForBot("work")
@@ -63,8 +64,9 @@ bots:
 	if work.CodexHome != filepath.Join(base, ".codex") {
 		t.Fatalf("unexpected work codex_home: %q", work.CodexHome)
 	}
-	if work.RuntimeHTTPAddr != "127.0.0.1:7332" {
-		t.Fatalf("unexpected work runtime_http_addr: %q", work.RuntimeHTTPAddr)
+	wantWorkSocket := filepath.Join(work.AliceHome, DefaultRuntimeSocket)
+	if work.RuntimeSocket != wantWorkSocket {
+		t.Fatalf("unexpected work runtime_socket: %q (want %q)", work.RuntimeSocket, wantWorkSocket)
 	}
 }
 
@@ -81,7 +83,7 @@ bots:
     prompt_dir: "`+filepath.Join(base, "custom-prompts")+`"
     codex_home: "`+filepath.Join(base, "custom-codex")+`"
     soul_path: "souls/chat.md"
-    runtime_http_addr: "127.0.0.1:7441"
+    runtime_socket: "/tmp/test-runtime.sock"
 `)
 	cfg, err := LoadFromFile(cfgPath)
 	if err != nil {
@@ -107,8 +109,8 @@ bots:
 	if runtime.SoulPath != filepath.Join(runtime.AliceHome, "souls/chat.md") {
 		t.Fatalf("unexpected soul_path: %q", runtime.SoulPath)
 	}
-	if runtime.RuntimeHTTPAddr != "127.0.0.1:7441" {
-		t.Fatalf("unexpected runtime_http_addr: %q", runtime.RuntimeHTTPAddr)
+	if runtime.RuntimeSocket != "/tmp/test-runtime.sock" {
+		t.Fatalf("unexpected runtime_socket: %q", runtime.RuntimeSocket)
 	}
 }
 

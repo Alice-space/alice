@@ -15,7 +15,7 @@ func normalizeLoadedConfig(cfg Config, rootEnv map[string]string) Config {
 	cfg.GroupScenes = normalizeGroupScenes(cfg.GroupScenes)
 	cfg.PrivateScenes = normalizePrivateScenes(cfg.PrivateScenes)
 	cfg.CodexEnv = normalizeEnvMap(rootEnv)
-	cfg.RuntimeHTTPAddr = strings.TrimSpace(cfg.RuntimeHTTPAddr)
+	cfg.RuntimeSocket = strings.TrimSpace(cfg.RuntimeSocket)
 	cfg.RuntimeHTTPToken = strings.TrimSpace(cfg.RuntimeHTTPToken)
 	cfg.FailureMessage = strings.TrimSpace(cfg.FailureMessage)
 	cfg.ThinkingMessage = strings.TrimSpace(cfg.ThinkingMessage)

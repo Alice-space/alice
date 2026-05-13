@@ -101,8 +101,8 @@ func diffRestartRequiredFields(current, next config.Config) []string {
 	if current.FeishuBaseURL != next.FeishuBaseURL {
 		changed = append(changed, "feishu_base_url")
 	}
-	if current.RuntimeHTTPAddr != next.RuntimeHTTPAddr {
-		changed = append(changed, "runtime_http_addr")
+	if current.RuntimeSocket != next.RuntimeSocket {
+		changed = append(changed, "runtime_socket")
 	}
 	if current.RuntimeHTTPToken != next.RuntimeHTTPToken {
 		changed = append(changed, "runtime_http_token")
