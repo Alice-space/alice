@@ -117,8 +117,7 @@ func (d *openCodeAppServerDriver) Close() error {
 		d.eventCancel = nil
 		d.mu.Unlock()
 		if cmd != nil && cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			err = cmd.Wait()
+			err = shared.WaitOrKill(cmd)
 		}
 		if cancelEvents != nil {
 			cancelEvents()
@@ -176,15 +175,13 @@ func (d *openCodeAppServerDriver) ensureServer(ctx context.Context, req RunReque
 	select {
 	case serverURL := <-urlCh:
 		if serverURL == "" {
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
+			_ = shared.WaitOrKill(cmd)
 			return fmt.Errorf("opencode serve exited before reporting URL: %s", strings.TrimSpace(d.stderr.String()))
 		}
 		d.mu.Lock()
 		if d.closed {
 			d.mu.Unlock()
-			_ = cmd.Process.Kill()
-			_ = cmd.Wait()
+			_ = shared.WaitOrKill(cmd)
 			return ErrInteractiveClosed
 		}
 		d.cmd = cmd
@@ -193,8 +190,7 @@ func (d *openCodeAppServerDriver) ensureServer(ctx context.Context, req RunReque
 		d.ensureEventStream()
 		return nil
 	case <-ctx.Done():
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = shared.WaitOrKill(cmd)
 		return ctx.Err()
 	}
 }
@@ -698,7 +694,6 @@ func (d *openCodeAppServerDriver) hasOpenCodeAssistantText() bool {
 
 func (d *openCodeAppServerDriver) resetServerForNextRequest() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.baseURL = ""
 	d.sessionID = ""
 	d.activeID = ""
@@ -709,11 +704,13 @@ func (d *openCodeAppServerDriver) resetServerForNextRequest() {
 		d.eventCancel()
 		d.eventCancel = nil
 	}
-	if d.cmd != nil && d.cmd.Process != nil {
-		_ = d.cmd.Process.Kill()
-		_ = d.cmd.Wait()
-	}
+	cmd := d.cmd
 	d.cmd = nil
+	d.mu.Unlock()
+
+	if cmd != nil && cmd.Process != nil {
+		_ = shared.WaitOrKill(cmd)
+	}
 }
 
 func (d *openCodeAppServerDriver) emit(event TurnEvent) {

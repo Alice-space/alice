@@ -106,8 +106,7 @@ func (d *claudeStreamDriver) Close() error {
 			_ = stdin.Close()
 		}
 		if cmd != nil && cmd.Process != nil {
-			_ = cmd.Process.Kill()
-			err = cmd.Wait()
+			err = shared.WaitOrKill(cmd)
 		}
 		close(d.events)
 	})
@@ -159,8 +158,7 @@ func (d *claudeStreamDriver) ensureStarted(ctx context.Context, req RunRequest) 
 	if d.closed {
 		d.mu.Unlock()
 		_ = stdin.Close()
-		_ = cmd.Process.Kill()
-		_ = cmd.Wait()
+		_ = shared.WaitOrKill(cmd)
 		return ErrInteractiveClosed
 	}
 	d.cmd = cmd

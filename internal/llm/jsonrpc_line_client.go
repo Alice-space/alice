@@ -176,9 +176,9 @@ func (c *lineRPCClient) Close() error {
 	}
 	_ = c.stdin.Close()
 	if c.cmd.Process != nil {
-		_ = c.cmd.Process.Kill()
+		return shared.WaitOrKill(c.cmd)
 	}
-	return c.cmd.Wait()
+	return nil
 }
 
 func (c *lineRPCClient) write(payload any) error {
