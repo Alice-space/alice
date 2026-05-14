@@ -24,7 +24,7 @@ description: 为当前会话设定并持续执行长期目标
 
 ### 严格审计流程
 
-Main Agent 严禁自行执行审计步骤或直接调用 `alice-goal complete`。所有审计和完成操作必须通过 `audit_completion` subagent 完成。
+Main Agent 严禁自行执行审计步骤或直接调用 `alice-goal complete`。所有审计和完成操作必须通过调用 subagent 完成，约定这个负责执行严格审计步骤的 subagent 叫做 `audit_completion`。
 
 1. 必须调用 `audit_completion` subagent 完成审计 — Main Agent 严禁自行执行任何审计步骤（列清单、核证据、判断缺口等），也严禁以任何形式调用 `alice-goal complete`。
 2. `audit_completion` 必须执行的审计步骤：
