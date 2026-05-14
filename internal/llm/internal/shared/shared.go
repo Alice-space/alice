@@ -17,7 +17,7 @@ const (
 // AuthCheckTimeout is the default timeout for CLI login/auth status checks.
 const AuthCheckTimeout = 15 * time.Second
 
-const (
+var (
 	// SubprocessGracePeriod is how long to wait for a subprocess to exit
 	// naturally after its stdin is closed before escalating to SIGTERM.
 	SubprocessGracePeriod = 10 * time.Second

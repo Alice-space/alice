@@ -694,7 +694,6 @@ func (d *openCodeAppServerDriver) hasOpenCodeAssistantText() bool {
 
 func (d *openCodeAppServerDriver) resetServerForNextRequest() {
 	d.mu.Lock()
-	defer d.mu.Unlock()
 	d.baseURL = ""
 	d.sessionID = ""
 	d.activeID = ""
@@ -705,10 +704,13 @@ func (d *openCodeAppServerDriver) resetServerForNextRequest() {
 		d.eventCancel()
 		d.eventCancel = nil
 	}
-	if d.cmd != nil && d.cmd.Process != nil {
-		_ = shared.WaitOrKill(d.cmd)
-	}
+	cmd := d.cmd
 	d.cmd = nil
+	d.mu.Unlock()
+
+	if cmd != nil && cmd.Process != nil {
+		_ = shared.WaitOrKill(cmd)
+	}
 }
 
 func (d *openCodeAppServerDriver) emit(event TurnEvent) {
