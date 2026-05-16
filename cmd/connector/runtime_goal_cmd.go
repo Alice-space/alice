@@ -19,6 +19,7 @@ func newRuntimeGoalCmd() *cobra.Command {
 	goalCmd.AddCommand(
 		newRuntimeGoalCreateCmd(),
 		newRuntimeGoalGetCmd(),
+		newRuntimeGoalDelayCmd(),
 		newRuntimeGoalPauseCmd(),
 		newRuntimeGoalResumeCmd(),
 		newRuntimeGoalCompleteCmd(),
@@ -153,6 +154,39 @@ func newRuntimeGoalDeleteCmd() *cobra.Command {
 			_ []string,
 		) error {
 			result, err := client.DeleteGoal(ctx, session)
+			if err != nil {
+				return err
+			}
+			return printRuntimeJSON(result)
+		}),
+	}
+}
+
+func newRuntimeGoalDelayCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "delay <duration> <reason>",
+		Short: "Delay the next goal iteration by a specified duration",
+		Long: `Delay the next goal iteration by a specified duration (Go duration format: "5m", "30m", "2h", "1h30m").
+Use "0s" to schedule an immediate next iteration.
+A reason explaining why the delay was chosen is required.
+
+Examples:
+  alice runtime goal delay 30m "waiting for CI build to complete"
+  alice runtime goal delay 2h "waiting for PR review"
+  alice runtime goal delay 0s "continue immediately with next task"`,
+		Args: cobra.ExactArgs(2),
+		RunE: withRuntimeClient(func(
+			ctx context.Context,
+			client *runtimeapi.Client,
+			session sessionctx.SessionContext,
+			_ *cobra.Command,
+			args []string,
+		) error {
+			req := runtimeapi.DelayGoalRequest{
+				Duration: args[0],
+				Reason:   args[1],
+			}
+			result, err := client.GoalDelay(ctx, session, req)
 			if err != nil {
 				return err
 			}

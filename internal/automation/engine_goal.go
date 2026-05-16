@@ -55,6 +55,10 @@ func (e *Engine) runGoals(ctx context.Context) {
 		default:
 			continue
 		}
+		now := e.nowTime()
+		if !goal.NextRunAt.IsZero() && now.Before(goal.NextRunAt) {
+			continue
+		}
 		goal := goal
 		e.taskSem <- struct{}{}
 		go func() {
@@ -157,6 +161,10 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 		now = e.nowTime()
 		if !goal.DeadlineAt.IsZero() && now.After(goal.DeadlineAt) {
 			e.markGoalTimeout(goalCtx, goal)
+			return nil
+		}
+		if !goal.NextRunAt.IsZero() && now.Before(goal.NextRunAt) {
+			logging.Infof("goal delayed scope=%s:%s next_run=%s reason=%q", goal.Scope.Kind, goal.Scope.ID, goal.NextRunAt.Format("2006-01-02 15:04:05"), goal.DelayReason)
 			return nil
 		}
 		select {
@@ -325,11 +333,7 @@ func (e *Engine) sendGoalIterationStartNotification(ctx context.Context, goal Go
 	if e.sender == nil {
 		return
 	}
-	obj := goal.Objective
-	if len([]rune(obj)) > 60 {
-		obj = string([]rune(obj)[:60]) + "..."
-	}
-	e.sendGoalNotification(ctx, goal, "🔄 "+obj)
+	e.sendGoalNotification(ctx, goal, "🔄 "+goal.Objective)
 }
 
 func (e *Engine) sendGoalNotification(ctx context.Context, goal GoalTask, text string) string {

@@ -2041,6 +2041,471 @@ func TestExecuteGoal_SendsIterationStartNotification(t *testing.T) {
 	}
 }
 
+func TestExecuteGoal_SkipsWhenNextRunAtInFuture(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &llmRunnerStub{
+		result: llm.RunResult{Reply: "working...", NextThreadID: "thread_1"},
+	}
+	engine.SetLLMRunner(runner)
+
+	futureTime := base.Add(30 * time.Minute)
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_future"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:          "goal_delay_future",
+		Objective:   "delay future test",
+		Status:      GoalStatusActive,
+		ThreadID:    "thread_0",
+		NextRunAt:   futureTime,
+		DelayReason: "test delay set by agent",
+		DeadlineAt:  base.Add(48 * time.Hour),
+		Scope:       scope,
+		Route:       Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:     Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	// ExecuteGoal should see NextRunAt in future and return immediately
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	// No LLM calls should have been made
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 0 {
+		t.Fatalf("expected 0 LLM calls when NextRunAt is in the future, got %d", calls)
+	}
+
+	// Goal should remain active (not changed to any other state)
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusActive {
+		t.Fatalf("expected status active, got %s", goal.Status)
+	}
+}
+
+func TestExecuteGoal_ContinuesWhenNextRunAtIsPast(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &llmRunnerStub{
+		result: llm.RunResult{Reply: "done", GoalDone: true, NextThreadID: "thread_1"},
+	}
+	engine.SetLLMRunner(runner)
+
+	pastTime := base.Add(-10 * time.Minute)
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_past"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_delay_past",
+		Objective:  "delay past test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		NextRunAt:  pastTime,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected 1 LLM call when NextRunAt is in the past, got %d", calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected status complete, got %s", goal.Status)
+	}
+}
+
+func TestExecuteGoal_ContinuesImmediatelyWhenNextRunAtIsZero(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &llmRunnerStub{
+		result: llm.RunResult{Reply: "done", GoalDone: true, NextThreadID: "thread_1"},
+	}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_zero"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_delay_zero",
+		Objective:  "delay zero test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 1 {
+		t.Fatalf("expected 1 LLM call when NextRunAt is zero, got %d", calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected status complete, got %s", goal.Status)
+	}
+}
+
+func TestRunGoals_SkipsGoalWithFutureNextRunAt(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+	engine.SetLLMRunner(&llmRunnerStub{result: llm.RunResult{Reply: "should not run", GoalDone: true}})
+
+	futureTime := base.Add(2 * time.Hour)
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_tick_future"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:          "goal_tick_future",
+		Objective:   "tick future test",
+		Status:      GoalStatusActive,
+		ThreadID:    "thread_tick",
+		NextRunAt:   futureTime,
+		DelayReason: "test tick delay",
+		DeadlineAt:  base.Add(48 * time.Hour),
+		Scope:       scope,
+		Route:       Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:     Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	engine.runGoals(t.Context())
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusActive {
+		t.Fatalf("expected status active (tick skipped due to NextRunAt), got %s", goal.Status)
+	}
+	if goal.Running {
+		t.Fatal("expected Running=false (tick should have skipped this goal)")
+	}
+}
+
+func TestRunGoals_LaunchesGoalWhenNextRunAtIsPast(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	runner := &llmRunnerStub{result: llm.RunResult{Reply: "done", GoalDone: true, NextThreadID: "t1"}}
+	engine.SetLLMRunner(runner)
+
+	pastTime := base.Add(-5 * time.Minute)
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_tick_past"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_tick_past",
+		Objective:  "tick past test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_tick",
+		NextRunAt:  pastTime,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	engine.runGoals(t.Context())
+
+	time.Sleep(100 * time.Millisecond)
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected status complete (tick ran goal), got %s", goal.Status)
+	}
+}
+
+func TestExecuteGoal_DelayAfterIterationRespected(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	// First iteration returns normally, agent has set NextRunAt via delay API
+	// Second iteration would require re-entry via engine tick
+	runner := &llmRunnerStub{
+		results: []llm.RunResult{
+			{Reply: "step 1", NextThreadID: "t1"},
+			{Reply: "step 2", NextThreadID: "t2", GoalDone: true},
+		},
+	}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_iter"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_delay_iter",
+		Objective:  "delay iteration test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	// Simulate agent calling delay 0s during iteration:
+	// Patch NextRunAt to indicate immediate continuation
+	_, err = store.PatchGoal(scope, func(g *GoalTask) error {
+		g.NextRunAt = time.Time{} // zero = continue immediately
+		g.DelayReason = "继续推进任务"
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("PatchGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	runner.mu.Lock()
+	calls := runner.calls
+	runner.mu.Unlock()
+	if calls != 2 {
+		t.Fatalf("expected 2 LLM calls (immediate continuation via delay 0s), got %d", calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusComplete {
+		t.Fatalf("expected complete, got %s", goal.Status)
+	}
+}
+
+func TestExecuteGoal_DelayStopsInnerLoopForFutureNextRunAt(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	futureTime := base.Add(30 * time.Minute)
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_stop"}
+
+	// Custom runner that patches NextRunAt after returning (simulating agent
+	// calling alice-goal delay during the iteration)
+	runner := &delayPatchRunnerStub{
+		store:      store,
+		scope:      scope,
+		futureTime: futureTime,
+		result: llm.RunResult{
+			Reply:        "step 1",
+			NextThreadID: "t1",
+		},
+	}
+	engine.SetLLMRunner(runner)
+
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_delay_stop",
+		Objective:  "delay stop loop test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	// Only 1 LLM call! After iter-1, the runner patched NextRunAt to future,
+	// so the inner loop exited before calling runner again.
+	if runner.calls != 1 {
+		t.Fatalf("expected 1 LLM call (delay stopped inner loop), got %d", runner.calls)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusActive {
+		t.Fatalf("expected status active (not done, just delayed), got %s", goal.Status)
+	}
+	if !goal.NextRunAt.Equal(futureTime) {
+		t.Fatalf("expected NextRunAt=%s, got %s", futureTime, goal.NextRunAt)
+	}
+	if goal.DelayReason != "等待 CI 完成" {
+		t.Fatalf("expected DelayReason preserved, got %q", goal.DelayReason)
+	}
+}
+
+func TestExecuteGoal_RunningFlagClearedOnDelay(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	futureTime := base.Add(10 * time.Minute)
+	runner := &llmRunnerStub{
+		result: llm.RunResult{Reply: "working", NextThreadID: "tt"},
+	}
+	engine.SetLLMRunner(runner)
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_running"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_delay_running",
+		Objective:  "running flag test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		NextRunAt:  futureTime,
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Running {
+		t.Fatal("expected Running=false after ExecuteGoal returned due to delay")
+	}
+}
+
+func TestDelayRespectsDeadlineBeforeNextRunAt(t *testing.T) {
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+
+	// Set engine clock past both NextRunAt and DeadlineAt
+	engine.now = func() time.Time { return base.Add(2 * time.Hour) }
+	engine.SetLLMRunner(&llmRunnerStub{result: llm.RunResult{Reply: "nope"}})
+
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_deadline"}
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_delay_deadline",
+		Objective:  "deadline before delay test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		NextRunAt:  base.Add(3 * time.Hour), // NextRunAt: 13:00
+		DeadlineAt: base.Add(1 * time.Hour), // DeadlineAt: 11:00, engine.now = 12:00
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	err = engine.ExecuteGoal(t.Context(), scope)
+	if err != nil {
+		t.Fatalf("ExecuteGoal: %v", err)
+	}
+
+	// Deadline is checked BEFORE NextRunAt, so goal should be timed out
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status != GoalStatusTimeout {
+		t.Fatalf("expected status timeout (deadline takes priority over NextRunAt), got %s", goal.Status)
+	}
+}
+
 type workspaceDirChecker struct {
 	workDir string
 }
@@ -2051,4 +2516,23 @@ func (c *workspaceDirChecker) IsSessionActive(sessionKey string) bool {
 
 func (c *workspaceDirChecker) GetSessionWorkDir(sessionKey string) string {
 	return c.workDir
+}
+
+type delayPatchRunnerStub struct {
+	store      *Store
+	scope      Scope
+	futureTime time.Time
+	result     llm.RunResult
+	calls      int
+}
+
+func (s *delayPatchRunnerStub) Run(_ context.Context, _ llm.RunRequest) (llm.RunResult, error) {
+	s.calls++
+	// Simulate agent calling alice-goal delay 30m "等待 CI 完成" during iteration
+	_, _ = s.store.PatchGoal(s.scope, func(g *GoalTask) error {
+		g.NextRunAt = s.futureTime
+		g.DelayReason = "等待 CI 完成"
+		return nil
+	})
+	return s.result, nil
 }

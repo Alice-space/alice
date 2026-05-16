@@ -453,3 +453,152 @@ func TestResolveAutomationScope_StripsMessageSuffixFromScopeID(t *testing.T) {
 		t.Fatalf("expected scope ID without message suffix, got %q", scopeCtx.scope.ID)
 	}
 }
+
+func TestValidateDelayGoalRequest_RejectsEmptyDuration(t *testing.T) {
+	_, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "",
+		Reason:   "test reason",
+	})
+	if err == nil {
+		t.Fatal("expected error for empty duration")
+	}
+	if !strings.Contains(err.Error(), "duration is required") {
+		t.Fatalf("expected 'duration is required', got: %v", err)
+	}
+}
+
+func TestValidateDelayGoalRequest_RejectsInvalidDuration(t *testing.T) {
+	_, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "abc",
+		Reason:   "test reason",
+	})
+	if err == nil {
+		t.Fatal("expected error for invalid duration")
+	}
+	if !strings.Contains(err.Error(), "invalid duration") {
+		t.Fatalf("expected 'invalid duration', got: %v", err)
+	}
+}
+
+func TestValidateDelayGoalRequest_RejectsNegativeDuration(t *testing.T) {
+	_, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "-5m",
+		Reason:   "test reason",
+	})
+	if err == nil {
+		t.Fatal("expected error for negative duration")
+	}
+	if !strings.Contains(err.Error(), "must not be negative") {
+		t.Fatalf("expected 'must not be negative', got: %v", err)
+	}
+}
+
+func TestValidateDelayGoalRequest_RejectsDurationTooLarge(t *testing.T) {
+	_, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "13h",
+		Reason:   "test reason",
+	})
+	if err == nil {
+		t.Fatal("expected error for duration > 12h")
+	}
+	if !strings.Contains(err.Error(), "must not exceed 12h") {
+		t.Fatalf("expected 'must not exceed 12h', got: %v", err)
+	}
+}
+
+func TestValidateDelayGoalRequest_RejectsDurationUnderOneMinute(t *testing.T) {
+	_, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "30s",
+		Reason:   "test reason",
+	})
+	if err == nil {
+		t.Fatal("expected error for duration < 1m (positive but under 1m)")
+	}
+	if !strings.Contains(err.Error(), "at least 1m") {
+		t.Fatalf("expected 'at least 1m', got: %v", err)
+	}
+}
+
+func TestValidateDelayGoalRequest_AcceptsZeroSeconds(t *testing.T) {
+	duration, reason, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "0s",
+		Reason:   "继续推进下一项任务",
+	})
+	if err != nil {
+		t.Fatalf("expected success for 0s, got: %v", err)
+	}
+	if duration != 0 {
+		t.Fatalf("expected zero duration, got %s", duration)
+	}
+	if reason != "继续推进下一项任务" {
+		t.Fatalf("expected reason preserved, got %q", reason)
+	}
+}
+
+func TestValidateDelayGoalRequest_AcceptsValidDuration(t *testing.T) {
+	duration, reason, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "30m",
+		Reason:   "等待 CI 构建完成",
+	})
+	if err != nil {
+		t.Fatalf("expected success for valid duration, got: %v", err)
+	}
+	if duration != 30*time.Minute {
+		t.Fatalf("expected 30m duration, got %s", duration)
+	}
+	if reason != "等待 CI 构建完成" {
+		t.Fatalf("expected reason preserved, got %q", reason)
+	}
+}
+
+func TestValidateDelayGoalRequest_AcceptsCompoundDuration(t *testing.T) {
+	duration, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "2h30m",
+		Reason:   "waiting for review, then re-check",
+	})
+	if err != nil {
+		t.Fatalf("expected success for compound duration, got: %v", err)
+	}
+	if duration != 2*time.Hour+30*time.Minute {
+		t.Fatalf("expected 2h30m, got %s", duration)
+	}
+}
+
+func TestValidateDelayGoalRequest_RejectsEmptyReason(t *testing.T) {
+	_, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "5m",
+		Reason:   "",
+	})
+	if err == nil {
+		t.Fatal("expected error for empty reason")
+	}
+	if !strings.Contains(err.Error(), "reason is required") {
+		t.Fatalf("expected 'reason is required', got: %v", err)
+	}
+}
+
+func TestValidateDelayGoalRequest_AcceptsMaxDelay(t *testing.T) {
+	duration, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "12h",
+		Reason:   "long wait for external dependency",
+	})
+	if err != nil {
+		t.Fatalf("expected success for 12h, got: %v", err)
+	}
+	if duration != 12*time.Hour {
+		t.Fatalf("expected 12h, got %s", duration)
+	}
+}
+
+func TestValidateDelayGoalRequest_AcceptsOneMinute(t *testing.T) {
+	duration, _, err := validateDelayGoalRequest(DelayGoalRequest{
+		Duration: "1m",
+		Reason:   "minimum valid delay",
+	})
+	if err != nil {
+		t.Fatalf("expected success for 1m, got: %v", err)
+	}
+	if duration != time.Minute {
+		t.Fatalf("expected 1m, got %s", duration)
+	}
+}
