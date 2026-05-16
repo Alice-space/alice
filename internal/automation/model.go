@@ -67,6 +67,7 @@ type GoalTask struct {
 	Objective  string     `json:"objective"`
 	Status     GoalStatus `json:"status"`
 	DeadlineAt time.Time  `json:"deadline_at"`
+	NextRunAt  time.Time  `json:"next_run_at,omitempty"`
 	ThreadID   string     `json:"thread_id,omitempty"`
 
 	Scope      Scope  `json:"scope"`
@@ -74,10 +75,11 @@ type GoalTask struct {
 	Creator    Actor  `json:"creator"`
 	SessionKey string `json:"session_key,omitempty"`
 
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
-	Revision  int64     `json:"revision"`
-	Running   bool      `json:"running,omitempty"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
+	Revision    int64     `json:"revision"`
+	Running     bool      `json:"running,omitempty"`
+	DelayReason string    `json:"delay_reason,omitempty"`
 }
 
 func NormalizeGoal(goal GoalTask) GoalTask {

@@ -97,6 +97,7 @@ func NewServer(
 	goal.POST("/pause", srv.handleGoalPause)
 	goal.POST("/resume", srv.handleGoalResume)
 	goal.POST("/complete", srv.handleGoalComplete)
+	goal.POST("/delay", srv.handleGoalDelay)
 	goal.DELETE("", srv.handleGoalDelete)
 	return srv
 }

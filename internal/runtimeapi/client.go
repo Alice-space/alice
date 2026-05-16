@@ -121,6 +121,10 @@ func (c *Client) GoalComplete(ctx context.Context, session sessionctx.SessionCon
 	return c.post(ctx, session, "/api/v1/goal/complete", nil)
 }
 
+func (c *Client) GoalDelay(ctx context.Context, session sessionctx.SessionContext, req DelayGoalRequest) (map[string]any, error) {
+	return c.post(ctx, session, "/api/v1/goal/delay", req)
+}
+
 func (c *Client) DeleteGoal(ctx context.Context, session sessionctx.SessionContext) (map[string]any, error) {
 	return c.delete(ctx, session, "/api/v1/goal", nil)
 }

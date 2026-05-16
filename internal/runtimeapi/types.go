@@ -53,6 +53,12 @@ type CreateGoalRequest struct {
 	DeadlineIn string `json:"deadline_in,omitempty"`
 }
 
+// DelayGoalRequest is the API payload for delaying the next goal iteration.
+type DelayGoalRequest struct {
+	Duration string `json:"duration"`
+	Reason   string `json:"reason"`
+}
+
 func BaseURL(socketPath string) string {
 	socketPath = strings.TrimSpace(socketPath)
 	if socketPath == "" {
