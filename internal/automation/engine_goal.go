@@ -164,6 +164,7 @@ func (e *Engine) ExecuteGoal(ctx context.Context, scope Scope) error {
 			return nil
 		}
 		if !goal.NextRunAt.IsZero() && now.Before(goal.NextRunAt) {
+			e.resetFastRunCount(scope)
 			logging.Infof("goal delayed scope=%s:%s next_run=%s reason=%q", goal.Scope.Kind, goal.Scope.ID, goal.NextRunAt.Format("2006-01-02 15:04:05"), goal.DelayReason)
 			return nil
 		}

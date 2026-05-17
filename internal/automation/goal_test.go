@@ -2518,6 +2518,72 @@ func (c *workspaceDirChecker) GetSessionWorkDir(sessionKey string) string {
 	return c.workDir
 }
 
+func TestExecuteGoal_DelayResetsFastRunCounter(t *testing.T) {
+	SetGoalTemplates("CONT|{{.Objective}}", "TIMEOUT|{{.Objective}}")
+
+	base := time.Date(2026, 5, 5, 10, 0, 0, 0, time.UTC)
+	store := NewStore(filepath.Join(t.TempDir(), "automation.db"))
+	store.now = func() time.Time { return base }
+
+	sender := &senderStub{}
+	engine := NewEngine(store, sender)
+	engine.now = func() time.Time { return base }
+
+	futureTime := base.Add(8 * time.Minute)
+	scope := Scope{Kind: ScopeKindChat, ID: "chat_id:oc_chat|work:om_delay_fastreset"}
+
+	// Runner patches NextRunAt after returning, simulating agent calling delay
+	runner := &delayPatchRunnerStub{
+		store:      store,
+		scope:      scope,
+		futureTime: futureTime,
+		result:     llm.RunResult{Reply: "checking...", NextThreadID: "tt"},
+	}
+	engine.SetLLMRunner(runner)
+
+	_, err := store.ReplaceGoal(GoalTask{
+		ID:         "goal_delay_fastreset",
+		Objective:  "delay resets fast counter test",
+		Status:     GoalStatusActive,
+		ThreadID:   "thread_0",
+		DeadlineAt: base.Add(48 * time.Hour),
+		Scope:      scope,
+		Route:      Route{ReceiveIDType: "chat_id", ReceiveID: "oc_chat"},
+		Creator:    Actor{UserID: "u1"},
+	})
+	if err != nil {
+		t.Fatalf("ReplaceGoal: %v", err)
+	}
+
+	// 6 cycles: runner patches NextRunAt → engine sees delay → exits
+	// delay check resets fast-run counter each time, so 6 fast cycles should NOT pause
+	for i := 0; i < 6; i++ {
+		err = engine.ExecuteGoal(t.Context(), scope)
+		if err != nil {
+			t.Fatalf("ExecuteGoal cycle %d: %v", i, err)
+		}
+		// Clear NextRunAt to simulate delay expired, engine tick re-enters
+		store.PatchGoal(scope, func(g *GoalTask) error {
+			g.NextRunAt = time.Time{}
+			return nil
+		})
+	}
+
+	goal, err := store.GetGoal(scope)
+	if err != nil {
+		t.Fatalf("GetGoal: %v", err)
+	}
+	if goal.Status == GoalStatusPaused {
+		t.Fatal("goal should NOT be paused (delay resets fast-run counter)")
+	}
+	if goal.Status != GoalStatusActive {
+		t.Fatalf("expected status active, got %s", goal.Status)
+	}
+	if runner.calls != 6 {
+		t.Fatalf("expected 6 LLM calls, got %d", runner.calls)
+	}
+}
+
 type delayPatchRunnerStub struct {
 	store      *Store
 	scope      Scope
